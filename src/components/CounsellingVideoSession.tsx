@@ -185,7 +185,9 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
     leaveRoom,
     sessionDuration,
     localVideoRef,
-    callObject
+    muteParticipant,
+    removeParticipant,
+    muteAll
   } = useDailyRoom({
     roomName,
     userName,
@@ -262,70 +264,21 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
     setIsFullscreen(!isFullscreen);
   };
 
+  // §3F — route host control through the hook (no raw call object). The hook
+  // enforces server-side on LiveKit and stays advisory on Daily, and handles toasts.
   const handleMuteParticipant = async (participant: DailyParticipantInfo) => {
-    if (!callObject || !isHost) return;
-    
-    try {
-      await callObject.updateParticipant(participant.sessionId, {
-        setAudio: false
-      });
-      toast({
-        title: t('counsellingVideoSession', 'participantMuted', 'Participant Muted'),
-        description: t('counsellingVideoSession', 'participantMutedDesc', '{name} has been muted').replace('{name}', String(participant.userName))
-      });
-    } catch (error) {
-      console.error('Failed to mute participant:', error);
-      toast({
-        title: t('counsellingVideoSession', 'error', 'Error'),
-        description: t('counsellingVideoSession', 'failedMuteParticipant', 'Failed to mute participant'),
-        variant: 'destructive'
-      });
-    }
+    if (!isHost) return;
+    await muteParticipant(participant.sessionId);
   };
 
   const handleRemoveParticipant = async (participant: DailyParticipantInfo) => {
-    if (!callObject || !isHost) return;
-    
-    try {
-      await callObject.updateParticipant(participant.sessionId, {
-        eject: true
-      });
-      toast({
-        title: t('counsellingVideoSession', 'participantRemoved', 'Participant Removed'),
-        description: t('counsellingVideoSession', 'participantRemovedDesc', '{name} has been removed from the call').replace('{name}', String(participant.userName))
-      });
-    } catch (error) {
-      console.error('Failed to remove participant:', error);
-      toast({
-        title: t('counsellingVideoSession', 'error', 'Error'),
-        description: t('counsellingVideoSession', 'failedRemoveParticipant', 'Failed to remove participant'),
-        variant: 'destructive'
-      });
-    }
+    if (!isHost) return;
+    await removeParticipant(participant.sessionId);
   };
 
   const handleMuteAll = async () => {
-    if (!callObject || !isHost) return;
-    
-    try {
-      // Mute all remote participants
-      for (const participant of remoteParticipants) {
-        await callObject.updateParticipant(participant.sessionId, {
-          setAudio: false
-        });
-      }
-      toast({
-        title: t('counsellingVideoSession', 'allMuted', 'All Muted'),
-        description: t('counsellingVideoSession', 'allMutedDesc', 'All participants have been muted')
-      });
-    } catch (error) {
-      console.error('Failed to mute all:', error);
-      toast({
-        title: t('counsellingVideoSession', 'error', 'Error'),
-        description: t('counsellingVideoSession', 'failedMuteAll', 'Failed to mute all participants'),
-        variant: 'destructive'
-      });
-    }
+    if (!isHost) return;
+    await muteAll();
   };
 
   // Pre-call screen

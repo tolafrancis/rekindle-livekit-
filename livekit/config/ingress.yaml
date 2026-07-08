@@ -1,0 +1,19 @@
+# LiveKit Ingress config — Phase 0 (RTMP / WHIP in).
+# An RTMP or WHIP feed (e.g. OBS) lands here and is published into a room as a
+# participant. Bind ports match docker-compose.
+
+redis:
+  address: redis:6379
+
+# Must match livekit.yaml keys and egress.yaml.
+api_key: devkey
+api_secret: devsecret_please_change_me_0123456789abcdef
+
+ws_url: ws://livekit:7880
+
+rtmp_port: 1935        # OBS: Server rtmp://<host>:1935/x  (stream key from Ingress create)
+whip_port: 8080        # WebRTC-HTTP ingest
+http_relay_port: 9090  # internal
+
+logging:
+  level: info

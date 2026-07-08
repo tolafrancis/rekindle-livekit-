@@ -21,14 +21,15 @@ interface HlsPlayerProps {
 }
 
 /**
- * Plays a LIVE HLS (.m3u8) stream. hls.js manages live sync itself — it starts
+ * Plays a LIVE HLS (.m3u8) stream — engine-agnostic (Mux, or LiveKit Egress HLS
+ * output §6A/§6D; Egress serves ~4s segments, so the default 6s target latency
+ * gives ~1.5 segments of headroom). hls.js manages live sync itself — it starts
  * ~`targetLatencySeconds` behind the edge and gently speeds playback (≤1.1x) to
  * correct drift, WITHOUT hard-seeking. (Earlier versions force-seeked to the
- * bleeding edge on start and on a timer; on Mux that seeks into not-yet-buffered
- * data → a stall → a visible "reconnect" a few seconds after joining, settling
- * only after the DVR window matured. We no longer do that.) When the broadcast
- * finalizes (ENDLIST) it shows an "ended" state; brief startup errors recover in
- * place without flashing the overlay.
+ * bleeding edge on start and on a timer; that seeks into not-yet-buffered data →
+ * a stall → a visible "reconnect" a few seconds after joining, settling only once
+ * the DVR window matured. We no longer do that.) When the broadcast finalizes
+ * (ENDLIST) it shows an "ended" state; brief startup errors recover in place.
  */
 export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, className, poster, onEnded, targetLatencySeconds = 6, debug = false }) => {
   const videoRef = useRef<HTMLVideoElement>(null);

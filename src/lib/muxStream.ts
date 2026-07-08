@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { isLiveKitBackend } from '@/lib/videoBackend';
 
 export interface MuxProvision {
   uid: string;
@@ -26,12 +27,58 @@ async function call(
   }
 }
 
-/** Create (or reuse) the channel's low-latency Mux live stream. */
-export const provisionChannelStream = (channelId: string, record = true) => call('create', { channelId }, { record, latency: 'low' });
+const channelRoom = (channelId: string) => `channel-${channelId}`;
+
+/** OBS/encoder ingest creds. On LiveKit (§6B) this is a LiveKit Ingress
+ *  (serverUrl + streamKey); on Daily/Mux it's the Mux live stream. Same shape. */
+async function ingress(action: 'create' | 'get' | 'delete', channelId: string, record = true): Promise<MuxProvision | null> {
+  const { data, error } = await supabase.functions.invoke('livekit-ingress', {
+    body: { action, channelId, roomName: channelRoom(channelId) },
+  });
+  if (error || !data) return null;
+  if (action === 'delete') return data as MuxProvision;
+  const serverUrl = data.serverUrl ?? '';
+  const streamKey = data.streamKey ?? '';
+  return {
+    uid: data.ingressId ?? channelId,
+    streamKey,
+    serverUrl,
+    rtmpUrl: streamKey ? `${serverUrl}/${streamKey}` : serverUrl,
+    playbackUrl: '', // playback comes from the broadcast HLS Egress, not ingress
+    playbackId: null,
+    status: data.ingressId ? 'active' : 'idle',
+  };
+}
+
+/** Create (or reuse) the channel's ingest (LiveKit Ingress / Mux live stream). */
+export const provisionChannelStream = (channelId: string, record = true) =>
+  isLiveKitBackend() ? ingress('create', channelId, record) : call('create', { channelId }, { record, latency: 'low' });
 /** Re-fetch current ingest credentials for the channel. */
-export const getChannelStreamCreds = (channelId: string) => call('ingest', { channelId });
-/** Tear down the channel's Mux live stream. */
-export const deleteChannelStream = (channelId: string) => call('delete', { channelId });
+export const getChannelStreamCreds = (channelId: string) =>
+  isLiveKitBackend() ? ingress('get', channelId) : call('ingest', { channelId });
+/** Tear down the channel's ingest. */
+export const deleteChannelStream = (channelId: string) =>
+  isLiveKitBackend() ? ingress('delete', channelId) : call('delete', { channelId });
+
+/** §6A — start the channel's live broadcast: composite the room → HLS via Egress
+ *  and publish the playback URL. On Daily/Mux the bridge in LiveChannelBroadcast
+ *  does the RTMP push instead, so this is a no-op there. */
+export async function startChannelBroadcast(channelId: string): Promise<{ playbackUrl: string } | null> {
+  if (!isLiveKitBackend()) return null;
+  const { data, error } = await supabase.functions.invoke('livekit-egress', {
+    body: { action: 'start-hls', roomName: channelRoom(channelId), channelId, context: { kind: 'channel', channelId } },
+  });
+  if (error || !data?.playbackUrl) return null;
+  return { playbackUrl: data.playbackUrl };
+}
+
+/** §6A — stop the channel's broadcast HLS Egress. */
+export async function stopChannelBroadcast(channelId: string): Promise<void> {
+  if (!isLiveKitBackend()) return;
+  await supabase.functions.invoke('livekit-egress', {
+    body: { action: 'stop-hls', channelId, context: { kind: 'channel', channelId } },
+  }).catch(() => {});
+}
 /** Change recording on/off after the channel exists (delete + re-create). */
 export async function reprovisionChannelStream(channelId: string, record: boolean) {
   await deleteChannelStream(channelId);
@@ -63,11 +110,15 @@ export function muxDownloadUrl(hls?: string | null, filename = 'recording'): str
   return `https://stream.mux.com/${m[1]}/capped-1080p.mp4?download=${encodeURIComponent(safe)}`;
 }
 
-/** List a channel's recorded broadcasts (ready Mux assets). */
+/** List a channel's recorded broadcasts. On LiveKit these are Egress outputs
+ *  (§12), listed from livekit_recordings; on Daily/Mux they're ready Mux assets.
+ *  Both return the same MuxRecording shape so the VOD viewer is unchanged. */
 export async function getChannelRecordings(channelId: string): Promise<MuxRecording[]> {
   try {
-    const { data, error } = await supabase.functions.invoke('manage-stream-input', {
-      body: { action: 'recordings', channelId },
+    const fn = isLiveKitBackend() ? 'livekit-egress' : 'manage-stream-input';
+    const action = isLiveKitBackend() ? 'list-recordings' : 'recordings';
+    const { data, error } = await supabase.functions.invoke(fn, {
+      body: { action, channelId },
     });
     if (error || !data?.recordings) return [];
     return data.recordings as MuxRecording[];
@@ -112,7 +163,10 @@ export interface SimulcastResult<T> {
 /** Invoke a simulcast action and normalise its result (these responses don't carry rtmpUrl). */
 async function callSimulcast<T>(action: string, payload: Record<string, unknown>): Promise<SimulcastResult<T>> {
   try {
-    const { data, error } = await supabase.functions.invoke(SIMULCAST_FN, {
+    // §6C — on LiveKit, simulcast is one RTMP Egress per destination (livekit-egress);
+    // on Daily/Mux it's a Mux simulcast-target (channel-simulcast). Same result shape.
+    const fn = isLiveKitBackend() ? 'livekit-egress' : SIMULCAST_FN;
+    const { data, error } = await supabase.functions.invoke(fn, {
       body: { action, ...payload },
     });
     if (error) {
@@ -130,9 +184,13 @@ async function callSimulcast<T>(action: string, payload: Record<string, unknown>
   }
 }
 
-/** Attach (or replace) a simulcast target for a platform. */
+/** Attach (or replace) a simulcast target for a platform. On LiveKit the RTMP
+ *  Egress needs the combined destination URL + the channel room. */
 export const addSimulcastTarget = (channelId: string, platform: SimulcastPlatform, serverUrl: string, streamKey: string) =>
-  callSimulcast<{ success: true; target: SimulcastTarget }>('add-simulcast', { channelId, platform, serverUrl, streamKey });
+  callSimulcast<{ success: true; target: SimulcastTarget }>('add-simulcast',
+    isLiveKitBackend()
+      ? { channelId, platform, roomName: channelRoom(channelId), rtmpUrl: `${serverUrl}/${streamKey}` }
+      : { channelId, platform, serverUrl, streamKey });
 
 /** Detach a platform's simulcast target and delete its row. */
 export const removeSimulcastTarget = (channelId: string, platform: SimulcastPlatform) =>

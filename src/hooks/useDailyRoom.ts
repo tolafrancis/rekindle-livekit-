@@ -3,9 +3,10 @@ import DailyIframe, { DailyCall, DailyParticipant, DailyEventObjectParticipant, 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/use-toast';
-import { EnhancedDailyVideoWrapper } from '@/lib/EnhancedDailyVideoWrapper';
-import { 
-  ParticipantRole, 
+import { createVideoWrapper, isLiveKitBackend } from '@/lib/videoBackend';
+import type { IVideoRoomWrapper, NormalizedParticipant } from '@/types/videoRoom';
+import {
+  ParticipantRole,
   ParticipantState, 
   MeetingSettings, 
   WaitingRoomParticipant,
@@ -30,6 +31,9 @@ export interface DailyRoomOptions {
   onMeetingEnded?: () => void;
   enableWaitingRoom?: boolean;
   meetingId?: string;
+  /** LiveKit only: which DB table the `livekit-token` fn checks for host status.
+   *  Defaults to 'channel' when a channelId is present, else 'meeting'. */
+  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel';
 }
 
 export interface DailyParticipantInfo {
@@ -161,7 +165,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const { user, profile } = useAuth();
   
   // Refs
-  const wrapperRef = useRef<EnhancedDailyVideoWrapper | null>(null);
+  const wrapperRef = useRef<IVideoRoomWrapper | null>(null);
+  // Phase 3: LiveKit-only. identity→role map (from participant metadata) and a
+  // stable pointer to the current advisory-message handler (fed by wrapper.onData).
+  const livekitRolesRef = useRef<Map<string, ParticipantRole>>(new Map());
+  const controlMessageHandlerRef = useRef<((event: { data: any; fromId?: string }) => void) | null>(null);
+  // Phase 5: active Egress recording id (LiveKit), so stopRecording can target it.
+  const recordingEgressIdRef = useRef<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const sessionStartTimeRef = useRef<Date | null>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -323,15 +333,23 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     
-    const dailyParticipants = wrapper.getParticipants();
-    if (!dailyParticipants) return;
-    
-    const participantList: DailyParticipantInfo[] = [];
-    
-    Object.values(dailyParticipants).forEach((p) => {
-      participantList.push(convertParticipant(p));
-    });
-    
+    const raw = wrapper.getParticipants();
+    if (!raw) return;
+
+    // LiveKit wrapper already emits NormalizedParticipant (== DailyParticipantInfo);
+    // the Daily wrapper emits Daily-shaped rows that need convertParticipant.
+    let participantList: DailyParticipantInfo[];
+    if (isLiveKitBackend()) {
+      const list = Object.values(raw) as (DailyParticipantInfo & { metadata?: { role?: ParticipantRole } })[];
+      // Mirror metadata roles so getParticipantRole (§3E) reads them.
+      const roles = new Map<string, ParticipantRole>();
+      list.forEach((p) => { if (p.metadata?.role) roles.set(p.sessionId, p.metadata.role); });
+      livekitRolesRef.current = roles;
+      participantList = list;
+    } else {
+      participantList = Object.values(raw).map((p) => convertParticipant(p as DailyParticipant));
+    }
+
     setParticipants(participantList);
   }, [convertParticipant]);
 
@@ -341,8 +359,31 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     return meetingSettings.waitingRoomEnabled ? 'attendee' : 'attendee';
   }, [meetingSettings.waitingRoomEnabled]);
 
-  // Get participant role
+  // Role-derivation context for the livekit edge fns (which table proves host).
+  const roleContext = useCallback(() => ({
+    kind: options.meetingKind ?? (options.channelId ? 'channel' : 'meeting'),
+    meetingId: options.meetingId,
+    channelId: options.channelId,
+  }), [options.meetingKind, options.channelId, options.meetingId]);
+
+  // §3A — server-enforced moderation. No-op on Daily (callers keep the advisory
+  // sendAppMessage path); on LiveKit it hits the livekit-moderation edge fn.
+  const moderate = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
+    const { data, error } = await supabase.functions.invoke('livekit-moderation', {
+      body: { action, roomName: options.roomName, context: roleContext(), ...extra },
+    });
+    if (error) throw new Error(error.message || `moderation ${action} failed`);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }, [options.roomName, roleContext]);
+
+  // Get participant role. On LiveKit the source of truth is participant metadata
+  // (§3E), mirrored into livekitRolesRef during updateParticipants.
   const getParticipantRole = useCallback((participantId: string): ParticipantRole => {
+    if (isLiveKitBackend()) {
+      const role = livekitRolesRef.current.get(participantId);
+      if (role) return role;
+    }
     return participantRoles.get(participantId) || 'attendee';
   }, [participantRoles]);
 
@@ -362,11 +403,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     // Broadcast role change via app message
     const wrapper = wrapperRef.current;
     if (wrapper) {
-      await wrapper.sendAppMessage({ 
-        type: 'role-change', 
-        participantId, 
-        role 
+      await wrapper.sendAppMessage({
+        type: 'role-change',
+        participantId,
+        role
       }, '*');
+      if (isLiveKitBackend()) await moderate('set-role', { identity: participantId, role });
     }
 
     // Update database if meetingId exists
@@ -386,12 +428,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    const dailyParticipants = wrapper.getParticipants();
-    if (!dailyParticipants) return;
+    const raw = wrapper.getParticipants();
+    if (!raw) return;
+
+    const normalized: DailyParticipantInfo[] = isLiveKitBackend()
+      ? (Object.values(raw) as DailyParticipantInfo[])
+      : Object.values(raw).map((p) => convertParticipant(p as DailyParticipant));
 
     const states: ParticipantState[] = [];
-    Object.values(dailyParticipants).forEach((p) => {
-      const convertedParticipant = convertParticipant(p);
+    normalized.forEach((convertedParticipant) => {
       const role = getParticipantRole(convertedParticipant.sessionId);
       
       // Check if host has disabled this participant's audio/video
@@ -446,8 +491,36 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // Create or get room from edge function
   const createRoom = useCallback(async (): Promise<{ url: string; token: string } | null> => {
     try {
+      // §1F — LiveKit collapses get-or-create + generate-token into ONE locally-signed
+      // JWT. Role is derived server-side (the client `isHost` is NOT trusted).
+      if (isLiveKitBackend()) {
+        const { data, error } = await supabase.functions.invoke('livekit-token', {
+          body: {
+            action: 'token',
+            roomName: options.roomName,
+            userName: options.userName,
+            viewerOnly: options.viewerOnlyMode && !options.isHost,
+            enableWaitingRoom: options.enableWaitingRoom || false,
+            context: {
+              kind: options.meetingKind ?? (options.channelId ? 'channel' : 'meeting'),
+              meetingId: options.meetingId,
+              channelId: options.channelId,
+            },
+          },
+        });
+        if (error) throw new Error(error.message || 'Failed to get LiveKit token');
+        if (data?.waiting) {
+          // Gated into the waiting room (§1C). Phase 3D wires the admit round-trip.
+          setConnectionError('waiting-room');
+          return null;
+        }
+        if (data?.error) throw new Error(data.error === 'locked' ? 'This meeting is locked' : data.error);
+        if (!data?.url || !data?.token) throw new Error('Invalid response from livekit-token');
+        return { url: data.url, token: data.token };
+      }
+
       console.log('[Daily] Creating/getting room:', options.roomName);
-      
+
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('TIMEOUT: Room creation took longer than 15 seconds')), 15000);
       });
@@ -532,7 +605,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       
       return null;
     }
-  }, [options.roomName, options.userName, options.userId, options.isHost, options.enableWaitingRoom]);
+  }, [options.roomName, options.userName, options.userId, options.isHost, options.enableWaitingRoom, options.viewerOnlyMode, options.channelId, options.meetingId, options.meetingKind]);
 
   // Attach local video track to video element
   const attachLocalVideoTrack = useCallback(() => {
@@ -541,9 +614,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     
     const local = wrapper.getLocalParticipant();
     if (!local) return;
-    
-    const track = local.tracks?.video?.persistentTrack || local.tracks?.video?.track;
-    
+
+    const track = isLiveKitBackend()
+      ? (local as NormalizedParticipant).videoTrack
+      : ((local as DailyParticipant).tracks?.video?.persistentTrack || (local as DailyParticipant).tracks?.video?.track);
+
     if (track && track.readyState === 'live') {
       console.log('[Daily] Attaching local video track to element');
       const stream = new MediaStream([track]);
@@ -580,8 +655,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       setIsConnecting(true);
       console.log('[Daily] Creating EnhancedDailyVideoWrapper...');
 
-      // Create the wrapper with callbacks
-      const wrapper = new EnhancedDailyVideoWrapper({
+      // Create the wrapper with callbacks (Daily or LiveKit, per VITE_VIDEO_BACKEND)
+      const wrapper = await createVideoWrapper({
         onJoined: () => {
           console.log('[Daily] Wrapper: onJoined callback');
           setIsConnected(true);
@@ -609,10 +684,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           }, 1000);
 
           updateParticipants();
-          
-          // Notify if host joined
-          const localParticipant = wrapper.getLocalParticipant();
-          if (localParticipant?.owner) {
+
+          // Notify if host joined (owner from Daily flag / normalized isOwner)
+          const localParticipant = wrapper.getLocalParticipant() as (DailyParticipant & NormalizedParticipant) | null;
+          if (localParticipant?.owner || localParticipant?.isOwner) {
             options.onHostJoined?.();
           }
         },
@@ -625,18 +700,18 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             durationIntervalRef.current = null;
           }
         },
-        onParticipantJoined: (participant) => {
-          console.log('[Daily] Wrapper: Participant joined', participant.user_name);
+        onParticipantJoined: (participant: any) => {
+          console.log('[Daily] Wrapper: Participant joined', participant?.user_name ?? participant?.userName);
           updateParticipants();
           options.onParticipantJoined?.(participant);
-          
-          if (participant.owner) {
+
+          if (participant?.owner || participant?.isOwner) {
             options.onHostJoined?.();
           }
         },
-        onParticipantLeft: (participant) => {
-          console.log('[Daily] Wrapper: Participant left', participant.user_name);
-          const sid = (participant as any).session_id;
+        onParticipantLeft: (participant: any) => {
+          console.log('[Daily] Wrapper: Participant left', participant?.user_name ?? participant?.userName);
+          const sid = participant?.session_id ?? participant?.sessionId;
           if (sid) {
             raisedHandsRef.current.delete(sid);
             setRaisedHands(prev => prev.filter(h => h.sessionId !== sid));
@@ -682,6 +757,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           console.error('[Daily] Wrapper: Error', event);
           setConnectionError(event?.errorMsg || 'An error occurred');
         },
+        onData: (data: any, fromIdentity?: string) => {
+          // LiveKit advisory data channel (§3C) → the same control-message handler
+          // Daily uses. fromIdentity == sessionId (we align identity/sessionId).
+          controlMessageHandlerRef.current?.({ data, fromId: fromIdentity });
+        },
         onMediaStateChange: (video, audio) => {
           console.log('[Daily] Wrapper: Media state changed - video:', video, 'audio:', audio);
           setIsCameraOn(video);
@@ -710,14 +790,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         console.log('[Daily] Joining in VIEWER-ONLY mode (no mic/camera access)');
         // Pass true as boolean — wrapper signature expects boolean, not options object
         await wrapper.joinMeeting(roomInfo.url, roomInfo.token, options.userName, true);
-        
-        // Ensure local tracks are hard-disabled after join
-        const callObject = wrapper.getCallObject();
-        if (callObject) {
-          await callObject.setLocalAudio(false);
-          await callObject.setLocalVideo(false);
-        }
-        
+
+        // Ensure local tracks are hard-disabled after join (backend-agnostic).
+        await wrapper.setAudio(false);
+        await wrapper.setVideo(false);
+
         console.log('[Daily] Viewer-only mode: Joined without media access');
       } else {
         // Normal join for hosts or when viewer-only mode is disabled
@@ -868,16 +945,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // Track that this participant is muted by host
       hostMutedParticipantsRef.current.add(participantId);
       
-      // Send app message for client-side handling
+      // Advisory (drives the target's mute-gating UI) + server-enforced on LiveKit.
       await wrapper.sendAppMessage({
         type: 'mute-participant',
         participantId
       }, participantId);
+      if (isLiveKitBackend()) await moderate('mute-track', { identity: participantId, source: 'microphone' });
 
       // Update database
       const { error } = await supabase
         .from('participant_states')
-        .update({ 
+        .update({
           has_audio: false,
           is_host_muted: true,
           updated_at: new Date().toISOString()
@@ -984,6 +1062,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       type: 'mute-all',
       except
     }, '*');
+    if (isLiveKitBackend()) await moderate('mute-all', { source: 'microphone', except });
 
     toast({ title: 'All Muted', description: 'All participants have been muted' });
   }, [options.isHost]);
@@ -1003,11 +1082,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // Track that this participant's video is disabled by host
       hostDisabledVideoParticipantsRef.current.add(participantId);
       
-      // Send app message for client-side handling
+      // Advisory + server-enforced on LiveKit.
       await wrapper.sendAppMessage({
         type: 'disable-video',
         participantId
       }, participantId);
+      if (isLiveKitBackend()) await moderate('mute-track', { identity: participantId, source: 'camera' });
 
       // Update database
       const { error } = await supabase
@@ -1119,6 +1199,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       type: 'disable-all-video',
       except
     }, '*');
+    if (isLiveKitBackend()) await moderate('mute-all', { source: 'camera', except });
 
     toast({ title: 'All Video Disabled', description: 'Video disabled for all participants' });
   }, [options.isHost]);
@@ -1137,6 +1218,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       type: 'remove-participant',
       participantId
     }, participantId);
+    if (isLiveKitBackend()) await moderate('remove-participant', { identity: participantId });
 
     // Update database
     if (options.meetingId) {
@@ -1159,25 +1241,32 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
     setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
 
-    const wrapper = wrapperRef.current;
-    if (wrapper) {
-      await wrapper.sendAppMessage({
-        type: 'admit-from-waiting-room',
-        participantId
-      }, participantId);
+    if (isLiveKitBackend()) {
+      // Waiting client has no connection — flip its DB row to 'admitted'; it's
+      // subscribed to that row and re-requests a token when admitted (§3D).
+      await moderate('admit-waiting', { identity: participantId });
+    } else {
+      const wrapper = wrapperRef.current;
+      if (wrapper) {
+        await wrapper.sendAppMessage({
+          type: 'admit-from-waiting-room',
+          participantId
+        }, participantId);
+      }
     }
 
     toast({ title: 'Participant Admitted', description: 'Participant has been admitted to the meeting' });
-  }, [options.isHost]);
+  }, [options.isHost, moderate]);
 
   // Admit all from waiting room
   const admitAllFromWaitingRoom = useCallback(async () => {
     if (!options.isHost) return;
 
-    const wrapper = wrapperRef.current;
-    if (wrapper) {
-      for (const participant of waitingRoomParticipants) {
-        await wrapper.sendAppMessage({
+    for (const participant of waitingRoomParticipants) {
+      if (isLiveKitBackend()) {
+        await moderate('admit-waiting', { identity: participant.session_id });
+      } else {
+        await wrapperRef.current?.sendAppMessage({
           type: 'admit-from-waiting-room',
           participantId: participant.session_id
         }, participant.session_id);
@@ -1186,7 +1275,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
     setWaitingRoomParticipants([]);
     toast({ title: 'All Admitted', description: 'All waiting participants have been admitted' });
-  }, [options.isHost, waitingRoomParticipants]);
+  }, [options.isHost, waitingRoomParticipants, moderate]);
 
   // Reject from waiting room
   const rejectFromWaitingRoom = useCallback(async (participantId: string) => {
@@ -1194,14 +1283,18 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
     setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
 
-    const wrapper = wrapperRef.current;
-    if (wrapper) {
-      await wrapper.sendAppMessage({
-        type: 'reject-from-waiting-room',
-        participantId
-      }, participantId);
+    if (isLiveKitBackend()) {
+      await moderate('reject-waiting', { identity: participantId });
+    } else {
+      const wrapper = wrapperRef.current;
+      if (wrapper) {
+        await wrapper.sendAppMessage({
+          type: 'reject-from-waiting-room',
+          participantId
+        }, participantId);
+      }
     }
-  }, [options.isHost]);
+  }, [options.isHost, moderate]);
 
   // Lock/unlock meeting
   const lockMeeting = useCallback(async (locked: boolean) => {
@@ -1219,6 +1312,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         type: 'meeting-lock-change',
         locked
       }, '*');
+      if (isLiveKitBackend()) await moderate('lock', { locked });
     }
 
     toast({ title: locked ? 'Meeting Locked' : 'Meeting Unlocked' });
@@ -1248,14 +1342,30 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke('daily-room', {
-        body: {
-          action: 'start-recording',
-          roomName: options.roomName
-        }
-      });
-
-      if (error) throw error;
+      if (isLiveKitBackend()) {
+        // §12 — record the room composite via LiveKit Egress → S3 HLS.
+        const { data, error } = await supabase.functions.invoke('livekit-egress', {
+          body: {
+            action: 'start-recording',
+            roomName: options.roomName,
+            kind: options.channelId ? 'channel' : 'meeting',
+            channelId: options.channelId,
+            meetingId: options.meetingId,
+            context: roleContext(),
+          },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        recordingEgressIdRef.current = data?.egressId ?? null;
+      } else {
+        const { error } = await supabase.functions.invoke('daily-room', {
+          body: {
+            action: 'start-recording',
+            roomName: options.roomName
+          }
+        });
+        if (error) throw error;
+      }
 
       setIsRecording(true);
       setMeetingSettings(prev => ({ ...prev, recordingStatus: 'recording' }));
@@ -1264,18 +1374,30 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       console.error('Failed to start recording:', error);
       toast({ title: 'Recording Failed', description: 'Could not start recording', variant: 'destructive' });
     }
-  }, [options.isHost, options.roomName]);
+  }, [options.isHost, options.roomName, options.channelId, options.meetingId, roleContext]);
 
   const stopRecording = useCallback(async () => {
     if (!options.isHost) return;
 
     try {
-      await supabase.functions.invoke('daily-room', {
-        body: {
-          action: 'stop-recording',
-          roomName: options.roomName
-        }
-      });
+      if (isLiveKitBackend()) {
+        await supabase.functions.invoke('livekit-egress', {
+          body: {
+            action: 'stop-recording',
+            roomName: options.roomName,
+            egressId: recordingEgressIdRef.current,
+            context: roleContext(),
+          },
+        });
+        recordingEgressIdRef.current = null;
+      } else {
+        await supabase.functions.invoke('daily-room', {
+          body: {
+            action: 'stop-recording',
+            roomName: options.roomName
+          }
+        });
+      }
 
       setIsRecording(false);
       setMeetingSettings(prev => ({ ...prev, recordingStatus: 'processing' }));
@@ -1283,7 +1405,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     } catch (error) {
       console.error('Failed to stop recording:', error);
     }
-  }, [options.isHost, options.roomName]);
+  }, [options.isHost, options.roomName, roleContext]);
 
   const pauseRecording = useCallback(async () => {
     if (!options.isHost) return;
@@ -1621,6 +1743,14 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       console.log('[Daily] enableSpeakerMedia: enabling audio', withVideo ? '+ video' : '');
       // Optimistically grant permission so toggleMic/toggleCamera stop being blocked
       setHasSpeakerPermission(true);
+
+      // §1D — LiveKit viewer tokens have canPublish:false, so the SFU rejects a
+      // publish until permissions are widened server-side. Do that before enabling.
+      if (isLiveKitBackend() && options.viewerOnlyMode && !options.isHost) {
+        await supabase.functions.invoke('livekit-token', {
+          body: { action: 'grant-publish', roomName: options.roomName, context: { channelId: options.channelId } },
+        });
+      }
 
       const audioOn = await wrapper.setAudio(true);
       setIsMicOn(audioOn);
@@ -2053,16 +2183,73 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       }
     };
 
-    // Add event listener using Daily's event system
-    const callObject = wrapper.getCallObject();
-    if (callObject) {
-      callObject.on('app-message', handleAppMessage);
-      
-      return () => {
-        callObject.off('app-message', handleAppMessage);
-      };
+    // Keep the ref pointed at the freshest handler so the LiveKit wrapper's onData
+    // (DataReceived, wired at construction) always calls current state/closures (§3C).
+    controlMessageHandlerRef.current = handleAppMessage;
+
+    // Daily delivers advisory app-messages via the raw call object's event system.
+    // LiveKit delivers them via onData → controlMessageHandlerRef above.
+    if (!isLiveKitBackend()) {
+      const callObject = (wrapper as unknown as { getCallObject(): DailyCall | null }).getCallObject();
+      if (callObject) {
+        callObject.on('app-message', handleAppMessage);
+        return () => {
+          callObject.off('app-message', handleAppMessage);
+        };
+      }
     }
+
+    return () => { controlMessageHandlerRef.current = null; };
   }, [isConnected, isMicOn, isCameraOn, toggleMic, toggleCamera, leaveRoom, participants, getParticipantRole, options.isHost]);
+
+  // §3D — LiveKit waiting room, host side: mirror the meeting_waiting_room table
+  // (status='waiting') into waitingRoomParticipants via Supabase realtime.
+  useEffect(() => {
+    if (!isLiveKitBackend() || !options.isHost || !isConnected) return;
+    const meetingKey = options.meetingId ?? options.roomName;
+
+    const load = async () => {
+      const { data } = await supabase
+        .from('meeting_waiting_room')
+        .select('user_id, name, requested_at')
+        .eq('meeting_id', meetingKey)
+        .eq('status', 'waiting');
+      setWaitingRoomParticipants((data ?? []).map((r: any) => ({
+        session_id: r.user_id,
+        user_id: r.user_id,
+        user_name: r.name ?? 'Guest',
+        joinedWaitingRoomAt: new Date(r.requested_at),
+      })));
+    };
+
+    load();
+    const ch = supabase
+      .channel(`waiting-room-${meetingKey}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_waiting_room', filter: `meeting_id=eq.${meetingKey}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [options.isHost, options.meetingId, options.roomName, isConnected]);
+
+  // §3D — waiting room, guest side: while gated (connectionError==='waiting-room'),
+  // watch our own row; on 'admitted' reconnect (livekit-token now issues a token).
+  useEffect(() => {
+    if (!isLiveKitBackend() || connectionError !== 'waiting-room' || !user?.id) return;
+    const meetingKey = options.meetingId ?? options.roomName;
+
+    const ch = supabase
+      .channel(`waiting-self-${meetingKey}-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'meeting_waiting_room', filter: `user_id=eq.${user.id}` }, (payload: any) => {
+        if (payload.new?.meeting_id !== meetingKey) return;
+        if (payload.new?.status === 'admitted') {
+          setConnectionError(null);
+          joinRoom();
+        } else if (payload.new?.status === 'rejected') {
+          setConnectionError('rejected');
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [connectionError, user?.id, options.meetingId, options.roomName, joinRoom]);
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -2208,9 +2395,19 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     sendChatMessage,
     sessionStartTime: sessionStartTimeRef.current,
     sessionDuration,
-    callObject: wrapperRef.current?.getCallObject() || null,
+    // Narrow handle: the raw Daily call object still backs Daily-only consumers
+    // (liveStreaming → Phase 6; updateParticipant → Phase 3F). On LiveKit there is
+    // no raw call object — remote control is server-side — so this is null and those
+    // consumers no-op (all are `if (!callObject) return`-guarded).
+    callObject: isLiveKitBackend()
+      ? null
+      : (wrapperRef.current as unknown as { getCallObject(): DailyCall | null } | null)?.getCallObject() || null,
     localVideoRef,
     cleanup
   };
 };
 export default useDailyRoom;
+
+/** Phase 2 seam alias — the canonical name going forward is `useVideoRoom`.
+ *  Consumers may import either; the implementation is backend-agnostic. */
+export const useVideoRoom = useDailyRoom;

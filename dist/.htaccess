@@ -1,0 +1,16 @@
+# SPA fallback for Apache hosting (Hostinger).
+# Serves index.html for any path that isn't a real file/directory so client-side
+# routes like /devotional-series/:id, /books/:id, /prayer-series/:id resolve
+# instead of returning the host's 404 page.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Let real files and directories be served directly (assets, etc.)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else -> the SPA entry point
+  RewriteRule ^ /index.html [L]
+</IfModule>

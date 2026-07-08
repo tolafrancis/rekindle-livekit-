@@ -4,7 +4,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { supabase } from '@/lib/supabase';
 import { useDailyRoom } from '@/hooks/useDailyRoom';
-import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, reprovisionChannelStream } from '@/lib/muxStream';
+import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, reprovisionChannelStream, startChannelBroadcast, stopChannelBroadcast } from '@/lib/muxStream';
+import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -215,6 +216,25 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   const muxBridgeStartedRef = useRef(false);
   useEffect(() => {
     if (!hasStarted) return;
+
+    // §6A — LiveKit: the host already publishes to the room; Egress composites it
+    // to HLS. No Mux provision, no callObject.startLiveStreaming — just start the
+    // HLS Egress (which also sets hls_playback_url + is_hls_live server-side).
+    if (isLiveKitBackend()) {
+      if (muxBridgeStartedRef.current) return;
+      muxBridgeStartedRef.current = true;
+      (async () => {
+        const res = await startChannelBroadcast(channel.id);
+        if (!res) {
+          console.warn('[Broadcast] HLS Egress did not start — viewers fall back to room subscribe.');
+          muxBridgeStartedRef.current = false;
+        } else {
+          console.log('[Broadcast] LiveKit HLS Egress live:', res.playbackUrl);
+        }
+      })();
+      return;
+    }
+
     const callObject = dailyRoom.callObject;
     if (!callObject) return;
     if (muxBridgeStartedRef.current) return;
@@ -474,12 +494,12 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   };
 
   // ADDED: Remove speaker
-  // Mute a specific speaker's audio via Daily SDK (host-side)
+  // §3F — mute/unmute a speaker through the hook (server-enforced on LiveKit,
+  // advisory on Daily) instead of reaching into the raw call object.
   const muteSpeaker = async (sessionId: string, mute: boolean) => {
     try {
-      const callObject = dailyRoom.callObject;
-      if (!callObject) return;
-      await callObject.updateParticipant(sessionId, { setAudio: !mute });
+      if (mute) await dailyRoom.muteParticipant(sessionId);
+      else await dailyRoom.allowUnmute(sessionId);
     } catch (err) {
       console.error('Failed to mute speaker:', err);
     }
@@ -488,18 +508,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   const removeSpeaker = async (userId: string) => {
     setLoadingAction(true);
     try {
-      // Force-disable the speaker's audio+video via Daily before removing DB record
-      // Find the participant's sessionId from the participants list
+      // §3F — force-disable the speaker's audio+video through the hook before
+      // removing the DB record (enforced on LiveKit, advisory on Daily).
       const participant = dailyRoom.participants.find(p => p.id === userId);
-      if (participant?.sessionId && dailyRoom.callObject) {
+      if (participant?.sessionId) {
         try {
-          await dailyRoom.callObject.updateParticipant(participant.sessionId, {
-            setAudio: false,
-            setVideo: false,
-          });
+          await dailyRoom.muteParticipant(participant.sessionId);
+          await dailyRoom.disableParticipantVideo(participant.sessionId);
         } catch (mediaErr) {
           // Non-fatal — DB removal triggers the speaker's Realtime subscription to disable locally
-          console.warn('Could not force-disable media via Daily:', mediaErr);
+          console.warn('Could not force-disable media:', mediaErr);
         }
       }
 
@@ -703,15 +721,19 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     try {
       console.log('[Broadcast] Ending broadcast for channel:', channel.id);
 
-      // No recording to stop here — Mux finalises the VOD asset on its own once
-      // the RTMP push stops below (after the live stream's reconnect window).
-
-      // Stop the Daily→Mux RTMP push (if running) before leaving the room.
+      // Stop the outbound stream. §6A LiveKit: stop the HLS Egress (and its VOD
+      // finalises via the egress webhook). Daily/Mux: stop the RTMP push (Mux then
+      // finalises the VOD on its own after the reconnect window).
       try {
-        await dailyRoom.callObject?.stopLiveStreaming();
-        console.log('[Broadcast] Daily→Mux RTMP push stopped');
+        if (isLiveKitBackend()) {
+          await stopChannelBroadcast(channel.id);
+          console.log('[Broadcast] LiveKit HLS Egress stopped');
+        } else {
+          await dailyRoom.callObject?.stopLiveStreaming();
+          console.log('[Broadcast] Daily→Mux RTMP push stopped');
+        }
       } catch (streamErr) {
-        console.warn('[Broadcast] stopLiveStreaming failed (non-fatal):', streamErr);
+        console.warn('[Broadcast] stop broadcast failed (non-fatal):', streamErr);
       }
       muxBridgeStartedRef.current = false;
 

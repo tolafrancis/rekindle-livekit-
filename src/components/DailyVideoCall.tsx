@@ -28,6 +28,9 @@ interface DailyVideoCallProps {
   showControls?: boolean;
   autoJoin?: boolean;
   meetingId?: string;
+  /** LiveKit role-derivation: which DB table holds this meeting's host_id.
+   *  Defaults to 'meeting' (the `meetings` table). */
+  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel';
   showParticipantList?: boolean;
   onAdmitParticipant?: (participantId: string) => void;
   onRemoveParticipant?: (participantId: string) => void;
@@ -822,6 +825,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   showControls = true,
   autoJoin = false,
   meetingId,
+  meetingKind,
   showParticipantList = false,
   onAdmitParticipant,
   onRemoveParticipant,
@@ -981,6 +985,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isHost,
     sessionId,
     meetingId,
+    meetingKind,
     onHostJoined: () => {
       console.log('[DailyVideoCall] Host has joined - callback triggered');
       setHostHasJoined(true);

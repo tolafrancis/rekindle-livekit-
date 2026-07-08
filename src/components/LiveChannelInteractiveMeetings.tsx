@@ -373,6 +373,7 @@ const EnhancedVideoCallWrapper = ({
         userId={userId}
         isHost={isHost}
         meetingId={meeting.id}
+        meetingKind="channel_meeting"
         onCallEnd={onLeave}
         onSessionComplete={handleSessionComplete}
         showControls={true}

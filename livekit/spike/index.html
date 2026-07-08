@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LiveKit Phase 0 Spike</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 16px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .sub { opacity: .7; font-size: 13px; margin-bottom: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    input { flex: 1; min-width: 240px; padding: 8px; font: inherit; }
+    button { padding: 8px 12px; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    #status { font-size: 13px; margin: 8px 0; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin-top: 12px; }
+    .tile { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; }
+    .tile video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+    .tag { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 4px; }
+    #log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; background: #0001; padding: 8px; border-radius: 6px; margin-top: 12px; max-height: 200px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>LiveKit Phase 0 spike</h1>
+  <div class="sub">Throwaway harness — proves SFU / TURN / Egress / Ingress end-to-end. Not app code. Mint a token with <code>livekit/spike/mint-token.mjs</code>.</div>
+
+  <div class="row">
+    <input id="url" placeholder="ws(s)://host:7880" />
+  </div>
+  <div class="row">
+    <input id="token" placeholder="paste JWT (or use ?token= in the URL)" />
+    <button id="connect">Connect</button>
+    <button id="disconnect" disabled>Leave</button>
+  </div>
+  <div class="row">
+    <button id="cam" disabled>Camera</button>
+    <button id="mic" disabled>Mic</button>
+    <button id="screen" disabled>Share screen</button>
+  </div>
+
+  <div id="status">idle</div>
+  <div id="grid"></div>
+  <div id="log"></div>
+
+  <script type="module">
+    import {
+      Room, RoomEvent, Track, createLocalTracks,
+    } from 'https://esm.sh/livekit-client@2';
+
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    $('url').value = params.get('url') || 'ws://localhost:7880';
+    $('token').value = params.get('token') || '';
+
+    const log = (m) => { $('log').textContent += m + '\n'; $('log').scrollTop = 1e9; console.log(m); };
+    const setStatus = (s) => { $('status').textContent = s; };
+
+    let room = null;
+    let camOn = false, micOn = false, screenOn = false;
+
+    const grid = $('grid');
+    function tileFor(id, label) {
+      let t = document.getElementById('tile-' + id);
+      if (!t) {
+        t = document.createElement('div');
+        t.className = 'tile';
+        t.id = 'tile-' + id;
+        t.innerHTML = `<video autoplay playsinline></video><span class="tag"></span>`;
+        grid.appendChild(t);
+      }
+      t.querySelector('.tag').textContent = label;
+      return t;
+    }
+    function removeTile(id) { document.getElementById('tile-' + id)?.remove(); }
+    function attach(id, label, track) { track.attach(tileFor(id, label).querySelector('video')); }
+
+    async function connect() {
+      const url = $('url').value.trim();
+      const token = $('token').value.trim();
+      if (!url || !token) { alert('need url + token'); return; }
+
+      room = new Room({ adaptiveStream: true, dynacast: true });
+
+      room
+        .on(RoomEvent.Connected, () => {
+          setStatus(`connected as "${room.localParticipant.identity}" — ${room.numParticipants} in room`);
+          log('Connected. Trying ICE/TURN…');
+        })
+        .on(RoomEvent.Disconnected, (r) => { setStatus('disconnected: ' + r); log('Disconnected: ' + r); })
+        .on(RoomEvent.ConnectionStateChanged, (s) => log('connection state: ' + s))
+        .on(RoomEvent.ParticipantConnected, (p) => { log('+ ' + p.identity); setStatus(`${room.numParticipants + 1} in room`); })
+        .on(RoomEvent.ParticipantDisconnected, (p) => { log('- ' + p.identity); removeTile(p.identity); removeTile(p.identity + '-screen'); })
+        .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+          if (track.kind === Track.Kind.Video) {
+            const isScreen = pub.source === Track.Source.ScreenShare;
+            attach(p.identity + (isScreen ? '-screen' : ''), p.identity + (isScreen ? ' (screen)' : ''), track);
+          } else if (track.kind === Track.Kind.Audio) {
+            const el = track.attach(); el.autoplay = true; document.body.appendChild(el);
+          }
+          log(`subscribed ${track.kind}/${pub.source} from ${p.identity}`);
+        })
+        .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
+          track.detach().forEach((el) => el.remove());
+          if (pub.source === Track.Source.ScreenShare) removeTile(p.identity + '-screen');
+        });
+
+      setStatus('connecting…');
+      try {
+        await room.connect(url, token);
+      } catch (e) {
+        setStatus('connect failed: ' + e.message);
+        log('CONNECT ERROR: ' + e.message);
+        return;
+      }
+      $('connect').disabled = true;
+      $('disconnect').disabled = false;
+      $('cam').disabled = $('mic').disabled = $('screen').disabled = false;
+    }
+
+    async function disconnect() {
+      await room?.disconnect();
+      room = null;
+      grid.innerHTML = '';
+      camOn = micOn = screenOn = false;
+      $('connect').disabled = false;
+      $('disconnect').disabled = true;
+      $('cam').disabled = $('mic').disabled = $('screen').disabled = true;
+    }
+
+    $('connect').onclick = connect;
+    $('disconnect').onclick = disconnect;
+
+    $('cam').onclick = async () => {
+      camOn = !camOn;
+      await room.localParticipant.setCameraEnabled(camOn);
+      $('cam').textContent = camOn ? 'Camera ✓' : 'Camera';
+      const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (camOn && pub?.track) attach('local', 'you', pub.track); else removeTile('local');
+    };
+    $('mic').onclick = async () => {
+      micOn = !micOn;
+      await room.localParticipant.setMicrophoneEnabled(micOn);
+      $('mic').textContent = micOn ? 'Mic ✓' : 'Mic';
+    };
+    $('screen').onclick = async () => {
+      screenOn = !screenOn;
+      await room.localParticipant.setScreenShareEnabled(screenOn);
+      $('screen').textContent = screenOn ? 'Sharing ✓' : 'Share screen';
+      const pub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      if (screenOn && pub?.track) attach('local-screen', 'you (screen)', pub.track); else removeTile('local-screen');
+    };
+  </script>
+</body>
+</html>

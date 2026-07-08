@@ -1,0 +1,120 @@
+# Phase 0 — Self-hosted LiveKit stack (SFU + Egress + Ingress + TURN).
+#
+# This is a DEV-oriented compose that runs all four services + Redis + a MinIO
+# S3 target so the Phase 0 spike (recording to storage, OBS ingest) works with
+# zero cloud accounts. For prod, see livekit/README.md ("Going to production").
+#
+#   cp .env.example .env      # then edit secrets/domains
+#   docker compose up -d
+#
+# All services share ONE api key/secret pair (LIVEKIT_API_KEY / LIVEKIT_API_SECRET).
+# Change them before exposing anything to a network.
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---- SFU (the room) ------------------------------------------------------
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Host networking is the reliable path for WebRTC (media ports + external
+    # IP detection). On Docker Desktop (mac/Windows) host mode is limited — the
+    # published port ranges below are the fallback. On a Linux prod box, prefer:
+    #   network_mode: host   (and delete the "ports:" block)
+    ports:
+      - "7880:7880"       # HTTP / WebSocket signaling
+      - "7881:7881"       # RTC over TCP (TURN/TCP fallback)
+      - "3478:3478/udp"   # embedded TURN (UDP)
+      - "50000-50100:50000-50100/udp"  # RTC media (narrow range for dev)
+    volumes:
+      - ./config/livekit.yaml:/etc/livekit.yaml:ro
+
+  # ---- Egress (recording / HLS / RTMP-out) ---------------------------------
+  egress:
+    image: livekit/egress:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    # Headless Chrome for room-composite egress needs these.
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    shm_size: "1gb"
+    volumes:
+      - ./config/egress.yaml:/etc/egress.yaml:ro
+
+  # ---- Ingress (RTMP / WHIP in) --------------------------------------------
+  ingress:
+    image: livekit/ingress:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      INGRESS_CONFIG_FILE: /etc/ingress.yaml
+    ports:
+      - "1935:1935"   # RTMP (point OBS here)
+      - "8080:8080"   # WHIP (WebRTC ingest)
+      - "9090:9090"   # HTTP relay (internal)
+    volumes:
+      - ./config/ingress.yaml:/etc/ingress.yaml:ro
+
+  # ---- Dev-only S3 target for Egress output --------------------------------
+  # In prod, delete this and point egress.yaml at real S3/GCS/Azure.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console (http://localhost:9001)
+    volumes:
+      - minio-data:/data
+
+  # Creates the egress bucket on startup so recordings have somewhere to land.
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until (mc alias set local http://minio:9000 minioadmin minioadmin) do echo 'waiting for minio'; sleep 2; done;
+      mc mb -p local/livekit-egress;
+      mc anonymous set download local/livekit-egress;
+      echo 'minio ready';
+      "
+
+  # ---- coturn (OPTIONAL, prod-grade TURN) ----------------------------------
+  # LiveKit's embedded TURN (config/livekit.yaml) is enough for the Phase 0
+  # spike. For production NAT traversal, run a dedicated coturn instead and set
+  # turn.enabled=false in livekit.yaml. Enable with:  --profile coturn
+  coturn:
+    image: coturn/coturn:latest
+    profiles: ["coturn"]
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config/coturn.conf:/etc/coturn/turnserver.conf:ro
+
+volumes:
+  minio-data:

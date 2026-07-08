@@ -2,16 +2,18 @@ import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 
 interface MuxVodPlayerProps {
-  src: string;        // Mux HLS .m3u8 for a recorded asset (VOD)
-  poster?: string;    // Mux thumbnail (https://image.mux.com/<id>/thumbnail.jpg)
+  src: string;        // HLS .m3u8 for a recorded asset (VOD) — Mux OR LiveKit Egress
+  poster?: string;    // thumbnail image URL
   className?: string;
 }
 
 /**
- * Plays a Mux VOD recording with standard transport controls (scrub, pause,
- * seek). Unlike HlsPlayer — which pins to the live edge and ends on ENDLIST —
- * this is for finished recordings, so it lets the viewer move through the
- * timeline freely. Safari/iOS play HLS natively; everywhere else uses hls.js.
+ * Plays a VOD recording (any HLS .m3u8) with standard transport controls (scrub,
+ * pause, seek). Engine-agnostic: the `src` is just an HLS playlist, so this plays
+ * Mux VOD assets and LiveKit Egress segmented output (Phase 5) identically. Unlike
+ * HlsPlayer — which pins to the live edge and ends on ENDLIST — this is for
+ * finished recordings, so it lets the viewer move through the timeline freely.
+ * Safari/iOS play HLS natively; everywhere else uses hls.js.
  */
 export const MuxVodPlayer: React.FC<MuxVodPlayerProps> = ({ src, poster, className }) => {
   const videoRef = useRef<HTMLVideoElement>(null);

@@ -1,0 +1,25 @@
+# LiveKit Egress config — Phase 0 (recording / HLS / RTMP-out).
+# Talks to the SFU over the internal docker network and writes output to MinIO
+# (dev). In prod, point s3 (or gcp/azure) at real object storage.
+
+redis:
+  address: redis:6379
+
+# Must match livekit.yaml keys and ingress.yaml.
+api_key: devkey
+api_secret: devsecret_please_change_me_0123456789abcdef
+
+# Internal signaling URL to the SFU (docker service name).
+ws_url: ws://livekit:7880
+
+# Where recordings/HLS segments land. MinIO is S3-compatible.
+s3:
+  access_key: minioadmin
+  secret: minioadmin
+  bucket: livekit-egress
+  region: us-east-1
+  endpoint: http://minio:9000
+  force_path_style: true
+
+logging:
+  level: info

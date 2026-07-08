@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Hls from 'hls.js';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -125,6 +126,25 @@ export const RecordingPlayer = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [viewId, setViewId] = useState<string | null>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState(0);
+
+  // Load the recording into the <video>. LiveKit Egress serves HLS (.m3u8), which
+  // only Safari plays natively — everywhere else needs hls.js. Mux/Daily MP4 URLs
+  // still load directly. Attaching to our own videoRef keeps the custom controls.
+  useEffect(() => {
+    const video = videoRef.current;
+    const url = recording.recording_url;
+    if (!video || !url) return;
+    let hls: Hls | null = null;
+    const isHls = /\.m3u8($|\?)/i.test(url);
+    if (isHls && !video.canPlayType('application/vnd.apple.mpegurl') && Hls.isSupported()) {
+      hls = new Hls({ enableWorker: true });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+    } else {
+      video.src = url;
+    }
+    return () => { if (hls) { try { hls.destroy(); } catch { /* noop */ } } };
+  }, [recording.recording_url]);
 
   // Track recording view on mount
   useEffect(() => {
@@ -286,7 +306,6 @@ export const RecordingPlayer = ({
           <div className="relative w-full h-full">
             <video
               ref={videoRef}
-              src={recording.recording_url}
               className="w-full h-full object-contain"
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}

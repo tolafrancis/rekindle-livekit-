@@ -1,0 +1,49 @@
+# LiveKit SFU config — Phase 0.
+# Keep the key/secret here in sync with egress.yaml, ingress.yaml, and the
+# spike token script (scripts env). Replace the dev secret before any real deploy.
+
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # DEV (localhost / same LAN): false is fine.
+  # PROD (cloud box behind NAT): set true so the server advertises its public IP.
+  # This is the #1 self-host risk (see plan §4 / risk register) — validate it here.
+  use_external_ip: false
+
+redis:
+  address: redis:6379
+
+# API key -> secret. Secret MUST be >= 32 chars. ONE pair, shared by all services.
+keys:
+  devkey: devsecret_please_change_me_0123456789abcdef
+
+# Embedded TURN — enough to prove NAT traversal in the spike.
+# For prod, prefer dedicated coturn (docker-compose --profile coturn) + real TLS,
+# and set enabled: false here.
+turn:
+  enabled: true
+  domain: localhost
+  udp_port: 3478
+  # tls_port: 5349        # prod: terminate TLS here or at a load balancer
+  # cert_file: /etc/tls/turn.crt
+  # key_file: /etc/tls/turn.key
+
+logging:
+  level: info
+
+# Webhooks — the SFU POSTs signed events (egress_ended, etc.) here. Required for
+# recording completion to flip livekit_recordings rows to 'completed' + duration
+# (Phase 5). Point at the deployed livekit-webhook edge fn; api_key must match a
+# key in `keys` above (the receiver verifies the signature with its secret).
+webhook:
+  api_key: devkey
+  urls:
+    - https://YOUR-PROJECT-REF.supabase.co/functions/v1/livekit-webhook
+
+# Auto-close idle rooms (replaces most of daily-room-cleanup — see plan §7 1E).
+room:
+  empty_timeout: 300        # seconds with no participants before the room closes
+  max_participants: 0       # 0 = unlimited; presets can be overridden per-room later
