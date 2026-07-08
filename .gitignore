@@ -1,0 +1,6 @@
+node_modules
+
+# Local env files (build-time secrets/config). Do NOT commit real values.
+.env
+.env.local
+.env.*.local

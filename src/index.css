@@ -1,0 +1,412 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=Noto+Sans+Hebrew:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221 83% 53%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 220 23% 95%;
+    --sidebar-foreground: 215 25% 27%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 90%;
+    --sidebar-accent-foreground: 215 25% 27%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 221 83% 53%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    --sidebar-background: 215 28% 17%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217.2 91.2% 59.8%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 25% 27%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 215 25% 27%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans dark:bg-background dark:text-foreground;
+  }
+
+  pre, code {
+    @apply font-mono;
+  }
+}
+
+/* Prevent any element from making the page wider than the device. On mobile,
+   a single overflowing element shifts/cuts the whole layout and forces pinch-zoom. */
+html,
+body,
+#root {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+.markdown-editor {
+  @apply font-mono text-base leading-relaxed;
+}
+
+.markdown-preview {
+  @apply prose max-w-none prose-blue dark:prose-invert;
+}
+
+.markdown-preview pre {
+  @apply bg-secondary p-4 rounded-md overflow-x-auto;
+}
+
+.markdown-preview code {
+  @apply text-sm font-mono text-primary;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  @apply font-sans font-semibold text-foreground;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  @apply my-4 ml-6;
+}
+
+/* Devotional Slide Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.8s ease-out;
+}
+
+/* Custom Scrollbar for Devotional Viewer */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+/* =====================================================
+   RTL (Right-to-Left) Language Support
+   ===================================================== */
+
+/* RTL base styles */
+html[dir="rtl"] {
+  direction: rtl;
+}
+
+html[dir="rtl"] body {
+  text-align: right;
+}
+
+/* RTL flex direction adjustments */
+html[dir="rtl"] .flex-row {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .flex-row-reverse {
+  flex-direction: row;
+}
+
+/* RTL margin/padding adjustments */
+html[dir="rtl"] .ml-auto {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+html[dir="rtl"] .mr-auto {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+/* RTL text alignment */
+html[dir="rtl"] .text-left {
+  text-align: right;
+}
+
+html[dir="rtl"] .text-right {
+  text-align: left;
+}
+
+/* RTL icon positioning */
+html[dir="rtl"] .icon-left {
+  margin-left: 0.5rem;
+  margin-right: 0;
+}
+
+html[dir="rtl"] .icon-right {
+  margin-right: 0.5rem;
+  margin-left: 0;
+}
+
+/* RTL border radius */
+html[dir="rtl"] .rounded-l-lg {
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+html[dir="rtl"] .rounded-r-lg {
+  border-radius: 0.5rem 0 0 0.5rem;
+}
+
+/* RTL transform adjustments */
+html[dir="rtl"] .translate-x-full {
+  transform: translateX(-100%);
+}
+
+html[dir="rtl"] .-translate-x-full {
+  transform: translateX(100%);
+}
+
+/* RTL sidebar positioning */
+html[dir="rtl"] .sidebar-left {
+  left: auto;
+  right: 0;
+}
+
+html[dir="rtl"] .sidebar-right {
+  right: auto;
+  left: 0;
+}
+/* =====================================================
+   Language-Specific Font Support
+   ===================================================== */
+
+/* Chinese */
+
+/* Chinese */
+html.lang-zh {
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* Japanese */
+html.lang-ja {
+  font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic Pro', 'Meiryo', sans-serif;
+}
+
+/* Korean */
+html.lang-ko {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+}
+
+/* Thai */
+html.lang-th {
+  font-family: 'Noto Sans Thai', 'Tahoma', sans-serif;
+}
+
+/* Arabic */
+html.lang-ar {
+  font-family: 'Noto Sans Arabic', 'Tahoma', 'Arial', sans-serif;
+}
+
+/* Hebrew */
+html.lang-he {
+  font-family: 'Noto Sans Hebrew', 'Arial Hebrew', sans-serif;
+}
+
+/* Hindi */
+html.lang-hi {
+  font-family: 'Noto Sans Devanagari', 'Mangal', sans-serif;
+}
+
+/* Bengali */
+html.lang-bn {
+  font-family: 'Noto Sans Bengali', 'Vrinda', sans-serif;
+}
+
+/* Vietnamese - uses Latin with diacritics */
+html.lang-vi {
+  font-family: 'Inter', 'Arial', sans-serif;
+}
+
+/* Russian - Cyrillic */
+html.lang-ru {
+  font-family: 'Inter', 'Arial', sans-serif;
+}
+
+/* =====================================================
+   Translation Loading States
+   ===================================================== */
+
+.translation-loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.translation-loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Translation badge animations */
+.translation-badge {
+  animation: badge-pop 0.3s ease-out;
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* =====================================================
+   Accessibility for RTL Languages
+   ===================================================== */
+
+/* Ensure proper focus indicators for RTL */
+html[dir="rtl"] *:focus-visible {
+  outline-offset: 2px;
+}
+
+/* RTL-aware scrollbar */
+html[dir="rtl"] ::-webkit-scrollbar {
+  direction: ltr;
+}
+
+/* Bidirectional text support */
+.bidi-isolate {
+  unicode-bidi: isolate;
+}
+
+.bidi-override {
+  unicode-bidi: bidi-override;
+}
+
+/* Number display in RTL (keep LTR for numbers) */
+html[dir="rtl"] .ltr-numbers {
+  direction: ltr;
+  unicode-bidi: embed;
+}

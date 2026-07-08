@@ -1,0 +1,16 @@
+# Supabase CLI config.
+# Scoped intentionally to Edge Functions — migrations are still applied by
+# pasting SQL in the dashboard (safer given the existing manual migration
+# history), so `db push` is not part of this workflow yet.
+
+project_id = "rekindle-digital-mission"
+
+[functions.spiritual-companion]
+enabled = true
+# The function verifies the user's JWT itself (supabase.auth.getUser), and the
+# client sends a Bearer token, so gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.evangelism-ai-suggestion]
+enabled = true
+verify_jwt = true
