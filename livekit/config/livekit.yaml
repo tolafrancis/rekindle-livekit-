@@ -8,10 +8,10 @@ rtc:
   tcp_port: 7881
   port_range_start: 50000
   port_range_end: 50100
-  # DEV (localhost / same LAN): false is fine.
-  # PROD (cloud box behind NAT): set true so the server advertises its public IP.
-  # This is the #1 self-host risk (see plan §4 / risk register) — validate it here.
-  use_external_ip: false
+  # PROD (cloud box): true so the server advertises its PUBLIC ip in ICE candidates.
+  # With false it hands out the docker-internal IP (172.x) and media never connects.
+  # Set false only for pure-localhost dev.
+  use_external_ip: true
 
 redis:
   address: redis:6379
@@ -25,7 +25,7 @@ keys:
 # and set enabled: false here.
 turn:
   enabled: true
-  domain: localhost
+  domain: livekit.rekindlebc.com
   udp_port: 3478
   # tls_port: 5349        # prod: terminate TLS here or at a load balancer
   # cert_file: /etc/tls/turn.crt
@@ -35,11 +35,14 @@ logging:
   level: info
 
 # Webhooks — the SFU POSTs signed events (egress_ended, etc.) here. Required for
-# recording completion to flip livekit_recordings rows to 'completed' + duration
-# (Phase 5). Point at the deployed livekit-webhook edge fn; api_key must match a
-# key in `keys` above (the receiver verifies the signature with its secret).
+# recording completion to flip livekit_recordings rows to 'completed' + duration.
+#
+# ⚠️ `api_key` MUST be one of the names in `keys:` above (here: `devkey`). LiveKit
+# signs the webhook with keys[api_key]; if the name isn't found the secret lookup
+# returns empty and the server dies with "api_key is required to use webhooks".
+# It is the key NAME, not the secret, and not a LiveKit Cloud key.
 webhook:
-  api_key: API3DeNodLWpPdE
+  api_key: devkey
   urls:
     - https://vpnpembyqbbaaiynfvli.supabase.co/functions/v1/livekit-webhook
 

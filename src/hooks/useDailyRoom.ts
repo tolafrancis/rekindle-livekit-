@@ -33,7 +33,7 @@ export interface DailyRoomOptions {
   meetingId?: string;
   /** LiveKit only: which DB table the `livekit-token` fn checks for host status.
    *  Defaults to 'channel' when a channelId is present, else 'meeting'. */
-  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel';
+  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling';
 }
 
 export interface DailyParticipantInfo {
@@ -360,11 +360,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [meetingSettings.waitingRoomEnabled]);
 
   // Role-derivation context for the livekit edge fns (which table proves host).
+  // Counselling resolves from sessionId (counselling_sessions.id); everything else
+  // from meetingId. This is LiveKit-only — the Daily path never reads it.
   const roleContext = useCallback(() => ({
     kind: options.meetingKind ?? (options.channelId ? 'channel' : 'meeting'),
-    meetingId: options.meetingId,
+    meetingId: options.meetingKind === 'counselling' ? options.sessionId : options.meetingId,
     channelId: options.channelId,
-  }), [options.meetingKind, options.channelId, options.meetingId]);
+  }), [options.meetingKind, options.channelId, options.meetingId, options.sessionId]);
 
   // §3A — server-enforced moderation. No-op on Daily (callers keep the advisory
   // sendAppMessage path); on LiveKit it hits the livekit-moderation edge fn.
@@ -501,11 +503,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             userName: options.userName,
             viewerOnly: options.viewerOnlyMode && !options.isHost,
             enableWaitingRoom: options.enableWaitingRoom || false,
-            context: {
-              kind: options.meetingKind ?? (options.channelId ? 'channel' : 'meeting'),
-              meetingId: options.meetingId,
-              channelId: options.channelId,
-            },
+            context: roleContext(),
           },
         });
         if (error) throw new Error(error.message || 'Failed to get LiveKit token');
@@ -605,7 +603,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       
       return null;
     }
-  }, [options.roomName, options.userName, options.userId, options.isHost, options.enableWaitingRoom, options.viewerOnlyMode, options.channelId, options.meetingId, options.meetingKind]);
+  }, [options.roomName, options.userName, options.userId, options.isHost, options.enableWaitingRoom, options.viewerOnlyMode, options.channelId, options.meetingId, options.meetingKind, roleContext]);
 
   // Attach local video track to video element
   const attachLocalVideoTrack = useCallback(() => {

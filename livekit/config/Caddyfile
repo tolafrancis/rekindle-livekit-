@@ -10,6 +10,6 @@
 #
 # Then set the app + Supabase to: wss://livekit.<domain>
 
-livekit.example.com {
+livekit.rekindlebc.com {
     reverse_proxy livekit:7880
 }

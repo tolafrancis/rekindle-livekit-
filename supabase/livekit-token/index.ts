@@ -50,7 +50,7 @@ interface RequestBody {
   viewerOnly?: boolean;
   enableWaitingRoom?: boolean;
   context?: {
-    kind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel';
+    kind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling';
     meetingId?: string;
     channelId?: string;
   };
@@ -92,6 +92,20 @@ async function resolveRole(
   body: RequestBody,
 ): Promise<Role> {
   const ctx = body.context ?? {};
+
+  // Counselling: counselling_sessions.counsellor_id → counsellors.id → counsellors.user_id.
+  // Two hops because counsellor_id references the counsellors row, not auth.users.
+  // Fail-safe: any miss/error leaves the caller as attendee (never wrongly host).
+  if (ctx.kind === 'counselling' && ctx.meetingId) {
+    const { data: s } = await admin
+      .from('counselling_sessions').select('counsellor_id').eq('id', ctx.meetingId).maybeSingle();
+    const counsellorId = (s as { counsellor_id?: string } | null)?.counsellor_id;
+    if (counsellorId) {
+      const { data: c } = await admin
+        .from('counsellors').select('user_id').eq('id', counsellorId).maybeSingle();
+      if ((c as { user_id?: string } | null)?.user_id === userId) return 'host';
+    }
+  }
 
   // Host: meetings.host_id / ministry_video_meetings.host_id /
   // live_channel_video_meetings.host_id, or live_channels.owner_id for broadcast.

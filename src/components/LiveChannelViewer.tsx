@@ -14,6 +14,8 @@ import { Badge } from './ui/badge';
 import { LiveChannelChat } from './LiveChannelChat';
 import { HlsPlayer } from './HlsPlayer';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
+import { useMeetingReactions } from '@/hooks/useMeetingReactions';
+import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
 import ReplayAccessGate from './ReplayAccessGate';
 import {
   Radio,
@@ -230,6 +232,11 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const presenceId = user?.id || guestPresenceIdRef.current;
   const presenceName = profile?.full_name || user?.email?.split('@')[0] || 'Viewer';
   useMeetingPresence(channel.id, presenceId, presenceName, !user?.id, isLive);
+
+  // Live reactions — same `channel.id` broadcast channel the host publishes on, so
+  // audience emojis float on the host's screen and vice-versa. Works on HLS too,
+  // since the transport is Supabase realtime, not the video pipeline.
+  const { floating: reactions, sendReaction } = useMeetingReactions(channel.id, true);
 
   // Join the broadcast on mount — but only when NOT watching via HLS.
   useEffect(() => {
@@ -904,10 +911,18 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Video Container — renders all remote participants (host + invited speakers) */}
-          <div 
+          <div
             ref={videoContainerRef}
             className="aspect-video bg-black relative flex items-center justify-center overflow-hidden"
           >
+            {/* Live reactions — same channel.id broadcast channel as the host */}
+            <MeetingReactionsLayer reactions={reactions} />
+            {isLive && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50">
+                <ReactionBar onReact={sendReaction} compact />
+              </div>
+            )}
+
             {watchViaHls ? (
               <HlsPlayer src={hlsPlaybackUrl!} muted={isMuted} poster={posterUrl} className="w-full h-full" />
             ) : channel.is_video_enabled ? (() => {

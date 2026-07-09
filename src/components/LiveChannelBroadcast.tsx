@@ -7,6 +7,8 @@ import { useDailyRoom } from '@/hooks/useDailyRoom';
 import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, reprovisionChannelStream, startChannelBroadcast, stopChannelBroadcast } from '@/lib/muxStream';
 import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
+import { useMeetingReactions } from '@/hooks/useMeetingReactions';
+import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
@@ -155,6 +157,9 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
 
   // ADDED: Participant management state
   const [raisedHands, setRaisedHands] = useState<RaisedHandRequest[]>([]);
+  // Live reactions. Keyed on channel.id so LiveChannelViewer joins the SAME Supabase
+  // broadcast channel and host↔audience see each other's emojis.
+  const { floating: reactions, sendReaction } = useMeetingReactions(channel.id, true);
   const [activeSpeakers, setActiveSpeakers] = useState<Set<string>>(new Set());
   const [showParticipants, setShowParticipants] = useState(true);
   const [loadingAction, setLoadingAction] = useState(false);
@@ -171,6 +176,12 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     userName: profile?.full_name || user?.email?.split('@')[0] || 'Host',
     userId: user?.id || 'anonymous',
     isHost: true,
+    // LiveKit derives host status SERVER-SIDE and ignores `isHost` above (auth hole,
+    // plan §7). Without channelId it can't match live_channels.owner_id, so the
+    // broadcaster would be issued an attendee token — losing isOwner, host-only UI,
+    // moderation and egress. Pass the channel so the host is actually recognised.
+    channelId: channel.id,
+    meetingKind: 'channel',
     onParticipantJoined: (participant) => {
       // Viewer counting is handled by the presence layer below (HLS viewers
       // never join the Daily room). Daily participants here are speakers only.
@@ -497,10 +508,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   };
 
   // ADDED: Remove speaker
-  // §3F — mute/unmute a speaker through the hook (server-enforced on LiveKit,
-  // advisory on Daily) instead of reaching into the raw call object.
+  // §3F — mute/unmute a speaker. On Daily keep the native ENFORCED path
+  // (updateParticipant). On LiveKit there is no raw call object, so go through the
+  // hook (server-enforced via the livekit-moderation edge fn).
   const muteSpeaker = async (sessionId: string, mute: boolean) => {
     try {
+      const callObject = dailyRoom.callObject;
+      if (callObject) {
+        await callObject.updateParticipant(sessionId, { setAudio: !mute });
+        return;
+      }
       if (mute) await dailyRoom.muteParticipant(sessionId);
       else await dailyRoom.allowUnmute(sessionId);
     } catch (err) {
@@ -511,13 +528,20 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   const removeSpeaker = async (userId: string) => {
     setLoadingAction(true);
     try {
-      // §3F — force-disable the speaker's audio+video through the hook before
-      // removing the DB record (enforced on LiveKit, advisory on Daily).
+      // §3F — force-disable the speaker's audio+video before removing the DB record.
+      // Daily: native enforced updateParticipant. LiveKit: via the hook (no call object).
       const participant = dailyRoom.participants.find(p => p.id === userId);
       if (participant?.sessionId) {
         try {
-          await dailyRoom.muteParticipant(participant.sessionId);
-          await dailyRoom.disableParticipantVideo(participant.sessionId);
+          if (dailyRoom.callObject) {
+            await dailyRoom.callObject.updateParticipant(participant.sessionId, {
+              setAudio: false,
+              setVideo: false,
+            });
+          } else {
+            await dailyRoom.muteParticipant(participant.sessionId);
+            await dailyRoom.disableParticipantVideo(participant.sessionId);
+          }
         } catch (mediaErr) {
           // Non-fatal — DB removal triggers the speaker's Realtime subscription to disable locally
           console.warn('Could not force-disable media:', mediaErr);
@@ -629,7 +653,14 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       }
       
       console.log('[Broadcast] Enabling host microphone...');
-      await dailyRoom.toggleMic();
+      // Guarded: if enabling the mic rejects, it must NOT abort startBroadcast —
+      // otherwise setHasStarted(true) below never runs and the entire live control
+      // bar (AI, invite, recording, participants) silently fails to render.
+      try {
+        await dailyRoom.toggleMic();
+      } catch (micErr) {
+        console.error('[Broadcast] Could not enable microphone (non-fatal):', micErr);
+      }
       
       // FIXED: Enable camera if video mode is enabled
       if (isVideoMode && !dailyRoom.isCameraOn) {
@@ -1263,10 +1294,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
           </div>
 
           {/* Video Container — host feed + active invited speakers */}
-          <div 
+          <div
             ref={videoContainerRef}
             className="flex-1 relative bg-black flex items-center justify-center overflow-hidden"
           >
+            {/* Live reactions — audience + host share the `channel.id` broadcast channel */}
+            <MeetingReactionsLayer reactions={reactions} />
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
+              <ReactionBar onReact={sendReaction} compact />
+            </div>
+
             {(() => {
               const remoteSpeakers = dailyRoom.remoteParticipants.filter(
                 p => activeSpeakers.has(p.id) && (p.hasVideo || p.hasAudio)

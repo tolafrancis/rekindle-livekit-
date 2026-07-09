@@ -175,11 +175,23 @@ serve(async (req) => {
       return json({ egressId: info.egressId, recordingId: (row as { id?: string } | null)?.id, playbackUrl });
     }
 
-    // ── 6A · Host broadcast → HLS Egress ─────────────────────────────────────
+    // ── 6A · Live HLS Egress ─────────────────────────────────────────────────
+    // Two scopes:
+    //   channel broadcast (context.kind='channel') → writes live_channels.hls_playback_url
+    //   meeting webinar   (context.kind=<meeting kind>) → writes <meetings table>.hls_playback_url
+    // Either way the audience's HlsPlayer picks the URL up via Supabase realtime.
     if (action === 'start-hls') {
-      if (!body.roomName || !body.channelId) return json({ error: 'roomName + channelId required' }, 400);
+      if (!body.roomName) return json({ error: 'roomName required' }, 400);
+      const ctxKind = body.context?.kind;
+      const isChannel = ctxKind === 'channel';
+      const meetingTable = HOST_TABLE[ctxKind ?? ''];
+      const meetingId = body.context?.meetingId;
+      const channelId = body.channelId ?? body.context?.channelId;
+      if (isChannel && !channelId) return json({ error: 'channelId required for channel broadcast' }, 400);
+      if (!isChannel && !(meetingTable && meetingId)) return json({ error: 'meeting context required' }, 400);
+
       const ts = Date.now();
-      const prefix = `broadcasts/${body.channelId}/${ts}`;
+      const prefix = `broadcasts/${isChannel ? channelId : meetingId}/${ts}`;
       const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
       const output = new SegmentedFileOutput({
         filenamePrefix: `${prefix}/seg`,
@@ -190,29 +202,59 @@ serve(async (req) => {
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
 
-      // The broadcast HLS doubles as the channel VOD (§12) — track it as a recording too.
+      // The live HLS doubles as the VOD (§12) — track it as a recording too.
       await admin.from('livekit_recordings').insert({
-        egress_id: info.egressId, room_name: body.roomName, kind: 'channel',
-        channel_id: body.channelId, status: 'recording', filepath: prefix, playback_url: playbackUrl,
+        egress_id: info.egressId,
+        room_name: body.roomName,
+        kind: isChannel ? 'channel' : 'meeting',
+        channel_id: isChannel ? channelId : null,
+        meeting_id: meetingId ?? body.roomName,
+        meeting_table: isChannel ? null : meetingTable,
+        status: 'recording',
+        filepath: prefix,
+        playback_url: playbackUrl,
       });
-      await admin.from('channel_streams').upsert(
-        { channel_id: body.channelId, hls_egress_id: info.egressId, updated_at: new Date().toISOString() },
-        { onConflict: 'channel_id' },
-      );
-      await admin.from('live_channels').update({ hls_playback_url: playbackUrl, is_hls_live: true }).eq('id', body.channelId);
+
+      if (isChannel) {
+        await admin.from('channel_streams').upsert(
+          { channel_id: channelId, hls_egress_id: info.egressId, updated_at: new Date().toISOString() },
+          { onConflict: 'channel_id' },
+        );
+        await admin.from('live_channels').update({ hls_playback_url: playbackUrl, is_hls_live: true }).eq('id', channelId);
+      } else {
+        await admin.from(meetingTable).update({ hls_playback_url: playbackUrl }).eq('id', meetingId);
+      }
       return json({ egressId: info.egressId, playbackUrl });
     }
 
     if (action === 'stop-hls') {
-      if (!body.channelId) return json({ error: 'channelId required' }, 400);
-      const { data: cs } = await admin.from('channel_streams').select('hls_egress_id').eq('channel_id', body.channelId).maybeSingle();
-      const egressId = (cs as { hls_egress_id?: string } | null)?.hls_egress_id;
+      const ctxKind = body.context?.kind;
+      const isChannel = ctxKind === 'channel';
+      const meetingTable = HOST_TABLE[ctxKind ?? ''];
+      const meetingId = body.context?.meetingId;
+      const channelId = body.channelId ?? body.context?.channelId;
+
+      let egressId: string | undefined;
+      if (isChannel && channelId) {
+        const { data: cs } = await admin.from('channel_streams').select('hls_egress_id').eq('channel_id', channelId).maybeSingle();
+        egressId = (cs as { hls_egress_id?: string } | null)?.hls_egress_id;
+      } else if (body.roomName) {
+        const { data } = await admin.from('livekit_recordings')
+          .select('egress_id').eq('room_name', body.roomName).eq('status', 'recording')
+          .order('started_at', { ascending: false }).limit(1).maybeSingle();
+        egressId = (data as { egress_id?: string } | null)?.egress_id;
+      }
+
       if (egressId) {
         await egressClient.stopEgress(egressId).catch(() => {});
         await admin.from('livekit_recordings').update({ status: 'processing', ended_at: new Date().toISOString() }).eq('egress_id', egressId);
-        await admin.from('channel_streams').update({ hls_egress_id: null, updated_at: new Date().toISOString() }).eq('channel_id', body.channelId);
       }
-      await admin.from('live_channels').update({ is_hls_live: false }).eq('id', body.channelId);
+      if (isChannel && channelId) {
+        await admin.from('channel_streams').update({ hls_egress_id: null, updated_at: new Date().toISOString() }).eq('channel_id', channelId);
+        await admin.from('live_channels').update({ is_hls_live: false }).eq('id', channelId);
+      } else if (meetingTable && meetingId) {
+        // Leave hls_playback_url in place — it becomes the VOD link once Egress finalises.
+      }
       return json({ success: true });
     }
 

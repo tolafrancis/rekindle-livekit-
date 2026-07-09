@@ -59,6 +59,19 @@ const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 
 async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, ctx: Body['context']): Promise<boolean> {
   const c = ctx ?? {};
+
+  // Counselling: session.counsellor_id → counsellors.id → counsellors.user_id (two hops).
+  if (c.kind === 'counselling' && c.meetingId) {
+    const { data: s } = await admin
+      .from('counselling_sessions').select('counsellor_id').eq('id', c.meetingId).maybeSingle();
+    const counsellorId = (s as { counsellor_id?: string } | null)?.counsellor_id;
+    if (counsellorId) {
+      const { data: cr } = await admin
+        .from('counsellors').select('user_id').eq('id', counsellorId).maybeSingle();
+      if ((cr as { user_id?: string } | null)?.user_id === userId) return true;
+    }
+  }
+
   const table = HOST_TABLE[c.kind ?? 'meeting'];
   if (c.meetingId && table) {
     const { data } = await admin.from(table).select('host_id').eq('id', c.meetingId).maybeSingle();

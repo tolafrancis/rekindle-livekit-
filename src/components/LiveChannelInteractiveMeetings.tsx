@@ -42,7 +42,8 @@ import MeetingInsightsPanel from './MeetingInsightsPanel';
 // Import the DailyVideoCall component - SOLE CONTROLLER OF ALL MEDIA
 import DailyVideoCall from './DailyVideoCall';
 import { HlsPlayer } from './HlsPlayer';
-import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream } from '@/lib/muxMeetingStream';
+import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@/lib/muxMeetingStream';
+import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
@@ -144,7 +145,8 @@ const EnhancedVideoCallWrapper = ({
   // Shared webinar building blocks (all keyed by meeting id).
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
   const isPresenter = stage.isPresenter; // host, or a viewer the host invited up
-  const { floating: reactions, sendReaction } = useMeetingReactions(meeting.id, isWebinar);
+  // Enabled for every meeting (not just webinars) — reactions ride Supabase realtime.
+  const { floating: reactions, sendReaction } = useMeetingReactions(meeting.id, true);
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
 
   // Draggable host "stage" panel position.
@@ -171,12 +173,24 @@ const EnhancedVideoCallWrapper = ({
   // audience feed; a recording-enabled meeting needs it so Mux records the call.
   useEffect(() => {
     if (!isHost) return;
+
+    // LiveKit: no Mux, no RTMP push. A webinar needs an HLS Egress so the audience
+    // has something to watch; a plain meeting's recording is handled by the record
+    // button (room-composite Egress), so nothing to provision here.
+    if (isLiveKitBackend()) {
+      if (!isWebinar) return;
+      startMeetingBroadcast(meeting.id, meeting.room_name, 'channel_meeting', channelId).then((p) => {
+        if (!p) console.warn('[Meeting] HLS Egress did not start — audience has no stream.');
+      });
+      return () => { stopMeetingBroadcast(meeting.id, meeting.room_name, 'channel_meeting', channelId); };
+    }
+
     const needsStream = isWebinar || meeting.enable_recording !== false;
     if (!needsStream) return;
     createMeetingStream(meeting.id, meeting.enable_recording !== false).then((p) => {
       if (p?.rtmpUrl) setRtmpUrl(p.rtmpUrl);
     });
-  }, [isWebinar, isHost, meeting.id, meeting.enable_recording]);
+  }, [isWebinar, isHost, meeting.id, meeting.room_name, meeting.enable_recording, channelId]);
 
   // When an invited speaker leaves, free their seat for the next raised hand.
   useEffect(() => {
@@ -385,13 +399,12 @@ const EnhancedVideoCallWrapper = ({
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
       />
 
-      {/* Webinar: floating reactions + a compact reaction bar for host/speakers */}
-      {isWebinar && <MeetingReactionsLayer reactions={reactions} />}
-      {isWebinar && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-          <ReactionBar onReact={sendReaction} compact />
-        </div>
-      )}
+      {/* Floating reactions + a compact reaction bar — available in every meeting,
+          not just webinars (transport is Supabase realtime broadcast). */}
+      <MeetingReactionsLayer reactions={reactions} />
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
+        <ReactionBar onReact={sendReaction} compact />
+      </div>
 
       {/* Additional Features Overlay - UI only, no media control */}
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">

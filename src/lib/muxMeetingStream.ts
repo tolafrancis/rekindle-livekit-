@@ -41,6 +41,49 @@ export function createMeetingStream(meetingId: string, record = true): Promise<S
   return callStreamFn('create', meetingId, { record, latency: 'low' });
 }
 
+// ── LiveKit webinar broadcast (§6A) ─────────────────────────────────────────
+// On LiveKit there is no RTMP push: the host publishes into the room and an HLS
+// Egress composites it. The edge fn writes the playback URL onto the meeting row,
+// which the audience picks up via the existing realtime subscription.
+
+/** Which meetings table holds this webinar (decides where hls_playback_url is written
+ *  and which host_id proves you may start the Egress). */
+export type MeetingKind = 'channel_meeting' | 'ministry_meeting' | 'meeting';
+
+/** Start the webinar's HLS Egress. Returns the playback URL (also written to the meeting row). */
+export async function startMeetingBroadcast(
+  meetingId: string,
+  roomName: string,
+  kind: MeetingKind,
+  channelId?: string,
+): Promise<{ playbackUrl: string } | null> {
+  const { data, error } = await supabase.functions.invoke('livekit-egress', {
+    body: {
+      action: 'start-hls',
+      roomName,
+      context: { kind, meetingId, channelId },
+    },
+  });
+  if (error || !data?.playbackUrl) return null;
+  return { playbackUrl: data.playbackUrl };
+}
+
+/** Stop the webinar's HLS Egress (no orphaned egress — it bills until stopped). */
+export async function stopMeetingBroadcast(
+  meetingId: string,
+  roomName: string,
+  kind: MeetingKind,
+  channelId?: string,
+): Promise<void> {
+  await supabase.functions.invoke('livekit-egress', {
+    body: {
+      action: 'stop-hls',
+      roomName,
+      context: { kind, meetingId, channelId },
+    },
+  }).catch(() => {});
+}
+
 /** Fetch fresh ingest credentials for the host going live. */
 export function getMeetingIngest(meetingId: string): Promise<StreamProvision | null> {
   return callStreamFn('ingest', meetingId);

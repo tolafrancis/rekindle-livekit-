@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDailyRoom, DailyParticipantInfo } from '@/hooks/useDailyRoom';
+import { isLiveKitBackend } from '@/lib/videoBackend';
 import { HostControlPanel } from '@/components/HostControlPanel';
 import { RoomChatSidebar } from '@/components/RoomChatSidebar';
 import {
@@ -1046,6 +1047,34 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // and keep the push running as the audience broadcast.
   const handleToggleRecording = async () => {
     if (!isHost) return;
+
+    // LiveKit: recording is a room-composite Egress (no RTMP push, no call object).
+    // The hook's startRecording/stopRecording hit the livekit-egress edge fn.
+    if (isLiveKitBackend()) {
+      if (isMuxRecording) {
+        setRecordingStatus('stopping');
+        try {
+          await stopRecording();
+          setIsMuxRecording(false);
+          setRecordingStatus('idle');
+        } catch {
+          setRecordingStatus('error');
+          toast({ title: t('dailyVideoCall', 'failedToStopRecording', 'Failed to stop recording'), variant: 'destructive' });
+        }
+      } else {
+        setRecordingStatus('starting');
+        try {
+          await startRecording();
+          setIsMuxRecording(true);
+          setRecordingStatus('recording');
+        } catch {
+          setRecordingStatus('error');
+          toast({ title: t('dailyVideoCall', 'failedToStartRecording', 'Failed to start recording'), variant: 'destructive' });
+        }
+      }
+      return;
+    }
+
     if (!liveStreamRtmpUrl || !callObject) {
       toast({ title: t('dailyVideoCall', 'recordingNotAvailable', 'Recording not available'), description: t('dailyVideoCall', 'enableRecordingFirst', 'Enable recording for this meeting first.'), variant: 'destructive' });
       return;

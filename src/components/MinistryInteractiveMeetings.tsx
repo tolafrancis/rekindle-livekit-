@@ -42,7 +42,8 @@ import MeetingInsightsPanel from './MeetingInsightsPanel';
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from './DailyVideoCall';
 import { HlsPlayer } from './HlsPlayer';
-import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream } from '@/lib/muxMeetingStream';
+import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@/lib/muxMeetingStream';
+import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
@@ -140,7 +141,8 @@ const EnhancedVideoCallWrapper = ({
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
   const isPresenter = stage.isPresenter;
   // Live floating reactions (love, amen, clap…) for webinars
-  const { floating: reactions, sendReaction } = useMeetingReactions(meeting.id, isWebinar);
+  // Enabled for every meeting (not just webinars) — reactions ride Supabase realtime.
+  const { floating: reactions, sendReaction } = useMeetingReactions(meeting.id, true);
   // Guests (not signed in) can watch + read chat, but must sign in to interact.
   const isGuest = !userId || userId.startsWith('guest-');
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -225,6 +227,19 @@ const EnhancedVideoCallWrapper = ({
 
   useEffect(() => {
     if (!isHost) return;
+
+    // LiveKit: no Mux, no RTMP push. A webinar needs an HLS Egress so the audience
+    // has something to watch (the edge fn writes hls_playback_url onto the meeting
+    // row, which the audience picks up via realtime). A plain meeting's recording is
+    // handled by the record button (room-composite Egress), so nothing to provision.
+    if (isLiveKitBackend()) {
+      if (!isWebinar) return;
+      startMeetingBroadcast(meeting.id, meeting.room_name, 'ministry_meeting').then(p => {
+        if (!p) console.warn('[Ministry] HLS Egress did not start — audience has no stream.');
+      });
+      return () => { stopMeetingBroadcast(meeting.id, meeting.room_name, 'ministry_meeting'); };
+    }
+
     // createMeetingStream reuses the existing input, or re-provisions one if a
     // previous session was torn down. A webinar needs it for the HLS audience
     // feed; a recording-enabled meeting needs it so Mux records the call.
@@ -233,7 +248,7 @@ const EnhancedVideoCallWrapper = ({
     createMeetingStream(meeting.id, meeting.enable_recording !== false).then(p => {
       if (p) setRtmpUrl(p.rtmpUrl);
     });
-  }, [isWebinar, isHost, meeting.id, meeting.enable_recording]);
+  }, [isWebinar, isHost, meeting.id, meeting.room_name, meeting.enable_recording]);
 
   // ── Hybrid seats ──
   // The first N non-host participants to join take the live seats; everyone
@@ -474,14 +489,12 @@ const EnhancedVideoCallWrapper = ({
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
       />
 
-      {/* Webinar: show the audience's floating reactions over the call, and let
-          the host / seated speakers react too. */}
-      {isWebinar && <MeetingReactionsLayer reactions={reactions} />}
-      {isWebinar && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-          <ReactionBar onReact={sendReaction} compact />
-        </div>
-      )}
+      {/* Floating reactions over the call + a compact bar so everyone can react —
+          available in every meeting, not just webinars. */}
+      <MeetingReactionsLayer reactions={reactions} />
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
+        <ReactionBar onReact={sendReaction} compact />
+      </div>
 
       {/* Additional Features Overlay - UI only, no media control */}
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">

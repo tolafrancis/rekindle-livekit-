@@ -323,9 +323,12 @@ export const ROLE_PERMISSIONS: Record<ParticipantRole, RolePermissions> = {
   },
 };
 
-// Helper to check if user has permission
+// Helper to check if user has permission.
+// Defensive: LiveKit mints roles like 'viewer'/'egress' that aren't in
+// ROLE_PERMISSIONS (they have no publish rights). Any unknown role → no permission,
+// instead of crashing on ROLE_PERMISSIONS[role] being undefined.
 export const hasPermission = (role: ParticipantRole, permission: keyof RolePermissions): boolean => {
-  return ROLE_PERMISSIONS[role][permission];
+  return ROLE_PERMISSIONS[role]?.[permission] ?? false;
 };
 
 // Default meeting settings

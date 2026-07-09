@@ -185,6 +185,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
     leaveRoom,
     sessionDuration,
     localVideoRef,
+    callObject,
     muteParticipant,
     removeParticipant,
     muteAll
@@ -194,6 +195,11 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
     userId,
     isHost,
     sessionId,
+    // LiveKit ignores the client `isHost` and derives it server-side. `counselling`
+    // tells the token fn to resolve the host from this sessionId (see roleContext).
+    // Deliberately NOT passing meetingId — on Daily that drives chat_messages /
+    // participant_states / endMeetingForAll and must stay unset here.
+    meetingKind: 'counselling',
     onSessionEnd: async () => {
       await updateSessionStatus('completed');
       onCallEnd?.();
@@ -264,20 +270,36 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
     setIsFullscreen(!isFullscreen);
   };
 
-  // §3F — route host control through the hook (no raw call object). The hook
-  // enforces server-side on LiveKit and stays advisory on Daily, and handles toasts.
+  // §3F — host control. On Daily, keep the native ENFORCED path
+  // (callObject.updateParticipant), which is what this always did. On LiveKit there
+  // is no raw call object (callObject === null), so route through the hook, which
+  // enforces server-side via the livekit-moderation edge fn.
   const handleMuteParticipant = async (participant: DailyParticipantInfo) => {
     if (!isHost) return;
+    if (callObject) {
+      await callObject.updateParticipant(participant.sessionId, { setAudio: false });
+      return;
+    }
     await muteParticipant(participant.sessionId);
   };
 
   const handleRemoveParticipant = async (participant: DailyParticipantInfo) => {
     if (!isHost) return;
+    if (callObject) {
+      await callObject.updateParticipant(participant.sessionId, { eject: true });
+      return;
+    }
     await removeParticipant(participant.sessionId);
   };
 
   const handleMuteAll = async () => {
     if (!isHost) return;
+    if (callObject) {
+      for (const participant of remoteParticipants) {
+        await callObject.updateParticipant(participant.sessionId, { setAudio: false });
+      }
+      return;
+    }
     await muteAll();
   };
 
