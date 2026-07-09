@@ -116,5 +116,27 @@ services:
     volumes:
       - ./config/coturn.conf:/etc/coturn/turnserver.conf:ro
 
+  # ---- Caddy (PROD TLS) ----------------------------------------------------
+  # Browsers require wss:// for a hosted site. Caddy auto-provisions a Let's
+  # Encrypt cert for livekit.<domain> and reverse-proxies HTTPS/WSS → the SFU's
+  # plain ws on :7880. Enable with:  docker compose --profile tls up -d
+  # Needs: DNS livekit.<domain> → this VPS, and ports 80+443 open.
+  # Edit config/Caddyfile with your real domain first.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   minio-data:
+  caddy-data:
+  caddy-config:

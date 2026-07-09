@@ -75,7 +75,7 @@ Windows release binary). Point it at the dev stack:
 ```bash
 export LIVEKIT_URL=ws://localhost:7880
 export LIVEKIT_API_KEY=devkey
-export LIVEKIT_API_SECRET=devsecret_please_change_me_0123456789abcdef
+export LIVEKIT_API_SECRET=3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893
 ```
 
 **Egress → storage** (record the room while the two tabs are joined):
@@ -116,9 +116,10 @@ tabs. Clean up: `lk ingress list` → `lk ingress delete <id>`.
   fill `external-ip`/certs in `coturn.conf`).
 - **Networking:** on Linux prefer `network_mode: host` for `livekit` (delete the
   `ports:` block) so media ports and IP detection are reliable.
-- **Secrets:** replace the `devsecret_…` value everywhere (livekit.yaml, egress.yaml,
-  ingress.yaml, .env). Secret must be ≥ 32 chars. Inject via env in prod, don't
-  commit real secrets.
+- **Secrets:** the dev secret is committed here for local use — **rotate it for prod**
+  (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) and set the
+  new value identically in livekit.yaml, egress.yaml, ingress.yaml, coturn.conf, .env, and
+  the Supabase `LIVEKIT_API_SECRET` secret. Inject via env in prod; don't commit real secrets.
 - **Storage:** delete the `minio`/`minio-setup` services; point `egress.yaml` `s3`
   (or `gcp`/`azure`) at real object storage.
 

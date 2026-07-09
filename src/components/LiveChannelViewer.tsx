@@ -4,6 +4,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { supabase } from '@/lib/supabase';
 import { useDailyRoom } from '@/hooks/useDailyRoom';
+import { isLiveKitBackend } from '@/lib/videoBackend';
 import { 
   postLiveChannelJoined,
   postLiveChannelEventAttended
@@ -215,11 +216,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     || (channel as any).featured_image_url
     || (channel as any).channel_logo_url
     || muxPoster;
-  // Live viewers watch the Mux HLS stream whenever the host's Daily→Mux bridge
-  // is active (the broadcast sets is_hls_live once the RTMP push is running).
-  // Speakers still join Daily to talk; if HLS isn't live yet, viewers fall back
-  // to the Daily room.
-  const watchViaHls = !!isHlsLive && !!hlsPlaybackUrl && !isSpeaker;
+  // On LiveKit, viewers subscribe to the broadcast over WebRTC (sub-second latency,
+  // and they see the host directly from the room) instead of the ~6s HLS path — a
+  // normal low-latency live stream/webinar. This also ignores any stale Mux
+  // hls_playback_url left over from a previous Daily/Mux broadcast. HLS Egress still
+  // runs for recording/VOD (and can front huge audiences later), but the LIVE view
+  // is WebRTC. On Daily/Mux, keep the original HLS-when-live behaviour.
+  const watchViaHls = !isLiveKitBackend() && !!isHlsLive && !!hlsPlaybackUrl && !isSpeaker;
 
   // Join the channel's live presence so the host can see/count this viewer — even
   // when watching via HLS (no Daily room). Mirrors the meetings presence layer.

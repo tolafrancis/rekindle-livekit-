@@ -18,7 +18,7 @@ redis:
 
 # API key -> secret. Secret MUST be >= 32 chars. ONE pair, shared by all services.
 keys:
-  devkey: devsecret_please_change_me_0123456789abcdef
+  devkey: 3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893
 
 # Embedded TURN — enough to prove NAT traversal in the spike.
 # For prod, prefer dedicated coturn (docker-compose --profile coturn) + real TLS,
@@ -39,9 +39,9 @@ logging:
 # (Phase 5). Point at the deployed livekit-webhook edge fn; api_key must match a
 # key in `keys` above (the receiver verifies the signature with its secret).
 webhook:
-  api_key: devkey
+  api_key: API3DeNodLWpPdE
   urls:
-    - https://YOUR-PROJECT-REF.supabase.co/functions/v1/livekit-webhook
+    - https://vpnpembyqbbaaiynfvli.supabase.co/functions/v1/livekit-webhook
 
 # Auto-close idle rooms (replaces most of daily-room-cleanup — see plan §7 1E).
 room:

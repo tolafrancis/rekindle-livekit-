@@ -388,11 +388,45 @@ shared secret pair (`LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET`) must be **identica
 across the SFU config, all edge fns, and the webhook. Nothing here is auto-verified —
 run the exit checks after.
 
-### Step 1 — Infra (SFU / Egress / Ingress / TURN)
+> ### 🟣 LiveKit Cloud variant (managed — recommended to start)
+> If you use **LiveKit Cloud** (a `wss://<project>.livekit.cloud` URL) instead of the
+> self-hosted VPS stack, the app code and edge fns are **identical** — they derive the
+> HTTPS API endpoint from `LIVEKIT_URL`, which is already correct for Cloud. What changes:
+>
+> - **Skip Step 1 entirely.** Cloud runs SFU + TURN + Egress + Ingress for you. The
+>   `livekit/` folder (compose, configs, `devkey`/`devsecret`) is unused — park it for
+>   the future self-host.
+> - **Keys come from the Cloud dashboard**, not our generated secret. LiveKit Cloud →
+>   **Settings → Keys** → API Key + Secret. Use those (with the `.livekit.cloud` URL) as
+>   the Step 2 secrets. ⚠️ Setting `devkey`/`devsecret` here = every token rejected.
+> - **Step 5 (webhook) moves to the dashboard:** LiveKit Cloud → **Project → Webhooks** →
+>   add your `livekit-webhook` edge-fn URL. Ignore the `livekit.yaml` `webhook:` block.
+> - **Egress storage is still yours:** set the `S3_*` / `S3_PUBLIC_BASE` secrets to your
+>   S3/R2 — Cloud Egress writes recordings there.
+>
+> **Two tiers on Cloud:**
+> - **Tier 1 — kills broadcast/meeting latency (WebRTC, sub-second):** Step 2 secrets
+>   (`LIVEKIT_URL`/`KEY`/`SECRET`) + deploy `livekit-token` + `livekit-moderation` +
+>   (`0145` if you use waiting rooms) + client flip (Step 6). Recording/HLS not involved
+>   in the live view, so nothing else is needed to go low-latency.
+> - **Tier 2 — recording / VOD / OBS / simulcast:** add `S3_*` secrets, deploy
+>   `livekit-egress` / `livekit-ingress` / `livekit-webhook` (JWT off), migrations
+>   `0146`+`0147`, and the dashboard webhook.
+>
+> **Self-host cutover later:** swap `VITE_LIVEKIT_URL` + the Supabase key/secret to the VPS,
+> move the webhook from the Cloud dashboard into `livekit.yaml`, do Step 1. No app code change.
+
+### Step 1 — Infra (SFU / Egress / Ingress / TURN) — *self-host only; skip on Cloud*
 - `cd livekit && cp .env.example .env`, edit secrets, `docker compose up -d` ([livekit/README.md](../livekit/README.md)).
 - **Replace** the dev secret `devsecret_please_change_me_…` everywhere (`config/*.yaml`, `.env`) with a real ≥32-char secret.
 - **Prod:** terminate TLS → `wss://livekit.yourdomain.com`; set `use_external_ip: true` in [livekit.yaml](../livekit/config/livekit.yaml); open the media UDP range; validate TURN/NAT (**do this first — #1 risk**).
-- Egress storage: replace dev MinIO with real S3/GCS/Azure; note the **public base URL** for playback.
+- Egress storage: replace dev MinIO with real S3/GCS/Azure/R2.
+- **CDN playback origin (`stream.<domain>`):** front the Egress bucket with a CDN at a
+  branded host and set `S3_PUBLIC_BASE=https://stream.<domain>` — the audience pulls HLS/VOD
+  from the edge, not the SFU box; stored playback URLs stay stable across storage changes.
+  Full setup (DNS, TLS, cache TTLs for `.m3u8` vs `.ts`, **CORS for hls.js**) in
+  [livekit/cdn-playback-origin.md](../livekit/cdn-playback-origin.md). No app code change —
+  every playback URL is built from `S3_PUBLIC_BASE`.
 
 ### Step 2 — Supabase function secrets (Edge Functions → Secrets)
 | Secret | Value | Used by |

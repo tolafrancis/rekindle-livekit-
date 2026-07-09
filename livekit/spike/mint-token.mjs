@@ -24,7 +24,7 @@ import crypto from 'node:crypto';
 
 const API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 const API_SECRET =
-  process.env.LIVEKIT_API_SECRET || 'devsecret_please_change_me_0123456789abcdef';
+  process.env.LIVEKIT_API_SECRET || '3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893';
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);

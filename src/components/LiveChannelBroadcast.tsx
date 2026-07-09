@@ -224,12 +224,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
-        const res = await startChannelBroadcast(channel.id);
-        if (!res) {
-          console.warn('[Broadcast] HLS Egress did not start — viewers fall back to room subscribe.');
-          muxBridgeStartedRef.current = false;
+        // Live viewers subscribe over WebRTC (sub-second). HLS Egress is only needed
+        // to RECORD the broadcast to VOD, so start it only when recording is on.
+        if (isRecording) {
+          const res = await startChannelBroadcast(channel.id);
+          if (res) console.log('[Broadcast] LiveKit HLS Egress (VOD) live:', res.playbackUrl);
+          else { console.warn('[Broadcast] HLS Egress did not start'); muxBridgeStartedRef.current = false; }
         } else {
-          console.log('[Broadcast] LiveKit HLS Egress live:', res.playbackUrl);
+          // Pure WebRTC webinar — clear any stale HLS flag so viewers use the room.
+          await supabase.from('live_channels').update({ is_hls_live: false }).eq('id', channel.id);
         }
       })();
       return;
@@ -886,7 +889,10 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     setIsRecording(next);
     try {
       await supabase.from('live_channels').update({ enable_recording: next }).eq('id', channel.id);
-      // Recording can't be toggled on an existing Mux stream — re-provision it so
+      // LiveKit: recording is just this flag — the broadcast's HLS Egress reads it at
+      // go-live and records to VOD. No stream to re-provision (Ingress ≠ recording).
+      if (isLiveKitBackend()) return;
+      // Mux: recording can't be toggled on an existing stream — re-provision it so
       // the live stream is (re)created with recording on/off. Re-provisioning mints
       // a new stream key + playback URL, so refresh the channel's stored config.
       const p = await reprovisionChannelStream(channel.id, next);

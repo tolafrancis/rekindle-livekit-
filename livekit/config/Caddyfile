@@ -1,0 +1,15 @@
+# Caddy TLS reverse proxy for the LiveKit SFU (Phase 6 self-host).
+# Caddy automatically gets + renews a Let's Encrypt certificate for this domain,
+# terminates HTTPS/WSS, and forwards to the SFU's plain ws on port 7880 over the
+# internal docker network. WebSocket upgrades are handled automatically.
+#
+# BEFORE `docker compose --profile tls up -d`:
+#   1. Replace livekit.example.com below with YOUR domain.
+#   2. Point DNS: A  livekit.<domain>  → this VPS's public IP.
+#   3. Open ports 80 and 443 on the VPS firewall (ACME needs 80; clients use 443).
+#
+# Then set the app + Supabase to: wss://livekit.<domain>
+
+livekit.example.com {
+    reverse_proxy livekit:7880
+}

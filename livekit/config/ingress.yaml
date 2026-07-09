@@ -7,7 +7,7 @@ redis:
 
 # Must match livekit.yaml keys and egress.yaml.
 api_key: devkey
-api_secret: devsecret_please_change_me_0123456789abcdef
+api_secret: 3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893
 
 ws_url: ws://livekit:7880
 
