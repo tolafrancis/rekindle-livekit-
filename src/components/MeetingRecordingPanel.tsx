@@ -27,12 +27,16 @@ import {
   parseSlashCommand,
 } from '@/lib/meetingAIEngine';
 import MeetingTranscriptionPanel from './MeetingTranscriptionPanel';
+import { useMeetingNotes } from '@/hooks/useMeetingNotes';
 import MeetingInsightsPanel from './MeetingInsightsPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type RecordingState = 'idle' | 'recording' | 'stopped';
-type TableName = 'ministry_video_meetings' | 'live_channel_video_meetings';
+// `channel_broadcasts` was already being passed by LiveChannelBroadcast but wasn't in
+// this union — a real type error. It has no transcript_* / summary_json columns, so
+// the meeting-row update is skipped for it; notes still persist to meeting_ai_notes.
+type TableName = 'ministry_video_meetings' | 'live_channel_video_meetings' | 'channel_broadcasts';
 
 interface MeetingRecordingPanelProps {
   meetingId: string;
@@ -43,6 +47,10 @@ interface MeetingRecordingPanelProps {
   tableName: TableName; // Which Supabase table to persist results to
   enableRecording: boolean; // From meeting settings
   inCallOverlay?: boolean; // Show compact version inside the video call
+  /** Reports note-taking state up so the parent can pulse its "AI" button. */
+  onStateChange?: (state: RecordingState) => void;
+  /** Allow a non-host to take notes (e.g. ministry-tier members). */
+  canTakeNotes?: boolean;
 }
 
 // ── Format helpers ────────────────────────────────────────────────────────
@@ -66,6 +74,8 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
   tableName,
   enableRecording,
   inCallOverlay = false,
+  onStateChange,
+  canTakeNotes = false,
 }) => {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
@@ -77,6 +87,35 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
   const [showInsightsDialog, setShowInsightsDialog] = useState(false);
   const [isSavingToDb, setIsSavingToDb] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Distributed note-taking (Option A). When anyone starts notes, EVERY participant's
+  // browser transcribes its own mic and shares the lines — SpeechRecognition can only
+  // hear the local mic, so this is the only way to capture remote speakers.
+  const notes = useMeetingNotes(meetingId, speakerName, true);
+  // Only the browser that started notes runs the (paid) AI pipeline + persistence.
+  const isInitiatorRef = useRef(false);
+
+  // Mirror remote-triggered start/stop so non-initiators show the running state.
+  useEffect(() => {
+    if (notes.active && recordingState === 'idle') {
+      setSessionStartTime(Date.now());
+      setElapsedSeconds(0);
+      setRecordingState('recording');
+    } else if (!notes.active && recordingState === 'recording') {
+      setRecordingState('stopped');
+    }
+  }, [notes.active, recordingState]);
+
+  // Report note-taking state up so the parent can flicker its "AI" button, and
+  // collapse this panel once notes start — the pulsing button is the indicator,
+  // rather than a big REC-style overlay sitting over the video.
+  // Held in a ref so an inline parent callback can't re-fire this effect.
+  const onStateChangeRef = useRef(onStateChange);
+  useEffect(() => { onStateChangeRef.current = onStateChange; }, [onStateChange]);
+  useEffect(() => {
+    onStateChangeRef.current?.(recordingState);
+    if (recordingState === 'recording') setIsCollapsed(true);
+  }, [recordingState]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -102,12 +141,22 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
     setSessionStartTime(now);
     setElapsedSeconds(0);
     setRecordingState('recording');
-    setShowTranscriptPanel(true);
-    toast.success('Session recording started');
-  }, []);
+    isInitiatorRef.current = true;
+    // Tells EVERY participant's browser to start transcribing its own mic (Option A).
+    notes.startNotes();
+    toast.success('AI notes started — everyone is being transcribed');
+  }, [notes]);
 
   const handleStopRecording = useCallback(async () => {
     setRecordingState('stopped');
+    notes.stopNotes();
+
+    // Capture the merged, speaker-attributed transcript from all participants.
+    setRawTranscript({
+      lines: notes.lines,
+      durationSeconds: elapsedSeconds,
+      detectedLanguages: [],
+    });
 
     // Update DB recording status
     if (enableRecording) {
@@ -124,8 +173,8 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
       }
     }
 
-    toast.success('Recording stopped. Clean the transcript and generate insights below.');
-  }, [meetingId, tableName, enableRecording]);
+    toast.success('Notes stopped. Clean the transcript and generate insights below.');
+  }, [meetingId, tableName, enableRecording, notes, elapsedSeconds]);
 
   const handleTranscriptReady = useCallback((raw: RawTranscript) => {
     setRawTranscript(raw);
@@ -145,24 +194,42 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
         ? cleanedTranscript.lines.map(l => `[${l.speaker}] ${l.text}`).join('\n')
         : null;
 
-      await supabase
-        .from(tableName)
-        .update({
-          transcript_text: transcriptText,
-          transcript_language: insights.dominantLanguage,
-          transcript_status: 'completed',
-          summary_json: insights,
-        })
-        .eq('id', meetingId);
+      // Durable, per-session record — survives the meeting and supports more than
+      // one note-taker. (The meeting-row update below only keeps the latest.)
+      await supabase.from('meeting_ai_notes').insert({
+        meeting_id: meetingId,
+        source_table: tableName,
+        meeting_title: meetingTitle,
+        created_by: userId,
+        raw_transcript: rawTranscript,
+        transcript: cleanedTranscript,
+        insights,
+        dominant_language: insights.dominantLanguage,
+        duration_seconds: elapsedSeconds,
+      });
 
-      toast.success('Insights saved to meeting record');
+      // Keep the meeting row's summary in sync. `channel_broadcasts` doesn't have
+      // these columns, so skip it there rather than failing the whole save.
+      if (tableName !== 'channel_broadcasts') {
+        await supabase
+          .from(tableName)
+          .update({
+            transcript_text: transcriptText,
+            transcript_language: insights.dominantLanguage,
+            transcript_status: 'completed',
+            summary_json: insights,
+          })
+          .eq('id', meetingId);
+      }
+
+      toast.success('Notes and insights saved');
     } catch (err) {
       console.error('Error saving insights to DB:', err);
       // Not fatal — insights are still in state
     } finally {
       setIsSavingToDb(false);
     }
-  }, [meetingId, tableName, cleanedTranscript]);
+  }, [meetingId, tableName, cleanedTranscript, meetingTitle, userId, rawTranscript, elapsedSeconds]);
 
   // Slash command listener — listens to chat messages via Supabase realtime
   useEffect(() => {
@@ -213,11 +280,13 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
                 <Mic className="h-3 w-3 text-gray-400" />
               )}
               <span className="text-xs text-gray-200 font-medium">
+                {/* "Notes", never "REC" — this transcribes speech, it does NOT
+                    record audio/video (that's the separate recording button). */}
                 {recordingState === 'recording'
-                  ? `REC ${formatDuration(elapsedSeconds)}`
+                  ? `Notes ${formatDuration(elapsedSeconds)}`
                   : recordingState === 'stopped'
-                  ? 'Stopped'
-                  : 'AI Features'}
+                  ? 'Notes stopped'
+                  : 'AI Notes'}
               </span>
             </div>
             <button
@@ -231,15 +300,22 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
           {/* Expanded controls */}
           {!isCollapsed && (
             <div className="space-y-2">
-              {recordingState === 'idle' && (
+              {/* Host, or any ministry-tier member, may take notes from their own
+                  browser — each transcribes their own microphone. */}
+              {recordingState === 'idle' && (isHost || canTakeNotes) && (
                 <Button
                   size="sm"
                   onClick={handleStartRecording}
-                  className="w-full h-7 text-xs bg-red-600 hover:bg-red-700"
+                  className="w-full h-7 text-xs bg-purple-600 hover:bg-purple-700"
                 >
-                  <Circle className="h-3 w-3 mr-1 fill-current" />
-                  Start Recording
+                  <FileText className="h-3 w-3 mr-1" />
+                  Take Notes
                 </Button>
+              )}
+              {recordingState === 'idle' && !isHost && !canTakeNotes && (
+                <p className="text-[10px] text-gray-400 leading-tight px-1">
+                  AI notes are available to the host and ministry members.
+                </p>
               )}
               {recordingState === 'recording' && (
                 <Button
@@ -248,7 +324,7 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
                   className="w-full h-7 text-xs bg-orange-600 hover:bg-orange-700"
                 >
                   <StopCircle className="h-3 w-3 mr-1" />
-                  Stop Recording
+                  Stop Notes
                 </Button>
               )}
               <Button
@@ -379,16 +455,33 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
         </CardContent>
       </Card>
 
-      {/* Inline transcription panel */}
+      {/* Live transcript — the MERGED, speaker-attributed stream from every
+          participant. (The old MeetingTranscriptionPanel ran its own recogniser and
+          only ever heard this one browser, and only after you clicked its mic
+          button. useMeetingNotes owns recognition now, so it must not run too.) */}
       {showTranscriptPanel && (
-        <MeetingTranscriptionPanel
-          speakerName={speakerName}
-          meetingTitle={meetingTitle}
-          isHost={isHost}
-          sessionStartTime={sessionStartTime}
-          onTranscriptReady={handleTranscriptReady}
-          onCleanedReady={handleCleanedReady}
-        />
+        <div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-gray-900/90 p-2 text-xs text-gray-200 space-y-1">
+          {!notes.isSupported && (
+            <p className="text-amber-400">
+              This browser can’t transcribe speech. Your voice won’t be captured — try Chrome.
+            </p>
+          )}
+          {notes.lines.length === 0 && !notes.interimText && (
+            <p className="text-gray-500">No speech captured yet…</p>
+          )}
+          {notes.lines.map((l, i) => (
+            <p key={`${l.timestamp}-${i}`}>
+              <span className="text-purple-300 font-medium">{l.speaker}:</span>{' '}
+              <span>{l.text}</span>
+            </p>
+          ))}
+          {notes.interimText && (
+            <p className="text-gray-400 italic">
+              <span className="text-purple-300/70 font-medium">{speakerName}:</span>{' '}
+              {notes.interimText}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Insights dialog */}

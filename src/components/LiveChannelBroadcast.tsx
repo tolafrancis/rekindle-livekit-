@@ -9,6 +9,7 @@ import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
+import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
@@ -153,6 +154,8 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
 
   // AI features state
   const [showAIPanel, setShowAIPanel] = useState(false);
+  // True while the AI notes recogniser is running — makes the AI button flicker.
+  const [notesActive, setNotesActive] = useState(false);
   const [showInsightsDialog, setShowInsightsDialog] = useState(false);
 
   // ADDED: Participant management state
@@ -1304,6 +1307,11 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               <ReactionBar onReact={sendReaction} compact />
             </div>
 
+            {/* Consent notice — AI notes transcribe every participant's mic */}
+            <div className="absolute top-3 left-3 z-50">
+              <MeetingNotesBanner active={notesActive} />
+            </div>
+
             {(() => {
               const remoteSpeakers = dailyRoom.remoteParticipants.filter(
                 p => activeSpeakers.has(p.id) && (p.hasVideo || p.hasAudio)
@@ -1450,15 +1458,25 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               <span className="hidden md:inline">{t('liveChannelBroadcast', 'invite', 'Invite')}</span>
             </Button>
 
-            {/* AI Features button — only shown once broadcast is live */}
+            {/* AI Notes button — flickers while notes are being taken, so we don't
+                need a big REC-style overlay sitting on the video. */}
             <Button
               variant={showAIPanel ? 'default' : 'outline'}
               size="sm"
               onClick={() => setShowAIPanel(!showAIPanel)}
-              className={`rounded-full px-3 sm:px-5 h-10 sm:h-12 flex items-center gap-2 ${showAIPanel ? 'bg-purple-600 hover:bg-purple-700 border-purple-600' : 'border-purple-400 text-purple-300 hover:bg-purple-900/30'}`}
+              title={notesActive ? 'AI notes are being taken' : 'AI notes'}
+              className={`rounded-full px-3 sm:px-5 h-10 sm:h-12 flex items-center gap-2 ${
+                notesActive
+                  ? 'bg-purple-600 hover:bg-purple-700 border-purple-400 ring-2 ring-purple-400 animate-pulse'
+                  : showAIPanel
+                  ? 'bg-purple-600 hover:bg-purple-700 border-purple-600'
+                  : 'border-purple-400 text-purple-300 hover:bg-purple-900/30'
+              }`}
             >
               <Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden md:inline">{t('liveChannelBroadcast', 'ai', 'AI')}</span>
+              <span className="hidden md:inline">
+                {notesActive ? 'Notes' : t('liveChannelBroadcast', 'ai', 'AI')}
+              </span>
             </Button>
 
             <Button
@@ -1499,9 +1517,12 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
             </div>
           )}
 
-          {/* AI Recording + Transcription Panel — shown inline below control bar */}
-          {showAIPanel && broadcastId && (
-            <div className="px-4 py-3 bg-gray-900 border-t border-purple-800">
+          {/* AI Notes panel. Kept MOUNTED once the broadcast has an id and merely
+              hidden when collapsed — unmounting it would tear down the speech
+              recogniser and silently stop note-taking. The pulsing AI button above
+              is the "notes running" indicator. */}
+          {broadcastId && (
+            <div className={showAIPanel ? 'px-4 py-3 bg-gray-900 border-t border-purple-800' : 'hidden'}>
               <MeetingRecordingPanel
                 meetingId={broadcastId}
                 meetingTitle={`${channel.name} — Live Broadcast`}
@@ -1511,6 +1532,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 tableName="channel_broadcasts"
                 enableRecording={isRecording}
                 inCallOverlay={false}
+                onStateChange={(s) => setNotesActive(s === 'recording')}
               />
             </div>
           )}

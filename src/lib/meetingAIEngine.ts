@@ -5,9 +5,13 @@
  * multilingual support, and structured summarization.
  * Used by both MinistryInteractiveMeetings and LiveChannelInteractiveMeetings.
  *
- * All AI calls go to claude-sonnet-5 via the Anthropic API.
+ * All AI calls go through the `meeting-ai` Supabase edge function (OpenAI
+ * gpt-4o-mini), which holds OPENAI_API_KEY server-side. The client never talks to
+ * a model provider directly.
  * No hallucination: if information is missing, fields are null or empty arrays.
  */
+
+import { supabase } from '@/lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -62,35 +66,27 @@ export type SlashCommand = '/record' | '/transcribe' | '/summarize';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-5';
 const CHUNK_DURATION_SECONDS = 180; // 3-minute chunks for long sessions
 const CHUNK_OVERLAP_SECONDS = 20;   // overlap to preserve context at boundaries
 
 // ── Internal helper ────────────────────────────────────────────────────────
 
-async function callClaude(systemPrompt: string, userContent: string, maxTokens = 1000): Promise<string> {
-  const response = await fetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      thinking: { type: 'disabled' },
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userContent }],
-    }),
+/**
+ * All AI calls go through the `meeting-ai` edge function (OpenAI gpt-4o-mini),
+ * which holds OPENAI_API_KEY server-side.
+ *
+ * This previously fetched api.anthropic.com straight from the browser with no
+ * API key and no CORS allowance, so every AI step failed. Never call a model
+ * provider from the client: the key would be exposed, and browsers block it.
+ */
+async function callAI(systemPrompt: string, userContent: string, maxTokens = 1000): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('meeting-ai', {
+    body: { system: systemPrompt, user: userContent, maxTokens },
   });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Claude API error ${response.status}: ${err}`);
-  }
-
-  const data = await response.json();
-  const textBlock = data.content?.find((b: { type: string }) => b.type === 'text');
-  if (!textBlock) throw new Error('No text block in Claude response');
-  return textBlock.text as string;
+  if (error) throw new Error(`meeting-ai failed: ${error.message}`);
+  if (data?.error) throw new Error(`meeting-ai: ${data.error}`);
+  if (typeof data?.text !== 'string') throw new Error('No text in meeting-ai response');
+  return data.text;
 }
 
 function safeJsonParse<T>(raw: string, fallback: T): T {
@@ -159,7 +155,7 @@ export async function detectLanguages(lines: TranscriptLine[]): Promise<{
   const sample = lines.filter((_, i) => i % step === 0).slice(0, 20);
   const sampleText = sample.map(l => l.text).join('\n');
 
-  const raw = await callClaude(
+  const raw = await callAI(
     `You are a language detection expert. Respond ONLY with valid JSON. No preamble.`,
     `Detect the language(s) in this transcript sample. Return JSON:
 {"dominantLanguage": "<ISO 639-1 code, e.g. en, fr, yo, sw>", "allLanguages": ["<code>", ...], "isMixed": <true|false>}
@@ -181,7 +177,7 @@ export async function cleanTranscriptChunk(
   if (lines.length === 0) return [];
 
   const raw = formatTranscriptToText(lines);
-  const cleaned = await callClaude(
+  const cleaned = await callAI(
     `You are a professional transcript editor. Clean the provided transcript segment by:
 1. Removing filler words (um, uh, like, you know, basically, literally, right?, so so, etc.)
 2. Fixing grammar and run-on sentences
@@ -209,7 +205,7 @@ export async function translateTranscriptToEnglish(
   if (sourceLanguage === 'en' || lines.length === 0) return [];
 
   const raw = formatTranscriptToText(lines);
-  const result = await callClaude(
+  const result = await callAI(
     `You are a professional translator. Translate the provided transcript to English.
 Preserve all timestamps and speaker names exactly.
 Return ONLY valid JSON: {"lines": [{"speaker": "...", "text": "...", "timestamp": <number>}, ...]}
@@ -287,7 +283,7 @@ export async function generateMeetingInsights(
       const batch = chunks.slice(i, i + 2);
       const results = await Promise.all(
         batch.map(chunk =>
-          callClaude(
+          callAI(
             'Summarize this meeting segment concisely. Extract only what is explicitly said. Return plain text.',
             formatTranscriptToText(chunk),
             300
@@ -307,7 +303,7 @@ export async function generateMeetingInsights(
   }
   const totalWords = Object.values(speakerWordCounts).reduce((a, b) => a + b, 0);
 
-  const insightsRaw = await callClaude(
+  const insightsRaw = await callAI(
     `You are an expert meeting analyst. Analyze the provided meeting transcript and return ONLY valid JSON.
 CRITICAL RULES:
 - Never hallucinate or invent details not present in the transcript
@@ -344,7 +340,7 @@ Output this exact JSON structure:
   let summaryOriginal: string | null = null;
   if (cleaned.dominantLanguage !== 'en' && cleaned.lines.length > 0) {
     const origText = formatTranscriptToText(cleaned.lines.slice(0, Math.min(cleaned.lines.length, 50)));
-    summaryOriginal = await callClaude(
+    summaryOriginal = await callAI(
       `Write a 2-4 sentence meeting summary in ${cleaned.dominantLanguage}. Be concise and accurate. Return only the summary text, nothing else.`,
       `Meeting title: "${meetingTitle}"\n\nTranscript excerpt:\n${origText}`,
       300

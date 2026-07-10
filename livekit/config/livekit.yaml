@@ -18,7 +18,7 @@ redis:
 
 # API key -> secret. Secret MUST be >= 32 chars. ONE pair, shared by all services.
 keys:
-  devkey: 3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893
+  devkey: e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c
 
 # Embedded TURN — enough to prove NAT traversal in the spike.
 # For prod, prefer dedicated coturn (docker-compose --profile coturn) + real TLS,

@@ -33,6 +33,7 @@ import {
   Hand, X, GripVertical
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
@@ -47,6 +48,7 @@ import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
+import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
@@ -143,6 +145,10 @@ const EnhancedVideoCallWrapper = ({
   // Live floating reactions (love, amen, clap…) for webinars
   // Enabled for every meeting (not just webinars) — reactions ride Supabase realtime.
   const { floating: reactions, sendReaction } = useMeetingReactions(meeting.id, true);
+  // Host OR any ministry-tier member may take AI notes from their own browser.
+  const { hasMinistryAccess } = useUserEntitlements();
+  // True while AI notes run anywhere in the meeting — drives the consent banner.
+  const [notesActive, setNotesActive] = useState(false);
   // Guests (not signed in) can watch + read chat, but must sign in to interact.
   const isGuest = !userId || userId.startsWith('guest-');
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -416,6 +422,7 @@ const EnhancedVideoCallWrapper = ({
 
           {/* Floating reactions over the stream */}
           <MeetingReactionsLayer reactions={reactions} />
+          <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
 
           <div className="z-50 flex flex-col items-center gap-2 py-3 sm:py-0 sm:absolute sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2">
             {/* Reactions — open to everyone, including guests */}
@@ -492,6 +499,7 @@ const EnhancedVideoCallWrapper = ({
       {/* Floating reactions over the call + a compact bar so everyone can react —
           available in every meeting, not just webinars. */}
       <MeetingReactionsLayer reactions={reactions} />
+      <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
         <ReactionBar onReact={sendReaction} compact />
       </div>
@@ -550,6 +558,8 @@ const EnhancedVideoCallWrapper = ({
                 tableName="ministry_video_meetings"
                 enableRecording={meeting.enable_recording}
                 inCallOverlay={true}
+                canTakeNotes={hasMinistryAccess}
+                onStateChange={(s) => setNotesActive(s === 'recording')}
               />
             </div>
           ) : (

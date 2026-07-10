@@ -1,0 +1,222 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import type { TranscriptLine } from '@/lib/meetingAIEngine';
+
+/**
+ * Distributed AI note-taking for a meeting.
+ *
+ * Why distributed: the Web Speech API (`SpeechRecognition`) can ONLY listen to the
+ * local microphone — by spec it cannot be fed a remote MediaStream. So one browser
+ * can never transcribe the other participants. Instead, when the host starts notes:
+ *
+ *   1. `notes-started` is broadcast on a Supabase realtime channel.
+ *   2. EVERY participant's browser starts transcribing its OWN microphone.
+ *   3. Each final phrase is broadcast as a `line` with that speaker's name.
+ *   4. Everyone merges the lines, so the note-taker ends up with a complete,
+ *      speaker-attributed transcript.
+ *
+ * Because everyone's mic is transcribed, callers MUST show the notes banner
+ * (see MeetingNotesBanner) for the duration.
+ *
+ * Transport is Supabase realtime broadcast — nothing to do with Daily/LiveKit.
+ */
+
+export interface UseMeetingNotes {
+  /** True while notes are being taken anywhere in the meeting. */
+  active: boolean;
+  /** Display name of whoever started notes (for the banner). */
+  startedBy: string | null;
+  /** Merged, speaker-attributed transcript from all participants. */
+  lines: TranscriptLine[];
+  /** What the local mic is currently hearing (not yet final). */
+  interimText: string;
+  /** True if this browser can transcribe (Web Speech API present). */
+  isSupported: boolean;
+  startNotes: () => void;
+  stopNotes: () => void;
+  reset: () => void;
+}
+
+// Minimal shapes for the (still non-standard) Web Speech API.
+interface SpeechResultEvent extends Event {
+  resultIndex: number;
+  results: { isFinal: boolean; 0: { transcript: string } ; length: number }[] & { length: number };
+}
+interface Recognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((e: SpeechResultEvent) => void) | null;
+  onerror: ((e: Event) => void) | null;
+  onend: (() => void) | null;
+}
+// NOTE: do NOT `declare global` for Window.SpeechRecognition here — MeetingTranscriptionPanel
+// already augments Window with its own (incompatible) shape, and two declarations conflict.
+// Resolve the constructor through a local cast instead.
+type RecognitionCtor = new () => Recognition;
+function getRecognitionCtor(): RecognitionCtor | undefined {
+  const w = window as unknown as {
+    SpeechRecognition?: RecognitionCtor;
+    webkitSpeechRecognition?: RecognitionCtor;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
+}
+
+export function useMeetingNotes(
+  meetingId: string,
+  speakerName: string,
+  enabled: boolean = true,
+): UseMeetingNotes {
+  const [active, setActive] = useState(false);
+  const [startedBy, setStartedBy] = useState<string | null>(null);
+  const [lines, setLines] = useState<TranscriptLine[]>([]);
+  const [interimText, setInterimText] = useState('');
+  const [isSupported, setIsSupported] = useState(true);
+
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const recognitionRef = useRef<Recognition | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+  // `active` inside recognition callbacks would be stale — mirror it in a ref.
+  const activeRef = useRef(false);
+  const speakerRef = useRef(speakerName);
+  useEffect(() => { speakerRef.current = speakerName; }, [speakerName]);
+
+  useEffect(() => {
+    setIsSupported(!!getRecognitionCtor());
+  }, []);
+
+  const elapsed = () =>
+    startedAtRef.current ? Math.floor((Date.now() - startedAtRef.current) / 1000) : 0;
+
+  const addLine = useCallback((line: TranscriptLine) => {
+    setLines((prev) => [...prev, line]);
+  }, []);
+
+  // ── Realtime channel: notes-started / notes-stopped / line ────────────────
+  useEffect(() => {
+    if (!meetingId || !enabled) return;
+
+    const channel = supabase.channel(`meeting-notes-${meetingId}`, {
+      config: { broadcast: { self: false } },
+    });
+
+    channel.on('broadcast', { event: 'notes-started' }, (payload) => {
+      const p = payload?.payload as { by?: string; startedAt?: number } | undefined;
+      startedAtRef.current = p?.startedAt ?? Date.now();
+      setStartedBy(p?.by ?? 'Someone');
+      setActive(true);
+      activeRef.current = true;
+    });
+
+    channel.on('broadcast', { event: 'notes-stopped' }, () => {
+      setActive(false);
+      activeRef.current = false;
+      setStartedBy(null);
+    });
+
+    channel.on('broadcast', { event: 'line' }, (payload) => {
+      const l = payload?.payload as TranscriptLine | undefined;
+      if (l?.text) addLine(l);
+    });
+
+    channel.subscribe();
+    channelRef.current = channel;
+
+    return () => {
+      try { supabase.removeChannel(channel); } catch { /* noop */ }
+      channelRef.current = null;
+    };
+  }, [meetingId, enabled, addLine]);
+
+  // ── Local microphone transcription, whenever notes are active ─────────────
+  useEffect(() => {
+    if (!active || !isSupported) return;
+
+    const Ctor = getRecognitionCtor();
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = ''; // auto-detect
+
+    recognition.onresult = (event: SpeechResultEvent) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i] as unknown as { isFinal: boolean; 0: { transcript: string } };
+        const text = result[0]?.transcript?.trim() ?? '';
+        if (!text) continue;
+
+        if (result.isFinal) {
+          const line: TranscriptLine = {
+            speaker: speakerRef.current,
+            text,
+            timestamp: elapsed(),
+          };
+          addLine(line); // self (broadcast self:false means we won't hear our own)
+          try {
+            channelRef.current?.send({ type: 'broadcast', event: 'line', payload: line });
+          } catch { /* noop */ }
+        } else {
+          interim += text + ' ';
+        }
+      }
+      setInterimText(interim.trim());
+    };
+
+    // The API stops on silence; restart while notes are still running.
+    recognition.onend = () => {
+      if (activeRef.current) {
+        try { recognition.start(); } catch { /* already starting */ }
+      }
+    };
+    recognition.onerror = () => { /* transient (no-speech / network) — onend restarts */ };
+
+    try { recognition.start(); } catch { /* noop */ }
+    recognitionRef.current = recognition;
+
+    return () => {
+      activeRef.current = false; // prevent the onend auto-restart
+      try { recognition.stop(); } catch { /* noop */ }
+      recognitionRef.current = null;
+      setInterimText('');
+    };
+  }, [active, isSupported, addLine]);
+
+  const startNotes = useCallback(() => {
+    const startedAt = Date.now();
+    startedAtRef.current = startedAt;
+    setLines([]);
+    setStartedBy(speakerRef.current);
+    setActive(true);
+    activeRef.current = true;
+    try {
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'notes-started',
+        payload: { by: speakerRef.current, startedAt },
+      });
+    } catch { /* noop */ }
+  }, []);
+
+  const stopNotes = useCallback(() => {
+    setActive(false);
+    activeRef.current = false;
+    setStartedBy(null);
+    try {
+      channelRef.current?.send({ type: 'broadcast', event: 'notes-stopped', payload: {} });
+    } catch { /* noop */ }
+  }, []);
+
+  const reset = useCallback(() => {
+    setLines([]);
+    setInterimText('');
+    startedAtRef.current = null;
+  }, []);
+
+  return { active, startedBy, lines, interimText, isSupported, startNotes, stopNotes, reset };
+}

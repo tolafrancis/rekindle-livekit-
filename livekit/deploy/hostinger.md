@@ -96,7 +96,7 @@ Now use `wss://livekit.<yourdomain>` everywhere (this is your self-hosted URL):
   ```
   LIVEKIT_URL        = wss://livekit.<yourdomain>
   LIVEKIT_API_KEY    = devkey
-  LIVEKIT_API_SECRET = 3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893
+  LIVEKIT_API_SECRET = e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c
   ```
   *(rotate that secret for real prod — see livekit/README.md — and update it in both
   places at once.)*

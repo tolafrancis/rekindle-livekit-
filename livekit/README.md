@@ -75,7 +75,7 @@ Windows release binary). Point it at the dev stack:
 ```bash
 export LIVEKIT_URL=ws://localhost:7880
 export LIVEKIT_API_KEY=devkey
-export LIVEKIT_API_SECRET=3107b948cb7e04f3309f33e32ca62f517313cac0312a08c2c3f50ae1c925c893
+export LIVEKIT_API_SECRET=e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c
 ```
 
 **Egress → storage** (record the room while the two tabs are joined):

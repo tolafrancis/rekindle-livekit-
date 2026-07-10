@@ -31,6 +31,7 @@ import {
   Sparkles, FileText, Hand, GripVertical, X
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
@@ -48,6 +49,7 @@ import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
+import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 
 // Import subscription enforcement functions
@@ -147,6 +149,10 @@ const EnhancedVideoCallWrapper = ({
   const isPresenter = stage.isPresenter; // host, or a viewer the host invited up
   // Enabled for every meeting (not just webinars) — reactions ride Supabase realtime.
   const { floating: reactions, sendReaction } = useMeetingReactions(meeting.id, true);
+  // Host OR any ministry-tier member may take AI notes from their own browser.
+  const { hasMinistryAccess } = useUserEntitlements();
+  // True while AI notes run anywhere in the meeting — drives the consent banner.
+  const [notesActive, setNotesActive] = useState(false);
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
 
   // Draggable host "stage" panel position.
@@ -340,6 +346,7 @@ const EnhancedVideoCallWrapper = ({
 
           {/* Floating reactions over the stream */}
           <MeetingReactionsLayer reactions={reactions} />
+          <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
 
           <div className="z-50 flex flex-col items-center gap-2 py-3 sm:py-0 sm:absolute sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2">
             <ReactionBar onReact={sendReaction} />
@@ -402,6 +409,7 @@ const EnhancedVideoCallWrapper = ({
       {/* Floating reactions + a compact reaction bar — available in every meeting,
           not just webinars (transport is Supabase realtime broadcast). */}
       <MeetingReactionsLayer reactions={reactions} />
+      <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
         <ReactionBar onReact={sendReaction} compact />
       </div>
@@ -446,6 +454,8 @@ const EnhancedVideoCallWrapper = ({
           tableName="live_channel_video_meetings"
           enableRecording={meeting.enable_recording}
           inCallOverlay={true}
+          canTakeNotes={hasMinistryAccess}
+          onStateChange={(s) => setNotesActive(s === 'recording')}
         />
       </div>
 
