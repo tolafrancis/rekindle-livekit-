@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Alert, AlertDescription } from './ui/alert';
 import { supabase } from '@/lib/supabase';
 import { getLocalDateString, endOfLocalDayISO } from '@/lib/utils';
+import { getMinistryStreamId } from '@/lib/devotionalStreams';
 import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -292,7 +293,40 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       setEvents(eventsRes.data || []);
       setPrayerRequests(prayersRes.data || []);
       setTestimonies(testimoniesRes.data || []);
-      setDevotionals(devotionalsRes.data || []);
+
+      // Daily-devotional source (0149): if this ministry pointed its homepage at an
+      // admin stream, show that stream's devotionals INSTEAD of its own. The ministry's
+      // own rows (devotionalsRes) are untouched in the DB — switching back restores them.
+      const chosenStreamId = await getMinistryStreamId(ministry.id);
+      if (chosenStreamId) {
+        const { data: streamDevs } = await supabase
+          .from('devotionals')
+          .select('*')
+          .eq('stream_id', chosenStreamId)
+          .eq('is_published', true)
+          .or(`schedule_date.is.null,schedule_date.lte.${endOfLocalDayISO()}`)
+          .order('schedule_date', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false })
+          .limit(10);
+        // Map the platform devotional shape onto the ministry devotional shape the
+        // homepage renderer expects.
+        setDevotionals((streamDevs || []).map((d: any) => ({
+          id: d.id,
+          title: d.title,
+          content: d.message || d.content || '',
+          scripture_reference: d.scripture_reference || d.scripture || '',
+          scripture_text: d.scripture_text || '',
+          reflection_questions: d.reflection_questions,
+          prayer_focus: d.prayer || d.prayer_focus || '',
+          featured_image: d.image_url || d.cover_image_url || '',
+          audio_url: d.audio_url || '',
+          scheduled_date: d.schedule_date ?? null,
+          is_published: d.is_published,
+          created_at: d.created_at,
+        })));
+      } else {
+        setDevotionals(devotionalsRes.data || []);
+      }
       setPrayers(prayerLibraryRes.data || []);
       setPrayerCampaigns(campaignsRes.data || []);
     } catch (err) {

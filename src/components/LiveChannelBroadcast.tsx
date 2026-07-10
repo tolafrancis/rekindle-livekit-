@@ -22,7 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { LiveChannelChat } from './LiveChannelChat';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
-import MeetingInsightsPanel from './MeetingInsightsPanel';
+import SavedMeetingInsights from './SavedMeetingInsights';
 // REMOVED: import { LiveChannelParticipantManager } from './LiveChannelParticipantManager';
 import {
   Radio,
@@ -1731,12 +1731,9 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
             </DialogDescription>
           </DialogHeader>
           {broadcastId && (
-            <MeetingInsightsPanel
+            <SavedMeetingInsights
               meetingTitle={`${channel.name} — Live Broadcast`}
               meetingId={broadcastId}
-              cleaned={null}
-              existingInsights={null}
-              onInsightsGenerated={() => {}}
             />
           )}
         </DialogContent>

@@ -13,6 +13,7 @@ import { toast } from '../ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getLocalDateString } from '@/lib/utils';
+import { listPublicStreams, getMinistryStreamId } from '@/lib/devotionalStreams';
 import { TranslateNowButton } from '@/components/TranslateNowButton';
 import { TranslationProgressIndicator } from '@/components/TranslationProgressIndicator';
 import { translationQueueService } from '@/lib/translationQueueService';
@@ -117,6 +118,11 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   const [editingDevotional, setEditingDevotional] = useState<Devotional | null>(null);
   const [editingSeries, setEditingSeries] = useState<DevotionalSeries | null>(null);
   const [saving, setSaving] = useState(false);
+  // Daily-devotional source (0149): null = write our own; a stream id = show that
+  // admin stream on the ministry homepage instead of our own devotionals.
+  const [publicStreams, setPublicStreams] = useState<{ id: string; name: string; description: string | null }[]>([]);
+  const [ministryStreamId, setMinistryStreamId] = useState<string | null>(null);
+  const [savingSource, setSavingSource] = useState(false);
   const [loadingScripture, setLoadingScripture] = useState(false);
   const [loadingBiblePassage, setLoadingBiblePassage] = useState(false);
 
@@ -127,6 +133,38 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
     loadDevotionals();
     loadSeries();
   }, [ministryId]);
+
+  // Load the daily-devotional source choice + the streams available to pick.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [streams, chosen] = await Promise.all([
+        listPublicStreams(),
+        getMinistryStreamId(ministryId),
+      ]);
+      if (cancelled) return;
+      setPublicStreams(streams.map((s) => ({ id: s.id, name: s.name, description: s.description })));
+      setMinistryStreamId(chosen);
+    })();
+    return () => { cancelled = true; };
+  }, [ministryId]);
+
+  const saveDevotionalSource = async (streamId: string | null) => {
+    setSavingSource(true);
+    const { error } = await supabase
+      .from('ministry_devotional_settings')
+      .upsert(
+        { ministry_id: ministryId, daily_devotional_stream_id: streamId, updated_at: new Date().toISOString() },
+        { onConflict: 'ministry_id' },
+      );
+    setSavingSource(false);
+    if (error) {
+      toast({ title: t('ministryDevotionalsManager2', 'sourceSaveFailed', 'Could not save devotional source'), description: error.message, variant: 'destructive' });
+      return;
+    }
+    setMinistryStreamId(streamId);
+    toast({ title: t('ministryDevotionalsManager2', 'sourceSaved', 'Devotional source updated') });
+  };
 
   const loadDevotionals = async () => {
     try {
@@ -600,8 +638,69 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
     );
   }
 
+  const usingStream = !!ministryStreamId;
+
   return (
     <div className="space-y-6">
+      {/* Daily devotional source: our own vs an admin-authored stream */}
+      <Card className="border-purple-100">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-purple-600" />
+            {t('ministryDevotionalsManager2', 'devotionalSourceTitle', 'Daily Devotional Source')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              onClick={() => saveDevotionalSource(null)}
+              disabled={savingSource}
+              className={`text-left p-3 rounded-lg border transition-all ${!usingStream ? 'border-purple-400 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
+            >
+              <p className={`text-sm font-medium ${!usingStream ? 'text-purple-900' : 'text-gray-700'}`}>
+                {t('ministryDevotionalsManager2', 'writeOurOwn', 'Write our own')}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {t('ministryDevotionalsManager2', 'writeOurOwnDesc', 'Show the devotionals we create below on our homepage.')}
+              </p>
+            </button>
+            <button
+              onClick={() => { if (publicStreams[0]) saveDevotionalSource(ministryStreamId ?? publicStreams[0].id); }}
+              disabled={savingSource || publicStreams.length === 0}
+              className={`text-left p-3 rounded-lg border transition-all ${usingStream ? 'border-purple-400 bg-purple-50' : 'border-gray-200 hover:border-gray-300'} ${publicStreams.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <p className={`text-sm font-medium ${usingStream ? 'text-purple-900' : 'text-gray-700'}`}>
+                {t('ministryDevotionalsManager2', 'useAStream', 'Use a ReKindle stream')}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {t('ministryDevotionalsManager2', 'useAStreamDesc', 'Display an admin-curated daily devotional instead of our own.')}
+              </p>
+            </button>
+          </div>
+
+          {usingStream && (
+            <div className="flex items-center gap-2">
+              <Select value={ministryStreamId ?? ''} onValueChange={(v) => saveDevotionalSource(v)}>
+                <SelectTrigger className="w-full sm:w-72">
+                  <SelectValue placeholder={t('ministryDevotionalsManager2', 'selectStream', 'Select a stream')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {publicStreams.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {savingSource && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+            </div>
+          )}
+          {usingStream && (
+            <p className="text-xs text-amber-600">
+              {t('ministryDevotionalsManager2', 'streamReplacesOwn', 'While a stream is selected, it replaces your own devotionals on the ministry homepage. Your own devotionals are kept and shown again when you switch back.')}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Header with Actions */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

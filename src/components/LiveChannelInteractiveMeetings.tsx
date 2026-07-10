@@ -38,7 +38,7 @@ import { toast } from 'sonner';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
 import { MinistryRecordingsTab } from '@/components/MinistryRecordingsTab';
-import MeetingInsightsPanel from './MeetingInsightsPanel';
+import SavedMeetingInsights from './SavedMeetingInsights';
 
 // Import the DailyVideoCall component - SOLE CONTROLLER OF ALL MEDIA
 import DailyVideoCall from './DailyVideoCall';
@@ -1641,12 +1641,9 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
             </DialogDescription>
           </DialogHeader>
           {insightsMeeting && (
-            <MeetingInsightsPanel
+            <SavedMeetingInsights
               meetingTitle={insightsMeeting.title}
               meetingId={insightsMeeting.id}
-              cleaned={null}
-              existingInsights={null}
-              onInsightsGenerated={() => {}}
             />
           )}
         </DialogContent>

@@ -406,19 +406,23 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const [ministryWorkspaceActive, setMinistryWorkspaceActive] = useState(false);
   const [devotionalSource, setDevotionalSource] = useState<'platform' | 'ministry' | 'both'>('platform');
   const [devotionalMinistryId, setDevotionalMinistryId] = useState<string | null>(null);
+  const [devotionalStreamId, setDevotionalStreamId] = useState<string | null>(null);
 
   // Load saved devotional source preference on mount
   useEffect(() => {
     if (!user?.id) return;
     supabase
       .from('user_profiles')
-      .select('devotional_source, devotional_ministry_id')
+      .select('devotional_source, devotional_ministry_id, devotional_stream_id')
       .eq('user_id', user.id)
       .maybeSingle()
       .then(({ data }) => {
         if (data?.devotional_source) {
           setDevotionalSource(data.devotional_source as 'platform' | 'ministry' | 'both');
           setDevotionalMinistryId(data.devotional_ministry_id || null);
+        }
+        if (data && 'devotional_stream_id' in data) {
+          setDevotionalStreamId((data as any).devotional_stream_id || null);
         }
       });
   }, [user?.id]);
@@ -1364,15 +1368,17 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>
                   <DevotionalSourceSettings
-                    onSaved={(src, minId) => {
+                    onSaved={(src, minId, streamId) => {
                       setDevotionalSource(src);
                       setDevotionalMinistryId(minId);
+                      setDevotionalStreamId(streamId ?? null);
                     }}
                   />
                   <DailyDevotionalWidget
                     onStartDevotional={handleStartDevotional}
                     source={devotionalSource}
                     ministryId={devotionalMinistryId}
+                    streamId={devotionalStreamId}
                   />
                 </div>
                 <div id="daily-declaration">

@@ -35,6 +35,11 @@ import { useLocalizedScripture } from '@/hooks/useLocalizedScripture';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from '@/components/viewerGestures';
 import { recordDailyActivity, getStreakSummary, type StreakSummary } from '@/lib/streak';
 
+/** Hold on the opening lines before the auto-scroll starts moving under the reader. */
+const SCROLL_START_DELAY_MS = 8000;
+/** Hold at the bottom so the closing lines can be read before the slide changes. */
+const SCROLL_END_DWELL_MS = 10000;
+
 const peacefulBackgrounds = [
   'https://d64gsuwffb70l.cloudfront.net/6928073259bf69394fcb95e8_1765006543774_0da9902b.png',
   'https://d64gsuwffb70l.cloudfront.net/6928073259bf69394fcb95e8_1765006544204_90a23c85.png',
@@ -135,6 +140,10 @@ export const DevotionalModule: React.FC<Props> = ({
   const { user } = useAuth();
   const { t } = useLanguage();
   const [currentSlide, setCurrentSlide] = useState(0);
+  // True while a scrollable slide is pacing itself (start delay → scroll → end dwell).
+  // The fixed-duration auto-advance timer stands down for these, so the two clocks
+  // can't race and cut a long devotional off mid-scroll.
+  const [isScrollDriven, setIsScrollDriven] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   // Background music auto-plays when the viewer opens. A SINGLE tap pauses it and
   // a DOUBLE tap resumes — a plain tap never *resumes* audio, only the explicit
@@ -692,7 +701,9 @@ export const DevotionalModule: React.FC<Props> = ({
   useEffect(() => { goToNextSlideRef.current = goToNextSlide; }, [goToNextSlide]);
 
   useEffect(() => {
-    if (autoAdvance && !isPaused && !spiritPrayerMode && currentSlide < slides.length - 1 && !isSpeaking && !isAudioActive && !isAudioLoading) {
+    // isScrollDriven: a scrollable slide advances when its scroll reaches the bottom
+    // and dwells there — not on a countdown that knows nothing about the content length.
+    if (autoAdvance && !isPaused && !spiritPrayerMode && !isScrollDriven && currentSlide < slides.length - 1 && !isSpeaking && !isAudioActive && !isAudioLoading) {
       const duration = currentSlideData?.duration || 30;
       setSlideTimeRemaining(duration);
       
@@ -715,15 +726,27 @@ export const DevotionalModule: React.FC<Props> = ({
       }
       setSlideTimeRemaining(0);
     }
-  }, [autoAdvance, isPaused, currentSlide, spiritPrayerMode, slides.length, isSpeaking, isAudioActive, isAudioLoading]);
+  }, [autoAdvance, isPaused, currentSlide, spiritPrayerMode, slides.length, isSpeaking, isAudioActive, isAudioLoading, isScrollDriven]);
 
   // Auto-scroll for devotional content and the long Bible Passage — steady fixed speed (px/sec, independent of reading time)
   useEffect(() => {
     const scrolls = currentSlideData.type === 'devotional' || currentSlideData.isLongPassage;
-    if (!autoScroll || isPaused || isUserScrolling || !scrolls) return;
+    if (!autoScroll || isPaused || isUserScrolling || !scrolls) {
+      setIsScrollDriven(false);
+      return;
+    }
     const element = contentRef.current;
     if (!element) return;
-    if (element.scrollHeight - element.clientHeight <= 0) return;
+    if (element.scrollHeight - element.clientHeight <= 0) {
+      // Nothing to scroll — let the fixed-duration timer advance this slide.
+      setIsScrollDriven(false);
+      return;
+    }
+
+    // This slide's pacing is owned by the scroll, not the duration timer: read the
+    // top, scroll, dwell at the bottom, then advance. Two clocks racing meant a long
+    // devotional could be cut off at 30s, mid-sentence.
+    setIsScrollDriven(true);
 
     // Baseline so the scroll listener doesn't read the resume position as a user scroll
     lastAutoTopRef.current = element.scrollTop;
@@ -731,6 +754,8 @@ export const DevotionalModule: React.FC<Props> = ({
     const pixelsPerSecond = scrollSpeed === 'slow' ? 3 : 5;
     let lastTime: number | null = null;
     let animationFrameId: number;
+    let startDelayId: NodeJS.Timeout | undefined;
+    let endDwellId: NodeJS.Timeout | undefined;
     let pos = element.scrollTop; // float accumulator; browsers round scrollTop to whole px,
                                  // so reading it back would lose sub-pixel-per-frame movement
 
@@ -750,15 +775,32 @@ export const DevotionalModule: React.FC<Props> = ({
 
       if (pos < maxScroll - 0.5) {
         animationFrameId = requestAnimationFrame(animate);
+        return;
       }
-      // Reached the bottom: stop. Slide auto-advance is handled by its own timer.
+
+      // Reached the bottom. Hold so the last paragraph can actually be read,
+      // then move on.
+      endDwellId = setTimeout(() => {
+        if (autoAdvance && currentSlideRef.current < slides.length - 1) {
+          goToNextSlideRef.current();
+        }
+      }, SCROLL_END_DWELL_MS);
     };
 
-    animationFrameId = requestAnimationFrame(animate);
+    // Give the reader time on the opening lines before anything moves. Only on a
+    // fresh slide — when resuming after a manual scroll, pick up immediately.
+    const atTop = element.scrollTop <= 2;
+    startDelayId = setTimeout(
+      () => { animationFrameId = requestAnimationFrame(animate); },
+      atTop ? SCROLL_START_DELAY_MS : 0,
+    );
+
     return () => {
+      if (startDelayId) clearTimeout(startDelayId);
+      if (endDwellId) clearTimeout(endDwellId);
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [autoScroll, isPaused, isUserScrolling, currentSlide, scrollSpeed]);
+  }, [autoScroll, isPaused, isUserScrolling, currentSlide, scrollSpeed, autoAdvance, slides.length]);
 
   // Pause auto-scroll only when the user actually scrolls the content (position moves
   // beyond what auto-scroll set). Touching/swiping without dragging won't pause it.

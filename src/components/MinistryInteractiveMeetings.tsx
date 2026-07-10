@@ -38,7 +38,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
-import MeetingInsightsPanel from './MeetingInsightsPanel';
+import SavedMeetingInsights from './SavedMeetingInsights';
 
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from './DailyVideoCall';
@@ -1810,12 +1810,9 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
             </DialogDescription>
           </DialogHeader>
           {insightsMeeting && (
-            <MeetingInsightsPanel
+            <SavedMeetingInsights
               meetingTitle={insightsMeeting.title}
               meetingId={insightsMeeting.id}
-              cleaned={null}
-              existingInsights={null}
-              onInsightsGenerated={() => {}}
             />
           )}
         </DialogContent>

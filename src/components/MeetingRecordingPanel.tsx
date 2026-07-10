@@ -94,6 +94,9 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
   const notes = useMeetingNotes(meetingId, speakerName, true);
   // Only the browser that started notes runs the (paid) AI pipeline + persistence.
   const isInitiatorRef = useRef(false);
+  // Row created when notes stop, so the transcript survives even if the user never
+  // generates insights. handleInsightsGenerated updates this row instead of inserting.
+  const savedNoteIdRef = useRef<string | null>(null);
 
   // Mirror remote-triggered start/stop so non-initiators show the running state.
   useEffect(() => {
@@ -152,11 +155,39 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
     notes.stopNotes();
 
     // Capture the merged, speaker-attributed transcript from all participants.
-    setRawTranscript({
+    const raw: RawTranscript = {
       lines: notes.lines,
       durationSeconds: elapsedSeconds,
       detectedLanguages: [],
-    });
+    };
+    setRawTranscript(raw);
+
+    // Persist the transcript NOW. Insights are optional and cost an API call; the
+    // transcript must not depend on the user remembering to click "Generate" before
+    // they leave. handleInsightsGenerated later updates this same row.
+    if (isInitiatorRef.current && raw.lines.length > 0 && userId) {
+      try {
+        const { data, error } = await supabase
+          .from('meeting_ai_notes')
+          .insert({
+            meeting_id: meetingId,
+            source_table: tableName,
+            meeting_title: meetingTitle,
+            created_by: userId,
+            raw_transcript: raw,
+            // A usable transcript for playback even before cleaning/insights run.
+            transcript: { lines: raw.lines, dominantLanguage: '', isMixedLanguage: false },
+            duration_seconds: elapsedSeconds,
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+        savedNoteIdRef.current = data?.id ?? null;
+      } catch (err) {
+        console.error('Failed to save transcript:', err);
+        toast.error('Notes stopped, but the transcript could not be saved.');
+      }
+    }
 
     // Update DB recording status
     if (enableRecording) {
@@ -174,7 +205,7 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
     }
 
     toast.success('Notes stopped. Clean the transcript and generate insights below.');
-  }, [meetingId, tableName, enableRecording, notes, elapsedSeconds]);
+  }, [meetingId, tableName, enableRecording, notes, elapsedSeconds, meetingTitle, userId]);
 
   const handleTranscriptReady = useCallback((raw: RawTranscript) => {
     setRawTranscript(raw);
@@ -196,17 +227,32 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
 
       // Durable, per-session record — survives the meeting and supports more than
       // one note-taker. (The meeting-row update below only keeps the latest.)
-      await supabase.from('meeting_ai_notes').insert({
-        meeting_id: meetingId,
-        source_table: tableName,
-        meeting_title: meetingTitle,
-        created_by: userId,
-        raw_transcript: rawTranscript,
-        transcript: cleanedTranscript,
-        insights,
-        dominant_language: insights.dominantLanguage,
-        duration_seconds: elapsedSeconds,
-      });
+      // handleStopRecording already inserted the transcript row; enrich it rather
+      // than inserting a second row for the same session.
+      if (savedNoteIdRef.current) {
+        await supabase
+          .from('meeting_ai_notes')
+          .update({
+            raw_transcript: rawTranscript,
+            transcript: cleanedTranscript,
+            insights,
+            dominant_language: insights.dominantLanguage,
+            duration_seconds: elapsedSeconds,
+          })
+          .eq('id', savedNoteIdRef.current);
+      } else {
+        await supabase.from('meeting_ai_notes').insert({
+          meeting_id: meetingId,
+          source_table: tableName,
+          meeting_title: meetingTitle,
+          created_by: userId,
+          raw_transcript: rawTranscript,
+          transcript: cleanedTranscript,
+          insights,
+          dominant_language: insights.dominantLanguage,
+          duration_seconds: elapsedSeconds,
+        });
+      }
 
       // Keep the meeting row's summary in sync. `channel_broadcasts` doesn't have
       // these columns, so skip it there rather than failing the whole save.
@@ -466,7 +512,8 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
               This browser can’t transcribe speech. Your voice won’t be captured — try Chrome.
             </p>
           )}
-          {notes.lines.length === 0 && !notes.interimText && (
+          {notes.error && <p className="text-red-400">{notes.error}</p>}
+          {notes.isSupported && !notes.error && notes.lines.length === 0 && !notes.interimText && (
             <p className="text-gray-500">No speech captured yet…</p>
           )}
           {notes.lines.map((l, i) => (

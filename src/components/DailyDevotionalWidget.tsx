@@ -9,6 +9,7 @@ import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getLocalDateString, endOfLocalDayISO } from '@/lib/utils';
+import { getDefaultStreamId } from '@/lib/devotionalStreams';
 import { DevotionalModule } from './DevotionalModule';
 import { recordDailyActivity } from '@/lib/streak';
 import { shareDevotional } from '@/lib/devotionalShare';
@@ -102,6 +103,8 @@ interface Props {
   onStartDevotional?: (devotional: any) => void;
   source?: DevotionalSource;
   ministryId?: string | null;
+  /** Which daily-devotional stream to show (0149). Null → the default stream. */
+  streamId?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -186,6 +189,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   onStartDevotional,
   source = 'platform',
   ministryId = null,
+  streamId = null,
 }) => {
   const { user } = useAuth();
   const { t, getLocalizedContent } = useLanguage();
@@ -266,16 +270,22 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
       const now        = new Date();
       const today      = getLocalDateString(now); // YYYY-MM-DD in local timezone
 
+      // Which stream's devotionals to show (0149). Falls back to the default stream
+      // so a second stream's devotionals never leak into the default platform feed.
+      const effectiveStreamId = streamId ?? await getDefaultStreamId();
+
       // Fetch all published devotionals scheduled up to the end of today (local time).
       // Using the local end-of-day boundary so a devotional dated for today is
       // included immediately at local midnight, not after UTC catches up.
-      let { data } = await supabase
+      let query = supabase
         .from('devotionals')
         .select('*')
         .eq('is_published', true)
         .lte('schedule_date', endOfLocalDayISO(now)) // through end of local today
         .order('schedule_date', { ascending: false })
         .limit(10);
+      if (effectiveStreamId) query = query.eq('stream_id', effectiveStreamId);
+      let { data } = await query;
 
       // Pick today's if it exists, otherwise most recent past one
       if (data && data.length > 0) {
@@ -286,14 +296,17 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
         data = [todayMatch || data[0]];
       }
 
-      // Final fallback: any published devotional
+      // Final fallback: any published devotional in this stream (never another
+      // stream's — that would leak content the ministry/user didn't choose).
       if (!data || data.length === 0) {
-        const res = await supabase
+        let fb = supabase
           .from('devotionals')
           .select('*')
           .eq('is_published', true)
           .order('created_at', { ascending: false })
           .limit(1);
+        if (effectiveStreamId) fb = fb.eq('stream_id', effectiveStreamId);
+        const res = await fb;
         data = res.data;
       }
 
@@ -316,14 +329,14 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
     } finally {
       setLoading(false);
     }
-  }, [user, source]);
+  }, [user, source, streamId]);
 
   useEffect(() => {
     loadTodayDevotional();
     if ((source === 'ministry' || source === 'both') && ministryId) {
       loadMinistryDevotional();
     }
-  }, [user, source, ministryId, loadTodayDevotional, loadMinistryDevotional]);
+  }, [user, source, ministryId, streamId, loadTodayDevotional, loadMinistryDevotional]);
 
   const handleStartDevotional = async () => {
     if (!todayDevotional) return;

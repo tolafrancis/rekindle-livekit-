@@ -19,6 +19,7 @@ import { EmailNotificationManager } from './EmailNotificationManager';
 import { AdminNotificationComposer } from './AdminNotificationComposer';
 import { DonationsManagement } from './DonationsManagement';
 import { AdminDevotionalLibraryManager } from './AdminDevotionalLibraryManager';
+import { AdminDevotionalStreamsManager } from './AdminDevotionalStreamsManager';
 import { MinistryGroupsManager } from './MinistryGroupsManager';
 import { AdminLeaderboard } from './AdminLeaderboard';
 import { AdminPrayerLibrary } from './AdminPrayerLibrary';
@@ -49,7 +50,7 @@ import {
   Heart, MessageSquare, Bell, Bookmark, Mic, Video, DollarSign,
   Send, Mail, Phone, Star, Book, UserCheck, Settings, Radio,
   BarChart3, TrendingUp, Crown, Lock, AlertTriangle, Loader2, Church,
-  Menu, X, ChevronDown, Building2, Download, Languages, Globe
+  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers
 } from 'lucide-react';
 import { fetchScripture, BIBLE_VERSIONS } from '@/lib/bibleApi';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -305,6 +306,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
   const [userPageSize] = useState(100);
   const [usersLoading, setUsersLoading] = useState(false);
   const [devotionals, setDevotionals] = useState<any[]>([]);
+  // Daily-devotional streams (0149) — the named feed each devotional is assigned to.
+  const [devotionalStreams, setDevotionalStreams] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
   const [music, setMusic] = useState<any[]>([]);
   const [affirmations, setAffirmations] = useState<any[]>([]);
   const [prayerWallPosts, setPrayerWallPosts] = useState<any[]>([]);
@@ -330,6 +333,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     { value: 'subscriptions', label: t('adminDashboard', 'tabSubscriptions', 'Subscriptions'), icon: Crown },
     { value: 'devotionals', label: t('adminDashboard', 'devotionals', 'Devotionals'), icon: BookOpen },
     { value: 'devotional-library', label: t('adminDashboard', 'tabDevotionalLibrary', 'Devotional Library'), icon: Book },
+    { value: 'devotional-streams', label: t('adminDashboard', 'tabDevotionalStreams', 'Devotional Streams'), icon: Layers },
     { value: 'bulk-tts', label: t('adminDashboard', 'tabBulkTts', 'Bulk TTS'), icon: Globe }, // NEW TAB
     { value: 'prayer-library', label: t('adminDashboard', 'tabPrayerLibrary', 'Prayer Library'), icon: Heart },
     { value: 'prayer-wall', label: t('adminDashboard', 'tabPrayerWall', 'Prayer Wall'), icon: MessageSquare },
@@ -417,6 +421,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
       loadUsers(0);
 
       if (devotionalsData.data) setDevotionals(devotionalsData.data);
+      // Streams for the devotional form's stream selector (best-effort — the table
+      // may not exist until migration 0149 runs).
+      supabase.from('devotional_streams').select('id, name, is_default')
+        .order('is_default', { ascending: false }).order('sort_order', { ascending: true })
+        .then(({ data }) => { if (data) setDevotionalStreams(data as any); });
       if (musicData.data) setMusic(musicData.data);
       if (affirmationsData.data) setAffirmations(affirmationsData.data);
       if (prayerWallData.data) setPrayerWallPosts(prayerWallData.data);
@@ -568,6 +577,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           if (formData.image_url)         devotionalPayload.image_url         = formData.image_url;
           if (formData.audio_url)         devotionalPayload.audio_url         = formData.audio_url;
           if (formData.category)          devotionalPayload.category          = formData.category;
+          if (formData.stream_id)         devotionalPayload.stream_id         = formData.stream_id;
           // Strip undefined/null keys entirely
           Object.keys(devotionalPayload).forEach(k => {
             if (devotionalPayload[k] === undefined) delete devotionalPayload[k];
@@ -752,6 +762,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                     <SelectItem value="family">{t('adminDashboard', 'catFamily', 'Family')}</SelectItem>
                     <SelectItem value="evangelism">{t('adminDashboard', 'catEvangelism', 'Evangelism')}</SelectItem>
                     <SelectItem value="general">{t('adminDashboard', 'catGeneral', 'General')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('adminDashboard', 'devotionalStream', 'Stream')}</Label>
+                <Select
+                  value={formData.stream_id || ''}
+                  onValueChange={(v) => setFormData({ ...formData, stream_id: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder={t('adminDashboard', 'selectStream', 'Select stream')} /></SelectTrigger>
+                  <SelectContent>
+                    {devotionalStreams.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1662,6 +1686,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
           {activeTab === 'devotional-library' && (
             <AdminDevotionalLibraryManager />
+          )}
+
+          {activeTab === 'devotional-streams' && (
+            <AdminDevotionalStreamsManager />
           )}
 
           {isSuperAdmin && activeTab === 'platform-admin' && (

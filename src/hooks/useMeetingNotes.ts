@@ -32,9 +32,30 @@ export interface UseMeetingNotes {
   interimText: string;
   /** True if this browser can transcribe (Web Speech API present). */
   isSupported: boolean;
+  /** Last fatal recognition error, if any (mic blocked, speech service refused…). */
+  error: string | null;
   startNotes: () => void;
   stopNotes: () => void;
   reset: () => void;
+}
+
+/** Errors that will never resolve by restarting — restarting just loops silently. */
+const FATAL_SPEECH_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported']);
+
+function describeSpeechError(code: string): string {
+  switch (code) {
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'Microphone access for speech recognition was blocked. Allow the mic for this site, then start notes again.';
+    case 'audio-capture':
+      return 'No microphone was available to transcribe.';
+    case 'language-not-supported':
+      return 'Speech recognition does not support this language.';
+    case 'network':
+      return 'Speech recognition lost its network connection.';
+    default:
+      return `Speech recognition error: ${code}`;
+  }
 }
 
 // Minimal shapes for the (still non-standard) Web Speech API.
@@ -75,6 +96,7 @@ export function useMeetingNotes(
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [interimText, setInterimText] = useState('');
   const [isSupported, setIsSupported] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const recognitionRef = useRef<Recognition | null>(null);
@@ -142,7 +164,9 @@ export function useMeetingNotes(
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = ''; // auto-detect
+    // NOT '' — the spec makes an empty lang mean "use the document language", and
+    // Chrome can refuse start() outright. There is no auto-detect; pick the user's.
+    recognition.lang = navigator.language || 'en-US';
 
     recognition.onresult = (event: SpeechResultEvent) => {
       let interim = '';
@@ -168,15 +192,35 @@ export function useMeetingNotes(
       setInterimText(interim.trim());
     };
 
+    // A fatal error must stop the restart loop, or onend/start ping-pongs forever
+    // while capturing nothing — a silent failure with no way to diagnose it.
+    let fatal = false;
+
     // The API stops on silence; restart while notes are still running.
     recognition.onend = () => {
-      if (activeRef.current) {
+      if (activeRef.current && !fatal) {
         try { recognition.start(); } catch { /* already starting */ }
       }
     };
-    recognition.onerror = () => { /* transient (no-speech / network) — onend restarts */ };
 
-    try { recognition.start(); } catch { /* noop */ }
+    recognition.onerror = (e: Event) => {
+      const code = (e as Event & { error?: string }).error ?? 'unknown';
+      // no-speech fires constantly during silence; it is not a failure.
+      if (code === 'no-speech' || code === 'aborted') return;
+
+      console.warn('[useMeetingNotes] recognition error:', code);
+      if (FATAL_SPEECH_ERRORS.has(code)) {
+        fatal = true;
+        setError(describeSpeechError(code));
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (err) {
+      console.warn('[useMeetingNotes] recognition.start() threw:', err);
+      setError('Could not start speech recognition in this browser.');
+    }
     recognitionRef.current = recognition;
 
     return () => {
@@ -190,6 +234,7 @@ export function useMeetingNotes(
   const startNotes = useCallback(() => {
     const startedAt = Date.now();
     startedAtRef.current = startedAt;
+    setError(null);
     setLines([]);
     setStartedBy(speakerRef.current);
     setActive(true);
@@ -218,5 +263,5 @@ export function useMeetingNotes(
     startedAtRef.current = null;
   }, []);
 
-  return { active, startedBy, lines, interimText, isSupported, startNotes, stopNotes, reset };
+  return { active, startedBy, lines, interimText, isSupported, error, startNotes, stopNotes, reset };
 }
