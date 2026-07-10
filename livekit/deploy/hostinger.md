@@ -49,25 +49,37 @@ docker --version     # confirm it installed
 
 ## 5. Get the LiveKit stack onto the VPS
 ```bash
-git clone <your-repo-url> rekindle
+git clone https://github.com/tolafrancis/rekindle-livekit- rekindle
 cd rekindle/livekit
 cp .env.example .env
 ```
 
-## 6. Edit three files
+## 6. Create the secret — on the VPS, never in git
 
-**a) `config/livekit.yaml`** — turn on public-IP mode (required on a cloud box):
-```yaml
-rtc:
-  use_external_ip: true     # was false
+`.env` is gitignored and ships **empty of secrets**. Generate yours here, on the box:
+
+```bash
+cd ~/rekindle/livekit
+openssl rand -hex 32          # copy this — you need it once more, in step 9
+nano .env
 ```
-The `keys:` secret and `webhook.urls` are already set. (The webhook URL should be your
-Supabase `livekit-webhook` function URL — it already points there.)
+Fill in:
+```
+LIVEKIT_API_SECRET=<the value you just generated>
+S3_ACCESS_KEY=minioadmin
+S3_SECRET=<a second: openssl rand -hex 16>
+```
 
-**b) `config/Caddyfile`** — replace `livekit.example.com` with **`livekit.<yourdomain>`**.
+> **Never put a secret in a tracked file.** `config/livekit.yaml` has no `keys:` block
+> on purpose — compose injects it from `.env` as `LIVEKIT_KEYS`, and Egress/Ingress get
+> their whole config the same way (`*_CONFIG_BODY`). A secret that reaches a commit is
+> public the moment you push: rotate it, don't try to scrub history.
 
-**c) `.env`** — the `LIVEKIT_*` values are already set. For recording, fill the `S3_*`
-lines with your R2 bucket creds (skip for now if you only want live calls).
+Then edit **`config/Caddyfile`** — replace `livekit.example.com` with **`livekit.<yourdomain>`**.
+
+`config/livekit.yaml` already has `use_external_ip: true` (required on a cloud box) and
+the Supabase `livekit-webhook` URL. Its `webhook.api_key: devkey` is a key **name**, not
+a secret — it only has to match `LIVEKIT_API_KEY` in `.env`.
 
 ## 7. Start it
 ```bash
@@ -92,14 +104,14 @@ Now use `wss://livekit.<yourdomain>` everywhere (this is your self-hosted URL):
   VITE_VIDEO_BACKEND=livekit
   ```
   then `npm run build` and redeploy the web app to Hostinger.
-- **Supabase → Edge Functions → Secrets** (must match the VPS `keys:` exactly):
+- **Supabase → Edge Functions → Secrets** — `LIVEKIT_API_SECRET` must be **byte-for-byte**
+  the value in the VPS `.env`, or every token the edge functions mint is rejected 401:
   ```
   LIVEKIT_URL        = wss://livekit.<yourdomain>
   LIVEKIT_API_KEY    = devkey
-  LIVEKIT_API_SECRET = e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c
+  LIVEKIT_API_SECRET = <the openssl value from step 6>
   ```
-  *(rotate that secret for real prod — see livekit/README.md — and update it in both
-  places at once.)*
+  These two places — VPS `.env` and Supabase secrets — are the **only** two that hold it.
 - Deploy the 5 edge functions + run migrations `0145`–`0147` (§18 runbook).
 
 ## 10. Test end to end

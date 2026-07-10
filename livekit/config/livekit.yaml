@@ -16,9 +16,14 @@ rtc:
 redis:
   address: redis:6379
 
-# API key -> secret. Secret MUST be >= 32 chars. ONE pair, shared by all services.
-keys:
-  devkey: e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c
+# NO `keys:` BLOCK HERE — ON PURPOSE. This file is tracked in git, so a secret in
+# it is a published secret. The key/secret pair is injected at runtime by
+# docker-compose from the gitignored .env, as:
+#
+#   LIVEKIT_KEYS: "<LIVEKIT_API_KEY>: <LIVEKIT_API_SECRET>"
+#
+# The env var fully replaces this block. Secret MUST be >= 32 chars.
+# ONE pair, shared by the SFU, Egress and Ingress.
 
 # Embedded TURN — enough to prove NAT traversal in the spike.
 # For prod, prefer dedicated coturn (docker-compose --profile coturn) + real TLS,
@@ -37,10 +42,11 @@ logging:
 # Webhooks — the SFU POSTs signed events (egress_ended, etc.) here. Required for
 # recording completion to flip livekit_recordings rows to 'completed' + duration.
 #
-# ⚠️ `api_key` MUST be one of the names in `keys:` above (here: `devkey`). LiveKit
-# signs the webhook with keys[api_key]; if the name isn't found the secret lookup
-# returns empty and the server dies with "api_key is required to use webhooks".
-# It is the key NAME, not the secret, and not a LiveKit Cloud key.
+# ⚠️ `api_key` is the key NAME — not the secret, and NOT a LiveKit Cloud key. It
+# must equal LIVEKIT_API_KEY in .env, because LiveKit signs the webhook with
+# keys[api_key]; if the name isn't found the secret lookup returns empty and the
+# server dies at boot with "api_key is required to use webhooks".
+# Safe to keep in git: a key name grants nothing on its own.
 webhook:
   api_key: devkey
   urls:

@@ -418,7 +418,7 @@ run the exit checks after.
 
 ### Step 1 — Infra (SFU / Egress / Ingress / TURN) — *self-host only; skip on Cloud*
 - `cd livekit && cp .env.example .env`, edit secrets, `docker compose up -d` ([livekit/README.md](../livekit/README.md)).
-- **Replace** the dev secret `devsecret_please_change_me_…` everywhere (`config/*.yaml`, `.env`) with a real ≥32-char secret.
+- **Generate** the ≥32-char secret with `openssl rand -hex 32` straight into `livekit/.env` (gitignored) **on the host**. It must never reach a tracked file — `config/livekit.yaml` deliberately has no `keys:` block, and Egress/Ingress take their whole config via `*_CONFIG_BODY` env vars, for exactly this reason.
 - **Prod:** terminate TLS → `wss://livekit.yourdomain.com`; set `use_external_ip: true` in [livekit.yaml](../livekit/config/livekit.yaml); open the media UDP range; validate TURN/NAT (**do this first — #1 risk**).
 - Egress storage: replace dev MinIO with real S3/GCS/Azure/R2.
 - **CDN playback origin (`stream.<domain>`):** front the Egress bucket with a CDN at a

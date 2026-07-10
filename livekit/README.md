@@ -12,16 +12,20 @@ throwaway browser spike to prove them end-to-end.
 ```
 livekit/
 ├── docker-compose.yml      # SFU + Egress + Ingress + Redis + MinIO (+ optional coturn)
-├── .env.example            # infra secrets (copy → .env)
+├── .env.example            # infra secrets (copy → .env, which is gitignored)
 ├── config/
-│   ├── livekit.yaml        # SFU + embedded TURN
-│   ├── egress.yaml         # recording → MinIO/S3
-│   ├── ingress.yaml        # RTMP/WHIP in
+│   ├── livekit.yaml        # SFU + embedded TURN (no keys: — injected from .env)
+│   ├── Caddyfile           # prod TLS termination for wss://
 │   └── coturn.conf         # optional prod-grade TURN
 └── spike/
     ├── index.html          # self-contained browser spike (livekit-client via CDN)
-    └── mint-token.mjs       # dependency-free dev JWT minter (node:crypto)
+    └── mint-token.mjs      # dependency-free dev JWT minter (node:crypto)
 ```
+
+Egress and Ingress have **no yaml on disk** — their whole config, including
+`api_secret`, is passed as `EGRESS_CONFIG_BODY` / `INGRESS_CONFIG_BODY` from
+`.env` at container start. That's the point: **no credential is ever in a
+tracked file.**
 
 Nothing here imports from the app or touches `package.json` — it's disposable.
 
@@ -31,7 +35,10 @@ Nothing here imports from the app or touches `package.json` — it's disposable.
 
 ```bash
 cd livekit
-cp .env.example .env          # edit if you want; defaults work locally
+cp .env.example .env
+# .env ships EMPTY of secrets on purpose — fill them before anything starts:
+printf 'LIVEKIT_API_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+printf 'S3_ACCESS_KEY=%s\nS3_SECRET=%s\n' minioadmin "$(openssl rand -hex 16)" >> .env
 docker compose up -d
 docker compose ps             # livekit, egress, ingress, redis, minio all "Up"
 docker compose logs -f livekit
@@ -73,9 +80,7 @@ These use the LiveKit CLI (`lk`). Install:
 Windows release binary). Point it at the dev stack:
 
 ```bash
-export LIVEKIT_URL=ws://localhost:7880
-export LIVEKIT_API_KEY=devkey
-export LIVEKIT_API_SECRET=e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c
+export $(grep -v '^#' livekit/.env | grep -v '^$' | xargs)   # LIVEKIT_* + S3_*
 ```
 
 **Egress → storage** (record the room while the two tabs are joined):
@@ -116,12 +121,15 @@ tabs. Clean up: `lk ingress list` → `lk ingress delete <id>`.
   fill `external-ip`/certs in `coturn.conf`).
 - **Networking:** on Linux prefer `network_mode: host` for `livekit` (delete the
   `ports:` block) so media ports and IP detection are reliable.
-- **Secrets:** the dev secret is committed here for local use — **rotate it for prod**
-  (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) and set the
-  new value identically in livekit.yaml, egress.yaml, ingress.yaml, coturn.conf, .env, and
-  the Supabase `LIVEKIT_API_SECRET` secret. Inject via env in prod; don't commit real secrets.
-- **Storage:** delete the `minio`/`minio-setup` services; point `egress.yaml` `s3`
-  (or `gcp`/`azure`) at real object storage.
+- **Secrets:** they live in `livekit/.env` (gitignored) and **nowhere else**. There are
+  exactly two places the same secret must appear: `livekit/.env` on the VPS, and the
+  Supabase function secret `LIVEKIT_API_SECRET`. Byte-for-byte identical, or every
+  minted token is rejected with a 401. Rotate with `openssl rand -hex 32`, update both,
+  `docker compose up -d --force-recreate`.
+  > If a secret ever reaches a commit, treat it as **published** — GitHub is scraped
+  > continuously. Rotate it; don't bother rewriting history.
+- **Storage:** delete the `minio`/`minio-setup` services and point the `S3_*` vars in
+  `.env` at real object storage (R2/S3).
 
 The same `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` become **Supabase function secrets**
 in Phase 1, and `VITE_LIVEKIT_URL` (the `wss://` URL) becomes the client env var.

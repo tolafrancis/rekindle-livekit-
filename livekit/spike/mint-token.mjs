@@ -17,14 +17,19 @@
 //   --recorder       mint a hidden egress-style token (subscribe only, hidden)
 //   --url        LiveKit ws url to embed in the printed spike link
 //
-// Key/secret come from env (fall back to the dev defaults in config/*.yaml):
-//   LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+// Key/secret come from env — there is deliberately no fallback, so a real secret
+// never has to live in this file:
+//   export $(grep -v '^#' livekit/.env | xargs)   # or set them by hand
 
 import crypto from 'node:crypto';
 
-const API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
-const API_SECRET =
-  process.env.LIVEKIT_API_SECRET || 'e6381ce27b5bb267a688339cbfd73ea4710a0c95bdb5498e52d93cf1ec21ab6c';
+const API_KEY = process.env.LIVEKIT_API_KEY;
+const API_SECRET = process.env.LIVEKIT_API_SECRET;
+
+if (!API_KEY || !API_SECRET) {
+  console.error('Set LIVEKIT_API_KEY and LIVEKIT_API_SECRET (see livekit/.env).');
+  process.exit(1);
+}
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);

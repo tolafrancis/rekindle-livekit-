@@ -1,14 +1,14 @@
-# Phase 0 — Self-hosted LiveKit stack (SFU + Egress + Ingress + TURN).
+# Self-hosted LiveKit stack (SFU + Egress + Ingress + TURN).
 #
-# This is a DEV-oriented compose that runs all four services + Redis + a MinIO
-# S3 target so the Phase 0 spike (recording to storage, OBS ingest) works with
-# zero cloud accounts. For prod, see livekit/README.md ("Going to production").
+#   cp .env.example .env      # then fill in secrets/domains — .env is gitignored
+#   docker compose --profile tls up -d
 #
-#   cp .env.example .env      # then edit secrets/domains
-#   docker compose up -d
+# NO SECRETS IN THIS FILE, OR IN config/*.yaml. Every credential is interpolated
+# from .env at `docker compose up` time. Egress and Ingress take their whole
+# config through *_CONFIG_BODY rather than a mounted yaml, precisely so their
+# api_secret never has to exist on disk in a tracked file.
 #
 # All services share ONE api key/secret pair (LIVEKIT_API_KEY / LIVEKIT_API_SECRET).
-# Change them before exposing anything to a network.
 
 services:
   redis:
@@ -35,10 +35,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    # Host networking is the reliable path for WebRTC (media ports + external
-    # IP detection). On Docker Desktop (mac/Windows) host mode is limited — the
-    # published port ranges below are the fallback. On a Linux prod box, prefer:
-    #   network_mode: host   (and delete the "ports:" block)
+    environment:
+      # Overrides `keys:` in livekit.yaml, which is why that file has none.
+      # Format is "<name>: <secret>". The name must equal webhook.api_key.
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
     # Only what MUST be internet-reachable is published. Caddy proxies wss:// on 443
     # to livekit:7880 over the internal network, so 7880 stays on loopback.
     # (Reminder: published ports bypass ufw — publish nothing you don't need.)
@@ -58,15 +58,27 @@ services:
       redis:
         condition: service_healthy
     environment:
-      EGRESS_CONFIG_FILE: /etc/egress.yaml
+      EGRESS_CONFIG_BODY: |
+        redis:
+          address: redis:6379
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://livekit:7880
+        s3:
+          access_key: ${S3_ACCESS_KEY}
+          secret: ${S3_SECRET}
+          bucket: ${S3_BUCKET}
+          region: ${S3_REGION}
+          endpoint: ${S3_ENDPOINT}
+          force_path_style: ${S3_FORCE_PATH_STYLE}
+        logging:
+          level: info
     # Headless Chrome for room-composite egress needs these.
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
     shm_size: "1gb"
-    volumes:
-      - ./config/egress.yaml:/etc/egress.yaml:ro
 
   # ---- Ingress (RTMP / WHIP in) --------------------------------------------
   ingress:
@@ -76,27 +88,34 @@ services:
       redis:
         condition: service_healthy
     environment:
-      INGRESS_CONFIG_FILE: /etc/ingress.yaml
+      INGRESS_CONFIG_BODY: |
+        redis:
+          address: redis:6379
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://livekit:7880
+        rtmp_port: 1935
+        whip_port: 8080
+        http_relay_port: 9090
+        logging:
+          level: info
     ports:
       - "1935:1935"   # RTMP (point OBS here)
       - "8080:8080"   # WHIP (WebRTC ingest)
-      - "9090:9090"   # HTTP relay (internal)
-    volumes:
-      - ./config/ingress.yaml:/etc/ingress.yaml:ro
+      # 9090 is the internal HTTP relay — never publish it.
 
   # ---- Dev-only S3 target for Egress output --------------------------------
-  # In prod, delete this and point egress.yaml at real S3/GCS/Azure.
+  # In prod, delete this and point S3_ENDPOINT at real S3/R2/GCS.
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET}
     # Bound to LOOPBACK only — default creds on a public port is a free bucket for
     # anyone scanning. Reach the console via an SSH tunnel:
     #   ssh -L 9001:127.0.0.1:9001 root@<vps>   then open http://localhost:9001
-    # In prod, delete this service entirely and use real S3/R2.
     ports:
       - "127.0.0.1:9000:9000"   # S3 API
       - "127.0.0.1:9001:9001"   # web console
@@ -108,18 +127,24 @@ services:
     image: minio/mc:latest
     depends_on:
       - minio
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET: ${S3_SECRET}
+      S3_BUCKET: ${S3_BUCKET}
     entrypoint: >
       /bin/sh -c "
-      until (mc alias set local http://minio:9000 minioadmin minioadmin) do echo 'waiting for minio'; sleep 2; done;
-      mc mb -p local/livekit-egress;
-      mc anonymous set download local/livekit-egress;
+      until (mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET) do echo 'waiting for minio'; sleep 2; done;
+      mc mb -p local/$$S3_BUCKET;
+      mc anonymous set download local/$$S3_BUCKET;
       echo 'minio ready';
       "
 
   # ---- coturn (OPTIONAL, prod-grade TURN) ----------------------------------
-  # LiveKit's embedded TURN (config/livekit.yaml) is enough for the Phase 0
-  # spike. For production NAT traversal, run a dedicated coturn instead and set
+  # LiveKit's embedded TURN (config/livekit.yaml) is enough to start. For heavier
+  # production NAT traversal, run a dedicated coturn instead and set
   # turn.enabled=false in livekit.yaml. Enable with:  --profile coturn
+  # NOTE: coturn.conf has NO secret in it — fill static-auth-secret on the host
+  # before enabling this profile (see the comment in that file).
   coturn:
     image: coturn/coturn:latest
     profiles: ["coturn"]
@@ -133,7 +158,6 @@ services:
   # Encrypt cert for livekit.<domain> and reverse-proxies HTTPS/WSS → the SFU's
   # plain ws on :7880. Enable with:  docker compose --profile tls up -d
   # Needs: DNS livekit.<domain> → this VPS, and ports 80+443 open.
-  # Edit config/Caddyfile with your real domain first.
   caddy:
     image: caddy:2-alpine
     profiles: ["tls"]
