@@ -14,8 +14,13 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --save "" --appendonly no
-    ports:
-      - "6379:6379"
+    # ⚠️ NEVER publish this port. Docker's published ports BYPASS ufw (it writes its
+    # own iptables rules), so "ports: 6379:6379" exposes an unauthenticated Redis to
+    # the whole internet — which gets it hijacked with REPLICAOF, and is routinely
+    # escalated to RCE. livekit/egress/ingress reach it over the internal docker
+    # network by service name; nothing needs it from the host.
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,11 +39,14 @@ services:
     # IP detection). On Docker Desktop (mac/Windows) host mode is limited — the
     # published port ranges below are the fallback. On a Linux prod box, prefer:
     #   network_mode: host   (and delete the "ports:" block)
+    # Only what MUST be internet-reachable is published. Caddy proxies wss:// on 443
+    # to livekit:7880 over the internal network, so 7880 stays on loopback.
+    # (Reminder: published ports bypass ufw — publish nothing you don't need.)
     ports:
-      - "7880:7880"       # HTTP / WebSocket signaling
-      - "7881:7881"       # RTC over TCP (TURN/TCP fallback)
-      - "3478:3478/udp"   # embedded TURN (UDP)
-      - "50000-50100:50000-50100/udp"  # RTC media (narrow range for dev)
+      - "127.0.0.1:7880:7880"  # HTTP/WS signaling — fronted by Caddy on 443
+      - "7881:7881"            # RTC over TCP (fallback) — must be public
+      - "3478:3478/udp"        # embedded TURN — must be public
+      - "50000-50100:50000-50100/udp"  # RTC media — must be public
     volumes:
       - ./config/livekit.yaml:/etc/livekit.yaml:ro
 
@@ -85,9 +93,13 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+    # Bound to LOOPBACK only — default creds on a public port is a free bucket for
+    # anyone scanning. Reach the console via an SSH tunnel:
+    #   ssh -L 9001:127.0.0.1:9001 root@<vps>   then open http://localhost:9001
+    # In prod, delete this service entirely and use real S3/R2.
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # web console (http://localhost:9001)
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # web console
     volumes:
       - minio-data:/data
 
