@@ -1,0 +1,21 @@
+{
+  "name": "@rekindle/ministry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./components/*": "./src/components/*.tsx",
+    "./giftAid/*": "./src/giftAid/*.ts"
+  },
+  "dependencies": {
+    "@rekindle/auth": "*",
+    "@rekindle/features": "*",
+    "@rekindle/live": "*",
+    "@rekindle/supabase": "*",
+    "@rekindle/types": "*",
+    "@rekindle/ui": "*"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  }
+}

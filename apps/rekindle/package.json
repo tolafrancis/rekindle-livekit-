@@ -15,6 +15,7 @@
     "@rekindle/auth": "*",
     "@rekindle/features": "*",
     "@rekindle/live": "*",
+    "@rekindle/ministry": "*",
     "@rekindle/supabase": "*",
     "@rekindle/types": "*",
     "@rekindle/ui": "*",
