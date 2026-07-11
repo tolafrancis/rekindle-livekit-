@@ -140,6 +140,18 @@ Fix (in `send-push-notification-function.ts` — the deployed-fn source mirror):
   remain per-user (`auth.uid() = user_id`, personal layer) — the tenant boundary is the
   audience resolver, now closed.
 
+## Global-content write vandalism — 0153 ✅ APPLIED + VERIFIED (2026-07-12)
+Global content tables carried redundant `USING(true)` / `auth.role()='authenticated'`
+write policies alongside proper admin ones, so any authenticated user could
+insert/update/delete global content (affirmations, devotionals, books, prayer
+points/topics/library, prayer_series_days). **0153_rls_global_content_writes.sql**
+drops all the open writes (reads untouched); writes now require `is_admin` /
+`is_content_admin`. `prayer_series_days`' only policy was an authenticated-any ALL —
+split into authenticated read + admin write. Verified: no `USING(true)` writes remain;
+a non-admin still READS all content (affirmations 272, devotionals 52, books 33, …) but
+`is_content_admin(outsider)=false` so cannot write. (Content authoring is admin-only in
+the app, so no legitimate write path is affected.)
+
 ## Still open in Phase 4 (beyond this migration)
 - Product-boundary marker (when rekindle sheds ministry).
 - Public-safe **discovery view** for `ministry_groups` (column-level PII split).
