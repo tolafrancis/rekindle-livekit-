@@ -20,6 +20,6 @@ export const isLiveKitBackend = (): boolean => true;
 export async function createVideoWrapper(
   callbacks?: VideoWrapperCallbacks,
 ): Promise<IVideoRoomWrapper> {
-  const { LiveKitRoomWrapper } = await import('@/lib/LiveKitRoomWrapper');
+  const { LiveKitRoomWrapper } = await import('./LiveKitRoomWrapper');
   return new LiveKitRoomWrapper(callbacks) as unknown as IVideoRoomWrapper;
 }
