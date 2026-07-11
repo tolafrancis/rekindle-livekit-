@@ -9,6 +9,9 @@ export default {
     "./components/**/*.{ts,tsx}",
     "./app/**/*.{ts,tsx}",
     "./src/**/*.{ts,tsx}",
+    // Shared workspace packages (ui/features components) so their Tailwind
+    // classes are not purged now that they live outside ./src.
+    "../../packages/*/src/**/*.{ts,tsx}",
   ],
   prefix: "",
   theme: {
