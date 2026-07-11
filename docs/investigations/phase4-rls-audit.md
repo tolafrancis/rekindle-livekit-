@@ -1,9 +1,17 @@
 # Phase 4 — RLS audit (findings + fix plan)
 
-**Status:** Audit complete (Management API, project `vpnpembyqbbaaiynfvli`, 2026-07-12).
-Fixes drafted as a reviewable migration — **NOT auto-applied**. RLS is the plan's
-non-negotiable gate; changes to a live DB with real ministries must be reviewed and
-applied deliberately (dashboard workflow per `supabase/config.toml`).
+**Status:** ✅ **APPLIED + VERIFIED on the live DB** (project `vpnpembyqbbaaiynfvli`,
+2026-07-12) via the Management API. Post-apply checks all green:
+- 13 previously-open tables now have RLS on; `ministry_groups_select_all` dropped;
+  `ministries` view `security_invoker=on`; `is_group_member/admin` created.
+- Predicate validation (real fixtures): `is_group_member(A, memberOfA)=true`,
+  `(B, memberOfA)=false`; `is_group_admin` false for a plain member, true for a
+  leader/admin → **real members are not locked out; cross-tenant is denied.**
+- Deny path proven on a populated table (`ministry_devotionals_backup`: privileged
+  sees 1 row, member sees 0). Discovery + own-membership reads still work (app intact).
+
+Isolation suite: [phase4-rls-tests.sql](phase4-rls-tests.sql) (fixtures: A=OPEN HEAVENS
+`9a91551a…`, B=Rekindle Digital Mission `d5c5f57e…`, member `65c40622…`).
 
 ## The three boundaries (plan §3)
 1. **Product** — Ministry vs ReKindle accounts. **No marker exists** (`user_profiles`
