@@ -1,5 +1,34 @@
 # Phase 1 — Package Extraction Map
 
+> **EXECUTION STATUS (updated).** Phase 0 shell + all six package **logic cores**
+> extracted on branch `chore/phase0-monorepo-shell`, each its own commit, every step
+> build-green (bundle byte-identical) + dev-server-verified. Consumers were re-wired via
+> the agreed **facade-shim** policy (old `@/…` paths re-export the package), so the ~198
+> supabase / hundreds of ui consumers were left untouched.
+>
+> | Pkg | Status | Notes |
+> |---|---|---|
+> | `@rekindle/types` | ✅ done | 10 files; hoisted `SupportedLanguage` out of i18n |
+> | `@rekindle/supabase` | ✅ done | client only; env-free |
+> | `@rekindle/auth` | ✅ core | 7 logic files; `AuthContext` + 5 UI comps deferred |
+> | `@rekindle/live` | ✅ core | 12 libs+hooks; `useDailyRoom` + all UI comps deferred |
+> | `@rekindle/ui` | ✅ done | 53 shadcn/util files; unblocks the deferred UI comps |
+> | `@rekindle/features` | ✅ core | 33 libs + 10 data; **hooks + contexts + ~54 UI comps deferred** |
+>
+> **Remaining "Phase 1 completion" pass (UI + entangled graph), now unblocked by `ui`:**
+> features hooks (useTranslation, useNotifications, …) + `LanguageContext` + `AuthContext`
+> (+ `usePushNotifications`) as one cohesive move, then the deferred auth/live/features UI
+> components. **Dead/misplaced Deno source left in the app** (not packaged):
+> `lib/functions/*`, `daily-recordings.ts`, `onboarding-tips-function.ts`,
+> `schemaValidator.ts` (0 consumers) — candidates for deletion.
+>
+> **Known tech debt surfaced:** `src/lib/utils.ts` is a grab-bag (`cn` + subscription/
+> ministry helpers + date utils) — moved intact into `ui`, which now depends on `supabase`;
+> splitting `cn` (ui) from the subscription helpers (auth) is a later refactor.
+
+---
+
+
 **Status:** ✅ Complete (planning artifact — no code moved). Covers **all 445 files** under
 `src/`, classified file-by-file into the six shared packages vs. the two apps.
 **Source:** master plan §9 first deliverable + §2 package layout
