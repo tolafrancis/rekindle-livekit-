@@ -75,6 +75,26 @@ leader, and uses those. (Reconciling the two membership tables remains a Phase-3
 - Migration: [../../supabase/migrations/0150_rls_hardening_phase4.sql](../../supabase/migrations/0150_rls_hardening_phase4.sql)
 - Isolation tests: [phase4-rls-tests.sql](phase4-rls-tests.sql)
 
+## Content-source boundary — 0151 ✅ APPLIED + VERIFIED (2026-07-12)
+Audit of content tables found cross-tenant leaks: `ministry_devotionals` had a
+`temp_authenticated_users_all_access` (USING `auth.uid() IS NOT NULL`) exposing ALL
+ministries' devotionals; `ministry_prayer_library` "members can view" was USING(true);
+`declarations`/`devotional_series`/`prayer_series` (ministry_id column) had USING(true)
+reads/writes. **[0151_rls_content_source_boundary.sql](../../supabase/migrations/0151_rls_content_source_boundary.sql)**
+replaces them with global-vs-ministry policies (global rows readable per published flag;
+ministry-owned readable by `is_group_member`, writable by `is_group_admin`; global writes
+by `is_content_admin`). Verified with a synthetic outsider:
+- `is_group_member(A, outsider)=false`; outsider reads **0** of A's ministry_devotionals /
+  ministry_prayer_library (cross-tenant deny), but still reads global content
+  (declarations 149, devotional_series 46). A's owner/creator still sees A's own content.
+- Data note: `ministry_id`-column tables are currently all-global (0 owned), so no
+  ministry content was hidden; `prayer_series` had 5 unpublished drafts previously
+  world-visible via a USING(true) leak — now correctly restricted.
+
+Remaining content follow-ups: global-content WRITE vandalism (affirmations_write,
+prayer_topics public_write = USING(true) → restrict to is_content_admin) and
+`ministry_devotional_settings` open read (low-risk).
+
 ## Still open in Phase 4 (beyond this migration)
 - Product-boundary marker (when rekindle sheds ministry).
 - Public-safe **discovery view** for `ministry_groups` (column-level PII split).
