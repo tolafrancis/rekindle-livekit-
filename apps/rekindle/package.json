@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
+    "@rekindle/auth": "*",
     "@rekindle/supabase": "*",
     "@rekindle/types": "*",
     "@radix-ui/react-accordion": "^1.2.0",
