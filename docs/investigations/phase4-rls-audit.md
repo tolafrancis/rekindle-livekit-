@@ -95,6 +95,30 @@ Remaining content follow-ups: global-content WRITE vandalism (affirmations_write
 prayer_topics public_write = USING(true) → restrict to is_content_admin) and
 `ministry_devotional_settings` open read (low-risk).
 
+## LiveKit tenant-scoping — §3b (partial: code + RLS done; DEPLOY + room-naming pending)
+Audit: recording/stream tables are owner-scoped (not wide-open), but the real gap was
+the **`livekit-token` edge function** — `resolveRole` only decides host-vs-viewer, so any
+authenticated user fell through to `attendee`/`viewer` and got a token for **any
+`roomName`** → could join another church's meeting.
+
+Done:
+- **`livekit-token/index.ts`**: added an `isEntitled` gate on the token path — ministry
+  meetings require membership of the meeting's ministry (`ministry_video_meetings.ministry_id`
+  → `ministry_group_members`/owner/leader); counselling requires the session's client;
+  channels/plain meetings unchanged. **⚠ This edge function must be DEPLOYED** (Deno; not a
+  SQL migration — CLI crashes on this box, so deploy via dashboard/CI).
+- **0152_rls_livekit_recordings_tenant.sql** (applied): tenant-scoped read for MEETING
+  recordings (`meeting_id → ministry_video_meetings` under `is_group_member`) so a
+  ministry's members see their recordings, never another church's. (Table empty today —
+  policy validated by construction on the proven predicate.)
+
+⚠ Residual (robust hardening): entitlement is derived from client-supplied
+`context.{kind,meetingId}`, so a client could spoof `kind` to dodge the ministry check.
+The robust fix binds tenant to the **room name** (`ministry:<ministryId>:<meetingId>`) so
+the server derives the ministry from `roomName` regardless of client claims — spans room
+creation + join sites (client) + the edge fn. Tracked as follow-up. Also: capacity
+(shared VPS, ~4 vCPU per room-composite egress) is an infra item, not RLS.
+
 ## Still open in Phase 4 (beyond this migration)
 - Product-boundary marker (when rekindle sheds ministry).
 - Public-safe **discovery view** for `ministry_groups` (column-level PII split).
