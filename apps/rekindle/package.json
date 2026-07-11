@@ -13,6 +13,7 @@
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
     "@rekindle/auth": "*",
+    "@rekindle/features": "*",
     "@rekindle/live": "*",
     "@rekindle/supabase": "*",
     "@rekindle/types": "*",
