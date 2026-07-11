@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./AuthContext": "./src/AuthContext.tsx",
+    "./LanguageContext": "./src/LanguageContext.tsx",
     "./data/*": "./src/data/*.ts",
     "./*": "./src/*.ts"
   },
