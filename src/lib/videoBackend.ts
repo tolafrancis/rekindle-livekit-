@@ -1,34 +1,25 @@
 /**
- * Video backend selector (Phase 2). Chooses the media engine behind the
- * `UseDailyRoomReturn` seam from the `VITE_VIDEO_BACKEND` build-time flag:
- *   'daily'   (default) → EnhancedDailyVideoWrapper (current, production)
- *   'livekit'          → LiveKitRoomWrapper (lazy-loaded; pulls livekit-client)
+ * Video backend selector. LiveKit is now the only backend — the Daily engine and
+ * the `VITE_VIDEO_BACKEND` flag were removed once the LiveKit migration completed.
  *
- * The LiveKit wrapper is loaded via dynamic import so `livekit-client` lands in its
- * own split chunk and is only fetched when the flag is actually 'livekit'.
+ * `isLiveKitBackend()` is kept (always true) so the many call sites that branch on it
+ * across the app keep compiling; they can be simplified in a later cosmetic pass.
+ *
+ * The LiveKit wrapper is still loaded via dynamic import so `livekit-client` lands in
+ * its own split chunk rather than the main bundle.
  */
-import { EnhancedDailyVideoWrapper } from '@/lib/EnhancedDailyVideoWrapper';
 import type { IVideoRoomWrapper, VideoWrapperCallbacks, VideoBackend } from '@/types/videoRoom';
 
 export function getVideoBackend(): VideoBackend {
-  const v = String(import.meta.env.VITE_VIDEO_BACKEND ?? 'daily').toLowerCase();
-  return v === 'livekit' ? 'livekit' : 'daily';
+  return 'livekit';
 }
 
-export const isLiveKitBackend = (): boolean => getVideoBackend() === 'livekit';
+export const isLiveKitBackend = (): boolean => true;
 
-/** Construct the wrapper for the active backend. Async because the LiveKit engine
- *  is code-split. Both wrappers share the method names the hook calls. */
+/** Construct the LiveKit wrapper. Async because the engine is code-split. */
 export async function createVideoWrapper(
   callbacks?: VideoWrapperCallbacks,
 ): Promise<IVideoRoomWrapper> {
-  if (isLiveKitBackend()) {
-    const { LiveKitRoomWrapper } = await import('@/lib/LiveKitRoomWrapper');
-    return new LiveKitRoomWrapper(callbacks) as unknown as IVideoRoomWrapper;
-  }
-  // Daily wrapper predates the normalized callback types; its participant args are
-  // Daily-shaped and the hook converts them. Shapes are compatible at the call sites.
-  return new EnhancedDailyVideoWrapper(
-    callbacks as unknown as ConstructorParameters<typeof EnhancedDailyVideoWrapper>[0],
-  ) as unknown as IVideoRoomWrapper;
+  const { LiveKitRoomWrapper } = await import('@/lib/LiveKitRoomWrapper');
+  return new LiveKitRoomWrapper(callbacks) as unknown as IVideoRoomWrapper;
 }

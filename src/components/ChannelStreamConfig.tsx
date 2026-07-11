@@ -375,8 +375,8 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
         // is what we need to see in the console to know why streaming won't set up.
         let reason = t('channelStreamConfig', 'noResponseFromService', 'No response from the streaming service.');
         try {
-          const { data: raw, error: rawErr } = await supabase.functions.invoke('manage-stream-input', {
-            body: { action: 'create', channelId: channel.id, record: channel.enable_recording !== false, latency: 'low' },
+          const { data: raw, error: rawErr } = await supabase.functions.invoke('livekit-ingress', {
+            body: { action: 'create', channelId: channel.id, roomName: `channel-${channel.id}` },
           });
           if (rawErr) {
             reason = rawErr.message || reason;

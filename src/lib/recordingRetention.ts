@@ -4,8 +4,10 @@
 //   • Interactive meetings (private, member-facing): 30 days
 //   • Live broadcasts / sermons (public, evergreen):  90 days
 //
-// The same numbers drive the "Available until …" badge in the UI and the
-// supabase/cleanup-recordings edge function, so keep them in sync.
+// These numbers drive the "Available until …" badge in the UI. NOTE: the old
+// Mux `cleanup-recordings` job was removed with Mux — server-side auto-deletion of
+// LiveKit Egress recordings (livekit_recordings + object storage) still needs a
+// LiveKit-native cleanup job wired to these same windows.
 
 export const RECORDING_RETENTION_DAYS = {
   meeting: 30,

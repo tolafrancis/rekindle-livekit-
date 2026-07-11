@@ -162,6 +162,22 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       this.localVideoEnabled = false;
       this.callbacks.onCameraError?.(e);
     }
+    // Report the REAL track state, not the values we just tried to set — an enable
+    // can fail or be immediately auto-muted, and the UI buttons must match the tile.
+    this.syncLocalMediaState();
+  }
+
+  /**
+   * Read the actual local mic/camera state from LiveKit and report it via
+   * onMediaStateChange, keeping the internal flags in sync. This is the single
+   * source of truth for the control buttons; reading our own intent flags let the
+   * buttons drift from the real track (they'd say "on" while the tile showed muted).
+   */
+  private syncLocalMediaState(): void {
+    const lp = this.room?.localParticipant;
+    if (!lp) return;
+    this.localAudioEnabled = lp.isMicrophoneEnabled;
+    this.localVideoEnabled = lp.isCameraEnabled;
     this.callbacks.onMediaStateChange?.(this.localVideoEnabled, this.localAudioEnabled);
   }
 
@@ -195,8 +211,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     if (!lp || !this.joined) return this.localAudioEnabled;
     try {
       await lp.setMicrophoneEnabled(on);
-      this.localAudioEnabled = on;
-      this.callbacks.onMediaStateChange?.(this.localVideoEnabled, on);
+      this.syncLocalMediaState();
     } catch (e) {
       this.callbacks.onError?.(e);
     }
@@ -212,8 +227,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     if (!lp || !this.joined) return this.localVideoEnabled;
     try {
       await lp.setCameraEnabled(on);
-      this.localVideoEnabled = on;
-      this.callbacks.onMediaStateChange?.(on, this.localAudioEnabled);
+      this.syncLocalMediaState();
     } catch (e) {
       this.callbacks.onCameraError?.(e);
     }
@@ -298,16 +312,20 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         this.callbacks.onParticipantLeft?.(this.normalize(p, false)))
       .on(RoomEvent.ParticipantMetadataChanged, (_prev, p: Participant) =>
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
-      .on(RoomEvent.TrackMuted, (_pub, p: Participant) =>
-        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
-      .on(RoomEvent.TrackUnmuted, (_pub, p: Participant) =>
-        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
+      .on(RoomEvent.TrackMuted, (_pub, p: Participant) => {
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
+        // Keep the control buttons in lockstep with the tile when OUR track is
+        // muted (by us, a host, or an auto-mute) — same source of truth for both.
+        if (p.isLocal) this.syncLocalMediaState();
+      })
+      .on(RoomEvent.TrackUnmuted, (_pub, p: Participant) => {
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
+        if (p.isLocal) this.syncLocalMediaState();
+      })
       .on(RoomEvent.TrackSubscribed, (track, _pub, p) => this.callbacks.onTrackStarted?.({ track, participant: p }))
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => this.callbacks.onTrackStopped?.({ track, participant: p }))
-      .on(RoomEvent.LocalTrackPublished, () =>
-        this.callbacks.onMediaStateChange?.(this.localVideoEnabled, this.localAudioEnabled))
-      .on(RoomEvent.LocalTrackUnpublished, () =>
-        this.callbacks.onMediaStateChange?.(this.localVideoEnabled, this.localAudioEnabled))
+      .on(RoomEvent.LocalTrackPublished, () => this.syncLocalMediaState())
+      .on(RoomEvent.LocalTrackUnpublished, () => this.syncLocalMediaState())
       .on(RoomEvent.MediaDevicesError, (e: Error) => this.callbacks.onCameraError?.(e))
       .on(RoomEvent.ConnectionStateChanged, (s: ConnectionState) => {
         if (s === ConnectionState.Disconnected) this.joined = false;

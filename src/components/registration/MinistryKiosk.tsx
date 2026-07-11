@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { sha256Hex, buildJoinUrl } from '@/lib/qrCode';
 import MinistryMemberRegistration from './MinistryMemberRegistration';
-import { Loader2, Building2, UserPlus, UserCheck, ArrowLeft, Lock, CheckCircle2 } from 'lucide-react';
+import { Loader2, Building2, UserPlus, UserCheck, ArrowLeft, Lock, CheckCircle2, Phone, Mail, Delete } from 'lucide-react';
 
 type Screen = 'loading' | 'invalid' | 'idle' | 'choose' | 'returning' | 'pick' | 'welcome' | 'register';
 
@@ -23,6 +23,9 @@ const MinistryKiosk: React.FC = () => {
   const tokenHashRef = useRef<string>('');
 
   const [lookup, setLookup] = useState({ phone: '', email: '' });
+  // Kiosk check-in method: choose phone or email first, then enter it. Phone uses an
+  // on-screen ATM keypad (no OS keyboard) since kiosks are touch-only.
+  const [lookupMethod, setLookupMethod] = useState<'choice' | 'phone' | 'email'>('choice');
   const [matches, setMatches] = useState<Array<{ profile_id: string; display_name: string }>>([]);
   const [searching, setSearching] = useState(false);
   const [welcomeName, setWelcomeName] = useState('');
@@ -84,7 +87,7 @@ const MinistryKiosk: React.FC = () => {
   }, [screen, resetIdle]);
 
   const backToIdle = (delay = 0) => setTimeout(() => {
-    setLookup({ phone: '', email: '' }); setWelcomeName(''); setMatches([]); setScreen('idle');
+    setLookup({ phone: '', email: '' }); setLookupMethod('choice'); setWelcomeName(''); setMatches([]); setScreen('idle');
   }, delay);
 
   // ── returning member lookup + attendance ────────────────────────────────────
@@ -191,7 +194,7 @@ const MinistryKiosk: React.FC = () => {
         <div className="w-full max-w-md">
           {Header}
           <div className="grid gap-4">
-            <button onClick={() => setScreen('returning')} className="flex items-center gap-4 bg-white rounded-2xl p-5 shadow-lg active:scale-[0.99] transition">
+            <button onClick={() => { setLookup({ phone: '', email: '' }); setLookupMethod('choice'); setScreen('returning'); }} className="flex items-center gap-4 bg-white rounded-2xl p-5 shadow-lg active:scale-[0.99] transition">
               <UserCheck className="h-8 w-8 text-green-600" />
               <div className="text-left"><p className="text-lg font-semibold">I’m a returning member</p><p className="text-sm text-gray-500">Quick check-in</p></div>
             </button>
@@ -207,16 +210,73 @@ const MinistryKiosk: React.FC = () => {
       {screen === 'returning' && (
         <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-xl">
           <h2 className="text-xl font-bold mb-1">Welcome back</h2>
-          <p className="text-sm text-gray-500 mb-4">Enter your phone number or email to check in.</p>
-          <div className="space-y-3">
-            <div className="space-y-1.5"><Label>Phone</Label><Input className="h-12 text-lg" inputMode="tel" value={lookup.phone} onChange={(e) => setLookup({ ...lookup, phone: e.target.value })} placeholder="+84…" /></div>
-            <div className="text-center text-xs text-gray-400">or</div>
-            <div className="space-y-1.5"><Label>Email</Label><Input className="h-12 text-lg" type="email" value={lookup.email} onChange={(e) => setLookup({ ...lookup, email: e.target.value })} /></div>
-          </div>
-          <Button className="w-full h-12 text-lg mt-5" disabled={searching || (!lookup.phone && !lookup.email)} onClick={doLookup}>
-            {searching ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Check in'}
-          </Button>
-          <button onClick={() => setScreen('choose')} className="text-gray-400 hover:text-gray-600 text-sm mt-4 flex items-center gap-1 mx-auto"><ArrowLeft className="h-4 w-4" /> Back</button>
+
+          {/* Step 1 — choose how to check in (touch-only kiosk: big buttons) */}
+          {lookupMethod === 'choice' && (
+            <>
+              <p className="text-sm text-gray-500 mb-5">How would you like to check in?</p>
+              <div className="grid gap-4">
+                <button
+                  onClick={() => { setLookup({ phone: '', email: '' }); setLookupMethod('phone'); }}
+                  className="flex items-center gap-4 border-2 border-gray-100 rounded-2xl p-5 active:scale-[0.99] transition hover:border-purple-200"
+                >
+                  <Phone className="h-8 w-8 text-purple-600 shrink-0" />
+                  <div className="text-left"><p className="text-lg font-semibold">Phone number</p><p className="text-sm text-gray-500">Enter it on the keypad</p></div>
+                </button>
+                <button
+                  onClick={() => { setLookup({ phone: '', email: '' }); setLookupMethod('email'); }}
+                  className="flex items-center gap-4 border-2 border-gray-100 rounded-2xl p-5 active:scale-[0.99] transition hover:border-purple-200"
+                >
+                  <Mail className="h-8 w-8 text-blue-600 shrink-0" />
+                  <div className="text-left"><p className="text-lg font-semibold">Email address</p><p className="text-sm text-gray-500">Type your email</p></div>
+                </button>
+              </div>
+              <button onClick={() => setScreen('choose')} className="text-gray-400 hover:text-gray-600 text-sm mt-5 flex items-center gap-1 mx-auto"><ArrowLeft className="h-4 w-4" /> Back</button>
+            </>
+          )}
+
+          {/* Step 2a — phone via an ATM-style on-screen keypad (no OS keyboard) */}
+          {lookupMethod === 'phone' && (
+            <>
+              <p className="text-sm text-gray-500 mb-3">Enter your phone number.</p>
+              <div className="h-14 rounded-xl bg-gray-50 border flex items-center justify-center text-2xl font-semibold tracking-wider mb-4 select-none">
+                {lookup.phone || <span className="text-gray-300">+84…</span>}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', 'del'].map((key) => (
+                  <button
+                    key={key}
+                    onClick={() => setLookup((l) => ({
+                      ...l,
+                      phone: key === 'del' ? l.phone.slice(0, -1) : l.phone + key,
+                    }))}
+                    className="h-16 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition text-2xl font-semibold flex items-center justify-center select-none"
+                  >
+                    {key === 'del' ? <Delete className="h-6 w-6 text-gray-600" /> : key}
+                  </button>
+                ))}
+              </div>
+              <Button className="w-full h-14 text-lg mt-4" disabled={searching || !lookup.phone} onClick={doLookup}>
+                {searching ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Check in'}
+              </Button>
+              <button onClick={() => setLookupMethod('choice')} className="text-gray-400 hover:text-gray-600 text-sm mt-4 flex items-center gap-1 mx-auto"><ArrowLeft className="h-4 w-4" /> Back</button>
+            </>
+          )}
+
+          {/* Step 2b — email (needs letters, so a normal field) */}
+          {lookupMethod === 'email' && (
+            <>
+              <p className="text-sm text-gray-500 mb-3">Enter your email address.</p>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input autoFocus className="h-14 text-lg" type="email" inputMode="email" value={lookup.email} onChange={(e) => setLookup({ ...lookup, email: e.target.value })} placeholder="you@example.com" />
+              </div>
+              <Button className="w-full h-14 text-lg mt-5" disabled={searching || !lookup.email} onClick={doLookup}>
+                {searching ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Check in'}
+              </Button>
+              <button onClick={() => setLookupMethod('choice')} className="text-gray-400 hover:text-gray-600 text-sm mt-4 flex items-center gap-1 mx-auto"><ArrowLeft className="h-4 w-4" /> Back</button>
+            </>
+          )}
         </div>
       )}
 

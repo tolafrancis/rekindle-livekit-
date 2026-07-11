@@ -1,17 +1,11 @@
 import { supabase } from '@/lib/supabase';
 
 // ============================================================
-// Webinar-meeting live streaming, backed by Mux via the `manage-stream-input`
-// edge function (the same function muxStream.ts uses for live channels). The
-// platform mints one Mux live stream per meeting and stores its HLS playback URL
-// on the meeting row — hosts never see or paste any credentials.
-//
-// The deployed `manage-stream-input` ALWAYS mints the Mux stream with
-// `latency_mode: 'low'` (Mux's lowest tier) regardless of the request body, so
-// meeting streams are low-latency by default. The `latency: 'low'` arg below is
-// belt-and-suspenders — a no-op today, correct if the edge fn ever reads it.
-// Residual host-ahead / audience "reconnecting" blips are client-side (see
-// HlsPlayer.tsx) + Daily's RTMP push delay, NOT the Mux latency mode.
+// Webinar-meeting live streaming, backed by self-hosted LiveKit (HLS Egress).
+// (Mux + the `manage-stream-input` edge function were removed once LiveKit was the
+// only backend. On LiveKit a webinar host publishes into the room and an HLS Egress
+// composites it — there is no RTMP ingest to provision — so the former Mux ingest
+// helpers now return null. Exported names are kept because components import them.)
 // ============================================================
 
 export interface StreamProvision {
@@ -20,31 +14,17 @@ export interface StreamProvision {
   uid: string;
 }
 
-async function callStreamFn(
-  action: 'create' | 'ingest' | 'delete' | 'stop',
-  meetingId: string,
-  extra: Record<string, unknown> = {},
-): Promise<StreamProvision | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke('manage-stream-input', {
-      body: { action, meetingId, ...extra },
-    });
-    if (error || !data || (action !== 'delete' && action !== 'stop' && !data.rtmpUrl)) return null;
-    return data as StreamProvision;
-  } catch {
-    return null;
-  }
-}
-
-/** Provision (or reuse) a low-latency Mux live stream for a webinar. Call when the meeting is created. */
-export function createMeetingStream(meetingId: string, record = true): Promise<StreamProvision | null> {
-  return callStreamFn('create', meetingId, { record, latency: 'low' });
+/** LiveKit webinars have no RTMP ingest to mint — the host publishes into the room
+ *  and go-live is startMeetingBroadcast (HLS Egress). Kept as a null no-op so the
+ *  webinar components that import it keep compiling. */
+export function createMeetingStream(_meetingId: string, _record = true): Promise<StreamProvision | null> {
+  return Promise.resolve(null);
 }
 
 // ── LiveKit webinar broadcast (§6A) ─────────────────────────────────────────
-// On LiveKit there is no RTMP push: the host publishes into the room and an HLS
-// Egress composites it. The edge fn writes the playback URL onto the meeting row,
-// which the audience picks up via the existing realtime subscription.
+// The host publishes into the room and an HLS Egress composites it. The edge fn
+// writes the playback URL onto the meeting row, which the audience picks up via
+// the existing realtime subscription.
 
 /** Which meetings table holds this webinar (decides where hls_playback_url is written
  *  and which host_id proves you may start the Egress). */
@@ -84,14 +64,14 @@ export async function stopMeetingBroadcast(
   }).catch(() => {});
 }
 
-/** Fetch fresh ingest credentials for the host going live. */
-export function getMeetingIngest(meetingId: string): Promise<StreamProvision | null> {
-  return callStreamFn('ingest', meetingId);
+/** No RTMP ingest on LiveKit webinars — null no-op (see createMeetingStream). */
+export function getMeetingIngest(_meetingId: string): Promise<StreamProvision | null> {
+  return Promise.resolve(null);
 }
 
-/** Tear down the live stream when the meeting ends. */
-export function deleteMeetingStream(meetingId: string): Promise<StreamProvision | null> {
-  return callStreamFn('delete', meetingId);
+/** No RTMP ingest to tear down on LiveKit — null no-op. */
+export function deleteMeetingStream(_meetingId: string): Promise<StreamProvision | null> {
+  return Promise.resolve(null);
 }
 
 export interface MeetingRecording {
@@ -103,11 +83,12 @@ export interface MeetingRecording {
   hls?: string;
 }
 
-/** List Mux recordings (automatic VOD captures) for a webinar meeting. */
+/** List a webinar's recordings — LiveKit Egress outputs (livekit_recordings),
+ *  keyed by the meeting's room. Returns [] when none. */
 export async function getMeetingRecordings(meetingId: string): Promise<MeetingRecording[]> {
   try {
-    const { data, error } = await supabase.functions.invoke('manage-stream-input', {
-      body: { action: 'recordings', meetingId },
+    const { data, error } = await supabase.functions.invoke('livekit-egress', {
+      body: { action: 'list-recordings', roomName: meetingId },
     });
     if (error || !data?.recordings) return [];
     return data.recordings as MeetingRecording[];
@@ -116,18 +97,13 @@ export async function getMeetingRecordings(meetingId: string): Promise<MeetingRe
   }
 }
 
-/** Pause a webinar (keeps the live stream + playback URL for restart). */
-export function stopMeetingStream(meetingId: string): Promise<StreamProvision | null> {
-  return callStreamFn('stop', meetingId);
+/** No RTMP stream to pause on LiveKit — null no-op. */
+export function stopMeetingStream(_meetingId: string): Promise<StreamProvision | null> {
+  return Promise.resolve(null);
 }
 
-/**
- * Re-provision a meeting's live stream (delete the existing one, then create a
- * fresh low-latency one with the new recording setting). Mux can't toggle
- * recording on an existing live stream, so this mints a new stream key +
- * playback URL. Only safe to call before the meeting goes live.
- */
-export async function reprovisionMeetingStream(meetingId: string, record = true): Promise<StreamProvision | null> {
-  await callStreamFn('delete', meetingId);
-  return callStreamFn('create', meetingId, { record, latency: 'low' });
+/** No RTMP stream to re-provision on LiveKit — null no-op (recording toggle is a
+ *  property of the Egress at start time, not a stream re-mint). */
+export function reprovisionMeetingStream(_meetingId: string, _record = true): Promise<StreamProvision | null> {
+  return Promise.resolve(null);
 }

@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import DailyIframe, { DailyCall, DailyParticipant, DailyEventObjectParticipant, DailyEventObjectParticipantLeft } from '@daily-co/daily-js';
+// Daily removed — LiveKit is the only backend. These structural stand-ins keep the
+// legacy participant-conversion types compiling; those Daily code paths are now
+// unreachable (isLiveKitBackend() is always true). No @daily-co dependency remains.
+type DailyCall = unknown;
+type DailyParticipant = any;
+type DailyEventObjectParticipant = any;
+type DailyEventObjectParticipantLeft = any;
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/use-toast';
@@ -2185,17 +2191,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     // (DataReceived, wired at construction) always calls current state/closures (§3C).
     controlMessageHandlerRef.current = handleAppMessage;
 
-    // Daily delivers advisory app-messages via the raw call object's event system.
-    // LiveKit delivers them via onData → controlMessageHandlerRef above.
-    if (!isLiveKitBackend()) {
-      const callObject = (wrapper as unknown as { getCallObject(): DailyCall | null }).getCallObject();
-      if (callObject) {
-        callObject.on('app-message', handleAppMessage);
-        return () => {
-          callObject.off('app-message', handleAppMessage);
-        };
-      }
-    }
+    // LiveKit delivers advisory control messages via onData → controlMessageHandlerRef
+    // above. (The former Daily app-message path was removed with the Daily backend.)
 
     return () => { controlMessageHandlerRef.current = null; };
   }, [isConnected, isMicOn, isCameraOn, toggleMic, toggleCamera, leaveRoom, participants, getParticipantRole, options.isHost]);
@@ -2393,13 +2390,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     sendChatMessage,
     sessionStartTime: sessionStartTimeRef.current,
     sessionDuration,
-    // Narrow handle: the raw Daily call object still backs Daily-only consumers
-    // (liveStreaming → Phase 6; updateParticipant → Phase 3F). On LiveKit there is
-    // no raw call object — remote control is server-side — so this is null and those
-    // consumers no-op (all are `if (!callObject) return`-guarded).
-    callObject: isLiveKitBackend()
-      ? null
-      : (wrapperRef.current as unknown as { getCallObject(): DailyCall | null } | null)?.getCallObject() || null,
+    // Legacy handle kept for API compatibility: consumers still read `callObject`
+    // behind `if (!callObject) return` guards. LiveKit has no raw call object (remote
+    // control is server-side), so it is always null and those Daily-only paths no-op.
+    callObject: null as DailyCall | null,
     localVideoRef,
     cleanup
   };
