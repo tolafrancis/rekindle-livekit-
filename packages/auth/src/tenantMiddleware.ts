@@ -43,21 +43,29 @@ export async function getTenantContext(userId: string): Promise<TenantContext | 
       };
     }
 
-    // Get user's ministry membership
+    // Get user's ministry membership. NOTE: a member can belong to MANY ministries
+    // (multi-membership), so this must NOT use .single() (which throws on >1 row).
+    // This legacy single-tenant context now returns the FIRST membership; the
+    // authoritative "which ministry am I acting in" lives in CurrentMinistryProvider
+    // (@rekindle/features). Prefer getUserMinistries() for the full list.
     const { data: membership } = await supabase
       .from('ministry_group_members')
-      .select('group_id, role, is_leader')
+      .select('group_id, ministry_id, role, is_leader')
       .eq('user_id', userId)
-      .single();
+      .order('joined_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-    // Also check if user owns any ministry
+    // Also check if user owns/leads any ministry
     const { data: ownedMinistry } = await supabase
       .from('ministry_groups')
       .select('id')
       .or(`owner_id.eq.${userId},leader_id.eq.${userId}`)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
-    const ministryId = membership?.group_id || ownedMinistry?.id || null;
+    const ministryId =
+      membership?.group_id || membership?.ministry_id || ownedMinistry?.id || null;
     const role = membership?.role || (ownedMinistry ? 'admin' : 'user');
 
     return {
@@ -70,6 +78,79 @@ export async function getTenantContext(userId: string): Promise<TenantContext | 
   } catch (error) {
     console.error('[Tenant Middleware] Error getting context:', error);
     return null;
+  }
+}
+
+/**
+ * A ministry the current user belongs to (member, leader, or owner).
+ * Feeds the ministry switcher + CurrentMinistryProvider (multi-membership).
+ */
+export interface MinistrySummary {
+  id: string;
+  name: string;
+  role: string;
+  isLeader: boolean;
+  isOwner: boolean;
+  logoUrl: string | null;
+  themeColor: string | null;
+}
+
+/**
+ * Full list of ministries a user can act in — memberships (ministry_group_members)
+ * merged with ministries they own/lead (ministry_groups.owner_id/leader_id), deduped
+ * by ministry id. `ministry_groups` is the canonical tenant table (see docs §3a).
+ */
+export async function getUserMinistries(userId: string): Promise<MinistrySummary[]> {
+  try {
+    const [{ data: memberships }, { data: owned }] = await Promise.all([
+      supabase
+        .from('ministry_group_members')
+        .select('group_id, ministry_id, role, is_leader')
+        .eq('user_id', userId),
+      supabase
+        .from('ministry_groups')
+        .select('id, name, logo_url, theme_color, owner_id, leader_id')
+        .or(`owner_id.eq.${userId},leader_id.eq.${userId}`),
+    ]);
+
+    const memberIds = Array.from(
+      new Set((memberships || []).map((m) => m.group_id || m.ministry_id).filter(Boolean)),
+    );
+
+    let memberGroups: any[] = [];
+    if (memberIds.length) {
+      const { data } = await supabase
+        .from('ministry_groups')
+        .select('id, name, logo_url, theme_color, owner_id, leader_id')
+        .in('id', memberIds as string[]);
+      memberGroups = data || [];
+    }
+
+    const byId = new Map<string, MinistrySummary>();
+    const put = (g: any, role: string) => {
+      if (!g?.id || byId.has(g.id)) return;
+      byId.set(g.id, {
+        id: g.id,
+        name: g.name,
+        role,
+        isLeader: g.leader_id === userId,
+        isOwner: g.owner_id === userId,
+        logoUrl: g.logo_url ?? null,
+        themeColor: g.theme_color ?? null,
+      });
+    };
+
+    // Owned/led first (highest privilege), then memberships.
+    for (const g of owned || []) put(g, 'admin');
+    for (const g of memberGroups) {
+      const mem = (memberships || []).find((m) => (m.group_id || m.ministry_id) === g.id);
+      put(g, mem?.role || 'member');
+    }
+
+    return Array.from(byId.values());
+  } catch (error) {
+    console.error('[Tenant Middleware] getUserMinistries error:', error);
+    return [];
   }
 }
 
