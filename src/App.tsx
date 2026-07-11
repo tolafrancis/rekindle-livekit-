@@ -82,6 +82,12 @@ const App = () => (
                   <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
                   <Route path="/my-membership/:slug" element={<MemberMinistryProfile />} />
 
+                  {/* In-app tabs as clean single-segment paths (/home, /devotional-library,
+                      …). Ranks below every static route above, so /admin, /landing, etc.
+                      keep their own components; only unmatched single-segment paths land
+                      here and render the app shell, which resolves the tab. */}
+                  <Route path="/:tab" element={<Index />} />
+
                   {/* 404 catch-all */}
                   <Route path="/unsubscribe" element={<UnsubscribePage />} />
                   <Route path="/privacy" element={<PrivacyPolicyPage />} />

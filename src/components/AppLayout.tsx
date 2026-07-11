@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useOnboardingTips } from '@/hooks/useOnboardingTips';
@@ -19,6 +20,7 @@ import { ReferralGenerator } from './ReferralGenerator';
 import { PrayerPointModal } from './PrayerPointModal';
 import { AffirmationCard } from './AffirmationCard';
 import { StreakWidget } from './StreakWidget';
+import { ReminderSetupTip } from './ReminderSetupTip';
 import { OnboardingTips } from './OnboardingTips';
 import { DeclarationCard } from './DeclarationCard';
 import { InstrumentalPlayer } from './InstrumentalPlayer';
@@ -316,6 +318,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   console.log('[AppLayout] Rendering with initialTab:', initialTab);
 
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // Safe auth hook with fallback values
   let user: any = null;
   let profile: UserProfile | null = null;
@@ -344,47 +349,48 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   // useOnboardingTips(language);
 
   // Initialize activeTab from URL hash, initialTab prop, or default to 'home'
+  // Clean-URL tabs (Phase: hash→path). Tabs live at /<tab> (e.g. /home,
+  // /devotional-library). 'admin' is intentionally EXCLUDED — the path /admin is a
+  // separate top-level route (AdminPage), so writing it here would hijack that route;
+  // the admin tab still works, it just doesn't own a URL.
+  const PATHLESS_TABS = React.useMemo(() => new Set(['admin']), []);
+  // The tab encoded by a URL path, if the path is a bare single-segment tab. Content
+  // deep links (/books/:id, /devotional-series/:id …) are multi-segment and return
+  // null here, so they never force a tab or get clobbered by the tab→path sync.
+  const tabFromPath = (pathname: string): string | null => {
+    const segs = pathname.split('/').filter(Boolean);
+    if (segs.length === 1 && TAB_TO_NAV_KEY[segs[0]]) return segs[0];
+    return null;
+  };
+
   const [activeTab, setActiveTab] = useState(() => {
-    const hash = window.location.hash.substring(1);
-    if (hash && TAB_TO_NAV_KEY[hash]) {
-      console.log('[AppLayout] Initializing from URL hash:', hash);
-      return hash;
-    }
-    if (initialTab && TAB_TO_NAV_KEY[initialTab]) {
-      console.log('[AppLayout] Initializing from initialTab prop:', initialTab);
-      return initialTab;
-    }
-    console.log('[AppLayout] Initializing with default: home');
+    const fromPath = tabFromPath(window.location.pathname);
+    if (fromPath) return fromPath;
+    if (initialTab && TAB_TO_NAV_KEY[initialTab]) return initialTab;
     return 'home';
   });
-  
+
   // Update activeTab when initialTab changes (for deep linking)
   useEffect(() => {
     if (initialTab && initialTab !== activeTab && TAB_TO_NAV_KEY[initialTab]) {
-      console.log('[AppLayout] Updating activeTab from', activeTab, 'to', initialTab);
       setActiveTab(initialTab);
     }
   }, [initialTab]);
 
-  // Sync activeTab with URL hash for browser back/forward
+  // URL path → activeTab (browser back/forward, direct navigation).
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.substring(1);
-      if (hash && TAB_TO_NAV_KEY[hash] && hash !== activeTab) {
-        console.log('[AppLayout] Hash changed to:', hash);
-        setActiveTab(hash);
-      }
-    };
-    
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [activeTab]);
+    const fromPath = tabFromPath(location.pathname);
+    if (fromPath && fromPath !== activeTab) setActiveTab(fromPath);
+  }, [location.pathname]);
 
-  // Update URL hash when activeTab changes
+  // activeTab → URL path. Skip PATHLESS_TABS, and never overwrite a content deep-link
+  // path (2+ segments) — only bare tab paths or the root get rewritten.
   useEffect(() => {
-    if (window.location.hash.substring(1) !== activeTab) {
-      console.log('[AppLayout] Updating URL hash to:', activeTab);
-      window.history.replaceState(null, '', `#${activeTab}`);
+    if (PATHLESS_TABS.has(activeTab)) return;
+    const segs = location.pathname.split('/').filter(Boolean);
+    const onDeepLink = segs.length >= 2; // e.g. /books/:id — leave it alone
+    if (!onDeepLink && segs[0] !== activeTab) {
+      navigate('/' + activeTab, { replace: true });
     }
   }, [activeTab]);
   
@@ -1364,6 +1370,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             <ErrorBoundary>
           {activeTab === 'home' && (
             <div className="space-y-6">
+              <ReminderSetupTip
+                onSetup={() => {
+                  setActiveTab('profile');
+                  // Let ProfileSettings mount, then open the Daily Reminders section.
+                  setTimeout(() => window.dispatchEvent(
+                    new CustomEvent('openProfileSection', { detail: { section: 'reminders' } })), 100);
+                }}
+              />
               <StreakWidget />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>

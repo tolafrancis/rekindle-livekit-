@@ -36,11 +36,11 @@ const GRACE_MINUTES = 30;
 type ReminderDef = { id: string; type: string; title: string; body: string; link: string };
 
 const REMINDERS: ReminderDef[] = [
-  { id: 'bible',      type: 'reading_reminder',    title: '📖 Time for Bible Reading', body: "Open today's scripture reading and spend a few minutes in the Word.", link: '/#reading-plan' },
-  { id: 'book',       type: 'book_reminder',       title: '📚 Book Summary of the Day', body: "Today's Christian book summary is ready for you.",                     link: '/#books' },
-  { id: 'prayer',     type: 'prayer_reminder',     title: '🙏 Prayer Challenge',        body: "It's time for your daily prayer challenge. Keep the momentum going!",  link: '/#challenges' },
-  { id: 'devotional', type: 'devotional_reminder', title: '🌅 Daily Devotional',        body: 'Your devotional is waiting. Start your day grounded in faith.',        link: '/#devotional-library' },
-  { id: 'memory',     type: 'memory_reminder',     title: '🧠 Scripture Memory',        body: 'Practice your memory verse and hide the Word in your heart.',          link: '/#scripture' },
+  { id: 'bible',      type: 'reading_reminder',    title: '📖 Time for Bible Reading', body: "Open today's scripture reading and spend a few minutes in the Word.", link: '/reading-plan' },
+  { id: 'book',       type: 'book_reminder',       title: '📚 Book Summary of the Day', body: "Today's Christian book summary is ready for you.",                     link: '/books' },
+  { id: 'prayer',     type: 'prayer_reminder',     title: '🙏 Prayer Challenge',        body: "It's time for your daily prayer challenge. Keep the momentum going!",  link: '/challenges' },
+  { id: 'devotional', type: 'devotional_reminder', title: '🌅 Daily Devotional',        body: 'Your devotional is waiting. Start your day grounded in faith.',        link: '/devotional-library' },
+  { id: 'memory',     type: 'memory_reminder',     title: '🧠 Scripture Memory',        body: 'Practice your memory verse and hide the Word in your heart.',          link: '/scripture' },
 ];
 const REMINDER_BY_ID = new Map(REMINDERS.map((r) => [r.id, r]));
 

@@ -24,12 +24,12 @@ const AUDIENCES = [
 // Optional quick deep links into the app's hash-tab router.
 const LINK_PRESETS = [
   { value: '',                     label: 'None' },
-  { value: '/#home',               label: 'Home' },
-  { value: '/#devotional-library', label: 'Devotionals' },
-  { value: '/#prayer-library',     label: 'Prayer' },
-  { value: '/#challenges',         label: 'Challenges' },
-  { value: '/#live-channels',      label: 'Live Channels' },
-  { value: '/#books',              label: 'Books' },
+  { value: '/home',               label: 'Home' },
+  { value: '/devotional-library', label: 'Devotionals' },
+  { value: '/prayer-library',     label: 'Prayer' },
+  { value: '/challenges',         label: 'Challenges' },
+  { value: '/live-channels',      label: 'Live Channels' },
+  { value: '/books',              label: 'Books' },
 ];
 
 export const AdminNotificationComposer: React.FC = () => {

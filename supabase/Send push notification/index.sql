@@ -52,7 +52,10 @@ serve(async (req) => {
     // [...] = send only to these user IDs
     let baseUserIds: string[] | null = null;
 
-    if (notificationType === 'prayer_challenge_reminder' && userId) {
+    if ((targetAudience === 'specific_user' || notificationType === 'prayer_challenge_reminder') && userId) {
+      // Single-user sends (daily reminders, prayer-challenge reminders). MUST resolve
+      // to [userId] — leaving baseUserIds null would fall through to "send to all",
+      // blasting one person's reminder to every user.
       baseUserIds = [userId];
     } else if (targetAudience && targetAudience !== 'all') {
       switch (targetAudience) {
@@ -248,9 +251,32 @@ serve(async (req) => {
     // No Legacy API, no server key needed
     // ==================================================================
 
+    // Resolve the service-account credentials forgivingly. FCM_PRIVATE_KEY may be:
+    //   • the raw PEM (with real or JSON-escaped \n newlines), or
+    //   • the ENTIRE service-account JSON pasted into this one secret.
+    // Either way, and whether or not copy-paste left surrounding quotes, we recover
+    // client_email + private_key. Bad input → a clear error, not a base64 crash.
+    const stripQuotes = (s: string) => s.trim().replace(/^["']|["']$/g, '');
+    const rawKeySecret = Deno.env.get('FCM_PRIVATE_KEY') ?? '';
+    let SA_CLIENT_EMAIL = stripQuotes(Deno.env.get('FCM_CLIENT_EMAIL') ?? '');
+    let SA_PRIVATE_KEY = '';
+    {
+      const trimmed = rawKeySecret.trim();
+      if (trimmed.startsWith('{')) {
+        // Whole service-account JSON pasted into FCM_PRIVATE_KEY.
+        try {
+          const sa = JSON.parse(trimmed);
+          SA_PRIVATE_KEY = sa.private_key ?? '';
+          if (!SA_CLIENT_EMAIL && sa.client_email) SA_CLIENT_EMAIL = sa.client_email;
+        } catch {
+          SA_PRIVATE_KEY = '';
+        }
+      } else {
+        SA_PRIVATE_KEY = stripQuotes(rawKeySecret);
+      }
+      SA_PRIVATE_KEY = SA_PRIVATE_KEY.replace(/\\n/g, '\n'); // JSON-escaped → real newlines
+    }
     const PROJECT_ID          = Deno.env.get('FCM_PROJECT_ID') ?? 'rekindle-bc';
-    const SA_CLIENT_EMAIL     = Deno.env.get('FCM_CLIENT_EMAIL') ?? '';
-    const SA_PRIVATE_KEY      = (Deno.env.get('FCM_PRIVATE_KEY') ?? '').replace(/\\n/g, '\n');
     const FCM_V1_URL          = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
 
     if (!SA_CLIENT_EMAIL || !SA_PRIVATE_KEY) {
@@ -285,12 +311,26 @@ serve(async (req) => {
       const body    = enc(payload);
       const signing = `${header}.${body}`;
 
-      // Import the RSA private key
+      // Import the RSA private key. Keep ONLY valid base64 chars from the PEM body,
+      // so a stray quote/whitespace/marker can't blow up atob with a cryptic
+      // InvalidCharacterError — and if what remains still isn't a PEM, say so plainly.
       const pemBody = SA_PRIVATE_KEY
-        .replace('-----BEGIN PRIVATE KEY-----', '')
-        .replace('-----END PRIVATE KEY-----', '')
-        .replace(/\s+/g, '');
-      const binaryKey = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+        .replace(/-----BEGIN [^-]+-----/g, '')
+        .replace(/-----END [^-]+-----/g, '')
+        .replace(/[^A-Za-z0-9+/=]/g, '');
+      if (!pemBody || !SA_PRIVATE_KEY.includes('BEGIN')) {
+        throw new Error(
+          'FCM_PRIVATE_KEY is not a valid PEM private key. Paste the private_key value ' +
+          'from the service-account JSON (starts with "-----BEGIN PRIVATE KEY-----"), ' +
+          'or paste the whole JSON — with no surrounding quotes.',
+        );
+      }
+      let binaryKey: Uint8Array;
+      try {
+        binaryKey = Uint8Array.from(atob(pemBody), c => c.charCodeAt(0));
+      } catch {
+        throw new Error('FCM_PRIVATE_KEY base64 body could not be decoded — the key value is malformed.');
+      }
 
       const cryptoKey = await crypto.subtle.importKey(
         'pkcs8', binaryKey.buffer,

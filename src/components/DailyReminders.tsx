@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Switch } from './ui/switch';
 import { Button } from './ui/button';
@@ -30,6 +30,10 @@ export const DailyReminders: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
   const [reminders, setReminders] = useState<Reminder[]>(defaultReminders);
+  // True once the user has changed a toggle/time this session. Guards against the
+  // async load resolving late (or re-running on a token refresh) and CLOBBERING an
+  // unsaved edit — the bug that silently reset "enabled" back to false before Save.
+  const editedRef = useRef(false);
 
   // Localized display labels for each reminder (name/description are data values in defaultReminders)
   const reminderLabels: Record<string, { name: string; description: string }> = {
@@ -40,8 +44,11 @@ export const DailyReminders: React.FC = () => {
     memory:     { name: t('dailyReminders', 'memoryName', 'Scripture Memory'), description: t('dailyReminders', 'memoryDesc', 'Verse memorization practice') },
   };
 
-  // Load reminders — DB first, localStorage fallback
+  // Load reminders — DB first, localStorage fallback. Keyed on user?.id (NOT the
+  // whole user object, which Supabase re-creates on every token refresh — that made
+  // this effect re-run and overwrite unsaved toggles).
   useEffect(() => {
+    editedRef.current = false; // fresh user context, safe to populate from storage
     const load = async () => {
       try {
         if (user) {
@@ -50,6 +57,7 @@ export const DailyReminders: React.FC = () => {
             .select('daily_reminders')
             .eq('user_id', user.id)
             .single();
+          if (editedRef.current) return; // user edited while we were fetching — don't clobber
           if (data?.daily_reminders) {
             // Merge saved enabled/time values back onto default structure (preserves icons/colors)
             const saved: { id: string; enabled: boolean; time: string }[] = data.daily_reminders;
@@ -61,7 +69,7 @@ export const DailyReminders: React.FC = () => {
           }
         }
         const stored = localStorage.getItem('dailyReminders');
-        if (stored) {
+        if (stored && !editedRef.current) {
           const saved = JSON.parse(stored);
           setReminders(defaultReminders.map(r => {
             const found = saved.find((s: any) => s.id === r.id);
@@ -71,20 +79,25 @@ export const DailyReminders: React.FC = () => {
       } catch {}
     };
     load();
-  }, [user]);
+  }, [user?.id]);
 
-  const toggleReminder  = (id: string) => setReminders(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
-  const updateTime      = (id: string, time: string) => setReminders(prev => prev.map(r => r.id === id ? { ...r, time } : r));
+  const toggleReminder  = (id: string) => { editedRef.current = true; setReminders(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)); };
+  const updateTime      = (id: string, time: string) => { editedRef.current = true; setReminders(prev => prev.map(r => r.id === id ? { ...r, time } : r)); };
 
   const saveReminders = async () => {
     // Only persist id, enabled, time — icons and colors are static defaults
     const payload = reminders.map(({ id, enabled, time }) => ({ id, enabled, time }));
     localStorage.setItem('dailyReminders', JSON.stringify(payload));
     if (user) {
-      await supabase
+      const { error } = await supabase
         .from('user_profiles')
         .update({ daily_reminders: payload })
         .eq('user_id', user.id);
+      if (error) {
+        // Was silently swallowed before, so a failed save still said "Saved!".
+        toast({ title: t('dailyReminders', 'saveFailedTitle', 'Could not save reminders'), description: error.message, variant: 'destructive' });
+        return;
+      }
     }
     toast({ title: t('dailyReminders', 'savedTitle', 'Reminders Saved!'), description: t('dailyReminders', 'savedDesc', 'Your daily reminder preferences have been updated.') });
   };

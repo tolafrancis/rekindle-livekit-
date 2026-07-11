@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import AppLayout from '@/components/AppLayout';
 import { AppProvider } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -77,6 +77,7 @@ const LoadingFallback: React.FC<{
 // Auth Gate Component with proper state management
 const AuthGate: React.FC = () => {
   const location = useLocation();
+  const routeParams = useParams();
   const { 
     user, 
     profile, 
@@ -133,6 +134,12 @@ const AuthGate: React.FC = () => {
       setInitialTab(tab);
     }
   }, [location.search]);
+
+  // Clean-URL tabs: /home, /devotional-library, … arrive as the :tab route param.
+  // AppLayout validates it (unknown → home), so pass it straight through.
+  useEffect(() => {
+    if (routeParams.tab) setInitialTab(routeParams.tab);
+  }, [routeParams.tab]);
 
   // Check for navigation state (legacy support)
   useEffect(() => {

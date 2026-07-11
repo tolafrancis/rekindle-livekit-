@@ -14,3 +14,21 @@
   # Everything else -> the SPA entry point
   RewriteRule ^ /index.html [L]
 </IfModule>
+
+# Never let the HTML shell or the service worker be cached by the browser/host —
+# they must always revalidate so a new deploy is picked up immediately. The hashed
+# JS/CSS in /assets are content-addressed and safe to cache forever (below).
+<IfModule mod_headers.c>
+  # Content-addressed assets (hashed filenames) can cache forever.
+  <FilesMatch "\.(js|css|woff2?|png|jpg|jpeg|gif|svg|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  # …but the HTML shell and the service worker must ALWAYS revalidate so a new
+  # deploy is picked up immediately. Listed last so this wins over the rule above
+  # for sw.js (which also matches \.js$).
+  <FilesMatch "(index\.html|sw\.js)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+</IfModule>

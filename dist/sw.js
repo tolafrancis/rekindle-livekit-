@@ -1,10 +1,14 @@
-const STATIC_CACHE = 'prayer-app-static-v1';
-const DYNAMIC_CACHE = 'prayer-app-dynamic-v1';
+// Bump these on any change that must purge old caches. The `activate` handler below
+// deletes every cache not named here, so a version bump wipes stale content.
+const STATIC_CACHE = 'prayer-app-static-v2';
+const DYNAMIC_CACHE = 'prayer-app-dynamic-v2';
 
-// Static assets to cache
+// Static assets to cache. NOTE: '/' and '/index.html' are deliberately NOT precached
+// — precaching the HTML shell pinned users to whatever bundle was cached at install
+// time (the cause of "deployed a new build but everyone still sees the old app", incl.
+// the old hash-routing shell). The app shell is served network-first (see fetch below),
+// so a fresh index.html — and thus the current JS bundle — is fetched on every load.
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/badge-72.png'

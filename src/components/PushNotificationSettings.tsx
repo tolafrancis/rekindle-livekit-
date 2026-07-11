@@ -267,7 +267,7 @@ export const PushNotificationSettings: React.FC = () => {
         body: {
           title: t('pushNotificationSettings', 'testPushTitle', '🔔 Test notification'),
           body: t('pushNotificationSettings', 'testPushBody', 'If you can see this, push is working end-to-end.'),
-          link: '/#home',
+          link: '/home',
           userId: user.id,
           targetAudience: 'specific_user',
           notificationType: 'test',
@@ -546,87 +546,19 @@ export const PushNotificationSettings: React.FC = () => {
           </div>
           </PaidOnly>
 
-          {/* Daily Devotional */}
-          <div className="space-y-3 border-t pt-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <BookOpen className="h-5 w-5 text-purple-500" />
-                <div>
-                  <Label className="font-medium">{t('pushNotificationSettings', 'dailyDevotionalLabel', 'Daily Devotional Reminder')}</Label>
-                  <p className="text-sm text-gray-500">{t('pushNotificationSettings', 'dailyDevotionalDesc', 'Get reminded to read your daily devotional')}</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.dailyDevotional}
-                onCheckedChange={(checked) => updateSetting('dailyDevotional', checked)}
-                disabled={!settings.enabled}
-              />
+          {/* Devotional + Prayer daily reminders were DUPLICATED here and in the
+              Daily Reminders tab, writing different columns and handled by a
+              different (unscheduled) worker — so nothing was delivered. They now
+              live ONLY in the Daily Reminders tab (in-app), which is the single
+              source of truth. This card keeps only what's unique to push:
+              counselling sessions (above) and live-channel events (below). */}
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center gap-3">
+              <BookOpen className="h-5 w-5 text-purple-400 shrink-0" />
+              <p className="text-sm text-gray-500">
+                {t('pushNotificationSettings', 'movedToDailyReminders', 'Devotional and prayer reminders are now managed in the Daily Reminders tab.')}
+              </p>
             </div>
-            {settings.dailyDevotional && (
-              <PaidOnly>
-              <div className="ml-8 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-gray-400" />
-                <input
-                  type="time"
-                  value={settings.devotionalTime}
-                  onChange={(e) => updateSetting('devotionalTime', e.target.value)}
-                  className="border rounded px-3 py-1 text-sm"
-                  disabled={!settings.enabled}
-                />
-              </div>
-              </PaidOnly>
-            )}
-          </div>
-
-          {/* Prayer Reminders */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Heart className="h-5 w-5 text-red-500" />
-                <div>
-                  <Label className="font-medium">{t('pushNotificationSettings', 'prayerRemindersLabel', 'Prayer Reminders')}</Label>
-                  <p className="text-sm text-gray-500">{t('pushNotificationSettings', 'prayerRemindersDesc', 'Set times for prayer reminders')}</p>
-                </div>
-              </div>
-              <Switch
-                checked={settings.prayerReminders}
-                onCheckedChange={(checked) => updateSetting('prayerReminders', checked)}
-                disabled={!settings.enabled}
-              />
-            </div>
-            {settings.prayerReminders && (
-              <PaidOnly>
-              <div className="ml-8 space-y-2">
-                {settings.prayerTimes.map((time, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-gray-400" />
-                    <input
-                      type="time"
-                      value={time}
-                      onChange={(e) => updatePrayerTime(index, e.target.value)}
-                      className="border rounded px-3 py-1 text-sm"
-                      disabled={!settings.enabled}
-                    />
-                    {settings.prayerTimes.length > 1 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removePrayerTime(index)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        {t('pushNotificationSettings', 'removeButton', 'Remove')}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                {settings.prayerTimes.length < 5 && (
-                  <Button variant="outline" size="sm" onClick={addPrayerTime}>
-                    {t('pushNotificationSettings', 'addPrayerTimeButton', 'Add Prayer Time')}
-                  </Button>
-                )}
-              </div>
-              </PaidOnly>
-            )}
           </div>
 
           {/* === LIVE CHANNEL EVENT REMINDERS === */}

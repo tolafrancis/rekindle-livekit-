@@ -455,8 +455,9 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
               size="lg" 
               className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
               onClick={() => {
-                // Navigate to subscription page
-                window.location.hash = '#subscription';
+                // Open the subscription (sponsor) tab via the app-native event —
+                // the old hash write no longer drives navigation (tabs are paths now).
+                window.dispatchEvent(new CustomEvent('openSubscription'));
               }}
             >
               <Crown className="h-5 w-5 mr-2" />

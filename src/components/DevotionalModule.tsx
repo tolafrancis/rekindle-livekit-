@@ -1,5 +1,6 @@
 import { useSwipe } from '@/hooks/useSwipe';
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
@@ -139,6 +140,7 @@ export const DevotionalModule: React.FC<Props> = ({
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [currentSlide, setCurrentSlide] = useState(0);
   // True while a scrollable slide is pacing itself (start delay → scroll → end dwell).
   // The fixed-duration auto-advance timer stands down for these, so the two clocks
@@ -490,8 +492,8 @@ export const DevotionalModule: React.FC<Props> = ({
     setShowCompletionPopup(false);
     if (popupSource === 'declaration') {
       onClose();
-      if (window.location.hash.substring(1) !== 'home') {
-        window.location.hash = 'home';
+      if (window.location.pathname !== '/home') {
+        navigate('/home');
       }
       setTimeout(() => {
         document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });

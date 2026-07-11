@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
@@ -169,6 +169,16 @@ export const ProfileSettings: React.FC = () => {
 
   const [saving, setSaving] = useState(false);
   const [section, setSection] = useState<string>('profile');
+  // Lets other screens deep-link into a specific settings section, e.g. the home
+  // "set up reminders" tip opens the Daily Reminders section directly.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const target = (e as CustomEvent).detail?.section;
+      if (typeof target === 'string') setSection(target);
+    };
+    window.addEventListener('openProfileSection', handler);
+    return () => window.removeEventListener('openProfileSection', handler);
+  }, []);
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [affirmCatsOpen, setAffirmCatsOpen] = useState(false);
   const [partnerOpen, setPartnerOpen] = useState(false);
@@ -625,7 +635,7 @@ export const ProfileSettings: React.FC = () => {
             />
           </CardTitle>
           <CardDescription>
-            {t('profileSettings', 'dailyRemindersDesc', 'Set the time you want to receive each daily reminder on WhatsApp')}
+            {t('profileSettings', 'dailyRemindersDesc', 'Set the time you want to receive each daily reminder in the app.')}
           </CardDescription>
         </CardHeader>
         {remindersOpen && (
