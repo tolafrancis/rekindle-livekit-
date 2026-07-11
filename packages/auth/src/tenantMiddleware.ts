@@ -93,6 +93,12 @@ export interface MinistrySummary {
   isOwner: boolean;
   logoUrl: string | null;
   themeColor: string | null;
+  /**
+   * Per-ministry module toggles, read from ministry_groups.settings.modules.
+   * A module absent/undefined here means "use the default" (enabled) — see
+   * resolveModules() in @rekindle/features. Null when the tenant has no config.
+   */
+  modules: Record<string, boolean> | null;
 }
 
 /**
@@ -109,7 +115,7 @@ export async function getUserMinistries(userId: string): Promise<MinistrySummary
         .eq('user_id', userId),
       supabase
         .from('ministry_groups')
-        .select('id, name, logo_url, theme_color, owner_id, leader_id')
+        .select('id, name, logo_url, theme_color, owner_id, leader_id, settings')
         .or(`owner_id.eq.${userId},leader_id.eq.${userId}`),
     ]);
 
@@ -121,7 +127,7 @@ export async function getUserMinistries(userId: string): Promise<MinistrySummary
     if (memberIds.length) {
       const { data } = await supabase
         .from('ministry_groups')
-        .select('id, name, logo_url, theme_color, owner_id, leader_id')
+        .select('id, name, logo_url, theme_color, owner_id, leader_id, settings')
         .in('id', memberIds as string[]);
       memberGroups = data || [];
     }
@@ -137,6 +143,10 @@ export async function getUserMinistries(userId: string): Promise<MinistrySummary
         isOwner: g.owner_id === userId,
         logoUrl: g.logo_url ?? null,
         themeColor: g.theme_color ?? null,
+        modules:
+          g.settings && typeof g.settings === 'object' && g.settings.modules
+            ? (g.settings.modules as Record<string, boolean>)
+            : null,
       });
     };
 
