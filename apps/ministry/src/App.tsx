@@ -4,12 +4,23 @@ import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider } from '@rekindle/features/CurrentMinistryContext';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
+import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
+import MinistryKiosk from '@rekindle/ministry/components/MinistryKiosk';
 import AuthScreen from './screens/AuthScreen';
 
-// Phase 2/3 — the standalone Ministry app: shared providers + routing + auth gate
-// + current-ministry context. Authenticated members get a ministry switcher and
-// land in their current ministry (single-membership fast-path). Everything is
-// rendered from the shared @rekindle/* packages.
+// Phase 5 — ministry-scoped entry. Public join/kiosk routes let members sign up
+// straight into a specific ministry (QR / invite link / join-by-code / kiosk),
+// reusing the server-side validate_join + claim_join_profile (find-or-create →
+// attach, no duplicate accounts) flows. The rest of the app is auth-gated.
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>
+    </div>
+  );
+}
+
 function MinistryShell() {
   return (
     <CurrentMinistryProvider>
@@ -28,30 +39,26 @@ function MinistryShell() {
   );
 }
 
-function Gate() {
+function AppRoutes() {
   const { user, loading, initialized } = useAuth();
-
-  if (loading || !initialized) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>
-      </div>
-    );
-  }
+  const ready = !loading && initialized;
 
   return (
     <Routes>
-      {!user ? (
-        <>
-          <Route path="/auth" element={<AuthScreen />} />
-          <Route path="*" element={<Navigate to="/auth" replace />} />
-        </>
-      ) : (
-        <>
-          <Route path="/" element={<MinistryShell />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </>
-      )}
+      {/* Public ministry-scoped entry points — available regardless of auth. */}
+      <Route path="/join/:slug" element={<MinistryJoinLanding />} />
+      <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
+
+      {/* Auth-gated app. */}
+      <Route
+        path="/auth"
+        element={!ready ? <LoadingScreen /> : user ? <Navigate to="/" replace /> : <AuthScreen />}
+      />
+      <Route
+        path="/"
+        element={!ready ? <LoadingScreen /> : user ? <MinistryShell /> : <Navigate to="/auth" replace />}
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
@@ -61,7 +68,7 @@ export default function App() {
     <LanguageProvider>
       <AuthProvider>
         <BrowserRouter>
-          <Gate />
+          <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
     </LanguageProvider>
