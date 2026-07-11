@@ -136,11 +136,12 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
   const loadMinistries = useCallback(async () => {
     try {
+      // Discovery reads the public-safe directory VIEW (non-PII columns of
+      // public+active ministries) — the base ministry_groups table no longer
+      // exposes billing/PII columns to non-members (see migration 0154).
       const { data, error } = await supabase
-        .from('ministry_groups')
+        .from('ministry_directory')
         .select('*')
-        .eq('is_active', true)
-        .eq('is_public', true)
         .order('member_count', { ascending: false });
 
       if (error) throw error;

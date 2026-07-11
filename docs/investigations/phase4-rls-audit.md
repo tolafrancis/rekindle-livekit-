@@ -152,6 +152,16 @@ a non-admin still READS all content (affirmations 272, devotionals 52, books 33,
 `is_content_admin(outsider)=false` so cannot write. (Content authoring is admin-only in
 the app, so no legitimate write path is affected.)
 
+## ministry_groups PII / discovery view — 0154 ✅ APPLIED + VERIFIED (2026-07-12)
+Closes §3a red flag #1's residual: RLS is row-level, so the public-discovery policies
+exposed ALL columns (tax_id, legal_name, contact_email, subscription_status, risk_level,
+owner/leader ids, settings) of every public+active ministry. **0154_ministry_directory_view.sql**
+adds `ministry_directory` — a definer view of **only** the 17 non-PII discovery columns of
+public+active ministries (granted anon+authenticated) — and restricts the base table to
+owner/leader/member/platform-admin. `MinistriesHub.loadMinistries` repointed to the view.
+Verified: view has no PII columns; outsider reads 2 rows via the directory but **0** on
+the base table; member still reads own ministries' full columns; both apps build green.
+
 ## Still open in Phase 4 (beyond this migration)
 - Product-boundary marker (when rekindle sheds ministry).
 - Public-safe **discovery view** for `ministry_groups` (column-level PII split).
