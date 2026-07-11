@@ -7,10 +7,12 @@
     ".": "./src/index.ts",
     "./AuthContext": "./src/AuthContext.tsx",
     "./LanguageContext": "./src/LanguageContext.tsx",
+    "./components/*": "./src/components/*.tsx",
     "./data/*": "./src/data/*.ts",
     "./*": "./src/*.ts"
   },
   "dependencies": {
+    "@rekindle/auth": "*",
     "@rekindle/supabase": "*",
     "@rekindle/types": "*",
     "@rekindle/ui": "*",
