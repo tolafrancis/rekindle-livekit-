@@ -45,12 +45,21 @@ white-labelled, without disrupting the existing ReKindle consumer app.
 - **Reading plans**
 - **Audio / TTS** (existing `tts_audio_cache` pipeline)
 - **Books** (Christian classics summaries + church-own)
+- **Daily reminders + in-app notifications + web push [REV]** — a member sets their own
+  devotional/prayer/Bible/book/memory reminders; the `process-daily-reminders` worker
+  (pg_cron, 15-min) delivers them to the in-app bell (`notifications`) and, best-effort,
+  to the browser/native via FCM (`send-push-notification` + `push_tokens`). All
+  per-member (personal layer), so it drops in with no tenant work of its own. Fully
+  built and hardened this session (see below).
 
 ### Ministry-native features
 Member registration (QR / invite / kiosk), attendance/check-in, giving + Gift Aid,
 **broadcasts/live (LiveKit) [REV]**, events, member directory, roles/leaders, analytics,
 branding. **AI meeting notes [REV]** (distributed transcription + `meeting-ai` OpenAI proxy)
-are available on ministry meetings.
+are available on ministry meetings. **Ministry → member messaging [REV]** — a leader pushes
+an announcement/reminder to their own members (bell + FCM), via the existing broadcast +
+`send-push-notification` audience logic; the new work is the leader UI and **tenant-scoped
+targeting** so a church only ever reaches ITS members (see §3c and the RLS gate).
 
 ---
 
@@ -121,9 +130,24 @@ point its homepage at a stream via `ministry_devotional_settings`).
 **Personal profile layer** (belongs to the member, not the church console):
 account/profile, giving history + receipts, check-in/attendance history, **prayer stats**,
 **AI meeting notes/insights [REV]** (`meeting_ai_notes`, already `created_by`-scoped),
-ministry switcher, leave/manage membership.
+**daily-reminder preferences + notification/push settings [REV]** (`daily_reminders`,
+`notif_*`, `push_tokens` — all per-member), ministry switcher, leave/manage membership.
 
-### 3a. [REV] The split tenant identity — investigate + reconcile before Phase 4
+### 3c. [REV] Notifications & reminders — how the two flavors are scoped
+Two distinct paths, one delivery stack (`notifications` bell + FCM push):
+
+1. **Personal daily reminders** — the member configures their own; `process-daily-reminders`
+   fans out to that member only. Per-user rows (`daily_reminders`, `notifications`,
+   `push_tokens`) — no tenant dimension needed. Drops in unchanged.
+2. **Ministry-initiated messages** — a leader sends to members. This is the ONE with a
+   tenant boundary: `send-push-notification`'s audience resolution must be constrained to
+   the leader's own ministry (its members / `ministry_group_members`), and a leader must
+   never be able to target another church's members or the ReKindle consumer base.
+   > ⚠️ Lesson from this session: `send-push-notification` defaults `baseUserIds = null`
+   > = "send to ALL users" when an audience doesn't match a case. In a multi-tenant product
+   > that is a **cross-tenant blast waiting to happen** — every ministry-messaging audience
+   > must resolve to an explicit, tenant-scoped id list, never fall through to null. This is
+   > a Phase 4 RLS/authorization line, not just a UI concern.
 Tenant identity is spread across **two tables sharing one id**:
 
 | table | role | key columns (observed) |
@@ -214,16 +238,24 @@ For each: move files → package `package.json` → re-point `apps/rekindle` imp
    **tables landed this session [REV]**:
    `meeting_waiting_room`, `livekit_recordings`, `channel_streams`/`livekit_channel_streams`,
    `meeting_ai_notes`, `devotional_streams`, `ministry_devotional_settings`,
-   `user_profiles.devotional_stream_id`. Notes:
+   `user_profiles.devotional_stream_id`, **`notifications`, `push_tokens`,
+   `daily_reminder_sends`, `user_profiles.daily_reminders`/`notif_*` [REV]**. Notes:
    - `meeting_ai_notes` is `created_by`-scoped → personal layer; confirm it stays private.
    - `livekit_recordings` / `channel_streams` have **no tenant dimension yet** → add one.
    - `devotional_streams` is global; `ministry_devotional_settings` is tenant-scoped
      (owner/leader + admin writes) — verify both under the product boundary too.
+   - **`notifications` / `push_tokens` / reminder prefs are per-member (personal layer)**
+     — RLS is `auth.uid() = user_id` (0143). Confirm it holds under the product boundary
+     (a Ministry member can't read a ReKindle user's notifications, and vice-versa).
+   - **Ministry-messaging targeting (§3c) is an authorization gate here** — the audience
+     resolver must produce a tenant-scoped id list; it must be impossible for a leader to
+     resolve to `null` (= all users) or another church's members.
 4. **[REV] LiveKit room/token tenant-scoping** (§3b) is part of this gate for live.
 5. Write **RLS test cases**: member of A can't read B; Ministry ≠ ReKindle; leader scope
    limited to own ministry; church sees global + own content only; member prayer/giving/
    **meeting-notes [REV]** history private to them; **church A can't join/record church B's
-   LiveKit rooms [REV]**.
+   LiveKit rooms [REV]**; **a leader's push/announcement reaches only their own members —
+   never another church's members or the ReKindle base [REV]**.
 6. **Checkpoint:** isolation suite passes. **Non-negotiable gate.**
 
 ### Phase 5 — Sign-up / sign-in
@@ -297,10 +329,14 @@ member content (devotionals **+ streams [REV]**, full prayer module, affirmation
 widgets, reading, audio + `tts_audio_cache`, books); authoring managers; QR/invite/kiosk
 sign-up; approval toggle; kiosk find-or-create; Supabase Auth; ministry-native features
 (registration, kiosk, giving/Gift Aid, analytics, branding); **[REV] self-hosted LiveKit live
-+ Egress recording (built; needs CPU upgrade)**; **[REV] AI meeting notes**.
++ Egress recording (built; needs CPU upgrade)**; **[REV] AI meeting notes**; **[REV] personal
+daily reminders + in-app bell (`notifications`, RLS+realtime) + web push (FCM/`push_tokens`),
+delivered by the `process-daily-reminders` cron — built and verified end-to-end this session**.
 
 **Partly have [REV]:** tenant context (`tenantMiddleware.getTenantContext`); billing/usage
-enforcement (`subscriptionEnforcement.ts`, `ministries.subscription_status`).
+enforcement (`subscriptionEnforcement.ts`, `ministries.subscription_status`); **ministry →
+member messaging** (broadcast + `send-push-notification` exist, but audience targeting must
+be made tenant-safe — see §3c).
 
 **New:** monorepo restructure + package extraction (**incl. `packages/live` [REV]**);
 product-boundary marker + RLS; `CurrentMinistryProvider` + switcher (extend existing);
