@@ -26,7 +26,7 @@ import {
   type BulkUploadInput,
   type CSVRow,
   type BulkTTSJob
-} from '@/types/bulkTTS';
+} from '@rekindle/types/bulkTTS';
 
 interface BulkTTSUploaderProps {
   seriesId?: string;

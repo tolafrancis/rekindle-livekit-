@@ -3,7 +3,7 @@
 // Type definitions for replay functionality
 // =====================================================
 
-import { SupportedLanguage } from '@/lib/i18n';
+import { SupportedLanguage } from './language';
 
 /**
  * Replay access levels

@@ -11,7 +11,7 @@ import {
   Mic,
   Clock
 } from 'lucide-react';
-import { ChannelEvent } from '@/types/liveChannelTypes';
+import { ChannelEvent } from '@rekindle/types/liveChannelTypes';
 
 interface LiveChannelEventsCalendarProps {
   events: ChannelEvent[];

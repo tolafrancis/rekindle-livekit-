@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from './ui/card';
 import { supabase } from '@/lib/supabase';
-import { PrayerChallenge } from '@/types/prayerTypes';
+import { PrayerChallenge } from '@rekindle/types/prayerTypes';
 import { Users, CheckCircle, Flame, Trophy, TrendingUp } from 'lucide-react';
 
 interface Props {

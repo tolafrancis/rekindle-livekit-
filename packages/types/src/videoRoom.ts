@@ -6,7 +6,7 @@
  * directly and the hook's `updateParticipants` becomes a pass-through instead of a
  * Daily-specific `convertParticipant`.
  */
-import type { ParticipantRole } from '@/types/liveChannelTypes';
+import type { ParticipantRole } from './liveChannelTypes';
 
 /** Maps 1:1 to `DailyParticipantInfo` in useDailyRoom/useVideoRoom. */
 export interface NormalizedParticipant {

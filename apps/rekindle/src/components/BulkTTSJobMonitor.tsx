@@ -13,7 +13,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
-import type { BulkTTSJob, BulkTTSGeneration } from '@/types/bulkTTS';
+import type { BulkTTSJob, BulkTTSGeneration } from '@rekindle/types/bulkTTS';
 
 export const BulkTTSJobMonitor: React.FC = () => {
   const { user } = useAuth();

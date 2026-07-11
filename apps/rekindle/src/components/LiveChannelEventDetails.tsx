@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { toast } from './ui/use-toast';
 import { shareEvent } from '@/lib/liveShare';
-import { ChannelEvent, EventRegistration } from '@/types/liveChannelTypes';
+import { ChannelEvent, EventRegistration } from '@rekindle/types/liveChannelTypes';
 
 interface LiveChannelEventDetailsProps {
   event: ChannelEvent | null;

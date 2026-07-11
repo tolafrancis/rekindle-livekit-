@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { PrayerGroup } from '@/types/prayerTypes';
+import { PrayerGroup } from '@rekindle/types/prayerTypes';
 import { Facebook, MessageCircle, Copy, Check, Share2, Users } from 'lucide-react';
 import { toast } from './ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';

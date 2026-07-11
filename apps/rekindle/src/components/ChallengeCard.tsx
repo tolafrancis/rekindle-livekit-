@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   PrayerChallenge,
   ChallengeParticipant
-} from '@/types/prayerTypes'
+} from '@rekindle/types/prayerTypes'
 import {
   Users,
   Clock,

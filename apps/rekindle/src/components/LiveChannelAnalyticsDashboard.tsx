@@ -28,7 +28,7 @@ import {
   ChannelAnalytics, 
   BroadcastAnalytics,
   AnalyticsSummary 
-} from '@/types/liveChannelAnalyticsTypes';
+} from '@rekindle/types/liveChannelAnalyticsTypes';
 
 interface LiveChannelAnalyticsDashboardProps {
   channelId: string;

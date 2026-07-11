@@ -8,7 +8,7 @@ import {
   ChannelReplayView,
   AnalyticsSummary,
   AnalyticsPermissions
-} from '@/types/liveChannelAnalyticsTypes';
+} from '@rekindle/types/liveChannelAnalyticsTypes';
 
 /**
  * Check if user has permission to view analytics for a channel

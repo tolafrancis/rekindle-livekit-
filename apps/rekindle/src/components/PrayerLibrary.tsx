@@ -25,7 +25,7 @@ import {
 } from '@/lib/communityActivityService';
 import PrayerSeriesViewer from './PrayerSeriesViewer';
 import { InteractivePrayerSession } from './InteractivePrayerSession';
-import { PrayerPoint } from '@/types/prayerTypes';
+import { PrayerPoint } from '@rekindle/types/prayerTypes';
 import { instrumentalTracks } from '@/data/instrumentals';
 import { 
   BookOpen, Search, Star, Share2, CheckCircle, 

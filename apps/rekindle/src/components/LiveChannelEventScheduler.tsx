@@ -39,7 +39,7 @@ import {
   Crown
 } from 'lucide-react';
 import { toast } from './ui/use-toast';
-import { LiveChannel, ChannelEvent } from '@/types/liveChannelTypes';
+import { LiveChannel, ChannelEvent } from '@rekindle/types/liveChannelTypes';
 
 interface LiveChannelEventSchedulerProps {
   channel: LiveChannel;

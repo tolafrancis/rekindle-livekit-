@@ -16,7 +16,7 @@ import {
   BroadcastAnalytics,
   AnalyticsSummary,
   AnalyticsPermissions
-} from '@/types/liveChannelAnalyticsTypes';
+} from '@rekindle/types/liveChannelAnalyticsTypes';
 
 interface UseChannelAnalyticsOptions {
   channelId: string;

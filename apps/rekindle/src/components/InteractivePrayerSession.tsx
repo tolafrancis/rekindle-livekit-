@@ -2,7 +2,7 @@ import { useSwipe } from '@/hooks/useSwipe';
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
-import { PrayerPoint, SESSION_DURATIONS } from '@/types/prayerTypes';
+import { PrayerPoint, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
 import { 
   X, ChevronRight, Volume2, VolumeX, BookOpen, CheckCircle, 
   Pause, Play, Flame, Clock, Timer, Volume1 

@@ -29,7 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ParticipantState, ParticipantRole, MeetingSettings, WaitingRoomParticipant } from '@/types/liveChannelTypes';
+import { ParticipantState, ParticipantRole, MeetingSettings, WaitingRoomParticipant } from '@rekindle/types/liveChannelTypes';
 
 interface HostControlPanelProps {
   participants: ParticipantState[];

@@ -30,8 +30,8 @@ import type {
   NormalizedParticipant,
   VideoWrapperCallbacks,
   IVideoRoomWrapper,
-} from '@/types/videoRoom';
-import type { ParticipantRole } from '@/types/liveChannelTypes';
+} from '@rekindle/types/videoRoom';
+import type { ParticipantRole } from '@rekindle/types/liveChannelTypes';
 
 interface PreviewState {
   isActive: boolean;

@@ -18,7 +18,7 @@ import {
   Check
 } from 'lucide-react';
 import { shareEvent } from '@/lib/liveShare';
-import { ChannelEvent } from '@/types/liveChannelTypes';
+import { ChannelEvent } from '@rekindle/types/liveChannelTypes';
 import { toast } from './ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 

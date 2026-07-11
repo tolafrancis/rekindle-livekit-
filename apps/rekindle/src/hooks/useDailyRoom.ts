@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/use-toast';
 import { createVideoWrapper, isLiveKitBackend } from '@/lib/videoBackend';
-import type { IVideoRoomWrapper, NormalizedParticipant } from '@/types/videoRoom';
+import type { IVideoRoomWrapper, NormalizedParticipant } from '@rekindle/types/videoRoom';
 import {
   ParticipantRole,
   ParticipantState, 
@@ -19,7 +19,7 @@ import {
   ChatMessageType,
   DEFAULT_MEETING_SETTINGS,
   hasPermission
-} from '@/types/liveChannelTypes';
+} from '@rekindle/types/liveChannelTypes';
 
 // Types
 export interface DailyRoomOptions {

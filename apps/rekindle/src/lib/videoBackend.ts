@@ -8,7 +8,7 @@
  * The LiveKit wrapper is still loaded via dynamic import so `livekit-client` lands in
  * its own split chunk rather than the main bundle.
  */
-import type { IVideoRoomWrapper, VideoWrapperCallbacks, VideoBackend } from '@/types/videoRoom';
+import type { IVideoRoomWrapper, VideoWrapperCallbacks, VideoBackend } from '@rekindle/types/videoRoom';
 
 export function getVideoBackend(): VideoBackend {
   return 'livekit';

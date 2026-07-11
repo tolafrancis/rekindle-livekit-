@@ -39,7 +39,7 @@ import {
   User,
   Mail
 } from 'lucide-react';
-import { LiveChannel, ChannelCategory, CHANNEL_CATEGORIES } from '@/types/liveChannelTypes';
+import { LiveChannel, ChannelCategory, CHANNEL_CATEGORIES } from '@rekindle/types/liveChannelTypes';
 import { ChannelStreamConfig } from './ChannelStreamConfig';
 import { useLanguage } from '@/contexts/LanguageContext';
 

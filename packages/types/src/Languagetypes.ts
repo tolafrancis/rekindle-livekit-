@@ -3,7 +3,7 @@
 // Complete TypeScript types reference
 // =====================================================
 
-import { SupportedLanguage } from '@/lib/i18n';
+import { SupportedLanguage } from './language';
 
 /**
  * User Profile with Language Preference

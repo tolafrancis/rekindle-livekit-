@@ -46,7 +46,7 @@ import {
 } from 'lucide-react';
 import { toast } from './ui/use-toast';
 import { shareChannel } from '@/lib/liveShare';
-import { LiveChannel } from '@/types/liveChannelTypes';
+import { LiveChannel } from '@rekindle/types/liveChannelTypes';
 import {
   Dialog,
   DialogContent,

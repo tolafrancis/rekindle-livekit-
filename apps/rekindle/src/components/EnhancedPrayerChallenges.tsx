@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { PrayerChallenge, ChallengeParticipant, PrayerPoint } from '@/types/prayerTypes';
+import { PrayerChallenge, ChallengeParticipant, PrayerPoint } from '@rekindle/types/prayerTypes';
 import { ChallengeCard } from './ChallengeCard';
 import { CreateChallengeModal } from './CreateChallengeModal';
 import { ShareChallengeModal } from './ShareChallengeModal';

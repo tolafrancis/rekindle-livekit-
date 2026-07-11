@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { PrayerPoint, CHALLENGE_CATEGORIES, SESSION_DURATIONS } from '@/types/prayerTypes';
+import { PrayerPoint, CHALLENGE_CATEGORIES, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
 import { instrumentalTracks } from '@/data/instrumentals';
 import { getVerseText, sampleVerses } from '@/data/bibleVerses';
 import { Plus, Trash2, Calendar, Music, BookOpen } from 'lucide-react';

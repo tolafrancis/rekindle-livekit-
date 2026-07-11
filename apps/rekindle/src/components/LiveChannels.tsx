@@ -51,7 +51,7 @@ import {
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { toast } from './ui/use-toast';
-import { LiveChannel, ChannelFollower, CHANNEL_CATEGORIES, ChannelCategory } from '@/types/liveChannelTypes';
+import { LiveChannel, ChannelFollower, CHANNEL_CATEGORIES, ChannelCategory } from '@rekindle/types/liveChannelTypes';
 import {
   SearchFilterPanel,
   searchFilterIconClass,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { GroupMessage } from '@/types/prayerTypes';
+import { GroupMessage } from '@rekindle/types/prayerTypes';
 import { Heart, Pin, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 

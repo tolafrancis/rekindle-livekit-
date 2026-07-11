@@ -7,7 +7,7 @@ import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { Send, Pin, Smile, MessageCircle } from 'lucide-react';
 import { toast } from './ui/use-toast';
-import { ChannelChatMessage } from '@/types/liveChannelTypes';
+import { ChannelChatMessage } from '@rekindle/types/liveChannelTypes';
 
 interface LiveChannelChatProps {
   channelId: string;

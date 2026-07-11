@@ -13,7 +13,7 @@ import {
   AlertCircle,
   Ban
 } from 'lucide-react';
-import { ChatMessageType } from '@/types/liveChannelTypes';
+import { ChatMessageType } from '@rekindle/types/liveChannelTypes';
 
 interface RoomChatSidebarProps {
   messages: ChatMessageType[];

@@ -4,18 +4,16 @@
 // =====================================================
 
 import { supabase } from './supabase';
+import type { SupportedLanguage } from '@rekindle/types';
 
 // =====================================================
 // SUPPORTED LANGUAGES
 // Asian languages fully implemented, European extensible
 // =====================================================
 
-// Explicitly define supported language type to avoid TDZ issues during bundling
-export type SupportedLanguage = 
-  | 'zh' | 'ja' | 'ko' | 'vi' | 'th' | 'id' | 'hi' | 'ar' | 'bn' | 'ta' | 'te' 
-  | 'ur' | 'fa' | 'he' | 'my' | 'km' | 'lo' | 'ne' | 'si' | 'tl' | 'ms'
-  | 'en' | 'es' | 'fr' | 'de' | 'pt' | 'ru' | 'it' | 'nl' | 'pl' | 'tr'
-  | 'sw' | 'yo';
+// The canonical SupportedLanguage union now lives in @rekindle/types; re-export it
+// here so existing `import { SupportedLanguage } from '@/lib/i18n'` call sites keep working.
+export type { SupportedLanguage };
 
 export interface LanguageInfo {
   code: SupportedLanguage;

@@ -24,7 +24,7 @@ import {
   postPrayerSeriesDayCompleted
 } from '@/lib/communityActivityService';
 import { InteractivePrayerSession } from './InteractivePrayerSession';
-import { PrayerPoint, SESSION_DURATIONS } from '@/types/prayerTypes';
+import { PrayerPoint, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
 import { instrumentalTracks } from '@/data/instrumentals';
 import {
   BookOpen, Calendar, Clock, Star, Play, 

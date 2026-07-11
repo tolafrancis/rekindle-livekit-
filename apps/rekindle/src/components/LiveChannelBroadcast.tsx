@@ -52,7 +52,7 @@ import {
   FileText
 } from 'lucide-react';
 import { toast } from './ui/use-toast';
-import { LiveChannel, ChannelCoHost } from '@/types/liveChannelTypes';
+import { LiveChannel, ChannelCoHost } from '@rekindle/types/liveChannelTypes';
 
 interface RaisedHandRequest {
   id: string;
