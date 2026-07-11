@@ -83,6 +83,22 @@ async function getAccessToken(sa: ServiceAccount): Promise<string> {
   return json.access_token as string;
 }
 
+// Decode the `role` claim of the caller's bearer JWT WITHOUT verifying the
+// signature — used only to distinguish trusted internal service-role calls (crons,
+// notify(), other edge fns) from user calls. The gateway (verify_jwt) has already
+// validated the token; authorization decisions below use the service-role client.
+function decodeJwtRole(authHeader: string): string | null {
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return (payload && typeof payload.role === 'string') ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -119,6 +135,62 @@ serve(async (req) => {
     );
 
     console.log(`send-notification - Type: ${notificationType}, Audience: ${targetAudience}, push=${doPush}, inApp=${doInApp}`);
+
+    // ── AUTHORIZATION (§3c) — prevent cross-tenant blasts ───────────────────
+    // Internal callers use the service role and are trusted (crons, notify(),
+    // other edge fns). USER callers may ONLY target their own ministry (as a
+    // leader/admin/owner) or themselves — never another church's members, a
+    // platform-wide audience, or "all users". The null=all default below is a
+    // cross-tenant blast unless the caller is a platform admin.
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const isServiceCall = decodeJwtRole(authHeader) === 'service_role';
+    let isPlatformAdmin = false;
+
+    if (!isServiceCall) {
+      const callerClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: { user: caller } } = await callerClient.auth.getUser();
+      if (!caller) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const { data: prof } = await supabaseClient
+        .from('user_profiles').select('role').eq('user_id', caller.id).maybeSingle();
+      isPlatformAdmin = ['admin', 'super_admin'].includes((prof as any)?.role);
+
+      let isMinistryAdmin = false;
+      if (ministryId) {
+        const [{ data: mem }, { data: grp }] = await Promise.all([
+          supabaseClient.from('ministry_group_members')
+            .select('role, is_leader').eq('group_id', ministryId).eq('user_id', caller.id).maybeSingle(),
+          supabaseClient.from('ministry_groups')
+            .select('owner_id, leader_id').eq('id', ministryId).maybeSingle(),
+        ]);
+        isMinistryAdmin =
+          (!!mem && ((mem as any).is_leader === true || ['admin', 'moderator'].includes((mem as any).role))) ||
+          (grp as any)?.owner_id === caller.id || (grp as any)?.leader_id === caller.id;
+      }
+
+      const ministryScoped = !!ministryId &&
+        (targetAudience === 'ministry_members' || notificationType === 'group_broadcast');
+      const selfSend = !!userId && userId === caller.id &&
+        (notificationType === 'prayer_challenge_reminder' || targetAudience === 'specific_user');
+
+      if (ministryScoped) {
+        if (!isMinistryAdmin && !isPlatformAdmin) {
+          return new Response(JSON.stringify({ error: 'Not authorized to message this ministry' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      } else if (!selfSend && !isPlatformAdmin) {
+        // Platform-wide audiences (premium/free/leaders/all/unknown) are admin-only.
+        return new Response(JSON.stringify({ error: 'Not authorized for this audience' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     // -- Resolve audience to a list of user IDs (Step 1) ------------------
     // null  = no filter (send to all)
@@ -218,6 +290,14 @@ serve(async (req) => {
         }
         console.log(`${notificationType}: filtered to ${tokenUserIds.length} after removing ${optedOut.length} opted-out users`);
       }
+    }
+
+    // Hard guard (§3c): tokenUserIds === null means "all users". Only a trusted
+    // service call or a platform admin may ever reach the entire user base — for
+    // anyone else this is a cross-tenant blast, so refuse rather than fan out.
+    if (tokenUserIds === null && !isServiceCall && !isPlatformAdmin) {
+      return new Response(JSON.stringify({ error: 'Refusing to broadcast to all users' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // ====================================================================

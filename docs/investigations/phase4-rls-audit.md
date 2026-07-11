@@ -119,6 +119,27 @@ the server derives the ministry from `roomName` regardless of client claims — 
 creation + join sites (client) + the edge fn. Tracked as follow-up. Also: capacity
 (shared VPS, ~4 vCPU per room-composite egress) is an infra item, not RLS.
 
+## Ministry-messaging audience — §3c (code done; DEPLOY pending)
+`send-push-notification` had **no caller auth** — it used only the service role and
+read `ministryId`/`targetAudience` from the body, and `baseUserIds` defaults to `null`
+= ALL users when the audience doesn't match (no default case; `ministry_members`
+without `ministryId`; unknown audience). So any authed user could broadcast to another
+church's members or the entire user base (cross-tenant blast).
+
+Fix (in `send-push-notification-function.ts` — the deployed-fn source mirror):
+- `decodeJwtRole()` distinguishes **trusted service-role callers** (crons, `notify()`,
+  other edge fns — unchanged) from **user callers**.
+- User calls are authorized: **ministry sends** (`ministry_members` / `group_broadcast`
+  with `ministryId`) require the caller to be a leader/admin/owner of *that* ministry
+  (`ministry_group_members`/owner/leader); **platform-wide** audiences (premium/free/
+  leaders/all/unknown) require a platform admin; self-sends allowed; else 403.
+- **Hard guard**: `tokenUserIds === null` (all users) is refused for any non-service,
+  non-platform-admin caller — the null=all default can never become a cross-tenant blast.
+- **⚠ Edge function — must be DEPLOYED** (Deno; not a SQL migration). Reconcile the
+  mirror with the actual deployed artifact before shipping. `notifications`/`push_tokens`
+  remain per-user (`auth.uid() = user_id`, personal layer) — the tenant boundary is the
+  audience resolver, now closed.
+
 ## Still open in Phase 4 (beyond this migration)
 - Product-boundary marker (when rekindle sheds ministry).
 - Public-safe **discovery view** for `ministry_groups` (column-level PII split).
