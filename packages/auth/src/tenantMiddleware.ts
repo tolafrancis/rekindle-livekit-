@@ -99,6 +99,12 @@ export interface MinistrySummary {
    * resolveModules() in @rekindle/features. Null when the tenant has no config.
    */
   modules: Record<string, boolean> | null;
+  /**
+   * Content sourcing: 'blended' = global catalog + this ministry's own content;
+   * 'own-only' = only this ministry's content. From ministry_groups.settings.content_mode
+   * (default 'blended'). Drives the merged content resolver in @rekindle/features.
+   */
+  contentMode: 'blended' | 'own-only';
 }
 
 /**
@@ -147,6 +153,10 @@ export async function getUserMinistries(userId: string): Promise<MinistrySummary
           g.settings && typeof g.settings === 'object' && g.settings.modules
             ? (g.settings.modules as Record<string, boolean>)
             : null,
+        contentMode:
+          g.settings && typeof g.settings === 'object' && g.settings.content_mode === 'own-only'
+            ? 'own-only'
+            : 'blended',
       });
     };
 
