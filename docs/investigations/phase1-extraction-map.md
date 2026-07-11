@@ -15,10 +15,26 @@
 > | `@rekindle/ui` | ✅ done | 53 shadcn/util files; unblocks the deferred UI comps |
 > | `@rekindle/features` | ✅ core | 33 libs + 10 data; **hooks + contexts + ~54 UI comps deferred** |
 >
-> **Remaining "Phase 1 completion" pass (UI + entangled graph), now unblocked by `ui`:**
-> features hooks (useTranslation, useNotifications, …) + `LanguageContext` + `AuthContext`
-> (+ `usePushNotifications`) as one cohesive move, then the deferred auth/live/features UI
-> components. **Dead/misplaced Deno source left in the app** (not packaged):
+> **Completion pass — DONE so far:**
+> - **A ✅** entangled cluster into `features`: `AuthContext` + `LanguageContext`
+>   (125/160 consumers) + 7 used hooks (usePushNotifications, useNotifications,
+>   useUserAnalytics, useOnboardingTips, useOfflineStorage, useLocalizedScripture,
+>   useMeetingNotes). Dead hooks left in app (useTranslation, Useaudioplayer,
+>   useOfflineSync, useLocalizedContent, useReadingPlan[broken deps]).
+> - **B ✅** 7 clean-closure auth UI components into `features/components`
+>   (LoginForm, SignupForm, PasswordResetForm, OnboardingFlow, ReplayAccessGate,
+>   SubscriptionManager, UpgradePromptModal).
+>
+> **Remaining — the ~84 feature/live UI components: DEFER TO PHASE 2 (recommended).**
+> Measured tangle: **63 of 214 top-level components import other app components as
+> siblings** (LiveChannels alone imports 13). Shared components freely import app-only
+> siblings (admin/counsellor/ministry surfaces), so they cannot move into packages as
+> clean closures without dragging app code in or breaking the graph — and their value
+> only lands once Phase 2 defines what the ministry app renders. Extract these
+> closure-by-closure **during** Phase 2, driven by ministry's actual surface, not
+> speculatively now.
+>
+> **Dead/misplaced Deno source left in the app** (not packaged):
 > `lib/functions/*`, `daily-recordings.ts`, `onboarding-tips-function.ts`,
 > `schemaValidator.ts` (0 consumers) — candidates for deletion.
 >
