@@ -12,5 +12,5 @@
 //   ./r68Adapters.
 // =============================================================================
 
-export * from '../../../supabase/functions/_shared/r68Builder';
-export * from '../../../supabase/functions/_shared/giftAidEnvelope';
+export * from '../../../../../supabase/functions/_shared/r68Builder';
+export * from '../../../../../supabase/functions/_shared/giftAidEnvelope';

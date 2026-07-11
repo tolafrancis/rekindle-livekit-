@@ -8,7 +8,7 @@
 // =============================================================================
 
 import type { CharityDetails, ClaimLineItem } from './claimsService';
-import type { R68Charity, R68LineItem, Regulator } from '../../../supabase/functions/_shared/r68Builder';
+import type { R68Charity, R68LineItem, Regulator } from '../../../../../supabase/functions/_shared/r68Builder';
 
 export function toRegulator(charity: CharityDetails): Regulator {
   const type = String((charity as any).regulatorType || 'CCEW');
