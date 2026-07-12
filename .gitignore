@@ -1,6 +1,21 @@
+# Dependencies
 node_modules
+
+# Build output
+dist
+**/dist
+
+# Turborepo
+.turbo
 
 # Local env files (build-time secrets/config). Do NOT commit real values.
 .env
 .env.local
 .env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# OS junk
+.DS_Store
+**/.DS_Store

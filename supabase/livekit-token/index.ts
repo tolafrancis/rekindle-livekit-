@@ -133,6 +133,52 @@ async function resolveRole(
   return body.viewerOnly ? 'viewer' : 'attendee';
 }
 
+/**
+ * Tenant/entitlement gate (§3b): may this caller join this room AT ALL? resolveRole
+ * only decides host vs viewer — without this, any authenticated user could mint a
+ * viewer token for ANOTHER church's meeting. Fail closed for the tenant cases.
+ *
+ * NOTE (robust hardening, tracked in docs phase4-rls-audit §3b): entitlement here is
+ * derived from client-supplied context.{kind,meetingId}. A fully robust design binds
+ * the tenant to the ROOM NAME (e.g. `ministry:<ministryId>:<meetingId>`) so a client
+ * cannot spoof `kind` to dodge the membership check. That naming convention spans room
+ * creation + join sites (client) and is a follow-up.
+ */
+async function isEntitled(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  body: RequestBody,
+): Promise<boolean> {
+  const ctx = body.context ?? {};
+
+  // Ministry meeting — caller MUST belong to the meeting's ministry (member/leader/owner).
+  if (ctx.kind === 'ministry_meeting' && ctx.meetingId) {
+    const { data: m } = await admin
+      .from('ministry_video_meetings').select('ministry_id').eq('id', ctx.meetingId).maybeSingle();
+    const mid = (m as { ministry_id?: string } | null)?.ministry_id;
+    if (!mid) return false;
+    const { data: mem } = await admin
+      .from('ministry_group_members').select('user_id')
+      .eq('ministry_id', mid).eq('user_id', userId).maybeSingle();
+    if (mem) return true;
+    const { data: g } = await admin
+      .from('ministry_groups').select('id')
+      .eq('id', mid).or(`owner_id.eq.${userId},leader_id.eq.${userId}`).maybeSingle();
+    return !!g;
+  }
+
+  // Counselling — the session's client (the counsellor already resolves to host).
+  if (ctx.kind === 'counselling' && ctx.meetingId) {
+    const { data: s } = await admin
+      .from('counselling_sessions').select('user_id').eq('id', ctx.meetingId).maybeSingle();
+    return (s as { user_id?: string } | null)?.user_id === userId;
+  }
+
+  // Channels are audience-facing broadcasts (no is_public flag on live_channels) and
+  // plain meetings have no reliable roster — left permissive; see the §3b note above.
+  return true;
+}
+
 /** The grant matrix (plan §7) as code. */
 function grantFor(role: Role, room: string) {
   const base = { room, roomJoin: true, canSubscribe: true, canPublishData: true };
@@ -215,6 +261,15 @@ serve(async (req) => {
     }
 
     // ── action === 'token' ───────────────────────────────────────────────────
+
+    // Gate: tenant entitlement (§3b) — a token must never let the caller into a
+    // room they aren't entitled to. Host/speaker already proven; everyone else
+    // (attendee/viewer) must pass isEntitled for the tenant-scoped kinds.
+    if (role !== 'host' && role !== 'speaker') {
+      if (!(await isEntitled(admin, user.id, body))) {
+        return json({ error: 'not_entitled' }, 403);
+      }
+    }
 
     // Gate: locked room (§1C) — enforced at issuance, replacing the advisory
     // client-side lock. Read the room's metadata; if it doesn't exist yet
