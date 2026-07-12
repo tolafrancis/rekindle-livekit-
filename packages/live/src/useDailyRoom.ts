@@ -523,70 +523,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         return { url: data.url, token: data.token };
       }
 
-      console.log('[Daily] Creating/getting room:', options.roomName);
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('TIMEOUT: Room creation took longer than 15 seconds')), 15000);
-      });
-      
-      const createRoomPromise = supabase.functions.invoke('daily-room', {
-        body: {
-          action: 'get-or-create-room',
-          roomName: options.roomName,
-          expiresInMinutes: 120,
-          maxParticipants: 50,
-          enableChat: true,
-          enableScreenShare: true,
-          ownerOnlyBroadcast: false,
-          enableKnocking: options.enableWaitingRoom || false
-        }
-      });
-      
-      const createResult = await Promise.race([createRoomPromise, timeoutPromise]);
-      const { data: roomData, error: roomError } = createResult as any;
-
-      if (roomError) {
-        console.error('[Daily] Room creation error:', roomError);
-        
-        if (roomError.message?.includes('FunctionsRelayError') || roomError.message?.includes('not found')) {
-          throw new Error('Video service not configured. The daily-room edge function is missing.');
-        } else if (roomError.message?.includes('unauthorized') || roomError.message?.includes('401')) {
-          throw new Error('Daily.co API key not configured or invalid.');
-        } else {
-          throw new Error(roomError.message || 'Failed to create room');
-        }
-      }
-
-      if (!roomData?.success || !roomData?.room?.url) {
-        throw new Error(roomData?.error || 'Invalid response from room creation - missing URL');
-      }
-
-      console.log('[Daily] Room ready:', roomData.room.url);
-
-      const tokenPromise = supabase.functions.invoke('daily-room', {
-        body: {
-          action: 'generate-token',
-          roomName: roomData.room.name,
-          userName: options.userName,
-          userId: options.userId,
-          isOwner: options.isHost,
-          expiresInMinutes: 120,
-          enableKnocking: options.enableWaitingRoom && !options.isHost
-        }
-      });
-
-      const tokenResult = await Promise.race([tokenPromise, timeoutPromise]);
-      const { data: tokenData, error: tokenError } = tokenResult as any;
-
-      if (tokenError) {
-        throw new Error(tokenError.message || 'Failed to generate meeting token');
-      }
-
-      if (!tokenData?.success || !tokenData?.token) {
-        throw new Error(tokenData?.error || 'Invalid response from token generation');
-      }
-
-      return { url: roomData.room.url, token: tokenData.token };
+      // Legacy Daily get-or-create-room + generate-token path removed (LiveKit-only).
+      // The LiveKit branch above always runs and returns.
+      return null;
     } catch (error: any) {
       console.error('[Daily] Failed to create room:', error);
       
@@ -1346,30 +1285,20 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
 
     try {
-      if (isLiveKitBackend()) {
-        // §12 — record the room composite via LiveKit Egress → S3 HLS.
-        const { data, error } = await supabase.functions.invoke('livekit-egress', {
-          body: {
-            action: 'start-recording',
-            roomName: options.roomName,
-            kind: options.channelId ? 'channel' : 'meeting',
-            channelId: options.channelId,
-            meetingId: options.meetingId,
-            context: roleContext(),
-          },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        recordingEgressIdRef.current = data?.egressId ?? null;
-      } else {
-        const { error } = await supabase.functions.invoke('daily-room', {
-          body: {
-            action: 'start-recording',
-            roomName: options.roomName
-          }
-        });
-        if (error) throw error;
-      }
+      // §12 — record the room composite via LiveKit Egress → S3 HLS.
+      const { data, error } = await supabase.functions.invoke('livekit-egress', {
+        body: {
+          action: 'start-recording',
+          roomName: options.roomName,
+          kind: options.channelId ? 'channel' : 'meeting',
+          channelId: options.channelId,
+          meetingId: options.meetingId,
+          context: roleContext(),
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      recordingEgressIdRef.current = data?.egressId ?? null;
 
       setIsRecording(true);
       setMeetingSettings(prev => ({ ...prev, recordingStatus: 'recording' }));
@@ -1384,24 +1313,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     if (!options.isHost) return;
 
     try {
-      if (isLiveKitBackend()) {
-        await supabase.functions.invoke('livekit-egress', {
-          body: {
-            action: 'stop-recording',
-            roomName: options.roomName,
-            egressId: recordingEgressIdRef.current,
-            context: roleContext(),
-          },
-        });
-        recordingEgressIdRef.current = null;
-      } else {
-        await supabase.functions.invoke('daily-room', {
-          body: {
-            action: 'stop-recording',
-            roomName: options.roomName
-          }
-        });
-      }
+      await supabase.functions.invoke('livekit-egress', {
+        body: {
+          action: 'stop-recording',
+          roomName: options.roomName,
+          egressId: recordingEgressIdRef.current,
+          context: roleContext(),
+        },
+      });
+      recordingEgressIdRef.current = null;
 
       setIsRecording(false);
       setMeetingSettings(prev => ({ ...prev, recordingStatus: 'processing' }));
@@ -1899,27 +1819,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [isScreenSharing]);
 
-  // Delete room
+  // Delete room — LiveKit rooms auto-close once empty, so this is a no-op.
   const deleteRoom = useCallback(async (): Promise<boolean> => {
-    try {
-      const { data, error } = await supabase.functions.invoke('daily-room', {
-        body: {
-          action: 'delete-room',
-          roomName: options.roomName
-        }
-      });
-
-      if (error) {
-        console.error('[Daily] Failed to delete room:', error);
-        return false;
-      }
-
-      return data?.success || false;
-    } catch (error: any) {
-      console.error('[Daily] Error deleting room:', error);
-      return false;
-    }
-  }, [options.roomName]);
+    return true;
+  }, []);
 
   // Listen for app messages from host for controls
   useEffect(() => {
