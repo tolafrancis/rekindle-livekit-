@@ -17,6 +17,18 @@ import { toast } from '@rekindle/ui/use-toast';
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 
+// The SaaS base domain — churches get <handle>.<domain> (e.g. grace.rekindlebc.com).
+const MINISTRY_DOMAIN =
+  (import.meta as any).env?.VITE_MINISTRY_DOMAIN || 'rekindlebc.com';
+
+// Labels that must never be claimable as a handle (they collide with app/infra hosts).
+const RESERVED_HANDLES = new Set([
+  'app', 'www', 'api', 'admin', 'dashboard', 'portal', 'auth', 'login', 'signup',
+  'mail', 'email', 'smtp', 'ftp', 'cdn', 'assets', 'static', 'status', 'help',
+  'support', 'docs', 'blog', 'ministry', 'ministries', 'staging', 'dev', 'test',
+  'rekindle', 'rekindlebc', 'join', 'kiosk', 'settings', 'billing',
+]);
+
 export default function CreateMinistryWizard({ onCreated }: { onCreated?: (id: string) => void }) {
   const { user } = useAuth();
   const { refresh } = useCurrentMinistry();
@@ -46,7 +58,9 @@ export default function CreateMinistryWizard({ onCreated }: { onCreated?: (id: s
     return () => { active = false; clearTimeout(t); };
   }, [handle]);
 
-  const canSubmit = !!user?.id && name.trim().length >= 2 && /^[a-z0-9-]{3,40}$/.test(handle) && !creating;
+  const reserved = RESERVED_HANDLES.has(handle);
+  const canSubmit =
+    !!user?.id && name.trim().length >= 2 && /^[a-z0-9-]{3,40}$/.test(handle) && !reserved && !creating;
 
   const create = async () => {
     if (!canSubmit || !user?.id) return;
@@ -124,11 +138,17 @@ export default function CreateMinistryWizard({ onCreated }: { onCreated?: (id: s
                 onChange={(e) => { setHandleEdited(true); setHandle(slugify(e.target.value)); }}
                 placeholder="grace-chapel"
               />
-              <span className="text-sm text-muted-foreground whitespace-nowrap">.yourproduct.com</span>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">.{MINISTRY_DOMAIN}</span>
             </div>
             {handle && (
-              <p className={`text-xs ${available === false ? 'text-destructive' : 'text-muted-foreground'}`}>
-                {available === false ? 'That handle is taken.' : available ? 'Available.' : 'Checking…'}
+              <p className={`text-xs ${available === false || reserved ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {reserved
+                  ? 'That handle is reserved.'
+                  : available === false
+                    ? 'That handle is taken.'
+                    : available
+                      ? `Available — ${handle}.${MINISTRY_DOMAIN}`
+                      : 'Checking…'}
               </p>
             )}
           </div>
