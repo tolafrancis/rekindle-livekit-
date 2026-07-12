@@ -1,10 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
-import { CurrentMinistryProvider } from '@rekindle/features/CurrentMinistryContext';
+import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
+import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWizard';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
 import MinistryKiosk from '@rekindle/ministry/components/MinistryKiosk';
 import AuthScreen from './screens/AuthScreen';
@@ -43,15 +44,28 @@ function BrandedHeader() {
   );
 }
 
+// Decides the authed landing: a member with no ministry self-onboards (creates their
+// org); otherwise they land in the branded ministry shell.
+function MinistryHome() {
+  const { ministries, loading } = useCurrentMinistry();
+
+  if (loading) return <LoadingScreen />;
+  if (ministries.length === 0) return <CreateMinistryWizard />;
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <BrandedHeader />
+      <main>
+        <MinistriesHub />
+      </main>
+    </div>
+  );
+}
+
 function MinistryShell() {
   return (
     <CurrentMinistryProvider>
-      <div className="min-h-screen bg-background text-foreground">
-        <BrandedHeader />
-        <main>
-          <MinistriesHub />
-        </main>
-      </div>
+      <MinistryHome />
     </CurrentMinistryProvider>
   );
 }
