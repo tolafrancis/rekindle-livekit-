@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider } from '@rekindle/features/CurrentMinistryContext';
+import { useMinistryBranding } from '@rekindle/features/ministryBranding';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
@@ -21,16 +22,32 @@ function LoadingScreen() {
   );
 }
 
+// Branded header — applies the current ministry's theme (via useMinistryBranding's
+// side effect) and shows its logo/name. On white-label tiers the ReKindle wordmark
+// is dropped; otherwise it shows as a small "powered by".
+function BrandedHeader() {
+  const { name, logoUrl, whiteLabel } = useMinistryBranding();
+  return (
+    <header className="flex h-14 items-center gap-3 border-b px-4">
+      {logoUrl ? (
+        <img src={logoUrl} alt="" className="h-8 w-8 rounded object-cover" />
+      ) : null}
+      <span className="font-semibold truncate">{name ?? 'Ministry'}</span>
+      {!whiteLabel && (
+        <span className="text-xs text-muted-foreground hidden sm:inline">· ReKindle</span>
+      )}
+      <div className="ml-auto">
+        <MinistrySwitcher />
+      </div>
+    </header>
+  );
+}
+
 function MinistryShell() {
   return (
     <CurrentMinistryProvider>
       <div className="min-h-screen bg-background text-foreground">
-        <header className="flex h-14 items-center gap-3 border-b px-4">
-          <span className="font-semibold">ReKindle Ministry</span>
-          <div className="ml-auto">
-            <MinistrySwitcher />
-          </div>
-        </header>
+        <BrandedHeader />
         <main>
           <MinistriesHub />
         </main>
