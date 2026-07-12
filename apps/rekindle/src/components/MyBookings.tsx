@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from '@/components/ui/use-toast';
 import { SessionRatingModal } from './SessionRatingModal';
+import CounsellingVideoSession from './CounsellingVideoSession';
 import { 
   Calendar, Clock, User, MessageSquare, XCircle, CheckCircle, 
   Loader2, RefreshCw, Video, Star, AlertCircle 
@@ -45,7 +46,6 @@ export const MyBookings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('upcoming');
   const [joiningSession, setJoiningSession] = useState<string | null>(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
-  const [videoCallData, setVideoCallData] = useState<{ url: string; token: string } | null>(null);
   const [selectedSession, setSelectedSession] = useState<CounsellingSession | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [sessionToRate, setSessionToRate] = useState<CounsellingSession | null>(null);
@@ -126,39 +126,16 @@ export const MyBookings: React.FC = () => {
     }
   };
 
-  const handleJoinSession = async (booking: CounsellingSession) => {
+  const handleJoinSession = (booking: CounsellingSession) => {
     if (!user) return;
-
-    setJoiningSession(booking.id);
+    // LiveKit-only: the session joins via CounsellingVideoSession (useDailyRoom ->
+    // livekit-token, role derived server-side). No Daily room / iframe.
     setSelectedSession(booking);
-
-    try {
-      const roomName = `counselling-${booking.id}`;
-      
-      const { data, error } = await supabase.functions.invoke('daily-room', {
-        body: {
-          roomName,
-          userName: user.user_metadata?.full_name || user.email || 'User',
-          userId: user.id,
-          isHost: false
-        }
-      });
-
-      if (error) throw error;
-
-      setVideoCallData(data);
-      setShowVideoModal(true);
-    } catch (err: any) {
-      console.error('Failed to join session:', err);
-      toast({ title: t('myBookings', 'error', 'Error'), description: t('myBookings', 'failedJoin', 'Failed to join video call'), variant: 'destructive' });
-    } finally {
-      setJoiningSession(null);
-    }
+    setShowVideoModal(true);
   };
 
   const handleLeaveSession = () => {
     setShowVideoModal(false);
-    setVideoCallData(null);
     setSelectedSession(null);
     loadBookings();
   };
@@ -455,12 +432,16 @@ export const MyBookings: React.FC = () => {
               {t('myBookings', 'sessionWith', 'Counselling Session with {name}').replace('{name}', String(selectedSession?.counsellor?.full_name || t('myBookings', 'counsellor', 'Counsellor')))}
             </DialogTitle>
           </DialogHeader>
-          {videoCallData && (
+          {selectedSession && user && (
             <div className="flex-1 h-full">
-              <iframe
-                src={`${videoCallData.url}?t=${videoCallData.token}`}
-                allow="camera; microphone; fullscreen; display-capture"
-                className="w-full h-[60vh] rounded-lg border"
+              <CounsellingVideoSession
+                sessionId={selectedSession.id}
+                roomName={`counselling-${selectedSession.id}`}
+                userName={user.user_metadata?.full_name || user.email || 'User'}
+                userId={user.id}
+                isHost={false}
+                autoJoin
+                onCallEnd={handleLeaveSession}
               />
             </div>
           )}
