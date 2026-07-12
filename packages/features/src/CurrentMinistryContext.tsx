@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { getUserMinistries, type MinistrySummary } from '@rekindle/auth/tenantMiddleware';
+import { resolveMinistryFromHostname } from './ministryHostname';
 import { useAuth } from './AuthContext';
 
 // Phase 3 — authoritative "which ministry am I acting in right now" context.
@@ -58,11 +59,16 @@ export function CurrentMinistryProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     const list = await getUserMinistries(userId);
     setMinistries(list);
-    // Resolve current: keep the persisted choice if still valid; otherwise the
-    // single-membership fast path (or the first ministry) so the member lands
-    // straight in a ministry rather than a chooser.
+    // Resolve current, in precedence order:
+    //  1) the ministry this HOSTNAME maps to (church.yourproduct.com / custom domain),
+    //     if the member belongs to it — a ministry-specific site pins its own tenant;
+    //  2) the persisted choice, if still valid;
+    //  3) single-membership fast path / first ministry.
+    const host = await resolveMinistryFromHostname();
+    const hostMatch = host && list.some((m) => m.id === host.id) ? host.id : null;
     const stored = readStored();
-    const next = list.find((m) => m.id === stored)?.id ?? (list[0]?.id ?? null);
+    const next =
+      hostMatch ?? list.find((m) => m.id === stored)?.id ?? (list[0]?.id ?? null);
     setCurrentMinistryId(next);
     setLoading(false);
   }, [user?.id]);
