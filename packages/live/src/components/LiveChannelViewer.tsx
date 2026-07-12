@@ -4,7 +4,6 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { supabase } from '@rekindle/supabase';
 import { useDailyRoom } from '../useDailyRoom';
-import { isLiveKitBackend } from '../videoBackend';
 import { 
   postLiveChannelJoined,
   postLiveChannelEventAttended
@@ -224,7 +223,9 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // hls_playback_url left over from a previous Daily/Mux broadcast. HLS Egress still
   // runs for recording/VOD (and can front huge audiences later), but the LIVE view
   // is WebRTC. On Daily/Mux, keep the original HLS-when-live behaviour.
-  const watchViaHls = !isLiveKitBackend() && !!isHlsLive && !!hlsPlaybackUrl && !isSpeaker;
+  // LiveKit-only: the live view is always WebRTC (no legacy Mux/Daily HLS-when-live
+  // path). HLS Egress still runs for recording/VOD; the LIVE view never uses it.
+  const watchViaHls = false;
 
   // Join the channel's live presence so the host can see/count this viewer — even
   // when watching via HLS (no Daily room). Mirrors the meetings presence layer.
