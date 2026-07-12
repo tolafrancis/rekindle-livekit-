@@ -39,6 +39,33 @@ export function resolveModules(
   return { ...DEFAULTS, ...(config ?? {}) };
 }
 
+// Phase 6 — which modules a subscription TIER must permit. A module listed here is
+// available only when the tenant's tier grants the matching capability (see
+// @rekindle/auth/ministryEntitlements MinistryCaps). Modules not listed are on all
+// tiers (the free content bundle). This is UI gating; RLS/usage stay the hard limits.
+export const MODULE_TIER_CAP: Record<string, string> = {
+  broadcasts: 'broadcastMessaging',
+  live: 'liveChannels',
+  branding: 'branding',
+  analytics: 'advancedAnalytics',
+};
+
+/**
+ * A module is ON only if the tenant enabled it (toggle) AND the tier permits it (cap).
+ * `caps` is MinistryEntitlements.caps; pass an all-true object to ignore tier gating.
+ */
+export function resolveModulesForTier(
+  config: Record<string, boolean> | null | undefined,
+  caps: Record<string, boolean> | null | undefined,
+): Record<string, boolean> {
+  const out = resolveModules(config);
+  if (!caps) return out;
+  for (const [mod, cap] of Object.entries(MODULE_TIER_CAP)) {
+    if (!caps[cap]) out[mod] = false;
+  }
+  return out;
+}
+
 /** Resolved module map for the current ministry. */
 export function useMinistryModules(): Record<string, boolean> {
   const { currentMinistry } = useCurrentMinistry();
