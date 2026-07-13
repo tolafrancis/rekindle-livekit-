@@ -10,6 +10,7 @@ import MinistryKiosk from '@rekindle/ministry/components/MinistryKiosk';
 import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWizard';
 import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSettings';
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
+import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -32,6 +33,9 @@ function BrandedHeader() {
       <Link to="/" className="font-semibold truncate hover:opacity-80">{name ?? 'Ministry'}</Link>
       {!whiteLabel && <span className="text-xs text-muted-foreground hidden sm:inline">· ReKindle</span>}
       <nav className="ml-auto flex items-center gap-3">
+        <Link to="/settings/account" className="text-sm text-muted-foreground hover:text-foreground">
+          Account
+        </Link>
         <Link to="/settings/billing" className="text-sm text-muted-foreground hover:text-foreground">
           Billing
         </Link>
@@ -89,6 +93,7 @@ function AppRoutes() {
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>
         <Route path="/" element={<MinistriesHub />} />
+        <Route path="/settings/account" element={<MemberAccountSettings />} />
         <Route path="/settings/billing" element={<BillingSettings />} />
         <Route path="/settings/domain" element={<CustomDomainSettings />} />
       </Route>
