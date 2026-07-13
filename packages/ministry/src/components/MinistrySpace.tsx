@@ -49,6 +49,9 @@ import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/conten
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
 import { recordDailyActivity } from '@rekindle/features/streak';
 import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
+import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan';
+import { ScriptureMemory } from '@rekindle/features/components/ScriptureMemory';
+import { BookSummaries } from '@rekindle/features/components/BookSummaries';
 
 interface Ministry {
   id: string;
@@ -577,9 +580,15 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     t('ministrySpace', `nav_${tab.id}`, tab.label);
 
   // Leaders/admins get an extra "Content" tab to manage declarations & affirmations.
+  // "The Word" (reading/scripture/books) sits right after Home for all members.
+  const baseNav: { id: string; label: string; icon: any }[] = [
+    MINISTRY_NAV[0],
+    { id: 'word', label: 'The Word', icon: Book },
+    ...MINISTRY_NAV.slice(1),
+  ];
   const navItems: { id: string; label: string; icon: any }[] = canManageMinistry
-    ? [...MINISTRY_NAV, { id: 'content', label: 'Content', icon: Sparkles }]
-    : [...MINISTRY_NAV];
+    ? [...baseNav, { id: 'content', label: 'Content', icon: Sparkles }]
+    : baseNav;
 
   // Per-ministry module toggle (ministry_groups.settings.modules); unknown keys default on.
   const moduleOn = (key: string): boolean => {
@@ -1078,6 +1087,26 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             themeColor={themeColor}
             onSourceChange={loadMinistryData}
           />
+        )}
+
+        {/* The Word — reading plan, scripture memory, and books (shared ReKindle library) */}
+        {activeTab === 'word' && (
+          <Tabs defaultValue="reading" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="reading" className="flex items-center gap-1.5">
+                <Calendar className="h-4 w-4" /> {t('ministrySpace', 'readingPlan', 'Reading Plan')}
+              </TabsTrigger>
+              <TabsTrigger value="scripture" className="flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4" /> {t('ministrySpace', 'scriptureMemory', 'Scripture Memory')}
+              </TabsTrigger>
+              <TabsTrigger value="books" className="flex items-center gap-1.5">
+                <Book className="h-4 w-4" /> {t('ministrySpace', 'books', 'Books')}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="reading"><BibleReadingPlan /></TabsContent>
+            <TabsContent value="scripture"><ScriptureMemory /></TabsContent>
+            <TabsContent value="books"><BookSummaries /></TabsContent>
+          </Tabs>
         )}
 
         {/* Home Tab */}
