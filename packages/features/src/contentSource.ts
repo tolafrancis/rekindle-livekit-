@@ -46,7 +46,8 @@ export const CONTENT_SOURCES: Record<string, ContentSource> = {
   devotional_series: { pattern: 'ministry_id', globalTable: 'devotional_series' },
   prayer_series: { pattern: 'ministry_id', globalTable: 'prayer_series' },
   declarations: { pattern: 'ministry_id', globalTable: 'declarations' },
-  affirmations: { pattern: 'global_only', globalTable: 'affirmations' },
+  // affirmations gained a nullable ministry_id in migration 0157 (own-content support).
+  affirmations: { pattern: 'ministry_id', globalTable: 'affirmations' },
   book_summaries: { pattern: 'global_only', globalTable: 'book_summaries' },
   prayer_points: { pattern: 'global_only', globalTable: 'prayer_points' },
   prayer_topics: { pattern: 'global_only', globalTable: 'prayer_topics' },
@@ -159,6 +160,76 @@ export async function setMinistryContentMode(ministryId: string, mode: ContentMo
   await supabase
     .from('ministry_groups')
     .update({ settings: { ...settings, content_mode: mode } })
+    .eq('id', ministryId);
+}
+
+// =============================================================================
+// Phase 7 — PER-FEATURE content source. Some churches want ReKindle's declarations
+// but their OWN affirmations (or vice versa), so declarations/affirmations each carry
+// an independent source stored in ministry_groups.settings.content_sources[feature].
+//   'rekindle' → global (ministry_id IS NULL) only
+//   'own'      → this ministry's rows only
+//   'both'     → global + this ministry (blended)
+// Only 'ministry_id'-pattern content (declarations, affirmations) supports this.
+// =============================================================================
+
+export type FeatureContentSource = 'rekindle' | 'own' | 'both';
+const EMPTY_UUID = '00000000-0000-0000-0000-000000000000';
+
+/** Apply a per-feature source to a `ministry_id`-column query. */
+export function scopeBySource(query: any, ministryId: string | null, source: FeatureContentSource): any {
+  if (source === 'rekindle') return query.is('ministry_id', null);
+  if (source === 'own') return query.eq('ministry_id', ministryId ?? EMPTY_UUID);
+  return ministryId
+    ? query.or(`ministry_id.is.null,ministry_id.eq.${ministryId}`)
+    : query.is('ministry_id', null);
+}
+
+/** Fetch a `ministry_id`-pattern content type by per-feature source. */
+export async function fetchFeatureContent(
+  type: keyof typeof CONTENT_SOURCES | string,
+  opts: { ministryId: string | null; source: FeatureContentSource; select?: string },
+): Promise<SourcedRow[]> {
+  const src = CONTENT_SOURCES[type];
+  if (!src || src.pattern !== 'ministry_id') {
+    throw new Error(`[contentSource] fetchFeatureContent needs a ministry_id-pattern type, got: ${type}`);
+  }
+  const { data } = await scopeBySource(
+    supabase.from(src.globalTable).select(opts.select ?? '*'),
+    opts.ministryId,
+    opts.source,
+  );
+  return (data ?? []).map((r: any) => ({ ...r, __source: r.ministry_id ? 'ministry' : 'global' }));
+}
+
+/** Read a feature's source from a ministry's settings JSON (defaults to 'rekindle'). */
+export function getFeatureSource(
+  settings: Record<string, any> | null | undefined,
+  feature: 'declarations' | 'affirmations',
+): FeatureContentSource {
+  const cs = settings && typeof settings === 'object' ? settings.content_sources : undefined;
+  const v = cs && typeof cs === 'object' ? cs[feature] : undefined;
+  return v === 'own' || v === 'both' || v === 'rekindle' ? v : 'rekindle';
+}
+
+/** Persist a feature's source to ministry_groups.settings.content_sources[feature]. */
+export async function setMinistryFeatureSource(
+  ministryId: string,
+  feature: 'declarations' | 'affirmations',
+  source: FeatureContentSource,
+): Promise<void> {
+  const { data } = await supabase
+    .from('ministry_groups')
+    .select('settings')
+    .eq('id', ministryId)
+    .maybeSingle();
+  const settings = (data?.settings && typeof data.settings === 'object' ? data.settings : {}) as Record<string, any>;
+  const content_sources = (settings.content_sources && typeof settings.content_sources === 'object'
+    ? settings.content_sources
+    : {}) as Record<string, any>;
+  await supabase
+    .from('ministry_groups')
+    .update({ settings: { ...settings, content_sources: { ...content_sources, [feature]: source } } })
     .eq('id', ministryId);
 }
 
