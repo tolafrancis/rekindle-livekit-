@@ -17,7 +17,8 @@ import {
   Search, Plus, Users, Crown, Shield, Settings,
   Globe, Lock, Link, Copy, Check, QrCode, Loader2,
   ChevronRight, Building2, MapPin, Heart, X, ArrowLeft,
-  BookOpen, LayoutDashboard, Upload, Image as ImageIcon
+  BookOpen, LayoutDashboard, Upload, Image as ImageIcon,
+  Sparkles, Compass, ArrowRight
 } from 'lucide-react';
 import MinistrySpace from './MinistrySpace';
 import { MinistryDevotionalCreator } from './MinistryDevotionalCreator';
@@ -68,6 +69,15 @@ interface MinistrySubscription {
 const MINISTRY_CATEGORIES = [
   'General', 'Youth', 'Women', 'Men', 'Children', 'Worship',
   'Prayer', 'Outreach', 'Missions', 'Education', 'Family', 'Singles'
+];
+
+// A gentle verse of encouragement in the welcome hero — rotates daily.
+const WELCOME_VERSES = [
+  '"For where two or three gather in my name, there am I with them." — Matthew 18:20',
+  '"And let us consider how we may spur one another on toward love and good deeds." — Hebrews 10:24',
+  '"How good and pleasant it is when God\'s people live together in unity!" — Psalm 133:1',
+  '"Carry each other\'s burdens, and in this way you will fulfill the law of Christ." — Galatians 6:2',
+  '"Therefore encourage one another and build each other up." — 1 Thessalonians 5:11',
 ];
 
 type MinistryHubView = 'discover' | 'my-ministries' | 'manage' | 'ministry-space' | 'ministry-management';
@@ -498,24 +508,68 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     );
   }
 
+  const firstName = (profile?.full_name || '').trim().split(' ')[0];
+  const hour = new Date().getHours();
+  const greeting = hour < 12
+    ? t('ministriesHub', 'goodMorning', 'Good morning')
+    : hour < 18
+      ? t('ministriesHub', 'goodAfternoon', 'Good afternoon')
+      : t('ministriesHub', 'goodEvening', 'Good evening');
+  const welcomeVerse = WELCOME_VERSES[Math.floor(Date.now() / 86_400_000) % WELCOME_VERSES.length];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-gray-500">{t('ministriesHub', 'headerSubtitle', 'Connect with faith communities and grow together')}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowJoinModal(true)}>
-            <Link className="h-4 w-4 mr-2" />
-            {t('ministriesHub', 'joinByCode', 'Join by Code')}
-          </Button>
-          {(is_ministry_Leader || isAdmin) && (
-            <Button onClick={() => setShowCreateModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('ministriesHub', 'createMinistry', 'Create Ministry')}
+      {/* Welcome hero */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 sm:p-8 text-white shadow-lg shadow-indigo-500/20">
+        {/* soft decorative glows */}
+        <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 -left-20 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl" />
+        <div className="relative max-w-2xl">
+          <p className="text-sm font-medium text-white/80">
+            {greeting}{firstName ? `, ${firstName}` : ''} 👋
+          </p>
+          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight">
+            {t('ministriesHub', 'heroTitle', 'Welcome to your faith community')}
+          </h1>
+          <p className="mt-2 text-white/85">
+            {t('ministriesHub', 'heroSubtitle', 'Discover ministries, grow together, and stay connected wherever you are.')}
+          </p>
+
+          {/* Daily encouragement */}
+          <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-white/10 p-3.5 ring-1 ring-white/15 backdrop-blur-sm">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
+            <p className="text-sm italic text-white/90">{welcomeVerse}</p>
+          </div>
+
+          {/* Primary actions */}
+          <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <Button className="bg-white text-indigo-700 shadow-sm hover:bg-white/90" onClick={() => setShowJoinModal(true)}>
+              <Link className="h-4 w-4 mr-2" />
+              {t('ministriesHub', 'joinByCode', 'Join by Code')}
             </Button>
-          )}
+            {(is_ministry_Leader || isAdmin) && (
+              <Button
+                variant="outline"
+                className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={() => setShowCreateModal(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {t('ministriesHub', 'createMinistry', 'Create Ministry')}
+              </Button>
+            )}
+          </div>
+
+          {/* At-a-glance stats */}
+          <div className="mt-5 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-white/85">
+            <span className="flex items-center gap-1.5">
+              <Heart className="h-4 w-4" />
+              {t('ministriesHub', 'statYourMinistries', '{count} your ministries').replace('{count}', String(myMinistries.length))}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Globe className="h-4 w-4" />
+              {t('ministriesHub', 'statToExplore', '{count} to explore').replace('{count}', String(ministries.length))}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -549,19 +603,46 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             </Select>
           </SearchFilterPanel>
 
+          {/* Section heading */}
+          <div className="flex items-center justify-between px-0.5">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+              <Compass className="h-5 w-5 text-indigo-600" />
+              {t('ministriesHub', 'discoverCommunities', 'Discover communities')}
+            </h2>
+            <span className="text-sm text-gray-500">
+              {t('ministriesHub', 'countFound', '{count} found').replace('{count}', String(filteredMinistries.length))}
+            </span>
+          </div>
+
           {/* Ministry Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredMinistries.length === 0 ? (
-              <div className="col-span-full text-center py-12">
-                <Building2 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold text-gray-700">{t('ministriesHub', 'noMinistriesFound', 'No ministries found')}</h3>
-                <p className="text-gray-500">{t('ministriesHub', 'adjustSearch', 'Try adjusting your search or filters')}</p>
+              <div className="col-span-full">
+                <div className="mx-auto max-w-md rounded-3xl border border-dashed border-gray-200 bg-gradient-to-b from-gray-50 to-white p-10 text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
+                    <Compass className="h-8 w-8 text-indigo-500" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-800">{t('ministriesHub', 'noMinistriesFound', 'No ministries found')}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{t('ministriesHub', 'noMinistriesHint', 'Try a different search, or join a community with an invite code.')}</p>
+                  <div className="mt-5 flex justify-center gap-2">
+                    <Button variant="outline" onClick={() => setShowJoinModal(true)}>
+                      <Link className="h-4 w-4 mr-2" />
+                      {t('ministriesHub', 'joinByCode', 'Join by Code')}
+                    </Button>
+                    {(is_ministry_Leader || isAdmin) && (
+                      <Button onClick={() => setShowCreateModal(true)}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        {t('ministriesHub', 'createMinistry', 'Create Ministry')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
               filteredMinistries.map(ministry => {
                 const isMember = !!memberships[ministry.id];
                 return (
-                  <Card key={ministry.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <Card key={ministry.id} className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl">
                     {/* Banner */}
                     <div 
                       className="h-24 bg-gradient-to-r from-purple-600 to-indigo-600"
