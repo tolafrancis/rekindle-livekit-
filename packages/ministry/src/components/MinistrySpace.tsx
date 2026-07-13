@@ -20,7 +20,7 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -46,6 +46,9 @@ import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
+import { StreakWidget } from '@rekindle/features/components/StreakWidget';
+import { recordDailyActivity } from '@rekindle/features/streak';
+import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
 
 interface Ministry {
   id: string;
@@ -272,6 +275,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const loadMinistryData = useCallback(async () => {
     setLoading(true);
     try {
+      // Scheduled ministry devotionals soft-expire from the member feed 5 days past
+      // their scheduled date (rows are NOT deleted — reversible). Null-dated
+      // (always-on) devotionals are exempt.
+      const expiryFloor = new Date();
+      expiryFloor.setHours(0, 0, 0, 0);
+      expiryFloor.setDate(expiryFloor.getDate() - 5);
+      const expiryFloorISO = expiryFloor.toISOString();
       const [announcementsRes, eventsRes, prayersRes, testimoniesRes, devotionalsRes, prayerLibraryRes, campaignsRes] = await Promise.all([
         supabase.from('ministry_announcements').select('*').eq('ministry_id', ministry.id)
           .not('status', 'in', '("draft","scheduled","expired")')
@@ -283,9 +293,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           .select('*')
           .eq('ministry_id', ministry.id)
           .eq('is_published', true)
-          // Local end-of-day boundary so today's devotional (with a daytime
-          // timestamp) is included rather than yesterday's. Matches the home widget.
-          .or(`scheduled_date.is.null,scheduled_date.lte.${endOfLocalDayISO()}`)
+          // Local end-of-day upper bound (today's daytime-stamped devotional is
+          // included) + 5-day lower bound (soft-expiry). Null-dated devotionals show
+          // regardless. Matches the home widget.
+          .or(`scheduled_date.is.null,and(scheduled_date.gte.${expiryFloorISO},scheduled_date.lte.${endOfLocalDayISO()})`)
           .order('scheduled_date', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false })
           .limit(10),
@@ -490,6 +501,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   };
 
   const handleStartDevotional = (devotional: MinistryDevotional) => {
+    // Count opening a devotional toward the member's faithfulness streak.
+    void recordDailyActivity(user?.id, 'daily_devotional');
     const parseQuestions = (q: any): string[] => {
       if (!q) return [];
       if (Array.isArray(q)) return q;
@@ -1090,6 +1103,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </div>
             </Card>
 
+            {/* Faithfulness streak */}
+            <StreakWidget />
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Today's Devotional */}
               <div className="lg:col-span-2">
@@ -1288,6 +1304,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               ministryId={ministry.id}
               ministryName={ministry.name}
             />
+
+            {/* Worship music — shared library + up to 10 personal uploads per member */}
+            {moduleOn('music') && (
+              <div>
+                <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-900">
+                  <Music className="h-5 w-5" style={{ color: themeColor }} />
+                  {t('ministrySpace', 'worshipMusic', 'Worship Music')}
+                </h2>
+                <InstrumentalPlayer uploadLimit={10} />
+              </div>
+            )}
 
             {/* Announcements */}
             <Card>
