@@ -52,6 +52,7 @@ import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPl
 import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan';
 import { ScriptureMemory } from '@rekindle/features/components/ScriptureMemory';
 import { BookSummaries } from '@rekindle/features/components/BookSummaries';
+import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibrary';
 
 interface Ministry {
   id: string;
@@ -1091,8 +1092,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* The Word — reading plan, scripture memory, and books (shared ReKindle library) */}
         {activeTab === 'word' && (
-          <Tabs defaultValue="reading" className="space-y-4">
-            <TabsList>
+          <Tabs defaultValue="devotionals" className="space-y-4">
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="devotionals" className="flex items-center gap-1.5">
+                <BookOpen className="h-4 w-4" /> {t('ministrySpace', 'devotionalSeries', 'Devotionals')}
+              </TabsTrigger>
               <TabsTrigger value="reading" className="flex items-center gap-1.5">
                 <Calendar className="h-4 w-4" /> {t('ministrySpace', 'readingPlan', 'Reading Plan')}
               </TabsTrigger>
@@ -1103,6 +1107,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 <Book className="h-4 w-4" /> {t('ministrySpace', 'books', 'Books')}
               </TabsTrigger>
             </TabsList>
+            <TabsContent value="devotionals"><DevotionalLibrary /></TabsContent>
             <TabsContent value="reading"><BibleReadingPlan /></TabsContent>
             <TabsContent value="scripture"><ScriptureMemory /></TabsContent>
             <TabsContent value="books"><BookSummaries /></TabsContent>
