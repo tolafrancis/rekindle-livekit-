@@ -20,7 +20,7 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -44,6 +44,8 @@ import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
 import { MLiveChannel } from './MLiveChannel';
 import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
+import MinistryContentManager from './MinistryContentManager';
+import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 
 interface Ministry {
   id: string;
@@ -203,6 +205,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([]);
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
   const [devotionals, setDevotionals] = useState<MinistryDevotional[]>([]);
+  const [declarations, setDeclarations] = useState<any[]>([]);
+  const [affirmations, setAffirmations] = useState<any[]>([]);
   const [prayers, setPrayers] = useState<MinistryPrayer[]>([]);
   const [prayerCampaigns, setPrayerCampaigns] = useState<PrayerCampaign[]>([]);
   const [selectedPrayer, setSelectedPrayer] = useState<MinistryPrayer | null>(null);
@@ -329,6 +333,20 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       }
       setPrayers(prayerLibraryRes.data || []);
       setPrayerCampaigns(campaignsRes.data || []);
+
+      // Declarations & affirmations resolve by their PER-FEATURE source (ReKindle /
+      // our own / both), read from ministry_groups.settings.content_sources.
+      try {
+        const select = 'id, text, title, scripture_reference, is_daily, is_published, ministry_id, created_at';
+        const [decs, affs] = await Promise.all([
+          fetchFeatureContent('declarations', { ministryId: ministry.id, source: getFeatureSource(ministry.settings, 'declarations'), select }),
+          fetchFeatureContent('affirmations', { ministryId: ministry.id, source: getFeatureSource(ministry.settings, 'affirmations'), select }),
+        ]);
+        setDeclarations(decs.filter((d: any) => d.is_published !== false));
+        setAffirmations(affs.filter((a: any) => a.is_published !== false));
+      } catch (e) {
+        console.error('Error loading declarations/affirmations:', e);
+      }
     } catch (err) {
       console.error('Error loading ministry data:', err);
     } finally {
@@ -544,6 +562,26 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Translate a nav tab's display label by its stable id (label used as EN fallback).
   const navLabel = (tab: { id: string; label: string }) =>
     t('ministrySpace', `nav_${tab.id}`, tab.label);
+
+  // Leaders/admins get an extra "Content" tab to manage declarations & affirmations.
+  const navItems: { id: string; label: string; icon: any }[] = canManageMinistry
+    ? [...MINISTRY_NAV, { id: 'content', label: 'Content', icon: Sparkles }]
+    : [...MINISTRY_NAV];
+
+  // Per-ministry module toggle (ministry_groups.settings.modules); unknown keys default on.
+  const moduleOn = (key: string): boolean => {
+    const m = (ministry.settings as any)?.modules;
+    return m && typeof m === 'object' && key in m ? !!m[key] : true;
+  };
+
+  // Deterministic daily pick: prefer is_daily rows, rotate by day so it varies.
+  const pickDaily = (list: any[]): any | null => {
+    if (!list.length) return null;
+    const daily = list.filter((x) => x.is_daily);
+    const pool = daily.length ? daily : list;
+    const dayIndex = Math.floor(Date.now() / 86_400_000);
+    return pool[dayIndex % pool.length];
+  };
 
   // ========== CONDITIONAL RETURNS (AFTER ALL HOOKS TO COMPLY WITH RULES OF HOOKS) ==========
   
@@ -847,7 +885,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <Menu className="h-5 w-5" />
                   <span className="max-w-[6.5rem] truncate">
                     {(() => {
-                      const current = MINISTRY_NAV.find((item) => item.id === activeTab);
+                      const current = navItems.find((item) => item.id === activeTab);
                       return current ? navLabel(current) : t('ministrySpace', 'menu', 'Menu');
                     })()}
                   </span>
@@ -857,7 +895,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setNavMenuOpen(false)} />
                     <div className="absolute left-0 top-full mt-1 z-50 w-60 max-h-[70vh] overflow-y-auto rounded-xl border bg-white shadow-xl py-1">
-                      {MINISTRY_NAV.map((tab) => {
+                      {navItems.map((tab) => {
                         const Icon = tab.icon;
                         const active = activeTab === tab.id;
                         return (
@@ -888,7 +926,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
               {/* Icon tab row (labels appear from sm+) */}
               <div className="flex gap-1 overflow-x-auto">
-                {MINISTRY_NAV.map((tab) => {
+                {navItems.map((tab) => {
                   const Icon = tab.icon;
                   return (
                     <button
@@ -973,7 +1011,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
               {/* Vertical navigation */}
               <nav className="flex flex-col gap-1 p-3" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
-                {MINISTRY_NAV.map((tab) => {
+                {navItems.map((tab) => {
                   const Icon = tab.icon;
                   const active = activeTab === tab.id;
                   return (
@@ -1016,6 +1054,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             ministryName={ministry.name}
             isLeader={isLeader}
             themeColor={themeColor}
+          />
+        )}
+
+        {/* Content Tab (leaders/admins) — declaration & affirmation source + authoring */}
+        {activeTab === 'content' && canManageMinistry && (
+          <MinistryContentManager
+            ministryId={ministry.id}
+            settings={ministry.settings}
+            themeColor={themeColor}
+            onSourceChange={loadMinistryData}
           />
         )}
 
@@ -1186,6 +1234,54 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 </CardContent>
               </Card>
             </div>
+
+            {/* Today's Declaration & Affirmation — source-aware (ReKindle / own / both),
+                module-gated, hidden when the resolved source yields nothing. */}
+            {(() => {
+              const decOn = moduleOn('declarations');
+              const affOn = moduleOn('affirmations');
+              const todaysDec = decOn ? pickDaily(declarations) : null;
+              const todaysAff = affOn ? pickDaily(affirmations) : null;
+              if (!todaysDec && !todaysAff) return null;
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {todaysDec && (
+                    <Card className="overflow-hidden">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <ScrollText className="h-5 w-5" style={{ color: themeColor }} />
+                          {t('ministrySpace', 'todaysDeclaration', "Today's Declaration")}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {todaysDec.title && <p className="text-sm font-semibold">{todaysDec.title}</p>}
+                        <p className="text-sm leading-relaxed text-gray-700">&ldquo;{todaysDec.text}&rdquo;</p>
+                        {todaysDec.scripture_reference && (
+                          <p className="text-xs font-medium" style={{ color: themeColor }}>{todaysDec.scripture_reference}</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {todaysAff && (
+                    <Card className="overflow-hidden">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Sparkles className="h-5 w-5" style={{ color: themeColor }} />
+                          {t('ministrySpace', 'todaysAffirmation', "Today's Affirmation")}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {todaysAff.title && <p className="text-sm font-semibold">{todaysAff.title}</p>}
+                        <p className="text-sm leading-relaxed text-gray-700">&ldquo;{todaysAff.text}&rdquo;</p>
+                        {todaysAff.scripture_reference && (
+                          <p className="text-xs font-medium" style={{ color: themeColor }}>{todaysAff.scripture_reference}</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* WhatsApp opt-in — only rendered if ministry has an active WhatsApp connection */}
             <MinistryWhatsAppOptIn
