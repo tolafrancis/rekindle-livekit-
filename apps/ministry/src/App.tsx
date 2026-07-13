@@ -27,6 +27,9 @@ function LoadingScreen() {
 
 function BrandedHeader() {
   const { name, logoUrl, whiteLabel } = useMinistryBranding();
+  const { currentMinistry } = useCurrentMinistry();
+  // Billing & Domain are leader/admin concerns; regular members see only Account.
+  const canManage = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
   return (
     <header className="flex h-14 items-center gap-3 border-b px-4">
       {logoUrl ? <img src={logoUrl} alt="" className="h-8 w-8 rounded object-cover" /> : null}
@@ -36,12 +39,16 @@ function BrandedHeader() {
         <Link to="/settings/account" className="text-sm text-muted-foreground hover:text-foreground">
           Account
         </Link>
-        <Link to="/settings/billing" className="text-sm text-muted-foreground hover:text-foreground">
-          Billing
-        </Link>
-        <Link to="/settings/domain" className="text-sm text-muted-foreground hover:text-foreground">
-          Domain
-        </Link>
+        {canManage && (
+          <>
+            <Link to="/settings/billing" className="text-sm text-muted-foreground hover:text-foreground">
+              Billing
+            </Link>
+            <Link to="/settings/domain" className="text-sm text-muted-foreground hover:text-foreground">
+              Domain
+            </Link>
+          </>
+        )}
         <MinistrySwitcher />
       </nav>
     </header>
