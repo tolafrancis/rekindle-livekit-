@@ -11,6 +11,8 @@ import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWi
 import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSettings';
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
+import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
+import { User, CreditCard, Globe, LogOut } from 'lucide-react';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -28,29 +30,36 @@ function LoadingScreen() {
 function BrandedHeader() {
   const { name, logoUrl, whiteLabel } = useMinistryBranding();
   const { currentMinistry } = useCurrentMinistry();
+  const { profile, signOut } = useAuth();
   // Billing & Domain are leader/admin concerns; regular members see only Account.
   const canManage = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
+  const firstName = (profile?.full_name || '').trim().split(' ')[0];
+  const iconBtn = 'flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm transition-transform hover:scale-105';
   return (
-    <header className="flex h-14 items-center gap-3 border-b px-4">
+    <header className="flex h-14 items-center gap-3 border-b px-3 sm:px-4">
       {logoUrl ? <img src={logoUrl} alt="" className="h-8 w-8 rounded object-cover" /> : null}
       <Link to="/" className="font-semibold truncate hover:opacity-80">{name ?? 'Ministry'}</Link>
       {!whiteLabel && <span className="text-xs text-muted-foreground hidden sm:inline">· ReKindle</span>}
-      <nav className="ml-auto flex items-center gap-3">
-        <Link to="/settings/account" className="text-sm text-muted-foreground hover:text-foreground">
-          Account
+      <div className="ml-auto flex items-center gap-2">
+        {firstName && <span className="hidden md:inline text-sm text-muted-foreground mr-1">Welcome back, {firstName}</span>}
+        <Link to="/settings/account" aria-label="Account" title="Account" className={`${iconBtn} bg-gradient-to-br from-indigo-500 to-purple-600`}>
+          <User className="h-4 w-4" />
         </Link>
         {canManage && (
           <>
-            <Link to="/settings/billing" className="text-sm text-muted-foreground hover:text-foreground">
-              Billing
+            <Link to="/settings/billing" aria-label="Billing" title="Billing" className={`${iconBtn} bg-gradient-to-br from-sky-500 to-blue-600`}>
+              <CreditCard className="h-4 w-4" />
             </Link>
-            <Link to="/settings/domain" className="text-sm text-muted-foreground hover:text-foreground">
-              Domain
+            <Link to="/settings/domain" aria-label="Domain" title="Domain" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
+              <Globe className="h-4 w-4" />
             </Link>
           </>
         )}
+        <button onClick={() => void signOut()} aria-label="Sign out" title="Sign out" className={`${iconBtn} bg-gradient-to-br from-rose-500 to-red-600`}>
+          <LogOut className="h-4 w-4" />
+        </button>
         <MinistrySwitcher />
-      </nav>
+      </div>
     </header>
   );
 }
@@ -67,6 +76,7 @@ function AuthedShell() {
       <main>
         <Outlet />
       </main>
+      <ScrollToTopButton />
     </div>
   );
 }

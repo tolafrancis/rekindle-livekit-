@@ -33,6 +33,7 @@ import { ScriptureMemory } from './ScriptureMemory';
 import { NotificationFeed } from './NotificationFeed';
 import { useNotifications } from '@/hooks/useNotifications';
 import { AppFooter } from './AppFooter';
+import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { UpgradePromptModal } from './UpgradePromptModal';
 import { UserActivityDashboard } from './UserActivityDashboard';
 import { BookSummaries } from './BookSummaries';
@@ -1533,6 +1534,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         </ErrorBoundary>
         </div>
       </main>
+
+      <ScrollToTopButton />
 
       {!ministryWorkspaceActive && <AppFooter onNavigate={setActiveTab} />}
 
