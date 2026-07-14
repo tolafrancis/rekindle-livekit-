@@ -53,6 +53,9 @@ import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan
 import { ScriptureMemory } from '@rekindle/features/components/ScriptureMemory';
 import { BookSummaries } from '@rekindle/features/components/BookSummaries';
 import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibrary';
+import { PrayerLibrary } from '@rekindle/features/components/PrayerLibrary';
+import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
+import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
 
 interface Ministry {
   id: string;
@@ -2074,7 +2077,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Prayer Library Tab */}
         {activeTab === 'prayer' && (
-          <div className="space-y-6">
+          <Tabs defaultValue="ministry" className="space-y-4">
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="ministry" className="flex items-center gap-1.5"><Heart className="h-4 w-4" />{t('ministrySpace', 'ourPrayers', 'Our Prayers')}</TabsTrigger>
+              <TabsTrigger value="library" className="flex items-center gap-1.5"><BookOpen className="h-4 w-4" />{t('ministrySpace', 'prayerLibraryTab', 'Prayer Library')}</TabsTrigger>
+              <TabsTrigger value="journal" className="flex items-center gap-1.5"><Edit className="h-4 w-4" />{t('ministrySpace', 'prayerJournal', 'Journal')}</TabsTrigger>
+              <TabsTrigger value="wall" className="flex items-center gap-1.5"><Users className="h-4 w-4" />{t('ministrySpace', 'prayerWall', 'Prayer Wall')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="ministry" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">{t('ministrySpace', 'ministryPrayerLibrary', 'Ministry Prayer Library')}</h2>
               <div className="flex items-center gap-2">
@@ -2249,7 +2259,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 </p>
               </Card>
             )}
-          </div>
+            </TabsContent>
+            <TabsContent value="library"><PrayerLibrary /></TabsContent>
+            <TabsContent value="journal"><PrayerJournal /></TabsContent>
+            <TabsContent value="wall"><CommunityPrayerWall /></TabsContent>
+          </Tabs>
         )}
           </div>
         </div>
