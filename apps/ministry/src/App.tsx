@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
@@ -12,6 +12,7 @@ import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSett
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
+import { OnboardingTips } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut } from 'lucide-react';
 import AuthScreen from './screens/AuthScreen';
 
@@ -68,6 +69,7 @@ function BrandedHeader() {
 // gets the branded shell with the child route rendered in <Outlet/>.
 function AuthedShell() {
   const { ministries, loading } = useCurrentMinistry();
+  const navigate = useNavigate();
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
   return (
@@ -77,6 +79,8 @@ function AuthedShell() {
         <Outlet />
       </main>
       <ScrollToTopButton />
+      {/* One-time welcome tips (ReKindle Tips) */}
+      <OnboardingTips onNavigate={() => navigate('/')} />
     </div>
   );
 }

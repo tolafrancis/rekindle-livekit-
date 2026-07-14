@@ -47,7 +47,9 @@ import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOpt
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
+import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
+import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip';
 import { recordDailyActivity } from '@rekindle/features/streak';
 import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
 import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan';
@@ -197,6 +199,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
   const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
+  const navigate = useNavigate();
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
   const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);
@@ -1271,6 +1274,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 </div>
               </div>
             </Card>
+
+            {/* ReKindle Tip — nudge to set up daily reminders (self-hides once set) */}
+            <ReminderSetupTip onSetup={() => navigate('/settings/account')} />
 
             {/* Faithfulness streak */}
             <StreakWidget />
