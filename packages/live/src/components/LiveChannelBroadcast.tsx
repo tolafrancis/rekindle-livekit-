@@ -600,6 +600,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       setBroadcastId(broadcast.id);
       console.log('[Broadcast] Broadcast record created:', broadcast.id);
 
+      console.log('[Broadcast] Joining Daily room...');
+      const joined = await dailyRoom.joinRoom();
+      if (!joined) {
+        throw new Error('Failed to join broadcast room');
+      }
+      console.log('[Broadcast] Successfully joined Daily room');
+
+      // Only NOW — after the LiveKit room actually connected — mark the channel
+      // live, so a failed connection never leaves it stuck showing "live".
       await supabase
         .from('live_channels')
         .update({
@@ -611,14 +620,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
           updated_at: new Date().toISOString()
         })
         .eq('id', channel.id);
-      console.log('[Broadcast] Channel status updated');
-
-      console.log('[Broadcast] Joining Daily room...');
-      const joined = await dailyRoom.joinRoom();
-      if (!joined) {
-        throw new Error('Failed to join broadcast room');
-      }
-      console.log('[Broadcast] Successfully joined Daily room');
+      console.log('[Broadcast] Channel marked live (post-connect)');
 
       // FIXED: Clean up ALL stale chat messages before starting new broadcast
       // This includes system messages to prevent "is now live" accumulation
@@ -740,6 +742,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       });
     } catch (err: any) {
       console.error('[Broadcast] Failed to start:', err);
+      // Roll back: if we couldn't connect, ensure the channel isn't left "live".
+      try {
+        await supabase
+          .from('live_channels')
+          .update({ is_live: false, is_recording: false, updated_at: new Date().toISOString() })
+          .eq('id', channel.id);
+      } catch (rbErr) {
+        console.warn('[Broadcast] Rollback (is_live=false) failed:', rbErr);
+      }
       toast({
         title: t('liveChannelBroadcast', 'failedToStart', 'Failed to Start'),
         description: err.message || t('liveChannelBroadcast', 'couldNotStartBroadcast', 'Could not start broadcast'),
