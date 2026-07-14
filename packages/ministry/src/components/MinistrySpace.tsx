@@ -379,18 +379,29 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         console.error('Error loading declarations/affirmations:', e);
       }
 
-      // Kiosk entries this month (ministry_attendance, source='kiosk').
+      // This member's OWN kiosk check-ins this month (ministry_attendance via their
+      // ministry_member_profile). Shown to every member.
       try {
         const monthStart = new Date();
         monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-        const { count } = await supabase
-          .from('ministry_attendance')
-          .select('id', { count: 'exact', head: true })
+        const { data: myProfiles } = await supabase
+          .from('ministry_member_profiles')
+          .select('id')
           .eq('ministry_id', ministry.id)
-          .eq('source', 'kiosk')
-          .gte('attended_on', monthStart.toISOString().slice(0, 10));
-        setKioskThisMonth(count ?? 0);
-      } catch { /* RLS may hide it for non-leaders — default 0 */ }
+          .eq('user_id', user?.id ?? '');
+        const ids = (myProfiles ?? []).map((p: any) => p.id);
+        if (ids.length) {
+          const { count } = await supabase
+            .from('ministry_attendance')
+            .select('id', { count: 'exact', head: true })
+            .in('profile_id', ids)
+            .eq('source', 'kiosk')
+            .gte('attended_on', monthStart.toISOString().slice(0, 10));
+          setKioskThisMonth(count ?? 0);
+        } else {
+          setKioskThisMonth(0);
+        }
+      } catch { setKioskThisMonth(0); }
     } catch (err) {
       console.error('Error loading ministry data:', err);
     } finally {
@@ -1263,8 +1274,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 { icon: BookOpen, value: analytics?.booksCompleted ?? 0, label: t('ministrySpace', 'booksCompleted', 'Books completed'), grad: 'from-orange-500 to-amber-600' },
                 { icon: Heart, value: analytics?.prayersCompleted ?? 0, label: t('ministrySpace', 'prayersCompleted', 'Prayers completed'), grad: 'from-rose-500 to-pink-600' },
                 { icon: Star, value: analytics?.xpPoints ?? 0, label: t('ministrySpace', 'devotionalsCompleted', 'Devotionals completed'), grad: 'from-amber-500 to-yellow-600' },
-                // Kiosk attendance is a leadership metric (RLS: leaders/admins only).
-                ...(canManageMinistry ? [{ icon: Users, value: kioskThisMonth, label: t('ministrySpace', 'kioskThisMonth', 'Kiosk entries this month'), grad: 'from-sky-500 to-blue-600' }] : []),
+                // This member's own physical kiosk check-ins this month.
+                { icon: Building2, value: kioskThisMonth, label: t('ministrySpace', 'myCheckInsThisMonth', 'Church check-ins this month'), grad: 'from-sky-500 to-blue-600' },
               ].map((s, i) => {
                 const SIcon = s.icon;
                 return (
