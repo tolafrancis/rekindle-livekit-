@@ -125,6 +125,10 @@ interface Props {
   ministryName?: string | null;
   onComplete: () => void;
   onClose: () => void;
+  /** Optional override for the "Take today's Declaration" action. When provided
+   *  (e.g. the ministry app, which isn't route-based), it's called instead of the
+   *  default navigate('/home') + scroll-to-#daily-declaration. */
+  onTakeDeclaration?: () => void;
 }
 
 export const DevotionalModule: React.FC<Props> = ({
@@ -136,7 +140,8 @@ export const DevotionalModule: React.FC<Props> = ({
   seriesTitle,
   totalDays,
   onComplete,
-  onClose
+  onClose,
+  onTakeDeclaration
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -492,12 +497,17 @@ export const DevotionalModule: React.FC<Props> = ({
     setShowCompletionPopup(false);
     if (popupSource === 'declaration') {
       onClose();
-      if (window.location.pathname !== '/home') {
-        navigate('/home');
+      if (onTakeDeclaration) {
+        // Host app (e.g. ministry) handles routing to its own declaration surface.
+        onTakeDeclaration();
+      } else {
+        if (window.location.pathname !== '/home') {
+          navigate('/home');
+        }
+        setTimeout(() => {
+          document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 350);
       }
-      setTimeout(() => {
-        document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 350);
     } else {
       onComplete();
     }

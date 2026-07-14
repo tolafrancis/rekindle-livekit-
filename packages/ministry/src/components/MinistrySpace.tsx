@@ -890,6 +890,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             setShowDevotionalModule(false);
           }}
           onClose={() => setShowDevotionalModule(false)}
+          onTakeDeclaration={() => {
+            // Ministry isn't route-based: go to the home tab and scroll to the card.
+            setShowDevotionalModule(false);
+            setActiveTab('home');
+            setTimeout(() => {
+              document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 350);
+          }}
         />
       )}
 
@@ -1421,7 +1429,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {(moduleOn('declarations') || moduleOn('affirmations')) && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {moduleOn('declarations') && (
-                  <DeclarationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'declarations')} brandName={ministry.name} />
+                  <div id="daily-declaration">
+                    <DeclarationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'declarations')} brandName={ministry.name} />
+                  </div>
                 )}
                 {moduleOn('affirmations') && (
                   <AffirmationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'affirmations')} brandName={ministry.name} />
