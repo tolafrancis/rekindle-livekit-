@@ -20,7 +20,7 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Award
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -56,6 +56,10 @@ import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibra
 import { PrayerLibrary } from '@rekindle/features/components/PrayerLibrary';
 import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
 import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
+import { CommunityActivityFeed } from '@rekindle/features/components/CommunityActivityFeed';
+import { EnhancedPrayerChallenges } from '@rekindle/features/components/EnhancedPrayerChallenges';
+import { BadgeCard } from '@rekindle/features/components/BadgeCard';
+import { badges } from '@rekindle/features/data/badges';
 
 interface Ministry {
   id: string;
@@ -187,7 +191,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const entitlements = useUserEntitlements();
   
   const [activeTab, setActiveTab] = useState('home');
-  const [communitySubTab, setCommunitySubTab] = useState<'revelations' | 'qa'>('revelations');
+  const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges' | 'rewards'>('feed');
 
   // ── Ministry Community: Revelations ──
   const [mRevLoading, setMRevLoading] = useState(true);
@@ -1774,6 +1778,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {/* Sub-tab bar */}
             <div className="flex border-b border-gray-200 overflow-x-auto scrollbar-hide">
               <button
+                onClick={() => setCommunitySubTab('feed')}
+                className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                  communitySubTab === 'feed'
+                    ? 'border-emerald-500 text-emerald-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Users className="h-4 w-4" />
+                {t('ministrySpace', 'feed', 'Feed')}
+              </button>
+              <button
                 onClick={() => setCommunitySubTab('revelations')}
                 className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
                   communitySubTab === 'revelations'
@@ -1795,7 +1810,38 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 <HelpCircle className="h-4 w-4" />
                 {t('ministrySpace', 'gotQuestionsSeekClarity', 'Got Questions? Seek Clarity')}
               </button>
+              <button
+                onClick={() => setCommunitySubTab('challenges')}
+                className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                  communitySubTab === 'challenges'
+                    ? 'border-amber-500 text-amber-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Trophy className="h-4 w-4" />
+                {t('ministrySpace', 'challenges', 'Challenges')}
+              </button>
+              <button
+                onClick={() => setCommunitySubTab('rewards')}
+                className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                  communitySubTab === 'rewards'
+                    ? 'border-yellow-500 text-yellow-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Award className="h-4 w-4" />
+                {t('ministrySpace', 'rewards', 'Rewards')}
+              </button>
             </div>
+
+            {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
+            {communitySubTab === 'feed' && <CommunityActivityFeed />}
+            {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
+            {communitySubTab === 'rewards' && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {badges.map((b) => <BadgeCard key={b.id} badge={b} />)}
+              </div>
+            )}
 
             {/* ── REVELATIONS sub-tab ── */}
             {communitySubTab === 'revelations' && (
