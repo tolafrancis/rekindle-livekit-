@@ -68,7 +68,7 @@ interface UserProgress {
   is_completed: boolean;
 }
 
-export const DevotionalLibrary: React.FC = () => {
+export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hidePlanBanner = false } = {}) => {
   const { user } = useAuth();
   const { t, language, getLocalizedContent } = useLanguage();
   const entitlements = useUserEntitlements();
@@ -543,7 +543,7 @@ export const DevotionalLibrary: React.FC = () => {
   return (
     <div className="space-y-6">
       
-      {devotionalAccessLevel === 'unlimited' && (
+      {!hidePlanBanner && devotionalAccessLevel === 'unlimited' && (
         <Alert className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
           <Crown className="h-4 w-4 text-green-600" />
           <AlertDescription className="ml-2">

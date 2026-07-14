@@ -1245,7 +1245,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* The Word — reading plan, scripture memory, and books (shared ReKindle library) */}
         {activeTab === 'word' && (
           <div className="space-y-4">
-            {wordSubTab === 'devotionals' && <DevotionalLibrary />}
+            {wordSubTab === 'devotionals' && <DevotionalLibrary hidePlanBanner />}
             {wordSubTab === 'reading' && <BibleReadingPlan />}
             {wordSubTab === 'scripture' && <ScriptureMemory />}
             {wordSubTab === 'books' && <BookSummaries />}
