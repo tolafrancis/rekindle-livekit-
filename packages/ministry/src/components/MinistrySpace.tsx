@@ -1380,46 +1380,41 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 })()}
               </div>
 
-              {/* Active Prayer Points */}
+              {/* Latest Announcements — now beside the devotional (swapped with Prayer Requests) */}
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
-                    <Heart className="h-5 w-5" style={{ color: themeColor }} />
-                    {t('ministrySpace', 'prayerRequests', 'Prayer Requests')}
+                    <Megaphone className="h-5 w-5" style={{ color: themeColor }} />
+                    {t('ministrySpace', 'latestAnnouncements', 'Latest Announcements')}
                   </CardTitle>
+                  {isAdmin && (
+                    <Button size="sm" onClick={() => setShowAnnouncementModal(true)}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      {t('ministrySpace', 'new', 'New')}
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent>
-                  {prayerRequests.length > 0 ? (
+                  {announcements.length > 0 ? (
                     <div className="space-y-3">
-                      {prayerRequests.slice(0, 3).map(prayer => (
-                        <div key={prayer.id} className="p-3 bg-gray-50 rounded-lg">
-                          <p className="font-medium text-sm">{prayer.title}</p>
-                          <div className="flex items-center justify-between mt-2">
-                            <span className="text-xs text-gray-500">
-                              {t('ministrySpace', 'prayersCount', '{count} prayers').replace('{count}', String(prayer.prayer_count))}
-                            </span>
-                            <Button 
-                              size="sm" 
-                              variant="ghost"
-                              onClick={() => handlePrayForRequest(prayer.id, prayer.prayer_count)}
-                            >
-                              <Heart className="h-3 w-3 mr-1" />
-                              {t('ministrySpace', 'pray', 'Pray')}
-                            </Button>
+                      {announcements.slice(0, 3).map(ann => (
+                        <div key={ann.id} className="p-3 border rounded-lg">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                {ann.is_pinned && <Pin className="h-4 w-4 text-amber-500 shrink-0" />}
+                                <h4 className="font-semibold text-sm truncate">{ann.title}</h4>
+                              </div>
+                              <p className="text-gray-600 mt-1 text-xs line-clamp-2">{ann.content}</p>
+                            </div>
+                            <span className="text-[10px] text-gray-400 shrink-0">{new Date(ann.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-4 text-sm">{t('ministrySpace', 'noPrayerRequestsShort', 'No prayer requests')}</p>
+                    <p className="text-gray-500 text-center py-4 text-sm">{t('ministrySpace', 'noAnnouncementsYet', 'No announcements yet')}</p>
                   )}
-                  <Button 
-                    variant="outline" 
-                    className="w-full mt-3"
-                    onClick={() => setActiveTab('requests')}
-                  >
-                    {t('ministrySpace', 'viewAll', 'View All')}
-                  </Button>
                 </CardContent>
               </Card>
             </div>
@@ -1454,42 +1449,37 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </div>
             )}
 
-            {/* Announcements */}
+            {/* Prayer Requests — moved to full-width (swapped with Latest Announcements) */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <Megaphone className="h-5 w-5" style={{ color: themeColor }} />
-                  {t('ministrySpace', 'latestAnnouncements', 'Latest Announcements')}
+                  <Heart className="h-5 w-5" style={{ color: themeColor }} />
+                  {t('ministrySpace', 'prayerRequests', 'Prayer Requests')}
                 </CardTitle>
-                {isAdmin && (
-                  <Button size="sm" onClick={() => setShowAnnouncementModal(true)}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    {t('ministrySpace', 'new', 'New')}
-                  </Button>
-                )}
+                <Button variant="outline" size="sm" onClick={() => setActiveTab('requests')}>
+                  {t('ministrySpace', 'viewAll', 'View All')}
+                </Button>
               </CardHeader>
               <CardContent>
-                {announcements.length > 0 ? (
+                {prayerRequests.length > 0 ? (
                   <div className="space-y-3">
-                    {announcements.slice(0, 3).map(ann => (
-                      <div key={ann.id} className="p-4 border rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              {ann.is_pinned && <Pin className="h-4 w-4 text-amber-500" />}
-                              <h4 className="font-semibold">{ann.title}</h4>
-                            </div>
-                            <p className="text-gray-600 mt-1 text-sm">{ann.content}</p>
-                          </div>
-                          <span className="text-xs text-gray-400">
-                            {new Date(ann.created_at).toLocaleDateString()}
+                    {prayerRequests.slice(0, 3).map(prayer => (
+                      <div key={prayer.id} className="p-4 bg-gray-50 rounded-lg">
+                        <p className="font-medium">{prayer.title}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-500">
+                            {t('ministrySpace', 'prayersCount', '{count} prayers').replace('{count}', String(prayer.prayer_count))}
                           </span>
+                          <Button size="sm" variant="ghost" onClick={() => handlePrayForRequest(prayer.id, prayer.prayer_count)}>
+                            <Heart className="h-3 w-3 mr-1" />
+                            {t('ministrySpace', 'pray', 'Pray')}
+                          </Button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-8">{t('ministrySpace', 'noAnnouncementsYet', 'No announcements yet')}</p>
+                  <p className="text-gray-500 text-center py-8">{t('ministrySpace', 'noPrayerRequestsShort', 'No prayer requests')}</p>
                 )}
               </CardContent>
             </Card>
