@@ -20,7 +20,7 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Award
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -56,6 +56,10 @@ import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibra
 import { PrayerLibrary } from '@rekindle/features/components/PrayerLibrary';
 import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
 import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
+import { CommunityActivityFeed } from '@rekindle/features/components/CommunityActivityFeed';
+import { EnhancedPrayerChallenges } from '@rekindle/features/components/EnhancedPrayerChallenges';
+import { BadgeCard } from '@rekindle/features/components/BadgeCard';
+import { badges } from '@rekindle/features/data/badges';
 
 interface Ministry {
   id: string;
@@ -187,7 +191,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const entitlements = useUserEntitlements();
   
   const [activeTab, setActiveTab] = useState('home');
-  const [communitySubTab, setCommunitySubTab] = useState<'revelations' | 'qa'>('revelations');
+  const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges' | 'rewards'>('feed');
+  // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
+  const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
+  const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
 
   // ── Ministry Community: Revelations ──
   const [mRevLoading, setMRevLoading] = useState(true);
@@ -583,16 +590,60 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const navLabel = (tab: { id: string; label: string }) =>
     t('ministrySpace', `nav_${tab.id}`, tab.label);
 
-  // Leaders/admins get an extra "Content" tab to manage declarations & affirmations.
-  // "The Word" (reading/scripture/books) sits right after Home for all members.
-  const baseNav: { id: string; label: string; icon: any }[] = [
-    MINISTRY_NAV[0],
-    { id: 'word', label: 'The Word', icon: Book },
-    ...MINISTRY_NAV.slice(1),
+  // ── Two-level grouped navigation (mirrors the consumer app) ──
+  type NavChild = { id: string; label: string; icon: any };
+  type NavGroup = { id: string; label: string; icon: any; gradient: string; children?: NavChild[] };
+  const GROUPS: NavGroup[] = [
+    { id: 'home', label: 'Home', icon: Home, gradient: 'from-violet-500 to-purple-600' },
+    { id: 'word', label: 'The Word', icon: BookOpen, gradient: 'from-amber-500 to-orange-500', children: [
+      { id: 'devotionals', label: 'Devotionals', icon: BookOpen },
+      { id: 'reading', label: 'Reading Plan', icon: Calendar },
+      { id: 'scripture', label: 'Scripture Memory', icon: Sparkles },
+      { id: 'books', label: 'Books', icon: Book },
+    ] },
+    { id: 'prayer', label: 'Prayers', icon: Heart, gradient: 'from-rose-500 to-pink-600', children: [
+      { id: 'ministry', label: 'Our Prayers', icon: Heart },
+      { id: 'library', label: 'Prayer Library', icon: BookOpen },
+      { id: 'journal', label: 'Journal', icon: Edit },
+      { id: 'wall', label: 'Prayer Wall', icon: Users },
+    ] },
+    { id: 'community', label: 'Community', icon: Users, gradient: 'from-emerald-500 to-teal-600', children: [
+      { id: 'feed', label: 'Feed', icon: Users },
+      { id: 'revelations', label: 'Revelations', icon: Book },
+      { id: 'qa', label: 'Q&A', icon: HelpCircle },
+      { id: 'challenges', label: 'Challenges', icon: Trophy },
+      { id: 'rewards', label: 'Rewards', icon: Award },
+    ] },
+    { id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' },
+    { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
+      { id: 'announcements', label: 'Announcements', icon: Megaphone },
+      { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
+      { id: 'testimonies', label: 'Testimonies', icon: Star },
+      { id: 'donations', label: 'Donations', icon: Gift },
+      { id: 'meetings', label: 'Meetings', icon: Video },
+      ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
+    ] },
   ];
-  const navItems: { id: string; label: string; icon: any }[] = canManageMinistry
-    ? [...baseNav, { id: 'content', label: 'Content', icon: Sparkles }]
-    : baseNav;
+
+  // word/prayer/community children switch a sub-view; 'admin' children are their own activeTab.
+  const SUBTAB: Record<string, { value: string; set: (v: any) => void }> = {
+    word: { value: wordSubTab, set: setWordSubTab },
+    prayer: { value: prayerSubTab, set: setPrayerSubTab },
+    community: { value: communitySubTab, set: setCommunitySubTab },
+  };
+  const ownsSubtab = (gid: string) => gid in SUBTAB;
+  const activeGroup = GROUPS.find(g => g.id === activeTab || g.children?.some(c => c.id === activeTab)) ?? GROUPS[0];
+  const goToGroup = (g: NavGroup) => {
+    if (!g.children || ownsSubtab(g.id)) { setActiveTab(g.id); return; }
+    setActiveTab(g.children[0].id); // admin group → first child
+  };
+  const goToChild = (g: NavGroup, childId: string) => {
+    if (ownsSubtab(g.id)) { setActiveTab(g.id); SUBTAB[g.id].set(childId); return; }
+    setActiveTab(childId); // admin group child
+  };
+  const isChildActive = (g: NavGroup, childId: string) =>
+    ownsSubtab(g.id) ? activeTab === g.id && SUBTAB[g.id].value === childId : activeTab === childId;
+  const isGroupActive = (g: NavGroup) => activeGroup.id === g.id;
 
   // Per-ministry module toggle (ministry_groups.settings.modules); unknown keys default on.
   const moduleOn = (key: string): boolean => {
@@ -910,10 +961,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 >
                   <Menu className="h-5 w-5" />
                   <span className="max-w-[6.5rem] truncate">
-                    {(() => {
-                      const current = navItems.find((item) => item.id === activeTab);
-                      return current ? navLabel(current) : t('ministrySpace', 'menu', 'Menu');
-                    })()}
+                    {navLabel(activeGroup)}
                   </span>
                   <ChevronDown className={`h-4 w-4 transition-transform ${navMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -921,19 +969,35 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setNavMenuOpen(false)} />
                     <div className="absolute left-0 top-full mt-1 z-50 w-60 max-h-[70vh] overflow-y-auto rounded-xl border bg-white shadow-xl py-1">
-                      {navItems.map((tab) => {
-                        const Icon = tab.icon;
-                        const active = activeTab === tab.id;
+                      {GROUPS.map((g) => {
+                        const GIcon = g.icon;
+                        const gActive = isGroupActive(g);
                         return (
-                          <button
-                            key={tab.id}
-                            onClick={() => { setActiveTab(tab.id); setNavMenuOpen(false); }}
-                            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${active ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
-                            style={active ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
-                          >
-                            <Icon className="h-4 w-4 shrink-0" />
-                            {navLabel(tab)}
-                          </button>
+                          <div key={g.id}>
+                            <button
+                              onClick={() => { goToGroup(g); if (!g.children) setNavMenuOpen(false); }}
+                              className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                              style={gActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
+                            >
+                              <GIcon className="h-4 w-4 shrink-0" />
+                              {navLabel(g)}
+                            </button>
+                            {g.children && gActive && g.children.map((c) => {
+                              const CIcon = c.icon;
+                              const cActive = isChildActive(g, c.id);
+                              return (
+                                <button
+                                  key={c.id}
+                                  onClick={() => { goToChild(g, c.id); setNavMenuOpen(false); }}
+                                  className={`flex w-full items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                                  style={cActive ? { color: themeColor } : {}}
+                                >
+                                  <CIcon className="h-3.5 w-3.5 shrink-0" />
+                                  {navLabel(c)}
+                                </button>
+                              );
+                            })}
+                          </div>
                         );
                       })}
                       {/* Switch Ministry — return to the ministries list to pick another */}
@@ -950,28 +1014,49 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 )}
               </div>
 
-              {/* Icon tab row (labels appear from sm+) */}
+              {/* Primary group row (labels appear from sm+) */}
               <div className="flex gap-1 overflow-x-auto">
-                {navItems.map((tab) => {
-                  const Icon = tab.icon;
+                {GROUPS.map((g) => {
+                  const GIcon = g.icon;
+                  const gActive = isGroupActive(g);
                   return (
                     <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
+                      key={g.id}
+                      onClick={() => goToGroup(g)}
                       className={`flex items-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
-                        activeTab === tab.id
-                          ? 'text-white'
-                          : 'text-gray-600 hover:bg-gray-100'
+                        gActive ? 'text-white' : 'text-gray-600 hover:bg-gray-100'
                       }`}
-                      style={activeTab === tab.id ? { backgroundColor: themeColor } : {}}
+                      style={gActive ? { backgroundColor: themeColor } : {}}
                     >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
-                      <span className="hidden sm:inline">{navLabel(tab)}</span>
+                      <GIcon className="h-4 w-4 flex-shrink-0" />
+                      <span className="hidden sm:inline">{navLabel(g)}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
+            {/* Secondary sub-tab row for the active group */}
+            {activeGroup.children && (
+              <div className="flex gap-1 overflow-x-auto pb-2">
+                {activeGroup.children.map((c) => {
+                  const CIcon = c.icon;
+                  const cActive = isChildActive(activeGroup, c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => goToChild(activeGroup, c.id)}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs whitespace-nowrap transition-colors ${
+                        cActive ? 'text-white' : 'text-gray-500 hover:bg-gray-100'
+                      }`}
+                      style={cActive ? { backgroundColor: themeColor } : {}}
+                    >
+                      <CIcon className="h-3.5 w-3.5" />
+                      {navLabel(c)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1037,21 +1122,43 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
               {/* Vertical navigation */}
               <nav className="flex flex-col gap-1 p-3" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
-                {navItems.map((tab) => {
-                  const Icon = tab.icon;
-                  const active = activeTab === tab.id;
+                {GROUPS.map((g) => {
+                  const GIcon = g.icon;
+                  const gActive = isGroupActive(g);
                   return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
-                        active ? 'text-white shadow-sm' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                      }`}
-                      style={active ? { backgroundColor: themeColor } : {}}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{navLabel(tab)}</span>
-                    </button>
+                    <div key={g.id}>
+                      <button
+                        onClick={() => goToGroup(g)}
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                          gActive ? 'text-white shadow-sm' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                        }`}
+                        style={gActive ? { backgroundColor: themeColor } : {}}
+                      >
+                        <GIcon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{navLabel(g)}</span>
+                      </button>
+                      {g.children && gActive && (
+                        <div className="mt-1 ml-3 flex flex-col gap-0.5 border-l pl-3">
+                          {g.children.map((c) => {
+                            const CIcon = c.icon;
+                            const cActive = isChildActive(g, c.id);
+                            return (
+                              <button
+                                key={c.id}
+                                onClick={() => goToChild(g, c.id)}
+                                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
+                                  cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                                style={cActive ? { color: themeColor, backgroundColor: `${themeColor}12` } : {}}
+                              >
+                                <CIcon className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{navLabel(c)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </nav>
@@ -1095,26 +1202,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* The Word — reading plan, scripture memory, and books (shared ReKindle library) */}
         {activeTab === 'word' && (
-          <Tabs defaultValue="devotionals" className="space-y-4">
-            <TabsList className="flex-wrap h-auto">
-              <TabsTrigger value="devotionals" className="flex items-center gap-1.5">
-                <BookOpen className="h-4 w-4" /> {t('ministrySpace', 'devotionalSeries', 'Devotionals')}
-              </TabsTrigger>
-              <TabsTrigger value="reading" className="flex items-center gap-1.5">
-                <Calendar className="h-4 w-4" /> {t('ministrySpace', 'readingPlan', 'Reading Plan')}
-              </TabsTrigger>
-              <TabsTrigger value="scripture" className="flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4" /> {t('ministrySpace', 'scriptureMemory', 'Scripture Memory')}
-              </TabsTrigger>
-              <TabsTrigger value="books" className="flex items-center gap-1.5">
-                <Book className="h-4 w-4" /> {t('ministrySpace', 'books', 'Books')}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="devotionals"><DevotionalLibrary /></TabsContent>
-            <TabsContent value="reading"><BibleReadingPlan /></TabsContent>
-            <TabsContent value="scripture"><ScriptureMemory /></TabsContent>
-            <TabsContent value="books"><BookSummaries /></TabsContent>
-          </Tabs>
+          <div className="space-y-4">
+            {wordSubTab === 'devotionals' && <DevotionalLibrary />}
+            {wordSubTab === 'reading' && <BibleReadingPlan />}
+            {wordSubTab === 'scripture' && <ScriptureMemory />}
+            {wordSubTab === 'books' && <BookSummaries />}
+          </div>
         )}
 
         {/* Home Tab */}
@@ -1771,31 +1864,15 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               <p className="text-sm text-gray-500 mt-1">{t('ministrySpace', 'communityIntro', 'Share insights and seek clarity together within {name}.').replace('{name}', ministry.name)}</p>
             </div>
 
-            {/* Sub-tab bar */}
-            <div className="flex border-b border-gray-200 overflow-x-auto scrollbar-hide">
-              <button
-                onClick={() => setCommunitySubTab('revelations')}
-                className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
-                  communitySubTab === 'revelations'
-                    ? 'border-purple-600 text-purple-700'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <Book className="h-4 w-4" />
-                {t('ministrySpace', 'revelations', 'Revelations')}
-              </button>
-              <button
-                onClick={() => setCommunitySubTab('qa')}
-                className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
-                  communitySubTab === 'qa'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <HelpCircle className="h-4 w-4" />
-                {t('ministrySpace', 'gotQuestionsSeekClarity', 'Got Questions? Seek Clarity')}
-              </button>
-            </div>
+
+            {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
+            {communitySubTab === 'feed' && <CommunityActivityFeed />}
+            {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
+            {communitySubTab === 'rewards' && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {badges.map((b) => <BadgeCard key={b.id} badge={b} />)}
+              </div>
+            )}
 
             {/* ── REVELATIONS sub-tab ── */}
             {communitySubTab === 'revelations' && (
@@ -2077,14 +2154,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Prayer Library Tab */}
         {activeTab === 'prayer' && (
-          <Tabs defaultValue="ministry" className="space-y-4">
-            <TabsList className="flex-wrap h-auto">
-              <TabsTrigger value="ministry" className="flex items-center gap-1.5"><Heart className="h-4 w-4" />{t('ministrySpace', 'ourPrayers', 'Our Prayers')}</TabsTrigger>
-              <TabsTrigger value="library" className="flex items-center gap-1.5"><BookOpen className="h-4 w-4" />{t('ministrySpace', 'prayerLibraryTab', 'Prayer Library')}</TabsTrigger>
-              <TabsTrigger value="journal" className="flex items-center gap-1.5"><Edit className="h-4 w-4" />{t('ministrySpace', 'prayerJournal', 'Journal')}</TabsTrigger>
-              <TabsTrigger value="wall" className="flex items-center gap-1.5"><Users className="h-4 w-4" />{t('ministrySpace', 'prayerWall', 'Prayer Wall')}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="ministry" className="space-y-6">
+          <div className="space-y-4">
+            {prayerSubTab === 'ministry' && (
+            <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">{t('ministrySpace', 'ministryPrayerLibrary', 'Ministry Prayer Library')}</h2>
               <div className="flex items-center gap-2">
@@ -2259,11 +2331,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 </p>
               </Card>
             )}
-            </TabsContent>
-            <TabsContent value="library"><PrayerLibrary /></TabsContent>
-            <TabsContent value="journal"><PrayerJournal /></TabsContent>
-            <TabsContent value="wall"><CommunityPrayerWall /></TabsContent>
-          </Tabs>
+            </div>
+            )}
+            {prayerSubTab === 'library' && <PrayerLibrary />}
+            {prayerSubTab === 'journal' && <PrayerJournal />}
+            {prayerSubTab === 'wall' && <CommunityPrayerWall />}
+          </div>
         )}
           </div>
         </div>
