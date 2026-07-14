@@ -46,6 +46,7 @@ import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
+import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
 import { recordDailyActivity } from '@rekindle/features/streak';
 import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
@@ -875,7 +876,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     toast({ title: t('ministrySpace', 'answerPosted', 'Answer posted!') });
   };
 
+  // Any devotional player rendered inside the ministry (home overlay OR The Word
+  // library) routes "Take today's Declaration" to the home tab's declaration card.
+  const goToDeclaration = () => {
+    setActiveTab('home');
+    setTimeout(() => {
+      document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 350);
+  };
+
   return (
+    <TakeDeclarationContext.Provider value={goToDeclaration}>
     <div className="min-h-screen bg-gray-50">
       {/* DevotionalModule Overlay */}
       {showDevotionalModule && selectedDevotional && (
@@ -2575,6 +2586,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         />
       )}
     </div>
+    </TakeDeclarationContext.Provider>
   );
 };
 

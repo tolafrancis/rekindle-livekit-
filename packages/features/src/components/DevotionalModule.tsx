@@ -31,6 +31,7 @@ import {
 import { instrumentalTracks } from '../data/instrumentals';
 import { SocialShareModal } from './SocialShareModal';
 import { useAuth } from '../AuthContext';
+import { useTakeDeclarationHandler } from '../takeDeclarationContext';
 import { useLanguage } from '../LanguageContext';
 import { useLocalizedScripture } from '../useLocalizedScripture';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from './viewerGestures';
@@ -146,6 +147,7 @@ export const DevotionalModule: React.FC<Props> = ({
   const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const ctxTakeDeclaration = useTakeDeclarationHandler();
   const [currentSlide, setCurrentSlide] = useState(0);
   // True while a scrollable slide is pacing itself (start delay → scroll → end dwell).
   // The fixed-duration auto-advance timer stands down for these, so the two clocks
@@ -497,9 +499,10 @@ export const DevotionalModule: React.FC<Props> = ({
     setShowCompletionPopup(false);
     if (popupSource === 'declaration') {
       onClose();
-      if (onTakeDeclaration) {
+      const takeDeclaration = onTakeDeclaration ?? ctxTakeDeclaration;
+      if (takeDeclaration) {
         // Host app (e.g. ministry) handles routing to its own declaration surface.
-        onTakeDeclaration();
+        takeDeclaration();
       } else {
         if (window.location.pathname !== '/home') {
           navigate('/home');
