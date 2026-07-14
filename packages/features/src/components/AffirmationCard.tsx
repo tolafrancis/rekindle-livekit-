@@ -29,13 +29,16 @@ interface AffirmationCardProps {
   // Ministry scoping: when `source` is set, restrict to the ministry's content.
   ministryId?: string | null;
   source?: FeatureContentSource;
+  // White-label share attribution (defaults to ReKindle BC in the consumer app).
+  brandName?: string;
 }
 
 export const AffirmationCard: React.FC<AffirmationCardProps> = ({
   category,
   showDaily = true,
   ministryId,
-  source
+  source,
+  brandName = 'ReKindle BC'
 }) => {
   const { profile } = useAuth();
   const { t, getLocalizedContent } = useLanguage();
@@ -116,7 +119,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
     if (!affirmation) return;
     const lz = getLocalizedContent(affirmation, ['title', 'text', 'scripture_reference']);
     const title = lz.title ? `${lz.title}\n\n` : '';
-    const text = `${title}${lz.text}${lz.scripture_reference ? `\n\n— ${lz.scripture_reference}` : ''}\n\nFrom ReKindle BC Daily Affirmations`;
+    const text = `${title}${lz.text}${lz.scripture_reference ? `\n\n— ${lz.scripture_reference}` : ''}\n\nFrom ${brandName} Daily Affirmations`;
     if (canNativeShare()) {
       await navigator.share({ title: lz.title || t('cards', 'dailyAffirmation', 'Daily Affirmation'), text });
     } else {

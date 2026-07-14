@@ -31,13 +31,16 @@ interface DeclarationCardProps {
   // Ministry scoping: when `source` is set, restrict to the ministry's content.
   ministryId?: string | null;
   source?: FeatureContentSource;
+  // White-label share attribution (defaults to ReKindle BC in the consumer app).
+  brandName?: string;
 }
 
 export const DeclarationCard: React.FC<DeclarationCardProps> = ({
   category,
   showDaily = true,
   ministryId,
-  source
+  source,
+  brandName = 'ReKindle BC'
 }) => {
   const { profile } = useAuth();
   const { t, getLocalizedContent } = useLanguage();
@@ -107,7 +110,7 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
     if (!declaration) return;
     const lz = getLocalizedContent(declaration, ['title', 'text', 'scripture_reference']);
     const title = lz.title ? `${lz.title}\n\n` : '';
-    const text = `${title}${lz.text}${lz.scripture_reference ? `\n\n— ${lz.scripture_reference}` : ''}\n\nFrom ReKindle BC Daily Declarations`;
+    const text = `${title}${lz.text}${lz.scripture_reference ? `\n\n— ${lz.scripture_reference}` : ''}\n\nFrom ${brandName} Daily Declarations`;
     if (canNativeShare()) {
       await navigator.share({ title: lz.title || t('cards', 'dailyDeclaration', 'Daily Declaration'), text });
     } else {

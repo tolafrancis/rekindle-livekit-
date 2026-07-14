@@ -1427,10 +1427,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {(moduleOn('declarations') || moduleOn('affirmations')) && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {moduleOn('declarations') && (
-                  <DeclarationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'declarations')} />
+                  <DeclarationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'declarations')} brandName={ministry.name} />
                 )}
                 {moduleOn('affirmations') && (
-                  <AffirmationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'affirmations')} />
+                  <AffirmationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'affirmations')} brandName={ministry.name} />
                 )}
               </div>
             )}
