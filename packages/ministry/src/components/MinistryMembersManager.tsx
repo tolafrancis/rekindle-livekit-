@@ -55,6 +55,7 @@ interface Member {
   user_full_name?: string;
   user_email?: string;
   user_phone?: string;
+  checkins?: number; // kiosk check-ins this month
   user_profile?: {
     full_name: string;
     email: string;
@@ -351,6 +352,28 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         seen.add(key);
         merged.push(m);
       });
+
+      // Attach each member's kiosk check-ins this month (leaders can read all
+      // ministry_attendance). Registrants carry their profile id directly; auth
+      // members map via user_id → ministry_member_profiles.id.
+      try {
+        const monthStart = new Date();
+        monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        const [attRes, profRes] = await Promise.all([
+          supabase.from('ministry_attendance').select('profile_id')
+            .eq('ministry_id', ministryId).eq('source', 'kiosk')
+            .gte('attended_on', monthStart.toISOString().slice(0, 10)),
+          supabase.from('ministry_member_profiles').select('id, user_id').eq('ministry_id', ministryId),
+        ]);
+        const countByProfile: Record<string, number> = {};
+        (attRes.data || []).forEach((r: any) => { countByProfile[r.profile_id] = (countByProfile[r.profile_id] || 0) + 1; });
+        const userToProfile: Record<string, string> = {};
+        (profRes.data || []).forEach((p: any) => { if (p.user_id) userToProfile[p.user_id] = p.id; });
+        merged.forEach((m) => {
+          const pid = m.is_registrant ? m.id : userToProfile[m.user_id];
+          m.checkins = pid ? (countByProfile[pid] || 0) : 0;
+        });
+      } catch { /* attendance optional — leave undefined */ }
 
       setMembers(merged);
     } catch (error: any) {
@@ -1241,6 +1264,10 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                       <span className="flex items-center gap-1">
                         <Activity className="h-3 w-3" />
                         {t('ministryMembersManager', 'scoreLabel', 'Score:')} {member.activity_score}
+                      </span>
+                      <span className="flex items-center gap-1" title={t('ministryMembersManager', 'checkInsTitle', 'Church kiosk check-ins this month')}>
+                        <CheckCircle className="h-3 w-3" />
+                        {t('ministryMembersManager', 'checkInsLabel', 'Check-ins:')} {member.checkins ?? 0}
                       </span>
                     </div>
                     {(member.membership_status || member.city || member.country || member.consent_gift_aid) && (

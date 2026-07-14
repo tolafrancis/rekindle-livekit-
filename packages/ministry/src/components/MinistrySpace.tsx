@@ -961,16 +961,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   )}
                 </div>
 
-                {/* Back to Rekindle (exit) — below the member section.
-                    Mobile only; on web it lives in the left sidebar. */}
-                <Button
-                  onClick={onExit}
-                  size="sm"
-                  className="md:hidden bg-white/15 text-white hover:bg-white/25 border border-white/40"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-1.5" />
-                  {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
-                </Button>
+                {/* "Back to Rekindle" now lives inside the mobile menu button (below). */}
               </div>
             </div>
           </div>
@@ -1030,14 +1021,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                           </div>
                         );
                       })}
-                      {/* Switch Ministry — return to the ministries list to pick another */}
+                      {/* Back to Rekindle — exit the ministry space (return to the hub) */}
                       <div className="my-1 border-t border-gray-100" />
                       <button
                         onClick={() => { setNavMenuOpen(false); onExit(); }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
                       >
-                        <Users className="h-4 w-4 shrink-0" />
-                        {t('ministrySpace', 'switchMinistry', 'Switch Ministry')}
+                        <ArrowLeft className="h-4 w-4 shrink-0" />
+                        {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
                       </button>
                     </div>
                   </>
@@ -1268,8 +1259,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {/* Faithfulness streak */}
             <StreakWidget />
 
-            {/* Stat capsules — completions (per member) + kiosk entries (this month) */}
-            <div className="flex flex-wrap gap-2">
+            {/* Stat capsules — inline on mobile, floating bar (like the consumer) on desktop */}
+            <div className="flex flex-wrap gap-2 md:fixed md:bottom-5 md:left-1/2 md:z-40 md:-translate-x-1/2 md:flex-nowrap md:rounded-full md:border md:bg-white/85 md:px-2.5 md:py-2 md:shadow-xl md:backdrop-blur">
               {[
                 { icon: BookOpen, value: analytics?.booksCompleted ?? 0, label: t('ministrySpace', 'booksCompleted', 'Books completed'), grad: 'from-orange-500 to-amber-600' },
                 { icon: Heart, value: analytics?.prayersCompleted ?? 0, label: t('ministrySpace', 'prayersCompleted', 'Prayers completed'), grad: 'from-rose-500 to-pink-600' },
