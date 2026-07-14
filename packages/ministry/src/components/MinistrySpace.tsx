@@ -20,7 +20,7 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Award
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -58,8 +58,6 @@ import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
 import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
 import { CommunityActivityFeed } from '@rekindle/features/components/CommunityActivityFeed';
 import { EnhancedPrayerChallenges } from '@rekindle/features/components/EnhancedPrayerChallenges';
-import { BadgeCard } from '@rekindle/features/components/BadgeCard';
-import { badges } from '@rekindle/features/data/badges';
 import { DeclarationCard } from '@rekindle/features/components/DeclarationCard';
 import { AffirmationCard } from '@rekindle/features/components/AffirmationCard';
 import { useUserAnalytics } from '@rekindle/features/useUserAnalytics';
@@ -194,7 +192,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const entitlements = useUserEntitlements();
   
   const [activeTab, setActiveTab] = useState('home');
-  const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges' | 'rewards'>('feed');
+  const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
   const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
@@ -642,7 +640,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'revelations', label: 'Revelations', icon: Book },
       { id: 'qa', label: 'Q&A', icon: HelpCircle },
       { id: 'challenges', label: 'Challenges', icon: Trophy },
-      { id: 'rewards', label: 'Rewards', icon: Award },
     ] },
     { id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
@@ -1866,11 +1863,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
             {communitySubTab === 'feed' && <CommunityActivityFeed />}
             {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
-            {communitySubTab === 'rewards' && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {badges.map((b) => <BadgeCard key={b.id} badge={b} />)}
-              </div>
-            )}
 
             {/* ── REVELATIONS sub-tab ── */}
             {communitySubTab === 'revelations' && (

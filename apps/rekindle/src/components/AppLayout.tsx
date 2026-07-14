@@ -258,7 +258,7 @@ const NAV_GROUPS: NavGroup[] = [
   { id: 'prayer',        label: 'Prayer',         labelKey: 'prayers',      icon: HandHeart,  gradient: 'from-rose-400 to-pink-600', emoji: '🙏', children: ['prayer-library', 'journal', 'wall'] },
   { id: 'ministries',    label: 'Ministries',     labelKey: 'ministries',   icon: Church,     gradient: 'from-sky-500 to-blue-600' },
   { id: 'live-channels', label: 'Live Broadcast', labelKey: 'liveChannels', icon: Radio,      gradient: 'from-red-500 to-rose-600' },
-  { id: 'community',     label: 'Community',      labelKey: 'community',     icon: UsersRound, gradient: 'from-emerald-400 to-teal-600', children: ['community-feed', 'revelations', 'challenges', 'rewards', 'music'] },
+  { id: 'community',     label: 'Community',      labelKey: 'community',     icon: UsersRound, gradient: 'from-emerald-400 to-teal-600', children: ['community-feed', 'revelations', 'challenges', 'music'] },
 ];
 
 type MinistryHubView = 'discover' | 'my-ministries' | 'manage' | 'ministry-space' | 'ministry-management';
@@ -302,7 +302,6 @@ const SECONDARY_NAV: Record<string, SecondaryNavItem[]> = {
     { id: 'community-feed', label: 'Feed', labelKey: 'feed', icon: Users, tab: 'community-feed' },
     { id: 'revelations', label: 'Revelations', labelKey: 'revelations', icon: Sparkles, tab: 'revelations' },
     { id: 'challenges', label: 'Challenges', labelKey: 'challenges', icon: Trophy, tab: 'challenges' },
-    { id: 'rewards', label: 'Rewards', labelKey: 'rewards', icon: Award, tab: 'rewards' },
     { id: 'music', label: 'Music', labelKey: 'music', icon: Music, tab: 'music' },
   ],
 };
@@ -519,7 +518,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       'sponsor',
       'referral',
       'profile',
-      'rewards',
       ...(isAdmin ? ['admin','admin-health'] : [])
     ],
     [isAdmin, isCounsellor]
@@ -1532,15 +1530,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
           {activeTab === 'profile' && <ProfileSettings />}
 
-          {activeTab === 'rewards' && (
-            <div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {badges.map((b) => (
-                  <BadgeCard key={b.id} badge={b} />
-                ))}
-              </div>
-            </div>
-          )}
         </ErrorBoundary>
         </div>
       </main>
