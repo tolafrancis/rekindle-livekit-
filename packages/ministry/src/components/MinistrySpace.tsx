@@ -60,6 +60,9 @@ import { CommunityActivityFeed } from '@rekindle/features/components/CommunityAc
 import { EnhancedPrayerChallenges } from '@rekindle/features/components/EnhancedPrayerChallenges';
 import { BadgeCard } from '@rekindle/features/components/BadgeCard';
 import { badges } from '@rekindle/features/data/badges';
+import { DeclarationCard } from '@rekindle/features/components/DeclarationCard';
+import { AffirmationCard } from '@rekindle/features/components/AffirmationCard';
+import { useUserAnalytics } from '@rekindle/features/useUserAnalytics';
 
 interface Ministry {
   id: string;
@@ -195,6 +198,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
   const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
+  // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
+  const { analytics } = useUserAnalytics();
+  const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);
 
   // ── Ministry Community: Revelations ──
   const [mRevLoading, setMRevLoading] = useState(true);
@@ -372,6 +378,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       } catch (e) {
         console.error('Error loading declarations/affirmations:', e);
       }
+
+      // Kiosk entries this month (ministry_attendance, source='kiosk').
+      try {
+        const monthStart = new Date();
+        monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+        const { count } = await supabase
+          .from('ministry_attendance')
+          .select('id', { count: 'exact', head: true })
+          .eq('ministry_id', ministry.id)
+          .eq('source', 'kiosk')
+          .gte('attended_on', monthStart.toISOString().slice(0, 10));
+        setKioskThisMonth(count ?? 0);
+      } catch { /* RLS may hide it for non-leaders — default 0 */ }
     } catch (err) {
       console.error('Error loading ministry data:', err);
     } finally {
@@ -1023,13 +1042,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <button
                       key={g.id}
                       onClick={() => goToGroup(g)}
-                      className={`flex items-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
-                        gActive ? 'text-white' : 'text-gray-600 hover:bg-gray-100'
+                      className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
+                        gActive ? 'text-gray-900' : 'text-gray-500'
                       }`}
-                      style={gActive ? { backgroundColor: themeColor } : {}}
                     >
-                      <GIcon className="h-4 w-4 flex-shrink-0" />
-                      <span className="hidden sm:inline">{navLabel(g)}</span>
+                      <span className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${g.gradient} text-white shadow-sm ${gActive ? 'ring-2 ring-offset-1 ring-gray-300' : ''}`}>
+                        <GIcon className="h-[18px] w-[18px]" />
+                      </span>
+                      <span>{navLabel(g)}</span>
                     </button>
                   );
                 })}
@@ -1129,13 +1149,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <div key={g.id}>
                       <button
                         onClick={() => goToGroup(g)}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
-                          gActive ? 'text-white shadow-sm' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                        className={`flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left text-sm transition-colors ${
+                          gActive ? 'bg-gray-100' : 'hover:bg-gray-50'
                         }`}
-                        style={gActive ? { backgroundColor: themeColor } : {}}
                       >
-                        <GIcon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{navLabel(g)}</span>
+                        <span className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${g.gradient} text-white shrink-0 shadow-sm ${gActive ? 'ring-2 ring-offset-1 ring-gray-300' : ''}`}>
+                          <GIcon className="h-[18px] w-[18px]" />
+                        </span>
+                        <span className={`truncate font-medium ${gActive ? 'text-gray-900' : 'text-gray-700'}`}>{navLabel(g)}</span>
                       </button>
                       {g.children && gActive && (
                         <div className="mt-1 ml-3 flex flex-col gap-0.5 border-l pl-3">
@@ -1235,6 +1256,26 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
             {/* Faithfulness streak */}
             <StreakWidget />
+
+            {/* Stat capsules — completions (per member) + kiosk entries (this month) */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { icon: BookOpen, value: analytics?.booksCompleted ?? 0, label: t('ministrySpace', 'booksCompleted', 'Books completed'), grad: 'from-orange-500 to-amber-600' },
+                { icon: Heart, value: analytics?.prayersCompleted ?? 0, label: t('ministrySpace', 'prayersCompleted', 'Prayers completed'), grad: 'from-rose-500 to-pink-600' },
+                { icon: Star, value: analytics?.xpPoints ?? 0, label: t('ministrySpace', 'devotionalsCompleted', 'Devotionals completed'), grad: 'from-amber-500 to-yellow-600' },
+                // Kiosk attendance is a leadership metric (RLS: leaders/admins only).
+                ...(canManageMinistry ? [{ icon: Users, value: kioskThisMonth, label: t('ministrySpace', 'kioskThisMonth', 'Kiosk entries this month'), grad: 'from-sky-500 to-blue-600' }] : []),
+              ].map((s, i) => {
+                const SIcon = s.icon;
+                return (
+                  <div key={i} className={`flex items-center gap-2 rounded-full bg-gradient-to-r ${s.grad} px-4 py-2 text-white shadow-sm`}>
+                    <SIcon className="h-4 w-4 shrink-0" />
+                    <span className="text-sm font-bold">{s.value}</span>
+                    <span className="text-xs opacity-90 whitespace-nowrap">{s.label}</span>
+                  </div>
+                );
+              })}
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Today's Devotional */}
@@ -1381,53 +1422,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </Card>
             </div>
 
-            {/* Today's Declaration & Affirmation — source-aware (ReKindle / own / both),
-                module-gated, hidden when the resolved source yields nothing. */}
-            {(() => {
-              const decOn = moduleOn('declarations');
-              const affOn = moduleOn('affirmations');
-              const todaysDec = decOn ? pickDaily(declarations) : null;
-              const todaysAff = affOn ? pickDaily(affirmations) : null;
-              if (!todaysDec && !todaysAff) return null;
-              return (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {todaysDec && (
-                    <Card className="overflow-hidden">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <ScrollText className="h-5 w-5" style={{ color: themeColor }} />
-                          {t('ministrySpace', 'todaysDeclaration', "Today's Declaration")}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        {todaysDec.title && <p className="text-sm font-semibold">{todaysDec.title}</p>}
-                        <p className="text-sm leading-relaxed text-gray-700">&ldquo;{todaysDec.text}&rdquo;</p>
-                        {todaysDec.scripture_reference && (
-                          <p className="text-xs font-medium" style={{ color: themeColor }}>{todaysDec.scripture_reference}</p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                  {todaysAff && (
-                    <Card className="overflow-hidden">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Sparkles className="h-5 w-5" style={{ color: themeColor }} />
-                          {t('ministrySpace', 'todaysAffirmation', "Today's Affirmation")}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        {todaysAff.title && <p className="text-sm font-semibold">{todaysAff.title}</p>}
-                        <p className="text-sm leading-relaxed text-gray-700">&ldquo;{todaysAff.text}&rdquo;</p>
-                        {todaysAff.scripture_reference && (
-                          <p className="text-xs font-medium" style={{ color: themeColor }}>{todaysAff.scripture_reference}</p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Today's Declaration & Affirmation — consumer card design (Save/Share/Audio),
+                ministry-scoped via the per-feature content source, module-gated. */}
+            {(moduleOn('declarations') || moduleOn('affirmations')) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {moduleOn('declarations') && (
+                  <DeclarationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'declarations')} brandName={ministry.name} />
+                )}
+                {moduleOn('affirmations') && (
+                  <AffirmationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'affirmations')} brandName={ministry.name} />
+                )}
+              </div>
+            )}
 
             {/* WhatsApp opt-in — only rendered if ministry has an active WhatsApp connection */}
             <MinistryWhatsAppOptIn
