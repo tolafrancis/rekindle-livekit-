@@ -80,6 +80,17 @@ const WELCOME_VERSES = [
   '"Therefore encourage one another and build each other up." — 1 Thessalonians 5:11',
 ];
 
+// White-label subdomain handle: churches get <handle>.<domain> (grace.rekindlebc.com).
+const slugify = (s: string) =>
+  s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+const MINISTRY_DOMAIN = (import.meta as any).env?.VITE_MINISTRY_DOMAIN || 'rekindlebc.com';
+const RESERVED_HANDLES = new Set([
+  'app', 'www', 'api', 'admin', 'dashboard', 'portal', 'auth', 'login', 'signup',
+  'mail', 'email', 'smtp', 'ftp', 'cdn', 'assets', 'static', 'status', 'help',
+  'support', 'docs', 'blog', 'ministry', 'ministries', 'staging', 'dev', 'test',
+  'rekindle', 'rekindlebc', 'join', 'kiosk', 'settings', 'billing',
+]);
+
 type MinistryHubView = 'discover' | 'my-ministries' | 'manage' | 'ministry-space' | 'ministry-management';
 
 interface MinistriesHubProps {
@@ -124,10 +135,17 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     banner_url: '',
     is_public: true,
     join_method: 'open',
-    theme_color: '#7c3aed'
+    theme_color: '#7c3aed',
+    slug: ''
   });
+  const [slugEdited, setSlugEdited] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+
+  // Keep the white-label handle in sync with the name until the user edits it.
+  useEffect(() => {
+    if (!slugEdited) setFormData(prev => ({ ...prev, slug: slugify(prev.name) }));
+  }, [formData.name, slugEdited]);
 
   const is_ministry_Leader = ['ministry', 'ministry_plus', 'ministry_starter', 'ministry_growth', 'ministry_enterprise'].includes(profile?.subscription_tier || '') || isPartner || authIsAdmin;
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
@@ -289,6 +307,16 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
       return;
     }
 
+    const slug = slugify(formData.slug || formData.name);
+    if (!/^[a-z0-9-]{3,40}$/.test(slug)) {
+      toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'handleInvalid', 'Web address must be 3–40 letters, numbers or hyphens.'), variant: 'destructive' });
+      return;
+    }
+    if (RESERVED_HANDLES.has(slug)) {
+      toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'handleReserved', 'That web address is reserved. Please choose another.'), variant: 'destructive' });
+      return;
+    }
+
     setCreating(true);
     try {
       const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -307,6 +335,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           is_public: formData.is_public,
           join_method: formData.join_method,
           theme_color: formData.theme_color,
+          slug,
           invite_code: inviteCode,
           owner_id: user?.id,
           leader_id: user?.id,
@@ -349,12 +378,19 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         banner_url: '',
         is_public: true,
         join_method: 'open',
-        theme_color: '#7c3aed'
+        theme_color: '#7c3aed',
+        slug: ''
       });
+      setSlugEdited(false);
       loadMinistries();
       loadMyMinistries();
     } catch (err: any) {
-      toast({ title: t('ministriesHub', 'error', 'Error'), description: err.message, variant: 'destructive' });
+      const taken = /uniq_ministry_groups_slug|duplicate key/i.test(err?.message || '');
+      toast({
+        title: t('ministriesHub', 'error', 'Error'),
+        description: taken ? t('ministriesHub', 'handleTaken', 'That web address is already taken. Please choose another.') : err.message,
+        variant: 'destructive',
+      });
     } finally {
       setCreating(false);
     }
@@ -880,6 +916,24 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder={t('ministriesHub', 'ministryNamePlaceholder', 'e.g., Grace Community Church')}
               />
+            </div>
+
+            {/* White-label web address (subdomain handle) — set from onset */}
+            <div>
+              <Label>{t('ministriesHub', 'webAddressLabel', 'Web Address (White Label)')}</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  value={formData.slug}
+                  onChange={(e) => { setSlugEdited(true); setFormData({ ...formData, slug: slugify(e.target.value) }); }}
+                  placeholder={t('ministriesHub', 'webAddressPlaceholder', 'grace')}
+                  className="flex-1"
+                />
+                <span className="text-sm text-gray-500 whitespace-nowrap">.{MINISTRY_DOMAIN}</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {t('ministriesHub', 'webAddressHelper', 'Your ministry will live at')}{' '}
+                <span className="font-mono text-purple-600">{(formData.slug || slugify(formData.name)) || 'your-church'}.{MINISTRY_DOMAIN}</span>. {t('ministriesHub', 'webAddressHelper2', 'You can connect your own custom domain later.')}
+              </p>
             </div>
             <div>
               <Label>{t('ministriesHub', 'descriptionLabel', 'Description')}</Label>
