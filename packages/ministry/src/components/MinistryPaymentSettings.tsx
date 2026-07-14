@@ -31,7 +31,7 @@ interface PaymentSettings {
   paystack_secret_key_encrypted: string;
   external_payment_url: string;
   external_payment_name: string;
-  default_currency: 'USD' | 'NGN';
+  default_currency: 'USD' | 'NGN' | 'GBP';
   supported_currencies: string[];
   donation_page_title: string;
   donation_page_description: string;
@@ -52,7 +52,7 @@ const defaultSettings: PaymentSettings = {
   external_payment_url: '',
   external_payment_name: '',
   default_currency: 'USD',
-  supported_currencies: ['USD', 'NGN'],
+  supported_currencies: ['USD', 'GBP', 'NGN'],
   donation_page_title: '',
   donation_page_description: '',
   thank_you_message: 'Thank you for your generous donation! May God bless you abundantly.',
@@ -395,6 +395,13 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
                 {t('ministryPaymentSettings', 'usdLabel', 'USD (US Dollar)')}
               </Button>
               <Button
+                variant={settings.supported_currencies.includes('GBP') ? 'default' : 'outline'}
+                onClick={() => handleCurrencyToggle('GBP')}
+                className={settings.supported_currencies.includes('GBP') ? 'bg-green-600 hover:bg-green-700' : ''}
+              >
+                {t('ministryPaymentSettings', 'gbpLabel', '£ GBP (Pound)')}
+              </Button>
+              <Button
                 variant={settings.supported_currencies.includes('NGN') ? 'default' : 'outline'}
                 onClick={() => handleCurrencyToggle('NGN')}
                 className={settings.supported_currencies.includes('NGN') ? 'bg-green-600 hover:bg-green-700' : ''}
@@ -414,6 +421,14 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
                 disabled={!settings.supported_currencies.includes('USD')}
               >
                 USD
+              </Button>
+              <Button
+                variant={settings.default_currency === 'GBP' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSettings({ ...settings, default_currency: 'GBP' })}
+                disabled={!settings.supported_currencies.includes('GBP')}
+              >
+                GBP
               </Button>
               <Button
                 variant={settings.default_currency === 'NGN' ? 'default' : 'outline'}

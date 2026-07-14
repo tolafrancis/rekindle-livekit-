@@ -86,7 +86,7 @@ const StripeDonationForm: React.FC<StripeDonationFormProps> = ({ amount, currenc
   };
 
   const getCurrencySymbol = (curr: string) => {
-    return curr === 'NGN' ? '₦' : '$';
+    return curr === 'NGN' ? '₦' : curr === 'GBP' ? '£' : '$';
   };
 
   return (
@@ -142,7 +142,7 @@ interface PaymentSettings {
   payment_mode: 'platform' | 'custom' | 'external';
   external_payment_url?: string;
   external_payment_name?: string;
-  default_currency: 'USD' | 'NGN';
+  default_currency: 'USD' | 'NGN' | 'GBP';
   supported_currencies: string[];
   donation_page_title?: string;
   donation_page_description?: string;
@@ -168,7 +168,7 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
-  const [currency, setCurrency] = useState<'USD' | 'NGN'>('USD');
+  const [currency, setCurrency] = useState<'USD' | 'NGN' | 'GBP'>('USD');
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'paystack'>('paystack');
   const [loading, setLoading] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -240,7 +240,7 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
         setPaymentSettings({
           payment_mode: 'platform',
           default_currency: 'USD',
-          supported_currencies: ['USD', 'NGN'],
+          supported_currencies: ['USD', 'GBP', 'NGN'],
           show_suggested_amounts: true,
           suggested_amounts_usd: defaultAmountsUSD,
           suggested_amounts_ngn: defaultAmountsNGN,
@@ -253,7 +253,7 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
       setPaymentSettings({
         payment_mode: 'platform',
         default_currency: 'USD',
-        supported_currencies: ['USD', 'NGN'],
+        supported_currencies: ['USD', 'GBP', 'NGN'],
         show_suggested_amounts: true,
         suggested_amounts_usd: defaultAmountsUSD,
         suggested_amounts_ngn: defaultAmountsNGN,
@@ -292,9 +292,9 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
     return 0;
   };
 
-  const getCurrencySymbol = () => currency === 'NGN' ? '₦' : '$';
+  const getCurrencySymbol = () => currency === 'NGN' ? '₦' : currency === 'GBP' ? '£' : '$';
 
-  const getMinimumAmount = () => currency === 'NGN' ? 100000 : 100; // ₦1000 or $1
+  const getMinimumAmount = () => currency === 'NGN' ? 100000 : 100; // ₦1000, or $1/£1
 
   // Update Gift Aid state; prefill the donor's name into the declaration the
   // first time they opt in, if those fields are still empty.
@@ -551,7 +551,7 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
           {supportedCurrencies.length > 1 && (
             <div>
               <Label className="mb-2 block">{t('ministryDonationForm', 'currency', 'Currency')}</Label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {supportedCurrencies.includes('USD') && (
                   <Button
                     variant={currency === 'USD' ? 'default' : 'outline'}
@@ -560,6 +560,15 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
                   >
                     <DollarSign className="h-4 w-4 mr-1" />
                     USD
+                  </Button>
+                )}
+                {supportedCurrencies.includes('GBP') && (
+                  <Button
+                    variant={currency === 'GBP' ? 'default' : 'outline'}
+                    onClick={() => { setCurrency('GBP'); setPaymentMethod('stripe'); setAmount(null); setCustomAmount(''); }}
+                    style={currency === 'GBP' ? { backgroundColor: themeColor } : {}}
+                  >
+                    £ GBP
                   </Button>
                 )}
                 {supportedCurrencies.includes('NGN') && (
@@ -685,6 +694,7 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
                 variant={paymentMethod === 'paystack' ? 'default' : 'outline'}
                 onClick={() => setPaymentMethod('paystack')}
                 style={paymentMethod === 'paystack' ? { backgroundColor: themeColor } : {}}
+                disabled={currency === 'GBP'} // Paystack doesn't support GBP
               >
                 <Globe className="h-4 w-4 mr-2" />
                 Paystack
