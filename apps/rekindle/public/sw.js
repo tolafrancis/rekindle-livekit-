@@ -1,7 +1,7 @@
 // Bump these on any change that must purge old caches. The `activate` handler below
 // deletes every cache not named here, so a version bump wipes stale content.
-const STATIC_CACHE = 'prayer-app-static-v2';
-const DYNAMIC_CACHE = 'prayer-app-dynamic-v2';
+const STATIC_CACHE = 'prayer-app-static-v3';
+const DYNAMIC_CACHE = 'prayer-app-dynamic-v3';
 
 // Static assets to cache. NOTE: '/' and '/index.html' are deliberately NOT precached
 // — precaching the HTML shell pinned users to whatever bundle was cached at install
@@ -40,21 +40,9 @@ self.addEventListener('install', (event) => {
   );
 });
 
-self.addEventListener("push", event => {
-  const data = event.data.json();
-
-  self.registration.showNotification(data.title, {
-    body: data.body,
-    data: { url: data.url }
-  });
-});
-
-self.addEventListener("notificationclick", event => {
-  event.notification.close();
-  event.waitUntil(
-    clients.openWindow(event.notification.data.url)
-  );
-});
+// NOTE: push / notificationclick are intentionally NOT handled here. FCM's
+// firebase-messaging-sw.js is the SOLE notification renderer — handling push in
+// this worker too caused notifications to show twice.
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
@@ -193,66 +181,8 @@ async function syncOfflineData() {
   });
 }
 
-// Push notifications
-self.addEventListener('push', (event) => {
-  console.log('Service Worker: Push received');
-  
-  let data = { title: 'Prayer App', body: 'You have a new notification' };
-  
-  if (event.data) {
-    try {
-      data = event.data.json();
-    } catch (e) {
-      data.body = event.data.text() || 'New notification';
-    }
-  }
-
-  const options = {
-    body: data.body,
-    icon: '/icon-192.png',
-    badge: '/badge-72.png',
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1,
-      url: data.url || '/'
-    },
-    actions: [
-      { action: 'open', title: 'Open' },
-      { action: 'close', title: 'Close' }
-    ]
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
-});
-
-// Notification click handler
-self.addEventListener('notificationclick', (event) => {
-  console.log('Service Worker: Notification clicked');
-  event.notification.close();
-
-  if (event.action === 'close') return;
-
-  const urlToOpen = event.notification.data?.url || '/';
-
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        // If a window is already open, focus it
-        for (const client of clientList) {
-          if (client.url === urlToOpen && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        // Otherwise open a new window
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(urlToOpen);
-        }
-      })
-  );
-});
+// (push + notificationclick removed — see note above; FCM's
+// firebase-messaging-sw.js renders notifications, this worker only caches.)
 
 // Message handler for cache management
 self.addEventListener('message', (event) => {
