@@ -34,9 +34,6 @@ import {
   Loader2,
   AlertCircle,
   Bell,
-  Share2,
-  Copy,
-  Check,
   Download,
   Lock,
   UserPlus,
@@ -44,7 +41,7 @@ import {
   Hand
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
-import { shareChannel } from '@rekindle/features/liveShare';
+import { ShareChannelButton } from './ShareChannelButton';
 import { LiveChannel } from '@rekindle/types/liveChannelTypes';
 import {
   Dialog,
@@ -142,7 +139,6 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const [viewerCount, setViewerCount] = useState(channel.viewer_count);
-  const [copied, setCopied] = useState(false);
   const [hasPostedJoin, setHasPostedJoin] = useState(false);
   const [replayAvailable, setReplayAvailable] = useState(false);
   const [replayUrl, setReplayUrl] = useState<string | null>(null);
@@ -775,23 +771,6 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     onLeave();
   };
 
-  // Handle share
-  const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/channels/${channel.id}`;
-    
-    const r = await shareChannel({
-      channelName: channel.name,
-      description: (channel as any).description,
-      isLive: (channel as any).is_live,
-      url: shareUrl,
-    });
-    if (r.method === 'clipboard') {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast({ title: t('liveChannelViewer', 'copiedToShareTitle', 'Copied to share!'), description: t('liveChannelViewer', 'copiedToShareDesc', 'The channel invite is on your clipboard.') });
-    }
-  };
-
   // Handle download replay
   const handleDownloadReplay = () => {
     if (!replayUrl) return;
@@ -1087,24 +1066,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 </Button>
               )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleShare}
-                className="border-gray-600"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    {t('liveChannelViewer', 'copiedButton', 'Copied!')}
-                  </>
-                ) : (
-                  <>
-                    <Share2 className="h-4 w-4 mr-2" />
-                    {t('liveChannelViewer', 'share', 'Share')}
-                  </>
-                )}
-              </Button>
+              <ShareChannelButton channel={channel} variant="button" triggerClassName="border-gray-600" />
             </div>
 
             <div className="flex items-center gap-2">

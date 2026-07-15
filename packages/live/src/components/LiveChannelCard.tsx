@@ -11,14 +11,10 @@ import {
   Bell,
   BellOff,
   Play,
-  Clock,
-  Share2,
-  Copy,
-  Check
+  Clock
 } from 'lucide-react';
-import { shareChannel } from '@rekindle/features/liveShare';
+import { ShareChannelButton } from './ShareChannelButton';
 import { LiveChannel } from '@rekindle/types/liveChannelTypes';
-import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 
 interface LiveChannelCardProps {
@@ -49,7 +45,6 @@ export const LiveChannelCard: React.FC<LiveChannelCardProps> = ({
   showRecordingsButton = false
 }) => {
   const { t } = useLanguage();
-  const [copied, setCopied] = React.useState(false);
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
@@ -76,22 +71,6 @@ export const LiveChannelCard: React.FC<LiveChannelCardProps> = ({
     if (diffHours < 24) return t('liveChannelCard', 'hoursAgo', '{count}h ago').replace('{count}', String(diffHours));
     if (diffDays < 7) return t('liveChannelCard', 'daysAgo', '{count}d ago').replace('{count}', String(diffDays));
     return d.toLocaleDateString();
-  };
-
-  const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/channels/${channel.id}`;
-    
-    const r = await shareChannel({
-      channelName: channel.name,
-      description: channel.description,
-      isLive: (channel as any).is_live,
-      url: shareUrl,
-    });
-    if (r.method === 'clipboard') {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast({ title: t('liveChannelCard', 'copiedToShare', 'Copied to share!'), description: t('liveChannelCard', 'copiedToShareDesc', 'The channel invite is on your clipboard.') });
-    }
   };
 
   // Determine background image
@@ -172,18 +151,12 @@ export const LiveChannelCard: React.FC<LiveChannelCardProps> = ({
           {channel.category.charAt(0).toUpperCase() + channel.category.slice(1)}
         </Badge>
 
-        {/* Share Button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleShare();
-          }}
-          className="absolute top-3 right-3 text-white bg-black/50 hover:bg-black/70 backdrop-blur-sm"
-        >
-          {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-        </Button>
+        {/* Share Button — Books-style dropdown (WhatsApp/Facebook/X/Email/Copy) */}
+        <ShareChannelButton
+          channel={channel}
+          variant="icon"
+          triggerClassName="absolute top-3 right-3 text-white bg-black/50 hover:bg-black/70 hover:text-white backdrop-blur-sm"
+        />
       </div>
 
       <CardContent className="p-4">
