@@ -16,6 +16,7 @@ import { OnboardingTips } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut } from 'lucide-react';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
+import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -112,6 +113,10 @@ function AppRoutes() {
       <Route path="/join/:slug" element={<MinistryJoinLanding />} />
       <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
       <Route path="/auth" element={<AuthRoute />} />
+
+      {/* Public live-broadcast watch link (channel Share builds /channels/:id).
+          Mounted OUTSIDE the auth gate so guests can watch without an account. */}
+      <Route path="/channels/:id" element={<ChannelWatchPage context="ministry" />} />
 
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>

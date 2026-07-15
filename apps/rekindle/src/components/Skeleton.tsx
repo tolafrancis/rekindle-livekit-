@@ -234,12 +234,13 @@ const Skeleton: React.FC = () => {
             .maybeSingle();
           hostName = channel?.owner_name || t('skeleton', 'unknownHost', 'Unknown Host');
         } else if (ministryId || meeting.ministry_id) {
-          const { data: ministry } = await supabase
-            .from('ministries')
-            .select('name')
-            .eq('id', ministryId || meeting.ministry_id)
-            .maybeSingle();
-          hostName = ministry?.name || 'Unknown Host';
+          // Resolve the canonical ministry name (ministry_groups) via a
+          // security-definer RPC — ministry_groups itself is not anon-readable,
+          // and the old direct read of the stale `ministries` mirror produced
+          // "Unknown Host" for guests. See migration 0160.
+          const { data: name } = await supabase
+            .rpc('public_ministry_name', { p_id: ministryId || meeting.ministry_id });
+          hostName = (typeof name === 'string' && name) ? name : t('skeleton', 'unknownHost', 'Unknown Host');
         }
 
         setMeetingData({

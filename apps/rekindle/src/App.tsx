@@ -21,6 +21,7 @@ import UnsubscribePage from "./pages/UnsubscribePage";
 import { BackToTop } from "./components/BackToTop";
 // Import the wrapper component that renders MLiveChannel (same architecture as LiveChannels)
 import MinistryLiveWrapper from "./components/MinistryLiveWrapper";
+import { ChannelWatchPage } from "@rekindle/live/components/ChannelWatchPage";
 
 // Configure QueryClient with better defaults for stability
 // FIXED: Added refetchOnMount: false and refetchInterval: false to prevent auto-refreshes
@@ -74,6 +75,10 @@ const App = () => (
                   {/* Meeting join routes - Ministry meetings */}
                   <Route path="/ministry/:ministryId/meeting/:meetingId" element={<Skeleton />} />
                   
+                  {/* Public live-broadcast watch link (channel Share builds /channels/:id).
+                      Renders LiveChannelViewer directly — guests can watch without signing in. */}
+                  <Route path="/channels/:id" element={<ChannelWatchPage />} />
+
                   {/* MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels) */}
                   <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />
 
