@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { shareMeeting } from '@/lib/liveShare';
+import { shareMeeting, publicAppOrigin } from '@/lib/liveShare';
 import {
   Dialog,
   DialogContent,
@@ -418,7 +418,7 @@ const EnhancedVideoCallWrapper = ({
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         <Button
           onClick={async () => {
-            const link = `${window.location.origin}/channel/${channelId}/meeting/${meeting.id}`;
+            const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
             const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
             if (r.method !== 'native') toast.success(t('liveChannelInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
           }}
@@ -1385,7 +1385,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                             variant="outline"
                             size="icon"
                             onClick={async () => {
-                              const link = `${window.location.origin}/channel/${channelId}/meeting/${meeting.id}`;
+                              const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
                               const r = await shareMeeting({ hostName: channelName, title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
                               if (r.method !== 'native') toast.success(t('liveChannelInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                             }}
@@ -1521,7 +1521,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                             variant="outline"
                             size="icon"
                             onClick={() => {
-                              const link = `${window.location.origin}/channel/${channelId}/meeting/${meeting.id}`;
+                              const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
                               navigator.clipboard.writeText(link);
                               toast.success(t('liveChannelInteractiveMeetings', 'meetingLinkCopied', 'Meeting link copied'));
                             }}

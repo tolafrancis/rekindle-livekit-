@@ -39,37 +39,43 @@ const MinistryLiveWrapper: React.FC = () => {
 
       try {
         setLoading(true);
-        
-        // Fetch ministry details from ministry_groups table
-        const { data: ministryData, error: ministryError } = await supabase
-          .from('ministry_groups')
-          .select('name, theme_color, owner_id, leader_id')
-          .eq('id', ministryId)
-          .single();
 
-        if (ministryError) throw new Error('Ministry not found');
-        
-        setMinistryName(ministryData.name || 'Ministry');
-        setThemeColor(ministryData.theme_color || '#7c3aed');
-        
-        // Check if user is a leader
+        // Resolve the ministry NAME via a security-definer RPC so this works for
+        // anonymous GUESTS too (ministry_groups itself is member-scoped/anon-blocked,
+        // and a direct read failed for guests — the real cause of the guest
+        // "Unable to Load Ministry" error when joining a shared meeting link).
+        const { data: name } = await supabase.rpc('public_ministry_name', { p_id: ministryId });
+        if (!name || typeof name !== 'string') throw new Error('Ministry not found');
+        setMinistryName(name);
+
+        // Theme colour + leader status need the member-scoped ministry_groups row,
+        // which only an authenticated member can read. Guests get sensible defaults
+        // (default theme, not a leader) — enough to watch/join.
         if (user?.id) {
-          const isOwnerOrLeader = 
-            ministryData.owner_id === user.id || 
-            ministryData.leader_id === user.id;
-          
-          if (!isOwnerOrLeader) {
-            // Check membership for leader role
-            const { data: membership } = await supabase
-              .from('ministry_memberships')
-              .select('is_leader, role')
-              .eq('ministry_id', ministryId)
-              .eq('user_id', user.id)
-              .single();
-            
-            setIsLeader(membership?.is_leader || membership?.role === 'leader' || membership?.role === 'admin');
-          } else {
-            setIsLeader(true);
+          const { data: ministryData } = await supabase
+            .from('ministry_groups')
+            .select('theme_color, owner_id, leader_id')
+            .eq('id', ministryId)
+            .maybeSingle();
+
+          if (ministryData) {
+            setThemeColor(ministryData.theme_color || '#7c3aed');
+            const isOwnerOrLeader =
+              ministryData.owner_id === user.id ||
+              ministryData.leader_id === user.id;
+
+            if (!isOwnerOrLeader) {
+              const { data: membership } = await supabase
+                .from('ministry_memberships')
+                .select('is_leader, role')
+                .eq('ministry_id', ministryId)
+                .eq('user_id', user.id)
+                .maybeSingle();
+
+              setIsLeader(membership?.is_leader || membership?.role === 'leader' || membership?.role === 'admin');
+            } else {
+              setIsLeader(true);
+            }
           }
         }
 

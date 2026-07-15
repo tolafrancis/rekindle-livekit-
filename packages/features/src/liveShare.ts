@@ -11,6 +11,22 @@ export interface ShareResult {
   method: 'native' | 'clipboard' | 'none';
 }
 
+/**
+ * Canonical public origin for share links whose landing page / room lives in the
+ * consumer app (e.g. interactive-meeting join links). The interactive-meeting
+ * join page + room exist only in the consumer app, so a link built from the
+ * standalone ministry app's own origin would dead-end. The ministry app sets
+ * VITE_PUBLIC_APP_URL to the consumer origin (e.g. https://app.rekindlebc.com);
+ * the consumer app leaves it unset and falls back to its own origin. Channel
+ * WATCH links intentionally do NOT use this — /channels/:id is self-contained in
+ * both apps, preserving white-label for live broadcasts.
+ */
+export function publicAppOrigin(): string {
+  const u = (import.meta as any)?.env?.VITE_PUBLIC_APP_URL;
+  if (typeof u === 'string' && u.trim()) return u.trim().replace(/\/+$/, '');
+  return typeof window !== 'undefined' ? window.location.origin : '';
+}
+
 /** Format an ISO timestamp for share text, e.g. "Sat, 5 Jul, 6:00 PM". */
 function formatWhen(iso?: string | null): string | null {
   if (!iso) return null;
