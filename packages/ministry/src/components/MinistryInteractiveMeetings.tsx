@@ -934,7 +934,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
             <p className="text-xs text-gray-500">
-              {t('ministryInteractiveMeetings', 'modeTip', 'Tip: sessions of {threshold} people or more default to Webinar to stay cheap at scale. You can always switch it manually.').replace('{threshold}', String(WEBINAR_AUTO_THRESHOLD))}
+              {t('ministryInteractiveMeetings', 'modeTip', 'Tip: sessions of {threshold} people or more default to Webinar. You can always switch it manually.').replace('{threshold}', String(WEBINAR_AUTO_THRESHOLD))}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -951,7 +951,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
                 className={`rounded-lg border p-3 text-left transition ${formData.mode === 'webinar' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
               >
                 <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modeWebinar', 'Webinar')}</p>
-                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modeWebinarDesc', 'Host presents, audience watches. Cheap at scale.')}</p>
+                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modeWebinarDesc', 'Host presents, audience watches.')}</p>
               </button>
             </div>
             {!modeTouched && formData.mode === 'webinar' && formData.max_participants >= WEBINAR_AUTO_THRESHOLD && (

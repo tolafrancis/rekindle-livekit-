@@ -14,6 +14,8 @@ import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSe
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut } from 'lucide-react';
+import { Toaster } from '@rekindle/ui/toaster';
+import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -128,6 +130,11 @@ export default function App() {
   return (
     <AuthProvider>
       <LanguageProvider>
+        {/* Toast renderers — without these mounted, every toast() call in the
+            ministry app (channel/meeting copy confirmations, etc.) is silent.
+            Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
+        <Toaster />
+        <Sonner />
         <BrowserRouter>
           <AppRoutes />
         </BrowserRouter>

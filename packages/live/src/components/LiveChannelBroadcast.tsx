@@ -660,78 +660,27 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       console.log('[Broadcast] Waiting for room to be fully ready...');
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      console.log('[Broadcast] Requesting microphone permission...');
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-        console.log('[Broadcast] Microphone permission granted');
-      } catch (permErr) {
-        console.error('[Broadcast] Microphone permission denied:', permErr);
-        toast({
-          title: t('liveChannelBroadcast', 'microphoneAccessRequired', 'Microphone Access Required'),
-          description: t('liveChannelBroadcast', 'enableMicPermissions', 'Please enable microphone permissions to broadcast audio'),
-          variant: 'destructive'
-        });
-      }
-      
-      console.log('[Broadcast] Enabling host microphone...');
-      // Guarded: if enabling the mic rejects, it must NOT abort startBroadcast —
-      // otherwise setHasStarted(true) below never runs and the entire live control
-      // bar (AI, invite, recording, participants) silently fails to render.
-      try {
-        await dailyRoom.toggleMic();
-      } catch (micErr) {
-        console.error('[Broadcast] Could not enable microphone (non-fatal):', micErr);
-      }
-      
-      // FIXED: Enable camera if video mode is enabled
-      if (isVideoMode && !dailyRoom.isCameraOn) {
-        console.log('[Broadcast] Enabling host camera for video mode...');
+      // The room wrapper auto-enables mic + camera on join (enableMediaAfterJoin),
+      // which also triggers the browser permission prompts. So by the time
+      // joinRoom() resolved, the mic is already live and — for a video broadcast —
+      // the camera is already publishing; the control buttons sync to the real
+      // track state via onMediaStateChange. We must NOT re-toggle here: the old
+      // code toggled mic + camera again, flipping BOTH back OFF, which is why the
+      // buttons showed OFF with no video until the host manually toggled off→on.
+      //
+      // The only correction needed is for an AUDIO-ONLY broadcast, where the
+      // wrapper still enabled the camera — switch it off once. Do NOT gate this on
+      // dailyRoom.isCameraOn: that React flag is stale inside this closure (it was
+      // captured as false before join). toggleCamera() flips the wrapper's REAL
+      // current state (on → off), which is what we want.
+      if (!isVideoMode) {
+        console.log('[Broadcast] Audio-only broadcast — disabling auto-enabled camera');
         try {
-          // Request camera permission
-          const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          videoStream.getTracks().forEach(track => track.stop());
-          console.log('[Broadcast] Camera permission granted');
-          
-          // Enable camera
           await dailyRoom.toggleCamera();
-          
-          setTimeout(() => {
-            if (dailyRoom.isCameraOn) {
-              console.log('[Broadcast] ✓ Host camera enabled successfully');
-              console.log('[Broadcast] ✓ Video should now be transmitting to viewers');
-            } else {
-              console.warn('[Broadcast] ⚠️ Host camera may not be enabled - check permissions');
-              toast({
-                title: t('liveChannelBroadcast', 'camera', 'Camera'),
-                description: t('liveChannelBroadcast', 'clickCameraButton', 'Please click the camera button to enable video'),
-                variant: 'destructive'
-              });
-            }
-          }, 1000);
         } catch (camErr) {
-          console.error('[Broadcast] Camera permission denied:', camErr);
-          toast({
-            title: t('liveChannelBroadcast', 'cameraAccessRequired', 'Camera Access Required'),
-            description: t('liveChannelBroadcast', 'enableCameraPermissions', 'Please enable camera permissions to broadcast video'),
-            variant: 'destructive'
-          });
+          console.warn('[Broadcast] Could not disable camera for audio broadcast (non-fatal):', camErr);
         }
       }
-      
-      setTimeout(() => {
-        if (dailyRoom.isMicOn) {
-          console.log('[Broadcast] ✓ Host microphone enabled successfully');
-          console.log('[Broadcast] ✓ Audio should now be transmitting to viewers');
-        } else {
-          console.warn('[Broadcast] ⚠️ Host microphone may not be enabled - check permissions');
-          toast({
-            title: t('liveChannelBroadcast', 'microphone', 'Microphone'),
-            description: t('liveChannelBroadcast', 'clickMicButton', 'Please click the microphone button to enable audio'),
-            variant: 'destructive'
-          });
-        }
-      }, 1000);
 
       await supabase
         .from('channel_chat_messages')
