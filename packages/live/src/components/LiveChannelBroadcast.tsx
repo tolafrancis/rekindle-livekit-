@@ -622,6 +622,23 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         .eq('id', channel.id);
       console.log('[Broadcast] Channel marked live (post-connect)');
 
+      // Notify followers the channel is live. In-app rows are inserted by the
+      // DB trigger (notify_followers_on_channel_live); this call fires the PUSH
+      // to those same followers. Best-effort — never blocks or fails go-live.
+      supabase.functions.invoke('send-push-notification', {
+        body: {
+          targetAudience: 'channel_followers',
+          channelId: channel.id,
+          title: `🔴 ${channel.name} is live`,
+          body: `${channel.name} just went live — tap to watch now.`,
+          link: '/live-channels',
+          senderName: channel.name,
+          notificationType: 'channel_live',
+          push: true,
+          inApp: false,
+        },
+      }).catch((e) => console.warn('[Broadcast] follower push failed (non-fatal):', e?.message));
+
       // FIXED: Clean up ALL stale chat messages before starting new broadcast
       // This includes system messages to prevent "is now live" accumulation
       console.log('[Broadcast] Cleaning up ALL stale chat messages');

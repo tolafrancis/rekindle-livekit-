@@ -106,7 +106,7 @@ serve(async (req) => {
   }
 
   try {
-    const { title, body, link, senderName, targetAudience, notificationType, challengeId, userId, ministryId, announcementId, inApp, push } = await req.json();
+    const { title, body, link, senderName, targetAudience, notificationType, challengeId, userId, ministryId, announcementId, channelId, inApp, push } = await req.json();
     // Channel flags: push defaults ON (back-compat with existing callers);
     // inApp defaults OFF. Broadcasts / notify() opt into in-app fan-out.
     const doPush = push !== false;
@@ -239,6 +239,17 @@ serve(async (req) => {
             const { data } = await supabaseClient
               .from('ministry_members').select('user_id').eq('ministry_id', ministryId).eq('status', 'active');
             baseUserIds = (data ?? []).map((m: any) => m.user_id).filter(Boolean);
+          }
+          break;
+        }
+        case 'channel_followers': {
+          // Followers of a live channel who haven't muted it (used when a channel goes live).
+          if (channelId) {
+            const { data } = await supabaseClient
+              .from('channel_followers').select('user_id')
+              .eq('channel_id', channelId)
+              .neq('notifications_enabled', false);
+            baseUserIds = (data ?? []).map((f: any) => f.user_id).filter(Boolean);
           }
           break;
         }
