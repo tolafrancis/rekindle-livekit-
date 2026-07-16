@@ -499,8 +499,10 @@ const EnhancedVideoCallWrapper = ({
       {/* Floating reactions over the call + a compact bar so everyone can react —
           available in every meeting, not just webinars. */}
       <MeetingReactionsLayer reactions={reactions} />
-      <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
+      <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
+      {/* Reaction bar sits BELOW the call's own top bar (LIVE/timer) on mobile so
+          the two don't overlap; centered under the header on larger screens. */}
+      <div className="absolute top-14 sm:top-3 left-1/2 -translate-x-1/2 z-50">
         <ReactionBar onReact={sendReaction} compact />
       </div>
 

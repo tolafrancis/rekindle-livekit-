@@ -130,51 +130,19 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       this.joined = true;
       this.joining = false;
 
-      // Parity with the Daily wrapper: publish mic+cam after join (unless viewer-only).
-      // Viewer-only tokens have canPublish:false, so the SFU would reject a publish —
-      // a promoted speaker gets `grant-publish` server-side first (§1D), then enables.
+      // Join MUTED: mic + camera start OFF (unless viewer-only, which can't publish
+      // anyway). Auto-publishing on join raced the browser permission prompt +
+      // device warm-up, leaving the buttons showing OFF with no local video until a
+      // manual toggle. Instead the user enables mic/camera themselves when ready
+      // (the room UI prompts them on join) — deterministic, no timing race.
       if (!viewerOnly) {
-        await this.enableMediaAfterJoin();
+        this.syncLocalMediaState(); // reports (false, false) — buttons show muted
       }
       return true;
     } catch (error) {
       this.joining = false;
       this.callbacks.onError?.(error);
       throw error;
-    }
-  }
-
-  private async enableMediaAfterJoin(): Promise<void> {
-    const lp = this.room?.localParticipant;
-    if (!lp) return;
-    // Audio first — mirrors the Daily wrapper's cascade-avoidance ordering.
-    try {
-      await lp.setMicrophoneEnabled(true);
-      this.localAudioEnabled = true;
-    } catch (e) {
-      this.localAudioEnabled = false;
-      this.callbacks.onError?.(e);
-    }
-    try {
-      await lp.setCameraEnabled(true);
-      this.localVideoEnabled = true;
-    } catch (e) {
-      this.localVideoEnabled = false;
-      this.callbacks.onCameraError?.(e);
-    }
-    // Report the REAL track state, not the values we just tried to set — an enable
-    // can fail or be immediately auto-muted, and the UI buttons must match the tile.
-    this.syncLocalMediaState();
-
-    // On the FIRST join the camera track often publishes a beat AFTER
-    // setCameraEnabled() resolves (permission prompt + device warm-up), so the
-    // sync above reads isCameraEnabled=false and the button/tile show OFF until a
-    // manual toggle. LocalTrackPublished re-syncs, but isn't 100% reliable across
-    // browsers, so re-read the real state a few times as it settles. These NEVER
-    // force the camera on — they just report whatever LiveKit actually has, so a
-    // genuine permission denial still correctly shows OFF.
-    for (const delay of [400, 1200, 2500]) {
-      setTimeout(() => { if (this.joined) this.syncLocalMediaState(); }, delay);
     }
   }
 

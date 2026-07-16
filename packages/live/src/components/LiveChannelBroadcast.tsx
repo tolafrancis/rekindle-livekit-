@@ -659,28 +659,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
 
       console.log('[Broadcast] Waiting for room to be fully ready...');
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // The room wrapper auto-enables mic + camera on join (enableMediaAfterJoin),
-      // which also triggers the browser permission prompts. So by the time
-      // joinRoom() resolved, the mic is already live and — for a video broadcast —
-      // the camera is already publishing; the control buttons sync to the real
-      // track state via onMediaStateChange. We must NOT re-toggle here: the old
-      // code toggled mic + camera again, flipping BOTH back OFF, which is why the
-      // buttons showed OFF with no video until the host manually toggled off→on.
-      //
-      // The only correction needed is for an AUDIO-ONLY broadcast, where the
-      // wrapper still enabled the camera — switch it off once. Do NOT gate this on
-      // dailyRoom.isCameraOn: that React flag is stale inside this closure (it was
-      // captured as false before join). toggleCamera() flips the wrapper's REAL
-      // current state (on → off), which is what we want.
-      if (!isVideoMode) {
-        console.log('[Broadcast] Audio-only broadcast — disabling auto-enabled camera');
-        try {
-          await dailyRoom.toggleCamera();
-        } catch (camErr) {
-          console.warn('[Broadcast] Could not disable camera for audio broadcast (non-fatal):', camErr);
-        }
-      }
+
+      // The room now joins MUTED — mic + camera start OFF (no auto-publish race).
+      // Nudge the host to turn them on when ready. For a video broadcast we point
+      // them at both mic + camera; for audio-only, just the mic.
+      toast({
+        title: t('liveChannelBroadcast', 'youreLiveMuted', "You're live — you're muted"),
+        description: isVideoMode
+          ? t('liveChannelBroadcast', 'tapMicCamToStart', 'Tap the microphone and camera buttons below to start your audio and video.')
+          : t('liveChannelBroadcast', 'tapMicToStart', 'Tap the microphone button below to start speaking.'),
+      });
 
       await supabase
         .from('channel_chat_messages')

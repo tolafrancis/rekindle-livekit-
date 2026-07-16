@@ -1004,6 +1004,20 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   });
 
+  // One-time nudge: the room joins MUTED (mic + camera OFF) to avoid the auto-
+  // enable timing race, so tell the user to turn them on. Restores the pre-
+  // migration "please unmute / enable video" prompt.
+  const mutedPromptShownRef = useRef(false);
+  useEffect(() => {
+    if (isConnected && !mutedPromptShownRef.current) {
+      mutedPromptShownRef.current = true;
+      toast({
+        title: t('dailyVideoCall', 'joinedMuted', "You've joined muted"),
+        description: t('dailyVideoCall', 'tapMicCamToStart', 'Tap the microphone and camera buttons below to turn on your audio and video.'),
+      });
+    }
+  }, [isConnected, toast, t]);
+
   // The host pushes the call's composite to Mux via one RTMP stream. This serves
   // two purposes depending on mode: in a webinar it's the feed the HLS audience
   // watches; in a normal meeting it's how the session gets recorded (Mux records
@@ -1602,24 +1616,24 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
       {/* Controls bar - all controls from useDailyRoom (Daily SDK) */}
       {showControls && (
-        <div className="bg-gray-900 border-t border-gray-800 p-3 sm:p-6">
-          <div className="flex items-center justify-start sm:justify-center gap-3 sm:gap-6 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="bg-gray-900 border-t border-gray-800 p-2 sm:p-6">
+          <div className="flex items-center justify-center gap-1.5 sm:gap-6 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Mic toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={toggleMic}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${isMicOn 
                   ? 'bg-gray-700 hover:bg-gray-600 text-white' 
                   : 'bg-red-600 hover:bg-red-700 text-white'}
               `}>
                 {isMicOn ? (
-                  <Mic className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <Mic className="h-4 w-4 sm:h-7 sm:w-7" />
                 ) : (
-                  <MicOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <MicOff className="h-4 w-4 sm:h-7 sm:w-7" />
                 )}
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1633,16 +1647,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${isCameraOn 
                   ? 'bg-gray-700 hover:bg-gray-600 text-white' 
                   : 'bg-red-600 hover:bg-red-700 text-white'}
               `}>
                 {isCameraOn ? (
-                  <Video className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <Video className="h-4 w-4 sm:h-7 sm:w-7" />
                 ) : (
-                  <VideoOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <VideoOff className="h-4 w-4 sm:h-7 sm:w-7" />
                 )}
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1656,16 +1670,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${isScreenSharing 
                   ? 'bg-blue-600 hover:bg-blue-700 text-white' 
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
                 {isScreenSharing ? (
-                  <MonitorOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <MonitorOff className="h-4 w-4 sm:h-7 sm:w-7" />
                 ) : (
-                  <Monitor className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <Monitor className="h-4 w-4 sm:h-7 sm:w-7" />
                 )}
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1680,13 +1694,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${handRaised 
                   ? 'bg-amber-600 hover:bg-amber-700 text-white' 
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
-                <Hand className="h-5 w-5 sm:h-7 sm:w-7" />
+                <Hand className="h-4 w-4 sm:h-7 sm:w-7" />
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
                 {handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
@@ -1699,13 +1713,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${showChat 
                   ? 'bg-purple-600 hover:bg-purple-700 text-white' 
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
-                <MessageSquare className="h-5 w-5 sm:h-7 sm:w-7" />
+                <MessageSquare className="h-4 w-4 sm:h-7 sm:w-7" />
                 {chatMessages.length > 0 && !showChat && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {chatMessages.length > 9 ? '9+' : chatMessages.length}
@@ -1724,13 +1738,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`
-                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                  w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                   transition-all duration-200 transform group-hover:scale-105
                   ${showHostControls 
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
                     : 'bg-gray-700 hover:bg-gray-600 text-white'}
                 `}>
-                  <Users className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <Users className="h-4 w-4 sm:h-7 sm:w-7" />
                   {waitingRoomParticipants.length > 0 && (
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                       {waitingRoomParticipants.length}
@@ -1751,7 +1765,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`
-                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
+                  w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
                   transition-all duration-200 transform group-hover:scale-105
                   ${isMuxRecording
                     ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -1762,11 +1776,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     : 'bg-gray-700 hover:bg-gray-600 text-white'}
                 `}>
                   {recordingStatus === 'starting' || recordingStatus === 'stopping' ? (
-                    <Loader2 className="h-5 w-5 sm:h-7 sm:w-7 animate-spin" />
+                    <Loader2 className="h-4 w-4 sm:h-7 sm:w-7 animate-spin" />
                   ) : isMuxRecording ? (
-                    <Square className="h-5 w-5 sm:h-7 sm:w-7" />
+                    <Square className="h-4 w-4 sm:h-7 sm:w-7" />
                   ) : (
-                    <Circle className="h-5 w-5 sm:h-7 sm:w-7" />
+                    <Circle className="h-4 w-4 sm:h-7 sm:w-7" />
                   )}
                 </div>
                 <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1785,11 +1799,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className="
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 bg-red-600 hover:bg-red-700 text-white
                 transition-all duration-200 transform group-hover:scale-105
               ">
-                <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                <PhoneOff className="h-4 w-4 sm:h-7 sm:w-7" />
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
                 {isHost ? t('dailyVideoCall', 'endForAll', 'End for All') : t('dailyVideoCall', 'leave', 'Leave')}
