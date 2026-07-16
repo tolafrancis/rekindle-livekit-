@@ -18,6 +18,8 @@ import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
+import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -118,6 +120,14 @@ function AppRoutes() {
       {/* Public live-broadcast watch link (channel Share builds /channels/:id).
           Mounted OUTSIDE the auth gate so guests can watch without an account. */}
       <Route path="/channels/:id" element={<ChannelWatchPage context="ministry" />} />
+
+      {/* Public guest meeting-join links — same self-contained flow as the consumer
+          app, so a shared ministry meeting link shows the guest join page (name
+          entry + optional sign-in) instead of forcing sign-up. The join page then
+          routes into the live room below. All OUTSIDE the auth gate. */}
+      <Route path="/ministry/:ministryId/meeting/:meetingId" element={<MeetingJoinPage />} />
+      <Route path="/channel/:channelId/meeting/:meetingId" element={<MeetingJoinPage />} />
+      <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />
 
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>
