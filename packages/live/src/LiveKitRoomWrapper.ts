@@ -165,6 +165,17 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     // Report the REAL track state, not the values we just tried to set — an enable
     // can fail or be immediately auto-muted, and the UI buttons must match the tile.
     this.syncLocalMediaState();
+
+    // On the FIRST join the camera track often publishes a beat AFTER
+    // setCameraEnabled() resolves (permission prompt + device warm-up), so the
+    // sync above reads isCameraEnabled=false and the button/tile show OFF until a
+    // manual toggle. LocalTrackPublished re-syncs, but isn't 100% reliable across
+    // browsers, so re-read the real state a few times as it settles. These NEVER
+    // force the camera on — they just report whatever LiveKit actually has, so a
+    // genuine permission denial still correctly shows OFF.
+    for (const delay of [400, 1200, 2500]) {
+      setTimeout(() => { if (this.joined) this.syncLocalMediaState(); }, delay);
+    }
   }
 
   /**
