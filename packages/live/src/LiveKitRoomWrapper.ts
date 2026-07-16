@@ -303,8 +303,23 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       })
       .on(RoomEvent.TrackSubscribed, (track, _pub, p) => this.callbacks.onTrackStarted?.({ track, participant: p }))
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => this.callbacks.onTrackStopped?.({ track, participant: p }))
-      .on(RoomEvent.LocalTrackPublished, () => this.syncLocalMediaState())
-      .on(RoomEvent.LocalTrackUnpublished, () => this.syncLocalMediaState())
+      .on(RoomEvent.LocalTrackPublished, () => {
+        this.syncLocalMediaState();
+        // Refresh the local participant so the video TILES re-attach the new track.
+        // Without this, enabling the camera updated the mic/cam BUTTON (via
+        // syncLocalMediaState) but NOT the participant object the tiles render from,
+        // so the local video only appeared after a SECOND toggle (that one fires
+        // TrackMuted/Unmuted → onParticipantUpdated, which is what refreshed it).
+        // LocalTrackPublished is the local analogue of TrackSubscribed (which only
+        // fires for remote tracks), so it's the right place to drive the local tile.
+        const lp = this.room?.localParticipant;
+        if (lp) this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
+      })
+      .on(RoomEvent.LocalTrackUnpublished, () => {
+        this.syncLocalMediaState();
+        const lp = this.room?.localParticipant;
+        if (lp) this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
+      })
       .on(RoomEvent.MediaDevicesError, (e: Error) => this.callbacks.onCameraError?.(e))
       .on(RoomEvent.ConnectionStateChanged, (s: ConnectionState) => {
         if (s === ConnectionState.Disconnected) this.joined = false;
