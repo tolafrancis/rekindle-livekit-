@@ -217,14 +217,28 @@ serve(async (req) => {
       global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
     });
     const { data: { user } } = await userClient.auth.getUser();
-    if (!user) return json({ error: 'Unauthorized' }, 401);
 
     // Service-role client for role lookups (bypasses RLS so host detection is reliable).
     const admin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const svc = new RoomServiceClient(httpUrl(LIVEKIT_URL), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
 
     const action = body.action ?? 'token';
-    const role = await resolveRole(admin, user.id, body);
+
+    // GUEST ACCESS (§ public share links): a caller with no Supabase session may
+    // request a JOIN token only, and can NEVER be host/speaker — the auth hole
+    // stays closed because guest role is derived here, not from the client. The
+    // admin actions (delete/create room, grant-publish) still require a real user.
+    const isGuest = !user;
+    if (isGuest && action !== 'token') {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+    // Stable per-connection identity: real users key on their uid; guests get a
+    // random one so LiveKit never collapses two guests into one participant.
+    const identity = user?.id ?? `guest-${crypto.randomUUID()}`;
+
+    const role: Role = isGuest
+      ? (body.viewerOnly ? 'viewer' : 'attendee')
+      : await resolveRole(admin, user!.id, body);
     const isHost = role === 'host';
 
     // ── Non-token admin actions ────────────────────────────────────────────
@@ -247,10 +261,10 @@ serve(async (req) => {
     if (action === 'grant-publish') {
       // Speaker-promote (§1D): viewer-only tokens have canPublish:false, so the
       // SFU rejects publishing until permissions are widened server-side.
-      const target = body.identity ?? user.id;
+      const target = body.identity ?? user!.id;
       // Promoting someone else requires host; promoting yourself requires a
       // verified speaker row (you were accepted as a speaker).
-      const allowed = target === user.id ? role === 'speaker' || isHost : isHost;
+      const allowed = target === user!.id ? role === 'speaker' || isHost : isHost;
       if (!allowed) return json({ error: 'Not permitted to grant publish' }, 403);
       await svc.updateParticipant(body.roomName, target, undefined, {
         canPublish: true,
@@ -265,8 +279,11 @@ serve(async (req) => {
     // Gate: tenant entitlement (§3b) — a token must never let the caller into a
     // room they aren't entitled to. Host/speaker already proven; everyone else
     // (attendee/viewer) must pass isEntitled for the tenant-scoped kinds.
-    if (role !== 'host' && role !== 'speaker') {
-      if (!(await isEntitled(admin, user.id, body))) {
+    // Guests arrive via a public share link, so they skip the tenant-membership
+    // entitlement check (it is keyed on a user id they don't have). They are
+    // still capped at viewer/attendee and remain subject to the locked-room gate.
+    if (!isGuest && role !== 'host' && role !== 'speaker') {
+      if (!(await isEntitled(admin, user!.id, body))) {
         return json({ error: 'not_entitled' }, 403);
       }
     }
@@ -285,13 +302,13 @@ serve(async (req) => {
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,
     // UNLESS a host has already admitted them (status='admitted' → fall through
     // and mint the token; that's how admitFromWaitingRoom lets the client back in).
-    if (body.enableWaitingRoom && !isHost) {
+    if (body.enableWaitingRoom && !isHost && !isGuest) {
       const meetingKey = body.context?.meetingId ?? body.roomName;
       const { data: existing } = await admin
         .from('meeting_waiting_room')
         .select('status')
         .eq('meeting_id', meetingKey)
-        .eq('user_id', user.id)
+        .eq('user_id', user!.id)
         .maybeSingle();
 
       if ((existing as { status?: string } | null)?.status === 'rejected') {
@@ -301,8 +318,8 @@ serve(async (req) => {
         await admin.from('meeting_waiting_room').upsert(
           {
             meeting_id: meetingKey,
-            user_id: user.id,
-            name: body.userName ?? user.email ?? 'Guest',
+            user_id: user!.id,
+            name: body.userName ?? user!.email ?? 'Guest',
             status: 'waiting',
           },
           { onConflict: 'meeting_id,user_id' },
@@ -314,9 +331,9 @@ serve(async (req) => {
 
     // Mint the JWT.
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity: user.id,
-      name: body.userName ?? user.email ?? 'Guest',
-      metadata: JSON.stringify({ role }),
+      identity,
+      name: body.userName ?? user?.email ?? 'Guest',
+      metadata: JSON.stringify({ role, guest: isGuest }),
       ttl: '2h',
     });
     at.addGrant(grantFor(role, body.roomName));
