@@ -14,6 +14,7 @@ import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSe
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut } from 'lucide-react';
+import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
@@ -132,18 +133,22 @@ function AppRoutes() {
 }
 
 export default function App() {
+  // ThemeProvider MUST wrap the tree: the Sonner toaster calls useTheme(),
+  // which throws (blanking the whole app) when no provider is present.
   return (
-    <AuthProvider>
-      <LanguageProvider>
-        {/* Toast renderers — without these mounted, every toast() call in the
-            ministry app (channel/meeting copy confirmations, etc.) is silent.
-            Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </LanguageProvider>
-    </AuthProvider>
+    <ThemeProvider defaultTheme="light">
+      <AuthProvider>
+        <LanguageProvider>
+          {/* Toast renderers — without these mounted, every toast() call in the
+              ministry app (channel/meeting copy confirmations, etc.) is silent.
+              Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </LanguageProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
