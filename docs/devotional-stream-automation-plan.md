@@ -12,7 +12,14 @@ already renders (home widget, ministry homepages, source picker) then shows them
 automatically — **no client changes**, because those surfaces resolve by
 `stream_id` + `schedule_date`.
 
-> Status: **planned, not built.** This document is the build spec.
+> Status: **BUILT** (2026-07-17). Population mode is now **per-stream** — a stream with
+> no `devotional_stream_sources` row stays **manual** (an admin authors each day, exactly
+> as before); a stream with an active row is automated. Decisions taken: build **both**
+> jobs, insert **drafts for admin approval** (`is_published=false`), AI passage chosen by
+> **themed rotation from the prompt**. Scraping is **RSS/Atom only** (`parser_key='rss'`)
+> and refuses to run without a recorded `license_basis`.
+>
+> **Deploy steps remain** — see "Deploying what was built" at the bottom.
 
 ---
 
@@ -159,22 +166,41 @@ select cron.schedule('ingest-devotional-ai', '45 5 * * *',  -- 05:45 daily
 
 ---
 
-## Build checklist (for later)
+## Build checklist
 
-- [ ] Migration: `uq_devotionals_stream_day` unique index + `devotional_stream_sources` table + RLS (admin-only writes; service-role reads in the functions).
-- [ ] Edge fn `ingest-devotional-scrape` (+ one parser profile for the chosen site).
-- [ ] Edge fn `ingest-devotional-ai` (reuses `meeting-ai` + Bible API).
-- [ ] `cron-setup-devotional-streams.sql` — schedule both jobs (pattern: `cron-setup.sql`).
-- [ ] Admin: show `last_run_at`/`last_status` per stream in `AdminDevotionalStreamsManager`; a "Run now" button that POSTs the function once.
-- [ ] Per source: record the license basis in `devotional_stream_sources` before going public.
+- [x] Migration `0161_devotional_stream_sources.sql`: `uq_devotionals_stream_day` unique index + `devotional_stream_sources` table + RLS (admin-only writes; the functions use the service role and bypass RLS). **Applied.**
+- [x] Edge fn `supabase/ingest-devotional-scrape/index.ts` (parser profile: `rss` — RSS 2.0 + Atom).
+- [x] Edge fn `supabase/ingest-devotional-ai/index.ts` (reuses `meeting-ai` + Bible API).
+- [x] `supabase/cron-setup-devotional-streams.sql` — schedules both jobs (05:15 / 05:45 UTC).
+- [x] Admin: population mode (Manual / AI / Feed) + config, `last_run_at`/`last_status` per stream, and a **Run now** button in `AdminDevotionalStreamsManager`.
+- [x] Licence basis captured per scraped source and **enforced** — the scrape job errors out if `license_basis` is blank.
 
-## Open decisions (needed before build)
-1. **Which website** for the scraper, and its exact license basis (public-domain?
-   permitted RSS?). This gates the whole scraper job.
-2. **AI scripture selection** — a fixed daily lectionary, a reading-plan table, or a
-   themed rotation from the prompt.
-3. **Run time / timezone** — one UTC fire vs per-region. Streams are global, so a
-   single early-UTC run is simplest; `schedule_date` makes "today" resolve locally in
-   the client regardless.
-4. **Publish immediately vs stage** — auto-`is_published=true`, or insert as draft for
-   an admin to approve (safer for the scraper while its parser is proven).
+## Resolved decisions
+1. **Which website** for the scraper — deferred *by design*. The job is feed-driven: an
+   admin supplies the RSS/Atom URL **and** its licence basis in the admin UI. No source is
+   hard-coded, and no scraped stream can produce anything until a basis is recorded.
+2. **AI scripture selection** — **themed rotation from the prompt**. The editable prompt
+   drives theme/tone; the model picks a passage within it, avoiding the stream's last 30
+   references. Verse **text** always comes from the Bible API, never the model.
+3. **Run time / timezone** — one early-UTC fire (05:15 scrape / 05:45 AI). `schedule_date`
+   is a DATE and the client resolves "today" locally against it, so a single run is correct
+   for a global audience.
+4. **Publish immediately vs stage** — **drafts** (`is_published=false`) for an admin to
+   approve. A bad generation or broken parse never reaches users.
+
+---
+
+## Deploying what was built
+
+1. **Migration** — `0161_devotional_stream_sources.sql` is already applied to production.
+2. **Edge functions** (Dashboard → Edge Functions → deploy, paste each file):
+   - `ingest-devotional-ai` — needs the existing `meeting-ai` fn + `OPENAI_API_KEY`.
+   - `ingest-devotional-scrape`
+3. **Cron** — run `supabase/cron-setup-devotional-streams.sql` in the SQL Editor after
+   replacing `<YOUR_SERVICE_ROLE_KEY>`.
+4. **Try it** — Admin → Devotional Streams → edit a stream → *How is this stream filled?*
+   → AI or Feed → **Run now** (the Play button) to fire it once without waiting for cron.
+   Then approve the resulting draft in the Devotionals tab.
+
+Until step 2+3 are done, the admin UI saves configuration fine but nothing runs (and
+**Run now** will fail because the function isn't deployed yet).
