@@ -308,6 +308,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
   const [devotionals, setDevotionals] = useState<any[]>([]);
   // Daily-devotional streams (0149) — the named feed each devotional is assigned to.
   const [devotionalStreams, setDevotionalStreams] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
+  // '' = all streams; otherwise a stream id (or 'none' for unassigned) to filter the list.
+  const [devotionalStreamFilter, setDevotionalStreamFilter] = useState('');
   const [music, setMusic] = useState<any[]>([]);
   const [affirmations, setAffirmations] = useState<any[]>([]);
   const [prayerWallPosts, setPrayerWallPosts] = useState<any[]>([]);
@@ -1613,18 +1615,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
             <PrayerChallengeBackendManager />
           )}
 
-          {activeTab === 'devotionals' && (
-            <ContentTable 
-              data={devotionals}
-              type="devotional"
-              columns={[
-                { key: 'title', label: 'Title' },
-                { key: 'scripture', label: 'Scripture' },
-                { key: 'schedule_date', label: 'Schedule Date & Time' },
-                { key: 'is_published', label: 'Published' }
-              ]}
-            />
-          )}
+          {activeTab === 'devotionals' && (() => {
+            // Tag each devotional with its stream name so the list SHOWS the stream,
+            // and let the admin filter the list down to one stream.
+            const streamName = (id: string | null) =>
+              !id ? '—' : (devotionalStreams.find((s) => s.id === id)?.name || '(unknown stream)');
+            const rows = devotionals
+              .filter((d) =>
+                !devotionalStreamFilter
+                  ? true
+                  : devotionalStreamFilter === 'none'
+                    ? !d.stream_id
+                    : d.stream_id === devotionalStreamFilter)
+              .map((d) => ({ ...d, stream_name: streamName(d.stream_id) }));
+            return (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label className="text-sm text-gray-600">{t('adminDashboard', 'filterByStream', 'Stream')}</Label>
+                  <Select value={devotionalStreamFilter || 'all'} onValueChange={(v) => setDevotionalStreamFilter(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('adminDashboard', 'allStreams', 'All streams')}</SelectItem>
+                      {devotionalStreams.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                      <SelectItem value="none">{t('adminDashboard', 'noStream', '(No stream)')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-gray-400">
+                    {t('adminDashboard', 'streamCount', '{n} devotionals').replace('{n}', String(rows.length))}
+                  </span>
+                </div>
+                <ContentTable
+                  data={rows}
+                  type="devotional"
+                  columns={[
+                    { key: 'title', label: 'Title' },
+                    { key: 'stream_name', label: 'Stream' },
+                    { key: 'scripture', label: 'Scripture' },
+                    { key: 'schedule_date', label: 'Schedule Date & Time' },
+                    { key: 'is_published', label: 'Published' }
+                  ]}
+                />
+              </div>
+            );
+          })()}
 
           {activeTab === 'prayer-library' && (
             <AdminPrayerLibrary />
