@@ -8,7 +8,7 @@ import {
 } from '@rekindle/ui/dialog';
 import { Button } from '@rekindle/ui/button';
 import { useAuth } from '../AuthContext';
-import { Building2, BookOpen, HandHeart, Sparkles, Flame, ArrowRight } from 'lucide-react';
+import { BookOpen, HandHeart, Sparkles, Flame, ArrowRight } from 'lucide-react';
 
 interface OnboardingTipsProps {
   onNavigate: (tab: string) => void;
@@ -25,10 +25,10 @@ interface Tip {
 
 const tips: Tip[] = [
   {
-    icon: <Building2 className="h-5 w-5 text-purple-600" />,
+    icon: <BookOpen className="h-5 w-5 text-purple-600" />,
     iconBg: 'bg-purple-100',
-    title: 'Join a ministry for their devotionals',
-    body: 'Open the Ministries tab and join one to receive its devotionals, such as Open Heavens by Pastor E.A. Adeboye. Then set your Devotional source to "My Ministry" on the home screen.',
+    title: 'Choose your devotional stream',
+    body: 'On the home screen, open "Devotional stream" and pick the daily devotional you want to follow. You can switch between streams any time.',
   },
   {
     icon: <BookOpen className="h-5 w-5 text-blue-600" />,
