@@ -650,24 +650,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
               </div>
               <div>
                 <Label>{t('adminDashboard', 'scriptureReference', 'Scripture Reference')}</Label>
-                <div className="flex flex-col sm:flex-row gap-2">
+                {/* The reference input gets its OWN full-width line. Previously it
+                    shared a flex row with the version dropdown (w-40) + Load button
+                    inside a half-width grid column, which squeezed the input to
+                    ~0px — it looked like the field "wouldn't accept text". */}
+                <div className="space-y-2">
                   <Input
-                    className="flex-1"
+                    className="w-full"
                     value={formData.scripture_reference || formData.scripture || ''}
                     onChange={(e) => setFormData({ ...formData, scripture_reference: e.target.value, scripture: e.target.value })}
                     placeholder={t('adminDashboard', 'scriptureRefExample', 'e.g., John 3:16')}
                   />
-                  <Select value={scriptureVersion} onValueChange={setScriptureVersion}>
-                    <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {BIBLE_VERSIONS.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="button" variant="outline" onClick={handleLoadScripture} disabled={loadingScripture}>
-                    {loadingScripture ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Download className="h-4 w-4 mr-1" /> {t('adminDashboard', 'load', 'Load')}</>}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Select value={scriptureVersion} onValueChange={setScriptureVersion}>
+                      <SelectTrigger className="flex-1 min-w-0"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {BIBLE_VERSIONS.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" className="shrink-0" onClick={handleLoadScripture} disabled={loadingScripture}>
+                      {loadingScripture ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Download className="h-4 w-4 mr-1" /> {t('adminDashboard', 'load', 'Load')}</>}
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div>
