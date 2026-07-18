@@ -570,6 +570,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           schedule_date:        formData.schedule_date,
           is_published:         formData.is_published ?? false,
         };
+        // author is a real column as of migration 0180. The form writes both
+        // `author` and `author_name`; only `author` exists on the table.
+        const authorValue = formData.author || formData.author_name;
+        if (authorValue)                      p.author                  = authorValue;
         if (formData.scripture_reference)     p.scripture_reference     = formData.scripture_reference;
         if (formData.scripture_version)       p.scripture_version       = formData.scripture_version;
         if (formData.bible_passage_reference) p.bible_passage_reference = formData.bible_passage_reference;
@@ -679,8 +683,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
               <div>
                 <Label>{t('adminDashboard', 'author', 'Author')}</Label>
                 <Input
-                  value={formData.author || formData.author_name || ''}
-                  onChange={(e) => setFormData({ ...formData, author: e.target.value, author_name: e.target.value })}
+                  value={formData.author || ''}
+                  onChange={(e) => setFormData({ ...formData, author: e.target.value })}
                   placeholder={t('adminDashboard', 'authorNamePlaceholder', 'Author name')}
                 />
               </div>
