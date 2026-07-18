@@ -79,6 +79,9 @@ export const AdminTranslationDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<TranslationStats | null>(null);
+  // Surfaced in the render guard below. Without this the load failure was only
+  // a transient toast, and the render then crashed on null `stats` — a blank tab.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [cacheEntries, setCacheEntries] = useState<TranslationCacheEntry[]>([]);
   const [filteredEntries, setFilteredEntries] = useState<TranslationCacheEntry[]>([]);
   
@@ -141,6 +144,7 @@ export const AdminTranslationDashboard: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // Load all cache entries. translation_cache can exceed Supabase's default
       // 1000-row API cap, and a client `.limit()` cannot raise the server cap —
@@ -168,6 +172,7 @@ export const AdminTranslationDashboard: React.FC = () => {
 
     } catch (err: any) {
       console.error('Error loading translation data:', err);
+      setLoadError(err?.message || String(err));
       toast({
         title: t('adminTranslationDashboard', 'errorTitle', 'Error'),
         description: t('adminTranslationDashboard', 'loadFailed', 'Failed to load translation data'),
@@ -444,6 +449,29 @@ export const AdminTranslationDashboard: React.FC = () => {
         <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
         <span className="ml-3 text-gray-600">{t('adminTranslationDashboard', 'loadingData', 'Loading translation data...')}</span>
       </div>
+    );
+  }
+
+  // `stats` is null whenever loadData() failed. Every stat tile below dereferences
+  // it directly (stats.totalEntries, stats.estimatedCost, ...), so rendering on
+  // without this guard throws and blanks the whole tab. Show the real error instead.
+  if (!stats) {
+    return (
+      <Card className="border-red-200">
+        <CardContent className="py-12 flex flex-col items-center text-center gap-3">
+          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <h3 className="text-lg font-semibold text-gray-900">
+            {t('adminTranslationDashboard', 'loadFailed', 'Failed to load translation data')}
+          </h3>
+          {loadError && (
+            <p className="text-sm text-gray-600 max-w-xl break-words font-mono">{loadError}</p>
+          )}
+          <Button variant="outline" onClick={handleRefresh} disabled={refreshing} className="mt-2">
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {t('adminTranslationDashboard', 'refresh', 'Refresh')}
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 

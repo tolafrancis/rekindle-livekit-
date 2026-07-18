@@ -17,10 +17,21 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2, Globe, Play, RefreshCw, Languages } from 'lucide-react';
+import { Loader2, Globe, Play, RefreshCw, Languages, BarChart3 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n';
 import { translationQueueService, TranslationQueueStats } from '@/lib/translationQueueService';
+
+// One row per (content_type, language_code) from the get_translation_coverage()
+// RPC (migration 0178). language_code is null for a content type that has no
+// translations at all — such a row exists purely to carry total_items.
+interface CoverageRow {
+  content_type: string;
+  language_code: string | null;
+  translated_items: number;
+  total_items: number;
+}
 
 // Content types the bulk translator can target. Each maps to a table + field set
 // server-side (CONTENT_TABLE_MAP / CONTENT_FIELD_MAP in process-translation-queue).
@@ -65,7 +76,81 @@ export const ContentTranslationManager: React.FC = () => {
     }
   };
 
-  useEffect(() => { loadStats(); }, []);
+  const [coverage, setCoverage] = useState<CoverageRow[] | null>(null);
+  const [loadingCoverage, setLoadingCoverage] = useState(false);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [queueingLang, setQueueingLang] = useState<string | null>(null);
+
+  const loadCoverage = async () => {
+    setLoadingCoverage(true);
+    setCoverageError(null);
+    try {
+      const { data, error } = await supabase.rpc('get_translation_coverage');
+      if (error) throw error;
+      setCoverage((data ?? []) as CoverageRow[]);
+    } catch (e: any) {
+      // Surfaced inline rather than as a toast — an empty panel with no
+      // explanation is what made the old Translations tab unreadable.
+      setCoverageError(e?.message || String(e));
+    } finally {
+      setLoadingCoverage(false);
+    }
+  };
+
+  useEffect(() => { loadStats(); loadCoverage(); }, []);
+
+  // Denominator = every item of every translatable type. Each content type
+  // appears at least once in the RPC result (left join), so summing total_items
+  // over DISTINCT content_type is exact even for types with zero translations.
+  const totalItems = React.useMemo(() => {
+    if (!coverage) return 0;
+    const perType = new Map<string, number>();
+    for (const r of coverage) perType.set(r.content_type, r.total_items);
+    return Array.from(perType.values()).reduce((a, b) => a + b, 0);
+  }, [coverage]);
+
+  const perLanguage = React.useMemo(() => {
+    if (!coverage) return [];
+    const totals = new Map<string, number>();
+    for (const r of coverage) {
+      if (!r.language_code) continue; // total-carrier row, not a real language
+      totals.set(r.language_code, (totals.get(r.language_code) ?? 0) + r.translated_items);
+    }
+    return Array.from(totals.entries())
+      .map(([code, translated]) => {
+        const meta = SUPPORTED_LANGUAGES.find((l) => l.code === code);
+        return {
+          code,
+          translated,
+          label: meta?.nativeName || meta?.name || code,
+          flag: meta?.flag || '🌐',
+          pct: totalItems > 0 ? Math.round((translated / totalItems) * 100) : 0,
+        };
+      })
+      .sort((a, b) => b.translated - a.translated);
+  }, [coverage, totalItems]);
+
+  // Queue only what's missing for one language: queueAll skips items already
+  // translated or in flight, so this is a "fill the gap" action, not a re-run.
+  const handleQueueGap = async (code: string) => {
+    setQueueingLang(code);
+    try {
+      const res = await translationQueueService.queueAll(
+        CONTENT_TYPES.map((c) => c.type),
+        [code],
+        { createdBy: user?.id, force: false }
+      );
+      toast({
+        title: 'Gap queued',
+        description: `${res.totalQueued} translation(s) queued across ${res.totalItems} items (${res.skipped} already done/in-flight).`,
+      });
+      await loadStats();
+    } catch (e: any) {
+      toast({ title: 'Failed to queue', description: e.message, variant: 'destructive' });
+    } finally {
+      setQueueingLang(null);
+    }
+  };
 
   const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
     const next = new Set(set);
@@ -139,10 +224,74 @@ export const ContentTranslationManager: React.FC = () => {
     }
   };
 
-  const busy = queueing || processing || retrying;
+  const busy = queueing || processing || retrying || queueingLang !== null;
 
   return (
     <div className="space-y-6">
+      {/* Translation coverage — which languages content already exists in */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" /> Translation coverage
+          </CardTitle>
+          <Button variant="outline" size="sm" onClick={loadCoverage} disabled={loadingCoverage}>
+            {loadingCoverage ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {coverageError ? (
+            <div className="text-sm text-red-600">
+              <div className="font-medium">Could not load coverage</div>
+              <div className="font-mono text-xs mt-1 break-words">{coverageError}</div>
+              <div className="text-xs text-muted-foreground mt-2">
+                If this says the function does not exist, apply migration
+                0178_translation_coverage_rpc.sql.
+              </div>
+            </div>
+          ) : loadingCoverage && !coverage ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading coverage…
+            </div>
+          ) : perLanguage.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">
+              No content has been translated yet. Queue a language below to start.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground mb-3">
+                {totalItems.toLocaleString()} translatable item(s) across {CONTENT_TYPES.length} content types.
+              </p>
+              {perLanguage.map((l) => (
+                <div key={l.code} className="flex items-center gap-3">
+                  <div className="w-40 flex items-center gap-2 text-sm shrink-0">
+                    <span>{l.flag}</span>
+                    <span className="truncate">{l.label}</span>
+                  </div>
+                  <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
+                    <div className="h-full bg-purple-600" style={{ width: `${l.pct}%` }} />
+                  </div>
+                  <div className="w-28 text-right text-sm tabular-nums shrink-0">
+                    {l.translated.toLocaleString()}/{totalItems.toLocaleString()}
+                  </div>
+                  <div className="w-12 text-right text-xs text-muted-foreground shrink-0">{l.pct}%</div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={busy || queueingLang !== null || l.translated >= totalItems}
+                    onClick={() => handleQueueGap(l.code)}
+                  >
+                    {queueingLang === l.code
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : l.translated >= totalItems ? 'Complete' : 'Queue gap'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Queue status */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
