@@ -13,6 +13,25 @@ export interface DevotionalStream {
   is_public: boolean;
   is_default: boolean;
   sort_order: number;
+  /** Machine translations written by process-translation-queue (migration 0179),
+   *  shaped {"fr": {"name": "...", "description": "..."}}. */
+  translations?: Record<string, { name?: string; description?: string }> | null;
+}
+
+/**
+ * Swap in the translated name/description for `language`, falling back to the
+ * authored English per-field. Mirrors how DevotionalSeriesViewer localizes a
+ * series/day — there is no shared helper for the `translations` JSONB.
+ */
+export function localizeStream(stream: DevotionalStream, language?: string): DevotionalStream {
+  if (!language || language === 'en') return stream;
+  const t = stream.translations?.[language];
+  if (!t) return stream;
+  return {
+    ...stream,
+    name: t.name || stream.name,
+    description: t.description || stream.description,
+  };
 }
 
 let defaultStreamIdCache: string | null | undefined;
@@ -30,8 +49,12 @@ export async function getDefaultStreamId(): Promise<string | null> {
   return defaultStreamIdCache;
 }
 
-/** Public streams for pickers, default first, then sort_order. */
-export async function listPublicStreams(): Promise<DevotionalStream[]> {
+/**
+ * Public streams for pickers, default first, then sort_order.
+ * Pass the reader's language to get translated names/blurbs; omitting it
+ * returns the authored English, so existing callers are unaffected.
+ */
+export async function listPublicStreams(language?: string): Promise<DevotionalStream[]> {
   const { data } = await supabase
     .from('devotional_streams')
     .select('*')
@@ -39,7 +62,9 @@ export async function listPublicStreams(): Promise<DevotionalStream[]> {
     .order('is_default', { ascending: false })
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
-  return (data as DevotionalStream[]) ?? [];
+  // Ordering stays on the authored name — sorting by the translated value would
+  // reshuffle the picker per language and move the default stream off the top.
+  return ((data as DevotionalStream[]) ?? []).map((s) => localizeStream(s, language));
 }
 
 /** The stream a ministry chose for its homepage, or null if it writes its own. */

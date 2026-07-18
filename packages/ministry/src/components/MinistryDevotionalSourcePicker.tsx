@@ -17,7 +17,7 @@ import { BookOpen, Check, Loader2, PenLine, Radio } from 'lucide-react';
  * the ministry's owner/leader (or an admin) to write this row.
  */
 export const MinistryDevotionalSourcePicker: React.FC<{ ministryId: string; className?: string }> = ({ ministryId, className = '' }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [streams, setStreams] = useState<{ id: string; name: string; description: string | null }[]>([]);
   const [streamId, setStreamId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,7 +26,7 @@ export const MinistryDevotionalSourcePicker: React.FC<{ ministryId: string; clas
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, chosen] = await Promise.all([listPublicStreams(), getMinistryStreamId(ministryId)]);
+      const [s, chosen] = await Promise.all([listPublicStreams(language), getMinistryStreamId(ministryId)]);
       if (cancelled) return;
       setStreams(s.map((x) => ({ id: x.id, name: x.name, description: x.description })));
       setStreamId(chosen);

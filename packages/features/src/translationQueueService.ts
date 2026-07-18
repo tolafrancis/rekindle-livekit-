@@ -26,6 +26,7 @@ export const CONTENT_TABLE_MAP: Record<string, string> = {
   'affirmation': 'affirmations',
   'declaration': 'declarations',
   'devotional_entry': 'devotional_entries',
+  'devotional_stream': 'devotional_streams',
   'prayer_topic': 'prayer_topics'
 };
 

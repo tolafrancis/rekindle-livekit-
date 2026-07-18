@@ -29,6 +29,9 @@ const CONTENT_FIELD_MAP: Record<string, string[]> = {
   'prayer_library': ['title', 'content', 'scripture'],
   'prayer_series': ['title', 'description'],
   'devotional_series': ['title', 'description'],
+  // Devotional streams (0149) are named feeds, not devotional bodies — the only
+  // reader-visible strings are the picker's name and blurb.
+  'devotional_stream': ['name', 'description'],
   'announcement': ['title', 'content', 'description'],
   'teaching': ['title', 'summary', 'key_takeaways'],
   'prayer_point': ['title', 'content', 'scripture'],
@@ -66,13 +69,15 @@ const CONTENT_TABLE_MAP: Record<string, string> = {
   'affirmation': 'affirmations',
   'declaration': 'declarations',
   'devotional_entry': 'devotional_entries',
+  'devotional_stream': 'devotional_streams',
   'prayer_topic': 'prayer_topics'
 };
 
 // Content types the hourly auto-enqueue keeps translated as new items are added.
 const DEFAULT_AUTO_CONTENT_TYPES = [
   'devotional', 'ministry_devotional', 'devotional_series', 'devotional_entry',
-  'prayer_library', 'prayer_topic', 'book_summary', 'affirmation', 'declaration'
+  'devotional_stream', 'prayer_library', 'prayer_topic', 'book_summary',
+  'affirmation', 'declaration'
 ];
 
 // Languages currently launched to users (app_languages registry). Used as the

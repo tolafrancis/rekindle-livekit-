@@ -104,7 +104,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   ministryId
 }) => {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [devotionals, setDevotionals] = useState<Devotional[]>([]);
   const [series, setSeries] = useState<DevotionalSeries[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
@@ -139,7 +139,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
     let cancelled = false;
     (async () => {
       const [streams, chosen] = await Promise.all([
-        listPublicStreams(),
+        listPublicStreams(language),
         getMinistryStreamId(ministryId),
       ]);
       if (cancelled) return;

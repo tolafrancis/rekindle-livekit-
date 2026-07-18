@@ -40,6 +40,7 @@ const CONTENT_TYPES: Array<{ type: string; label: string }> = [
   { type: 'ministry_devotional', label: 'Ministry Daily Devotionals' },
   { type: 'devotional_series', label: 'Devotional Series (titles)' },
   { type: 'devotional_entry', label: 'Devotional Readings (daily body)' },
+  { type: 'devotional_stream', label: 'Devotional Streams (feed names)' },
   { type: 'prayer_library', label: 'Prayer Library' },
   { type: 'prayer_topic', label: 'Prayer Topics' },
   { type: 'book_summary', label: 'Books' },

@@ -23,7 +23,7 @@ interface Props {
  */
 export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [streams, setStreams] = useState<DevotionalStream[]>([]);
   const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +39,7 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
           .select('devotional_stream_id')
           .eq('user_id', user.id)
           .single(),
-        listPublicStreams().catch(() => [] as DevotionalStream[]),
+        listPublicStreams(language).catch(() => [] as DevotionalStream[]),
       ]);
       setStreams(publicStreams);
       setSelectedStreamId((pref as any)?.devotional_stream_id ?? null);
