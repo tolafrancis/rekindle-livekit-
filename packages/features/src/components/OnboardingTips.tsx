@@ -8,22 +8,33 @@ import {
 } from '@rekindle/ui/dialog';
 import { Button } from '@rekindle/ui/button';
 import { useAuth } from '../AuthContext';
-import { BookOpen, HandHeart, Sparkles, Flame, ArrowRight } from 'lucide-react';
+import { BookOpen, HandHeart, Sparkles, Flame, ArrowRight, Users, Radio, Settings } from 'lucide-react';
 
-interface OnboardingTipsProps {
-  onNavigate: (tab: string) => void;
-}
-
-const STORAGE_PREFIX = 'rekindle_tips_seen_v1';
-
-interface Tip {
+export interface Tip {
   icon: React.ReactNode;
   iconBg: string;
   title: string;
   body: string;
 }
 
-const tips: Tip[] = [
+interface OnboardingTipsProps {
+  onNavigate?: (tab: string) => void;
+  /** Modal heading. Defaults to "Welcome to ReKindle" (consumer). */
+  title?: string;
+  subtitle?: string;
+  /** Which tips to show. Defaults to the consumer set. */
+  tips?: Tip[];
+  /** Distinct dismissal key so e.g. ministry-leader onboarding tracks separately. */
+  storageKey?: string;
+  /** Primary footer action. undefined = consumer default ("Explore Ministries");
+   *  null = only the "Got it" button. */
+  primaryAction?: { label: React.ReactNode; onClick: () => void } | null;
+}
+
+const STORAGE_PREFIX = 'rekindle_tips_seen_v1';
+
+/** Consumer onboarding — members using the main app. */
+export const CONSUMER_TIPS: Tip[] = [
   {
     icon: <BookOpen className="h-5 w-5 text-purple-600" />,
     iconBg: 'bg-purple-100',
@@ -56,34 +67,77 @@ const tips: Tip[] = [
   },
 ];
 
-export const OnboardingTips: React.FC<OnboardingTipsProps> = ({ onNavigate }) => {
+/** Ministry LEADER onboarding — shown once to a leader after creating a ministry.
+ *  Leader-oriented setup guidance (no consumer devotional-stream tip). */
+export const MINISTRY_LEADER_TIPS: Tip[] = [
+  {
+    icon: <BookOpen className="h-5 w-5 text-purple-600" />,
+    iconBg: 'bg-purple-100',
+    title: 'Add your devotionals',
+    body: 'In The Word → Devotionals, write your ministry’s daily devotional or choose a ReKindle stream for your members to follow.',
+  },
+  {
+    icon: <Users className="h-5 w-5 text-blue-600" />,
+    iconBg: 'bg-blue-100',
+    title: 'Invite your members',
+    body: 'Share your ministry’s join link or QR code so members can register and follow along.',
+  },
+  {
+    icon: <Radio className="h-5 w-5 text-rose-600" />,
+    iconBg: 'bg-rose-100',
+    title: 'Go live',
+    body: 'Start a live broadcast or an interactive meeting from Live so your members can join in real time.',
+  },
+  {
+    icon: <Sparkles className="h-5 w-5 text-amber-600" />,
+    iconBg: 'bg-amber-100',
+    title: 'Set daily declarations & affirmations',
+    body: 'Choose the daily declaration and affirmation your members speak over their lives from the home screen.',
+  },
+  {
+    icon: <Settings className="h-5 w-5 text-gray-600" />,
+    iconBg: 'bg-gray-100',
+    title: 'Manage your ministry',
+    body: 'Open Manage Ministry to handle members, content, donations, and your white-label settings.',
+  },
+];
+
+export const OnboardingTips: React.FC<OnboardingTipsProps> = ({
+  onNavigate,
+  title = 'Welcome to ReKindle',
+  subtitle = 'A few things to help you get started.',
+  tips = CONSUMER_TIPS,
+  storageKey = STORAGE_PREFIX,
+  primaryAction,
+}) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
     try {
-      const seen = localStorage.getItem(`${STORAGE_PREFIX}_${user.id}`);
+      const seen = localStorage.getItem(`${storageKey}_${user.id}`);
       if (!seen) setOpen(true);
     } catch {
       // localStorage unavailable; show once for this session
       setOpen(true);
     }
-  }, [user?.id]);
+  }, [user?.id, storageKey]);
 
   const dismiss = () => {
     try {
-      if (user?.id) localStorage.setItem(`${STORAGE_PREFIX}_${user.id}`, '1');
+      if (user?.id) localStorage.setItem(`${storageKey}_${user.id}`, '1');
     } catch {
       /* ignore */
     }
     setOpen(false);
   };
 
-  const goToMinistries = () => {
-    dismiss();
-    onNavigate('ministries');
-  };
+  // Resolve the primary action: undefined → consumer default; null → none.
+  const resolvedPrimary =
+    primaryAction === undefined
+      ? { label: (<>Explore Ministries<ArrowRight className="h-4 w-4 ml-1" /></>), onClick: () => onNavigate?.('ministries') }
+      : primaryAction;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) dismiss(); }}>
@@ -91,10 +145,8 @@ export const OnboardingTips: React.FC<OnboardingTipsProps> = ({ onNavigate }) =>
           the action buttons stay visible on short mobile screens. */}
       <DialogContent className="max-w-lg max-h-[85dvh] flex flex-col overflow-hidden gap-0 p-0">
         <DialogHeader className="p-6 pb-3">
-          <DialogTitle className="text-xl">Welcome to ReKindle</DialogTitle>
-          <p className="text-sm text-gray-500 mt-1">
-            A few things to help you get started.
-          </p>
+          <DialogTitle className="text-xl">{title}</DialogTitle>
+          <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 space-y-4 py-1">
@@ -115,10 +167,14 @@ export const OnboardingTips: React.FC<OnboardingTipsProps> = ({ onNavigate }) =>
           <Button variant="ghost" onClick={dismiss} className="w-full sm:w-auto">
             Got it
           </Button>
-          <Button onClick={goToMinistries} className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700">
-            Explore Ministries
-            <ArrowRight className="h-4 w-4 ml-1" />
-          </Button>
+          {resolvedPrimary && (
+            <Button
+              onClick={() => { dismiss(); resolvedPrimary.onClick(); }}
+              className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700"
+            >
+              {resolvedPrimary.label}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

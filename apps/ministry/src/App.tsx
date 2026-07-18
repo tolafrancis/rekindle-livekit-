@@ -12,7 +12,7 @@ import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSett
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
-import { OnboardingTips } from '@rekindle/features/components/OnboardingTips';
+import { OnboardingTips, MINISTRY_LEADER_TIPS } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
@@ -74,10 +74,14 @@ function BrandedHeader() {
 // Inside CurrentMinistryProvider: members with no ministry self-onboard; everyone else
 // gets the branded shell with the child route rendered in <Outlet/>.
 function AuthedShell() {
-  const { ministries, loading } = useCurrentMinistry();
+  const { ministries, loading, currentMinistry } = useCurrentMinistry();
+  const { name } = useMinistryBranding();
   const navigate = useNavigate();
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
+  // Only LEADERS see the onboarding — it's leader-oriented setup guidance shown
+  // once after creating a ministry. Members get no welcome modal.
+  const isLeader = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
   return (
     <div className="min-h-screen bg-background text-foreground">
       <BrandedHeader />
@@ -85,8 +89,16 @@ function AuthedShell() {
         <Outlet />
       </main>
       <ScrollToTopButton />
-      {/* One-time welcome tips (ReKindle Tips) */}
-      <OnboardingTips onNavigate={() => navigate('/')} />
+      {/* One-time leader welcome tips, titled with the ministry's own name. */}
+      {isLeader && (
+        <OnboardingTips
+          title={`Welcome to ${name ?? 'your ministry'}`}
+          subtitle="A few things to help you set up your ministry."
+          tips={MINISTRY_LEADER_TIPS}
+          storageKey="rekindle_ministry_leader_tips_v1"
+          primaryAction={null}
+        />
+      )}
     </div>
   );
 }
