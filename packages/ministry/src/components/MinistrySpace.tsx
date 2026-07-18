@@ -1131,95 +1131,76 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <div className="flex items-start gap-6">
           {/* Web sidebar (desktop only) — restores the original ministry menu */}
-          <aside className="hidden md:flex w-64 shrink-0 sticky top-24 self-start rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex w-full flex-col">
-              {/* Ministry identity + Back to Rekindle directly beneath it */}
-              <div className="border-b border-gray-100 p-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
-                    style={{ backgroundColor: `${themeColor}1a` }}
-                  >
-                    {ministry.logo_url ? (
-                      <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded-lg object-cover" />
-                    ) : (
-                      <Building2 className="h-5 w-5" style={{ color: themeColor }} />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{ministry.name}</p>
-                    <p className="text-xs text-gray-500">{t('ministrySpace', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count))}</p>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onExit}
-                  className="w-full justify-start mt-3"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
-                </Button>
+          {/* Desktop navigation — consumer-style: a narrow icon RAIL of primary
+              groups + a MODULE panel listing the active group's sub-tabs. */}
+          <div className="hidden md:flex items-start gap-3 shrink-0 sticky top-24 self-start">
+            {/* Primary icon rail */}
+            <aside className="flex w-[4.75rem] flex-col items-center rounded-2xl border border-gray-200 bg-white shadow-sm py-3">
+              <div
+                className="mb-2 h-10 w-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
+                style={{ backgroundColor: `${themeColor}1a` }}
+                title={ministry.name}
+              >
+                {ministry.logo_url
+                  ? <img src={ministry.logo_url} alt={ministry.name} className="h-10 w-10 rounded-xl object-cover" />
+                  : <Building2 className="h-5 w-5" style={{ color: themeColor }} />}
               </div>
-
-              {/* Vertical navigation */}
-              <nav className="flex flex-col gap-1 p-3" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
+              <nav className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
                 {GROUPS.map((g) => {
                   const GIcon = g.icon;
                   const gActive = isGroupActive(g);
                   return (
-                    <div key={g.id}>
-                      <button
-                        onClick={() => goToGroup(g)}
-                        className={`flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left text-sm transition-colors ${
-                          gActive ? 'bg-gray-100' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <span className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${g.gradient} text-white shrink-0 shadow-sm ${gActive ? 'ring-2 ring-offset-1 ring-gray-300' : ''}`}>
-                          <GIcon className="h-[18px] w-[18px]" />
-                        </span>
-                        <span className={`truncate font-medium ${gActive ? 'text-gray-900' : 'text-gray-700'}`}>{navLabel(g)}</span>
-                      </button>
-                      {g.children && gActive && (
-                        <div className="mt-1 ml-3 flex flex-col gap-0.5 border-l pl-3">
-                          {g.children.map((c) => {
-                            const CIcon = c.icon;
-                            const cActive = isChildActive(g, c.id);
-                            return (
-                              <button
-                                key={c.id}
-                                onClick={() => goToChild(g, c.id)}
-                                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
-                                  cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'
-                                }`}
-                                style={cActive ? { color: themeColor, backgroundColor: `${themeColor}12` } : {}}
-                              >
-                                <CIcon className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">{navLabel(c)}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      key={g.id}
+                      onClick={() => goToGroup(g)}
+                      aria-current={gActive ? 'page' : undefined}
+                      className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                      <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${g.gradient} text-white shadow-md transition-transform ${gActive ? 'scale-105 ring-2 ring-offset-2 ring-gray-300' : 'group-hover:scale-105'}`}>
+                        <GIcon className="h-5 w-5" />
+                      </span>
+                      <span className="w-full truncate">{navLabel(g)}</span>
+                    </button>
                   );
                 })}
               </nav>
+              <button
+                onClick={onExit}
+                title={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
+                className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            </aside>
 
-              {/* Switch Ministry */}
-              <div className="mt-auto border-t border-gray-100 p-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onExit}
-                  className="w-full justify-start"
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  {t('ministrySpace', 'switchMinistry', 'Switch Ministry')}
-                </Button>
-              </div>
-            </div>
-          </aside>
+            {/* Secondary MODULE panel — only for groups that have sub-tabs */}
+            {activeGroup.children && (
+              <aside className="flex w-52 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-gray-100 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('ministrySpace', 'module', 'Module')}</p>
+                  <h2 className="text-base font-semibold text-gray-900 truncate">{navLabel(activeGroup)}</h2>
+                </div>
+                <nav className="flex flex-col gap-1 p-3" aria-label={`${navLabel(activeGroup)} navigation`}>
+                  {activeGroup.children.map((c) => {
+                    const CIcon = c.icon;
+                    const cActive = isChildActive(activeGroup, c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => goToChild(activeGroup, c.id)}
+                        aria-current={cActive ? 'page' : undefined}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${cActive ? '' : 'text-gray-700 hover:bg-gray-50'}`}
+                        style={cActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
+                      >
+                        <CIcon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{navLabel(c)}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </aside>
+            )}
+          </div>
 
           {/* Main content */}
           <div className="min-w-0 flex-1">
