@@ -56,6 +56,7 @@ import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan
 import { ScriptureMemory } from '@rekindle/features/components/ScriptureMemory';
 import { BookSummaries } from '@rekindle/features/components/BookSummaries';
 import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibrary';
+import { MinistryDevotionalSourcePicker } from './MinistryDevotionalSourcePicker';
 import { PrayerLibrary } from '@rekindle/features/components/PrayerLibrary';
 import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
 import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
@@ -1245,6 +1246,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* The Word — reading plan, scripture memory, and books (shared ReKindle library) */}
         {activeTab === 'word' && (
           <div className="space-y-4">
+            {/* Leader-only: choose the daily-devotional source (own vs a ReKindle
+                stream), like the consumer app's devotional-source picker. */}
+            {wordSubTab === 'devotionals' && isLeader && (
+              <MinistryDevotionalSourcePicker ministryId={ministry.id} />
+            )}
             {wordSubTab === 'devotionals' && <DevotionalLibrary hidePlanBanner />}
             {wordSubTab === 'reading' && <BibleReadingPlan />}
             {wordSubTab === 'scripture' && <ScriptureMemory />}
