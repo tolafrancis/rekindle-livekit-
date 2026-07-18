@@ -67,18 +67,59 @@ export const CONSUMER_TIPS: Tip[] = [
   },
 ];
 
+/** Ministry MEMBER onboarding — shown to a member joining a ministry. No
+ *  devotional-stream tip: members don't choose the source, their leader does. */
+export const MINISTRY_MEMBER_TIPS: Tip[] = [
+  {
+    icon: <BookOpen className="h-5 w-5 text-blue-600" />,
+    iconBg: 'bg-blue-100',
+    title: "Read today's devotional",
+    body: "Your ministry's daily devotional sits on the home screen. Read it to the end and mark it complete.",
+  },
+  {
+    icon: <HandHeart className="h-5 w-5 text-rose-600" />,
+    iconBg: 'bg-rose-100',
+    title: 'Pray through the Prayer Library',
+    body: 'Find guided prayer series in the Prayer Library and pray through them day by day.',
+  },
+  {
+    icon: <Sparkles className="h-5 w-5 text-amber-600" />,
+    iconBg: 'bg-amber-100',
+    title: 'Speak the daily declaration and affirmation',
+    body: 'Each day you get a fresh declaration and affirmation on the home screen to speak over your life.',
+  },
+  {
+    icon: <Radio className="h-5 w-5 text-purple-600" />,
+    iconBg: 'bg-purple-100',
+    title: 'Join live gatherings',
+    body: "Tune into your ministry's live broadcasts and interactive meetings from Live.",
+  },
+  {
+    icon: <Flame className="h-5 w-5 text-orange-600" />,
+    iconBg: 'bg-orange-100',
+    title: 'Build your faithfulness streak',
+    body: 'Completing a devotional or a prayer day keeps your streak alive. Show up daily and watch it grow.',
+  },
+];
+
 /** Ministry LEADER onboarding — shown once to a leader after creating a ministry.
- *  Leader-oriented setup guidance (no consumer devotional-stream tip). */
+ *  Leader setup guidance, INCLUDING the devotional-source (stream) choice. */
 export const MINISTRY_LEADER_TIPS: Tip[] = [
   {
     icon: <BookOpen className="h-5 w-5 text-purple-600" />,
     iconBg: 'bg-purple-100',
-    title: 'Add your devotionals',
-    body: 'In The Word → Devotionals, write your ministry’s daily devotional or choose a ReKindle stream for your members to follow.',
+    title: 'Choose your devotional source',
+    body: 'In The Word → Devotionals, pick whether members see your ministry’s own devotionals or a ReKindle stream — you can switch any time.',
   },
   {
-    icon: <Users className="h-5 w-5 text-blue-600" />,
+    icon: <BookOpen className="h-5 w-5 text-blue-600" />,
     iconBg: 'bg-blue-100',
+    title: 'Add your devotionals',
+    body: 'Write your ministry’s daily devotional so your members have fresh content to follow each day.',
+  },
+  {
+    icon: <Users className="h-5 w-5 text-emerald-600" />,
+    iconBg: 'bg-emerald-100',
     title: 'Invite your members',
     body: 'Share your ministry’s join link or QR code so members can register and follow along.',
   },
@@ -87,12 +128,6 @@ export const MINISTRY_LEADER_TIPS: Tip[] = [
     iconBg: 'bg-rose-100',
     title: 'Go live',
     body: 'Start a live broadcast or an interactive meeting from Live so your members can join in real time.',
-  },
-  {
-    icon: <Sparkles className="h-5 w-5 text-amber-600" />,
-    iconBg: 'bg-amber-100',
-    title: 'Set daily declarations & affirmations',
-    body: 'Choose the daily declaration and affirmation your members speak over their lives from the home screen.',
   },
   {
     icon: <Settings className="h-5 w-5 text-gray-600" />,

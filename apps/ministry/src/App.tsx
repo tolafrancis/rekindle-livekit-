@@ -12,7 +12,7 @@ import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSett
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
-import { OnboardingTips, MINISTRY_LEADER_TIPS } from '@rekindle/features/components/OnboardingTips';
+import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
@@ -79,8 +79,8 @@ function AuthedShell() {
   const navigate = useNavigate();
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
-  // Only LEADERS see the onboarding — it's leader-oriented setup guidance shown
-  // once after creating a ministry. Members get no welcome modal.
+  // Members and leaders both get onboarding, but different sets: leaders get the
+  // devotional-SOURCE tip (they choose it); members don't (their leader sets it).
   const isLeader = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -89,16 +89,14 @@ function AuthedShell() {
         <Outlet />
       </main>
       <ScrollToTopButton />
-      {/* One-time leader welcome tips, titled with the ministry's own name. */}
-      {isLeader && (
-        <OnboardingTips
-          title={`Welcome to ${name ?? 'your ministry'}`}
-          subtitle="A few things to help you set up your ministry."
-          tips={MINISTRY_LEADER_TIPS}
-          storageKey="rekindle_ministry_leader_tips_v1"
-          primaryAction={null}
-        />
-      )}
+      {/* One-time welcome tips, titled with the ministry's own name. */}
+      <OnboardingTips
+        title={`Welcome to ${name ?? 'your ministry'}`}
+        subtitle={isLeader ? 'A few things to help you set up your ministry.' : 'A few things to help you get started.'}
+        tips={isLeader ? MINISTRY_LEADER_TIPS : MINISTRY_MEMBER_TIPS}
+        storageKey={isLeader ? 'rekindle_ministry_leader_tips_v1' : 'rekindle_ministry_member_tips_v1'}
+        primaryAction={null}
+      />
     </div>
   );
 }
