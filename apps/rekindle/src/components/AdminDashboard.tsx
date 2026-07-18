@@ -552,7 +552,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
       };
 
       const table = tableMap[modalType];
-      
+
+      // Build a devotionals payload with ONLY real table columns. formData also
+      // carries form-only fields (author, author_name, category, featured_image)
+      // that are NOT columns on `devotionals`, so it must never be sent raw — that
+      // was the "author column not found" 400 on create. Used for insert AND update.
+      const buildDevotionalPayload = (): Record<string, any> => {
+        const p: Record<string, any> = {
+          title:                formData.title,
+          message:              formData.message || formData.content,
+          scripture:            formData.scripture || formData.scripture_reference,
+          scripture_text:       formData.scripture_text,
+          prayer:               formData.prayer,
+          reflection_questions: formData.reflection_questions,
+          schedule_date:        formData.schedule_date,
+          is_published:         formData.is_published ?? false,
+        };
+        if (formData.scripture_reference)     p.scripture_reference     = formData.scripture_reference;
+        if (formData.scripture_version)       p.scripture_version       = formData.scripture_version;
+        if (formData.bible_passage_reference) p.bible_passage_reference = formData.bible_passage_reference;
+        if (formData.bible_passage_text)      p.bible_passage_text      = formData.bible_passage_text;
+        if (formData.image_url)               p.image_url               = formData.image_url;
+        if (formData.audio_url)               p.audio_url               = formData.audio_url;
+        if (formData.stream_id)               p.stream_id               = formData.stream_id;
+        Object.keys(p).forEach(k => { if (p[k] === undefined) delete p[k]; });
+        return p;
+      };
+
       if (editingItem) {
         // user_profiles uses user_id as the lookup key, not id
         const matchKey = modalType === 'user' ? 'user_id' : 'id';
@@ -570,31 +596,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
             subscription_tier: formData.subscription_tier,
           };
         } else if (modalType === 'devotional') {
-          // Build payload with only confirmed devotionals table columns
-          // Any undefined values are stripped to avoid overwriting existing data
-          const devotionalPayload: Record<string, any> = {
-            title:                formData.title,
-            message:              formData.message || formData.content,
-            scripture:            formData.scripture || formData.scripture_reference,
-            scripture_text:       formData.scripture_text,
-            prayer:               formData.prayer,
-            reflection_questions: formData.reflection_questions,
-            schedule_date:        formData.schedule_date,
-            is_published:         formData.is_published ?? false,
-          };
-          // Only add optional columns if they have a value
-          if (formData.scripture_version) devotionalPayload.scripture_version = formData.scripture_version;
-          if (formData.bible_passage_reference) devotionalPayload.bible_passage_reference = formData.bible_passage_reference;
-          if (formData.bible_passage_text)      devotionalPayload.bible_passage_text      = formData.bible_passage_text;
-          if (formData.image_url)         devotionalPayload.image_url         = formData.image_url;
-          if (formData.audio_url)         devotionalPayload.audio_url         = formData.audio_url;
-          if (formData.category)          devotionalPayload.category          = formData.category;
-          if (formData.stream_id)         devotionalPayload.stream_id         = formData.stream_id;
-          // Strip undefined/null keys entirely
-          Object.keys(devotionalPayload).forEach(k => {
-            if (devotionalPayload[k] === undefined) delete devotionalPayload[k];
-          });
-          updatePayload = devotionalPayload;
+          updatePayload = buildDevotionalPayload();
         } else {
           updatePayload = formData;
         }
@@ -606,10 +608,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
         
         if (error) throw error;
       } else {
+        // Devotionals need the same column whitelist as update — formData carries
+        // form-only fields that aren't table columns (author/category/…). Other
+        // types insert formData as before.
+        const insertPayload = modalType === 'devotional' ? buildDevotionalPayload() : formData;
         const { error } = await supabase
           .from(table)
-          .insert([formData]);
-        
+          .insert([insertPayload]);
+
         if (error) throw error;
       }
 
