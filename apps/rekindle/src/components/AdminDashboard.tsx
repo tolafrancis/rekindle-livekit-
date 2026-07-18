@@ -492,6 +492,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     setShowModal(true);
   };
 
+  // Open the devotional editor pre-scoped to a stream. Used by the Devotional
+  // Streams manager's "Add devotional" action so authoring a MANUAL stream's
+  // entry is one click (the fields live in the devotional form, not the stream
+  // editor). Defaults the schedule date to today for convenience.
+  const handleAddDevotionalToStream = (streamId: string) => {
+    setActiveTab('devotionals');
+    setModalType('devotional');
+    setEditingItem(null);
+    setFormData({ stream_id: streamId, schedule_date: new Date().toISOString() });
+    setShowModal(true);
+  };
+
   // Delete handler
   const handleDelete = async (type: string, id: string) => {
     if (!confirm(t('adminDashboard', 'confirmDelete', 'Are you sure you want to delete this item?'))) return;
@@ -1689,7 +1701,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           )}
 
           {activeTab === 'devotional-streams' && (
-            <AdminDevotionalStreamsManager />
+            <AdminDevotionalStreamsManager onAddDevotional={handleAddDevotionalToStream} />
           )}
 
           {isSuperAdmin && activeTab === 'platform-admin' && (

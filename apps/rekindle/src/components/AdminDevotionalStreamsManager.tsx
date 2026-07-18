@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { toast } from './ui/use-toast';
 import {
   Layers, Plus, Edit, Trash2, Loader2, Star, Eye, EyeOff, Save,
-  Hand, Sparkles, Rss, Play, AlertTriangle, CheckCircle2,
+  Hand, Sparkles, Rss, Play, AlertTriangle, CheckCircle2, PenLine,
 } from 'lucide-react';
 
 type Mode = 'manual' | 'ai' | 'scrape';
@@ -73,7 +73,10 @@ const empty = (): Editing => ({
   mode: 'manual', src_scripture_version: 'kjv', src_is_active: true,
 });
 
-export const AdminDevotionalStreamsManager: React.FC = () => {
+export const AdminDevotionalStreamsManager: React.FC<{
+  /** Jump to the devotional editor pre-scoped to a stream (provided by AdminDashboard). */
+  onAddDevotional?: (streamId: string) => void;
+}> = ({ onAddDevotional }) => {
   const { t } = useLanguage();
   const [streams, setStreams] = useState<Stream[]>([]);
   const [loading, setLoading] = useState(true);
@@ -310,6 +313,16 @@ export const AdminDevotionalStreamsManager: React.FC = () => {
                   </p>
                   {statusLine(s) && <p className="text-xs mt-0.5 truncate">{statusLine(s)}</p>}
                 </div>
+                {onAddDevotional && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title={t('adminDevotionalStreams', 'addDevotional', 'Add a devotional to this stream')}
+                    onClick={() => onAddDevotional(s.id)}
+                  >
+                    <PenLine className="h-4 w-4 text-emerald-600" />
+                  </Button>
+                )}
                 {s.source && (
                   <Button
                     size="icon"
@@ -378,6 +391,24 @@ export const AdminDevotionalStreamsManager: React.FC = () => {
                     <p className="text-xs text-gray-400 mt-1">
                       {t('adminDevotionalStreams', 'draftHint', 'Runs daily and adds the devotional as a DRAFT — approve it in the Devotionals tab before it reaches users.')}
                     </p>
+                  )}
+                  {mode === 'manual' && (
+                    <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-100 p-3">
+                      <p className="text-xs text-emerald-800">
+                        {t('adminDevotionalStreams', 'manualHint', 'Manual streams have no automation. You write each entry in the Devotionals tab and pick this stream there — the “✎” button on the stream row opens that editor already scoped to this stream.')}
+                      </p>
+                      {editing?.id && onAddDevotional && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                          onClick={() => { setShowModal(false); onAddDevotional(editing.id!); }}
+                        >
+                          <PenLine className="h-4 w-4 mr-1" />
+                          {t('adminDevotionalStreams', 'writeDevotionalNow', 'Write a devotional now')}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 
