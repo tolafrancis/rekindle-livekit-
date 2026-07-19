@@ -14,6 +14,14 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
 
+  server: {
+    // MUST stay 'https'. getUserMedia() — and therefore every LiveKit broadcast
+    // and meeting — only works in a SECURE CONTEXT. Serving the WebView over
+    // http:// silently breaks camera/mic with no obvious error.
+    androidScheme: 'https',
+    iosScheme: 'https',
+  },
+
   plugins: {
     // Keep the splash brief; the app shell renders fast from local assets.
     SplashScreen: {

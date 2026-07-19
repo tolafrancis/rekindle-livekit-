@@ -38,4 +38,30 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- LiveKit / WebRTC: live broadcasts and interactive meetings.
+         Capacitor's WebChromeClient bridges the WebView's getUserMedia
+         permission request to these Android runtime permissions. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Network state: LiveKit reconnect logic reacts to connectivity changes. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Keeps an in-progress broadcast/meeting alive briefly when the app is
+         backgrounded (e.g. the host checks another app mid-stream). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Push notifications (Phase 4). Android 13+ requires the runtime prompt. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Camera/mic are used but must NOT be install-time requirements: the app is
+         fully usable as a viewer/member without them, and marking them required
+         would exclude devices lacking a camera from Play. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>
