@@ -8,9 +8,13 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:sync": "vite build && cap sync",
+    "mobile:android": "vite build && cap sync android && cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
     "@rekindle/auth": "*",
     "@rekindle/features": "*",
     "@rekindle/live": "*",
@@ -22,6 +26,7 @@
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
     "@tailwindcss/typography": "^0.5.16",
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.3",
