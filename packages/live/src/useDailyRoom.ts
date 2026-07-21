@@ -563,9 +563,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       : ((local as DailyParticipant).tracks?.video?.persistentTrack || (local as DailyParticipant).tracks?.video?.track);
 
     if (track && track.readyState === 'live') {
+      // Don't reattach the same track — reassigning srcObject reloads the <video>
+      // and flickers. The periodic 2s re-check + track-published events would
+      // otherwise flicker the local tile continuously.
+      const cur = localVideoRef.current.srcObject;
+      if (cur instanceof MediaStream && cur.getVideoTracks()[0] === track) return;
       console.log('[Daily] Attaching local video track to element');
-      const stream = new MediaStream([track]);
-      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.srcObject = new MediaStream([track]);
       localVideoRef.current.play().catch(e => console.warn('[Daily] Video play error:', e));
     }
   }, []);
