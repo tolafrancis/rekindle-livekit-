@@ -46,6 +46,13 @@ interface UiString {
 }
 
 // Flatten the in-code English dictionary to { namespace, key, en } rows.
+// How many translate-content calls run at once during auto-draft / fill-missing.
+// A full draft is ~8,270 strings = ~166 batches of 50; at 4 wide that is ~42
+// rounds instead of 166 sequential ones. Raise for speed, lower if OpenAI
+// rate-limits mid-draft — a failure is recoverable ("Fill missing" resumes from
+// whatever was already upserted), but a slow success beats a fast 429.
+const DRAFT_CONCURRENCY = 4;
+
 function flattenDefaults(): Array<{ namespace: string; key: string; en: string }> {
   const out: Array<{ namespace: string; key: string; en: string }> = [];
   Object.entries(DEFAULT_TRANSLATIONS as Record<string, Record<string, string>>).forEach(([ns, vals]) => {
@@ -133,33 +140,69 @@ export const LanguageManager: React.FC = () => {
     flat: Array<{ namespace: string; key: string; en: string }>
   ): Promise<number> => {
     let saved = 0;
-    const CHUNK = 100;
-    for (let i = 0; i < flat.length; i += CHUNK) {
-      const group = flat.slice(i, i + CHUNK);
-      setDraftProgress(`Translating ${Math.min(i + CHUNK, flat.length)} / ${flat.length}…`);
+    let completed = 0;
+    let firstError: unknown = null;
 
-      const partial: Record<string, Record<string, string>> = {};
-      for (const r of group) (partial[r.namespace] ??= {})[r.key] = r.en;
+    // CHUNK is deliberately aligned with CHUNK_SIZE inside
+    // translationService.translateUIStrings (i18n.ts). That function re-chunks
+    // whatever it is given into batches of 50 and awaits them SEQUENTIALLY, so
+    // passing 100 here used to mean every unit of work was silently two
+    // round-trips deep. At 50 each unit is exactly one translate-content call,
+    // which makes the concurrency below real rather than nominal — and means an
+    // upsert lands twice as often, so a failure loses less work.
+    const CHUNK = 50;
 
-      const translated = (await translationService.translateUIStrings(partial as any, code as any)) as Record<string, Record<string, string>>;
+    // Pre-slice so workers just pull the next index.
+    const groups: Array<typeof flat> = [];
+    for (let i = 0; i < flat.length; i += CHUNK) groups.push(flat.slice(i, i + CHUNK));
 
-      const rows: Array<{ language_code: string; namespace: string; key: string; value: string; reviewed: boolean }> = [];
-      Object.entries(translated).forEach(([ns, vals]) => {
-        Object.entries(vals).forEach(([key, value]) => {
-          if (value && typeof value === 'string') {
-            rows.push({ language_code: code, namespace: ns, key, value, reviewed: false });
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        if (firstError) return;              // stop claiming new work after a failure
+        const idx = next++;
+        if (idx >= groups.length) return;
+        const group = groups[idx];
+
+        try {
+          const partial: Record<string, Record<string, string>> = {};
+          for (const r of group) (partial[r.namespace] ??= {})[r.key] = r.en;
+
+          const translated = (await translationService.translateUIStrings(partial as any, code as any)) as Record<string, Record<string, string>>;
+
+          const rows: Array<{ language_code: string; namespace: string; key: string; value: string; reviewed: boolean }> = [];
+          Object.entries(translated).forEach(([ns, vals]) => {
+            Object.entries(vals).forEach(([key, value]) => {
+              if (value && typeof value === 'string') {
+                rows.push({ language_code: code, namespace: ns, key, value, reviewed: false });
+              }
+            });
+          });
+
+          if (rows.length) {
+            const { error } = await supabase
+              .from('ui_translations')
+              .upsert(rows, { onConflict: 'language_code,namespace,key', ignoreDuplicates: true });
+            if (error) throw error;
+            saved += rows.length;          // JS is single-threaded; no race here
           }
-        });
-      });
-
-      if (rows.length) {
-        const { error } = await supabase
-          .from('ui_translations')
-          .upsert(rows, { onConflict: 'language_code,namespace,key', ignoreDuplicates: true });
-        if (error) throw error;
-        saved += rows.length;
+        } catch (e) {
+          if (!firstError) firstError = e;  // first failure wins; peers finish their current chunk
+          return;
+        } finally {
+          completed++;
+          setDraftProgress(`Translating ${Math.min(completed * CHUNK, flat.length)} / ${flat.length}…`);
+        }
       }
-    }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(DRAFT_CONCURRENCY, groups.length) }, () => worker())
+    );
+
+    // Rethrow so the caller still shows "progress was saved — click Fill missing
+    // to resume". Everything upserted before the failure is already committed.
+    if (firstError) throw firstError;
     return saved;
   };
 

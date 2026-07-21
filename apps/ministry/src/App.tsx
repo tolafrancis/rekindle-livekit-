@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
@@ -40,6 +41,8 @@ function BrandedHeader() {
   const { profile, signOut } = useAuth();
   // Billing & Domain are leader/admin concerns; regular members see only Account.
   const canManage = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
+  // Native builds ship with no purchase surfaces (Phase 0 — Apple 3.1.1).
+  const showBilling = canManage && canShowPurchaseUI();
   const firstName = (profile?.full_name || '').trim().split(' ')[0];
   const iconBtn = 'flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm transition-transform hover:scale-105';
   return (
@@ -52,15 +55,15 @@ function BrandedHeader() {
         <Link to="/settings/account" aria-label="Account" title="Account" className={`${iconBtn} bg-gradient-to-br from-indigo-500 to-purple-600`}>
           <User className="h-4 w-4" />
         </Link>
+        {showBilling && (
+          <Link to="/settings/billing" aria-label="Billing" title="Billing" className={`${iconBtn} bg-gradient-to-br from-sky-500 to-blue-600`}>
+            <CreditCard className="h-4 w-4" />
+          </Link>
+        )}
         {canManage && (
-          <>
-            <Link to="/settings/billing" aria-label="Billing" title="Billing" className={`${iconBtn} bg-gradient-to-br from-sky-500 to-blue-600`}>
-              <CreditCard className="h-4 w-4" />
-            </Link>
-            <Link to="/settings/domain" aria-label="Domain" title="Domain" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
-              <Globe className="h-4 w-4" />
-            </Link>
-          </>
+          <Link to="/settings/domain" aria-label="Domain" title="Domain" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
+            <Globe className="h-4 w-4" />
+          </Link>
         )}
         <button onClick={() => void signOut()} aria-label="Sign out" title="Sign out" className={`${iconBtn} bg-gradient-to-br from-rose-500 to-red-600`}>
           <LogOut className="h-4 w-4" />
@@ -143,7 +146,12 @@ function AppRoutes() {
       <Route element={<AuthedArea />}>
         <Route path="/" element={<MinistriesHub />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
-        <Route path="/settings/billing" element={<BillingSettings />} />
+        {/* Billing is web-only: native builds ship without purchase surfaces
+            (Phase 0 — Apple 3.1.1). Deep-linking it natively lands on Home. */}
+        <Route
+          path="/settings/billing"
+          element={canShowPurchaseUI() ? <BillingSettings /> : <Navigate to="/" replace />}
+        />
         <Route path="/settings/domain" element={<CustomDomainSettings />} />
       </Route>
 

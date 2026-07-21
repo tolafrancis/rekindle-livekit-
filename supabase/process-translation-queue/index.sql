@@ -149,6 +149,14 @@ async function queueAllContent(
       if (q.length < 1000) break;
     }
 
+    // Accumulate rows and flush in batches instead of two round trips PER ITEM.
+    // The per-item version only survived because the early `continue` below fires
+    // for almost every item on a normal run — but with force=true nothing is
+    // already-done, so every item paid 2 sequential DB calls and a few thousand
+    // items blew the edge function's CPU/wall limit (Supabase returns 546).
+    const queueRows: any[] = [];
+    const statusRows: any[] = [];
+
     let items = 0, queued = 0, skipped = 0;
     for (const id of ids) {
       const done = completedBy[id] || new Set<string>();
@@ -160,25 +168,42 @@ async function queueAllContent(
         l !== sourceLanguage && !inflight.has(l) && (force || !done.has(l)));
       if (missing.length === 0) { skipped++; continue; }
 
-      await supabase.from('translation_queue').insert(missing.map(lang => ({
-        content_type: contentType, content_id: String(id), content_table: table,
-        source_language: sourceLanguage, target_language: lang,
-        fields_to_translate: fields, priority, created_by: createdBy,
-        is_auto_triggered: true, status: 'pending'
-      })));
+      for (const lang of missing) {
+        queueRows.push({
+          content_type: contentType, content_id: String(id), content_table: table,
+          source_language: sourceLanguage, target_language: lang,
+          fields_to_translate: fields, priority, created_by: createdBy,
+          is_auto_triggered: true, status: 'pending'
+        });
+      }
 
       // Merge into status without clobbering already-completed languages.
-      await supabase.from('content_translation_status').upsert({
+      statusRows.push({
         content_type: contentType, content_id: String(id), content_table: table,
         total_languages: done.size + inflight.size + missing.length,
         completed_languages: done.size,
         pending_languages: Array.from(new Set([...inflight, ...missing])),
         completed_language_codes: Array.from(done),
         failed_languages: []
-      }, { onConflict: 'content_type,content_id' });
+      });
 
       items++; queued += missing.length;
     }
+
+    // 500 keeps each request comfortably under PostgREST's payload limits while
+    // cutting round trips by ~500x: 4,000 calls becomes ~8.
+    const INSERT_BATCH = 500;
+    for (let i = 0; i < queueRows.length; i += INSERT_BATCH) {
+      const { error } = await supabase.from('translation_queue')
+        .insert(queueRows.slice(i, i + INSERT_BATCH));
+      if (error) throw new Error(`translation_queue insert: ${error.message}`);
+    }
+    for (let i = 0; i < statusRows.length; i += INSERT_BATCH) {
+      const { error } = await supabase.from('content_translation_status')
+        .upsert(statusRows.slice(i, i + INSERT_BATCH), { onConflict: 'content_type,content_id' });
+      if (error) throw new Error(`content_translation_status upsert: ${error.message}`);
+    }
+
     perType[contentType] = { items, queued, skipped };
     totalItems += items; totalQueued += queued; totalSkipped += skipped;
    } catch (e: any) {
@@ -969,19 +994,36 @@ Deno.serve(async (req) => {
       }
 
       case 'get_queue_stats': {
-        // Get queue statistics
-        const { data: stats } = await supabase
-          .from('translation_queue')
-          .select('status')
-          .then(({ data }) => {
-            const counts = { pending: 0, processing: 0, completed: 0, failed: 0 };
-            data?.forEach(item => {
-              counts[item.status as keyof typeof counts]++;
-            });
-            return { data: counts };
-          });
+        // Count per status with head-only exact counts.
+        //
+        // The previous version did `.select('status')` with no pagination and
+        // tallied the rows it got back. PostgREST caps that at the project's
+        // max-rows (commonly 1000-2000), so once the table grew past the cap it
+        // only ever saw the OLDEST slice — all long-since 'completed' — and
+        // reported pending: 0 while hundreds of rows were genuinely queued.
+        // That also hid the "Retry all failed" button, which only renders when
+        // stats.failed > 0, so a large backlog of failures stayed invisible too.
+        //
+        // head: true transfers no rows at all; count: 'exact' is computed
+        // server-side, so this is both correct and cheaper than the old fetch.
+        const statuses = ['pending', 'processing', 'completed', 'failed'] as const;
+        const counts: Record<string, number> = {
+          pending: 0, processing: 0, completed: 0, failed: 0
+        };
 
-        return new Response(JSON.stringify(stats), {
+        for (const s of statuses) {
+          const { count, error } = await supabase
+            .from('translation_queue')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', s);
+          if (error) {
+            console.error(`get_queue_stats: counting '${s}' failed:`, error.message);
+            continue; // leave this bucket at 0 rather than failing the whole call
+          }
+          counts[s] = count ?? 0;
+        }
+
+        return new Response(JSON.stringify(counts), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
       }

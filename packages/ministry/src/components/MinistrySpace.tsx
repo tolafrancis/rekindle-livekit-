@@ -46,6 +46,7 @@ import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
@@ -293,7 +294,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const hasMinistryAccess = hasOwnMinistryAccess || ownerHasMinistryAccess;
 
   // Block access if neither the user nor the ministry's owner has Ministry tier.
-  const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess;
+  // Hidden in native builds: no purchase/upgrade surfaces there (Phase 0 — Apple 3.1.1).
+  const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess && canShowPurchaseUI();
 
   const loadMinistryData = useCallback(async () => {
     setLoading(true);
