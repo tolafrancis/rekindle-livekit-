@@ -168,6 +168,7 @@ const EnhancedVideoCallWrapper = ({
   const { hasMinistryAccess } = useUserEntitlements();
   // True while AI notes run anywhere in the meeting — drives the consent banner.
   const [notesActive, setNotesActive] = useState(false);
+  const [showAiPanel, setShowAiPanel] = useState(false);
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
 
   // Draggable host "stage" panel position.
@@ -439,7 +440,7 @@ const EnhancedVideoCallWrapper = ({
           }}
           variant="secondary"
           size="sm"
-          className="bg-gray-800/80 backdrop-blur-sm hover:bg-gray-700"
+          className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
         >
           <Copy className="h-4 w-4 sm:mr-2" />
           <span className="hidden sm:inline">{t('liveChannelInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
@@ -458,21 +459,44 @@ const EnhancedVideoCallWrapper = ({
         )}
       </div>
 
-      {/* ── AI Recording & Transcription Overlay (bottom-left) ── */}
-      <div className="absolute bottom-24 left-4 z-50 space-y-2 max-w-xs">
-        <MeetingRecordingPanel
-          meetingId={meeting.id}
-          meetingTitle={meeting.title}
-          speakerName={userName}
-          userId={userId}
-          isHost={isHost}
-          tableName="live_channel_video_meetings"
-          enableRecording={meeting.enable_recording}
-          inCallOverlay={true}
-          canTakeNotes={hasMinistryAccess}
-          onStateChange={(s) => setNotesActive(s === 'recording')}
-        />
-      </div>
+      {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
+      {isHost && (
+        <div className="absolute top-20 left-4 z-50 max-w-xs">
+          {showAiPanel ? (
+            <div className="space-y-2">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowAiPanel(false)}
+                  className="bg-gray-900/80 backdrop-blur-sm text-white/80 hover:text-white rounded-full p-1.5"
+                  title={t('liveChannelInteractiveMeetings', 'hideAiFeatures', 'Hide AI features')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <MeetingRecordingPanel
+                meetingId={meeting.id}
+                meetingTitle={meeting.title}
+                speakerName={userName}
+                userId={userId}
+                isHost={isHost}
+                tableName="live_channel_video_meetings"
+                enableRecording={meeting.enable_recording}
+                inCallOverlay={true}
+                canTakeNotes={hasMinistryAccess}
+                onStateChange={(s) => setNotesActive(s === 'recording')}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAiPanel(true)}
+              className="flex items-center gap-1.5 bg-gray-900/80 backdrop-blur-sm text-white rounded-full px-3 py-2 text-sm hover:bg-gray-800"
+              title={t('liveChannelInteractiveMeetings', 'aiFeatures', 'AI features')}
+            >
+              <Sparkles className="h-4 w-4" /> {t('liveChannelInteractiveMeetings', 'ai', 'AI')}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Host stage panel (webinar): invite raised hands / audience up, manage speakers */}
       {isHost && isWebinar && (

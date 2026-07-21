@@ -532,7 +532,7 @@ const EnhancedVideoCallWrapper = ({
           }}
           variant="secondary"
           size="sm"
-          className="bg-gray-800/80 backdrop-blur-sm hover:bg-gray-700"
+          className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
         >
           <Copy className="h-4 w-4 sm:mr-2" />
           <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
