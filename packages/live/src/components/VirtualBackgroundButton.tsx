@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
-import { Sparkles, Ban, Check } from 'lucide-react';
+import { toast } from '@rekindle/ui/use-toast';
+import { Sparkles, Ban, Check, ImagePlus } from 'lucide-react';
+
+const MAX_BG_BYTES = 10 * 1024 * 1024; // 10 MB
 
 // Photographic-style backdrops shipped in each app's public/backgrounds/. They
 // MUST be same-origin so the LiveKit VirtualBackground canvas isn't CORS-tainted;
@@ -28,6 +31,30 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
   const cell = 'relative h-12 rounded-lg border flex items-center justify-center text-xs font-medium overflow-hidden transition-all';
   const sel = (on: boolean) => (on ? 'border-purple-500 ring-2 ring-purple-400' : 'border-gray-200 hover:border-gray-300');
 
+  // A user-supplied image. Kept as a local blob: URL — the background is applied
+  // to the LOCAL camera before publishing, so it never needs uploading, and a
+  // same-origin blob URL avoids the canvas CORS taint a remote URL would cause.
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [customUrl, setCustomUrl] = useState<string | null>(null);
+  useEffect(() => () => { if (customUrl) URL.revokeObjectURL(customUrl); }, [customUrl]);
+
+  const onUpload = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Not an image', description: 'Choose a JPG or PNG image.', variant: 'destructive' });
+      return;
+    }
+    if (file.size > MAX_BG_BYTES) {
+      toast({ title: 'Image too large', description: 'Background images must be 10 MB or less.', variant: 'destructive' });
+      return;
+    }
+    if (customUrl) URL.revokeObjectURL(customUrl);
+    const url = URL.createObjectURL(file);
+    setCustomUrl(url);
+    onChange(url);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
@@ -54,8 +81,38 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
               {value === p.url && <Check className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />}
             </button>
           ))}
+
+          {/* The user's uploaded image (once chosen) becomes a reselectable tile. */}
+          {customUrl && (
+            <button
+              type="button"
+              onClick={() => onChange(customUrl)}
+              title="Your image"
+              className={`${cell} ${sel(value === customUrl)} bg-cover bg-center`}
+              style={{ backgroundImage: `url(${customUrl})` }}
+            >
+              {value === customUrl && <Check className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />}
+            </button>
+          )}
+
+          {/* Upload your own */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => onUpload(e.target.files?.[0] || undefined)}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            title="Upload your own image"
+            className={`${cell} border-dashed bg-gray-50 text-gray-500 hover:border-purple-400 hover:text-purple-600`}
+          >
+            <ImagePlus className="h-4 w-4 mr-1" /> Upload
+          </button>
         </div>
-        <p className="text-[10px] text-gray-400 mt-2">Applies to your camera. Turn the camera on to see it.</p>
+        <p className="text-[10px] text-gray-400 mt-2">Applies to your camera. Turn the camera on to see it. Uploads stay on your device.</p>
       </PopoverContent>
     </Popover>
   );
