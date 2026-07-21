@@ -817,12 +817,15 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
   return (
     <div className="flex flex-col h-full gap-2 p-2">
       <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black rounded-xl overflow-hidden">
+        {/* absolute inset-0 pins the video to the container box, so a large shared
+            screen (e.g. 2560x1440) is letterboxed to fit (object-contain) and can
+            NEVER grow the panel to its native resolution. */}
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-contain"
+          className="absolute inset-0 h-full w-full object-contain"
         />
         <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
           <Monitor className="h-3.5 w-3.5" />
@@ -1438,7 +1441,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
       {/* Main video area */}
       <div className={`flex-1 min-h-0 flex flex-col`}>
-        <div className="relative w-full flex-1 bg-gray-800">
+        {/* min-h-0 is required: without it this flex-1 child can't shrink below its
+            content, so a screen share (h-full video) grew the panel to the shared
+            screen's native resolution instead of fitting within the stage. */}
+        <div className="relative w-full flex-1 min-h-0 bg-gray-800">
         {/* A live screen share takes over the main stage (local or remote), with a
             camera filmstrip beside it so viewers still see the presenter. */}
         {screenSharer ? (
