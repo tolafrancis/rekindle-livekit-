@@ -6,14 +6,16 @@ import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
+import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { useAuth } from '@rekindle/features/AuthContext';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
@@ -661,24 +663,26 @@ const ParticipantVideo: React.FC<{
 
       // Try to get the video track
       const track = participant.videoTrack;
-      
+
       if (track && track.readyState === 'live') {
-        console.log('[ParticipantVideo] Attaching video track for:', participant.userName, 'readyState:', track.readyState);
+        // FLICKER FIX: if this exact track is already attached, do nothing.
+        // Reassigning srcObject to a fresh MediaStream reloads the <video> and
+        // flickers on every participant update (mute/unmute, roster refresh, etc.).
+        const cur = videoRef.current.srcObject;
+        if (cur instanceof MediaStream && cur.getVideoTracks()[0] === track) {
+          setVideoAttached(true);
+          return true;
+        }
         try {
-          const stream = new MediaStream([track]);
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch((e) => {
-            console.warn('[ParticipantVideo] Video play failed, will retry:', e.message);
-          });
+          videoRef.current.srcObject = new MediaStream([track]);
+          videoRef.current.play().catch(() => { /* autoplay may defer */ });
           setVideoAttached(true);
           return true;
         } catch (e) {
           console.error('[ParticipantVideo] Error attaching video:', e);
         }
-      } else if (track) {
-        console.log('[ParticipantVideo] Track exists but not ready for:', participant.userName, 'readyState:', track.readyState);
       }
-      
+
       return false;
     };
 
@@ -797,8 +801,11 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
     const attach = () => {
       const el = videoRef.current;
       if (el && track && track.readyState === 'live') {
-        el.srcObject = new MediaStream([track]);
-        el.play().catch(() => { /* autoplay may defer until interaction */ });
+        const cur = el.srcObject;
+        if (!(cur instanceof MediaStream) || cur.getVideoTracks()[0] !== track) {
+          el.srcObject = new MediaStream([track]);
+          el.play().catch(() => { /* autoplay may defer until interaction */ });
+        }
         return;
       }
       if (tries++ < 20) timer = setTimeout(attach, 150); // ~3s window
@@ -810,12 +817,15 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
   return (
     <div className="flex flex-col h-full gap-2 p-2">
       <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black rounded-xl overflow-hidden">
+        {/* absolute inset-0 pins the video to the container box, so a large shared
+            screen (e.g. 2560x1440) is letterboxed to fit (object-contain) and can
+            NEVER grow the panel to its native resolution. */}
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-contain"
+          className="absolute inset-0 h-full w-full object-contain"
         />
         <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
           <Monitor className="h-3.5 w-3.5" />
@@ -899,6 +909,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
+  const { user: authUser } = useAuth();  // members can attach files; guests cannot
 
 
   // Track participant join function
@@ -983,6 +994,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isScreenSharing,
     toggleMic,
     toggleCamera,
+    videoBackground,
+    setVideoBackground,
     startScreenShare,
     stopScreenShare,
     joinRoom,
@@ -1402,9 +1415,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   }
 
   // Whoever is actively screen-sharing (local or remote) — their screen becomes
-  // the main stage. A remote sharer needs the subscribed track; the local sharer
-  // has it immediately.
-  const screenSharer = participants.find((p: any) => p.hasScreenShare && p.screenVideoTrack) || null;
+  // the main stage. Require the track to be LIVE: when a share stops, the track
+  // ends (readyState 'ended') but the participant object can linger a beat; without
+  // this check ScreenShareView kept rendering the dead track as a frozen black
+  // stage instead of falling back to the camera grid.
+  const screenSharer = participants.find((p: any) =>
+    p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
 
   const pinnedParticipant = pinnedParticipantId
     ? remoteParticipants.find((p: any) => p.sessionId === pinnedParticipantId)
@@ -1425,7 +1441,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
       {/* Main video area */}
       <div className={`flex-1 min-h-0 flex flex-col`}>
-        <div className="relative w-full flex-1 bg-gray-800">
+        {/* min-h-0 is required: without it this flex-1 child can't shrink below its
+            content, so a screen share (h-full video) grew the panel to the shared
+            screen's native resolution instead of fitting within the stage. */}
+        <div className="relative w-full flex-1 min-h-0 bg-gray-800">
         {/* A live screen share takes over the main stage (local or remote), with a
             camera filmstrip beside it so viewers still see the presenter. */}
         {screenSharer ? (
@@ -1732,6 +1751,22 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
+            {/* Virtual background */}
+            <VirtualBackgroundButton
+              value={videoBackground}
+              onChange={setVideoBackground}
+              trigger={
+                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                  <div className={`w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                    <Sparkles className="h-4 w-4 sm:h-7 sm:w-7" />
+                  </div>
+                  <span className="hidden sm:block text-xs font-medium text-gray-300">
+                    {t('dailyVideoCall', 'background', 'Background')}
+                  </span>
+                </button>
+              }
+            />
+
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={isScreenSharing ? stopScreenShare : startScreenShare}
@@ -1924,6 +1959,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           currentUserId={userId}
           chatMode={meetingSettings.chatMode}
           onClose={() => setShowChat(false)}
+          canAttach={!!authUser}
+          meetingId={meetingId}
         />
       )}
     </div>

@@ -17,6 +17,7 @@ import {
   MeetingSettings, 
   WaitingRoomParticipant,
   ChatMessageType,
+  ChatAttachment,
   DEFAULT_MEETING_SETTINGS,
   hasPermission
 } from '@rekindle/types/liveChannelTypes';
@@ -100,6 +101,9 @@ export interface UseDailyRoomReturn {
   // Media controls
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
+  // Virtual background: 'none' | 'blur' | <image URL>.
+  videoBackground: string;
+  setVideoBackground: (mode: string) => Promise<void>;
   /** Directly enables mic+optional video for an accepted speaker, bypassing the permission gate */
   enableSpeakerMedia: (withVideo: boolean) => Promise<void>;
   startScreenShare: () => Promise<void>;
@@ -151,7 +155,7 @@ export interface UseDailyRoomReturn {
   
   // Chat messages
   chatMessages: ChatMessageType[];
-  sendChatMessage: (content: string, isPrivate?: boolean, recipientId?: string) => Promise<void>;
+  sendChatMessage: (content: string, isPrivate?: boolean, recipientId?: string, attachment?: ChatAttachment | null) => Promise<void>;
   
   // Session tracking
   sessionStartTime: Date | null;
@@ -199,6 +203,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [videoBackground, setVideoBackgroundState] = useState<string>('none');
   const [audioInputState, setAudioInputState] = useState<'available' | 'blocked' | 'detecting' | 'unavailable'>('unavailable');
 
   // Enhanced state for role-based system
@@ -563,9 +568,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       : ((local as DailyParticipant).tracks?.video?.persistentTrack || (local as DailyParticipant).tracks?.video?.track);
 
     if (track && track.readyState === 'live') {
+      // Don't reattach the same track — reassigning srcObject reloads the <video>
+      // and flickers. The periodic 2s re-check + track-published events would
+      // otherwise flicker the local tile continuously.
+      const cur = localVideoRef.current.srcObject;
+      if (cur instanceof MediaStream && cur.getVideoTracks()[0] === track) return;
       console.log('[Daily] Attaching local video track to element');
-      const stream = new MediaStream([track]);
-      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.srcObject = new MediaStream([track]);
       localVideoRef.current.play().catch(e => console.warn('[Daily] Video play error:', e));
     }
   }, []);
@@ -1407,7 +1416,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [participants]);
 
   // Send chat message
-  const sendChatMessage = useCallback(async (content: string, isPrivate: boolean = false, recipientId?: string) => {
+  const sendChatMessage = useCallback(async (content: string, isPrivate: boolean = false, recipientId?: string, attachment?: ChatAttachment | null) => {
     const localParticipant = participants.find(p => p.isLocal);
     // GUESTS may chat too: no `user` required. Registered users store their uid in
     // sender_id; a guest stores null (their name is in sender_name). chat_messages
@@ -1459,7 +1468,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           content,
           message_type: role === 'host' ? 'host-announcement' : 'text',
           is_private: isPrivate,
-          recipient_id: recipientId || null
+          recipient_id: recipientId || null,
+          attachment_url: attachment?.url ?? null,
+          attachment_name: attachment?.name ?? null,
+          attachment_type: attachment?.type ?? null,
+          attachment_size: attachment?.size ?? null
         })
         .select()
         .single();
@@ -1484,7 +1497,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         timestamp: new Date(data.created_at),
         messageType: data.message_type as 'text' | 'system' | 'host-announcement',
         isPrivate,
-        recipientId
+        recipientId,
+        attachment: attachment ?? null
       };
 
       // Also send via app message for immediate delivery (backup to database)
@@ -1567,7 +1581,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             timestamp: new Date(msg.created_at),
             messageType: msg.message_type,
             isPrivate: msg.is_private,
-            recipientId: msg.recipient_id
+            recipientId: msg.recipient_id,
+            attachment: msg.attachment_url
+              ? { url: msg.attachment_url, name: msg.attachment_name, type: msg.attachment_type, size: msg.attachment_size }
+              : null
           }));
 
           // Filter out private messages not meant for this participant. Guests
@@ -1616,6 +1633,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           }
           
           const newMessage: ChatMessageType = {
+            attachment: msg.attachment_url
+              ? { url: msg.attachment_url, name: msg.attachment_name, type: msg.attachment_type, size: msg.attachment_size }
+              : null,
             id: msg.id,
             sender_id: msg.sender_id,
             sender_name: msg.sender_name,
@@ -1785,6 +1805,23 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       });
     }
   }, [attachLocalVideoTrack, isCameraOn, videoDisabledByHost, options.isHost, options.viewerOnlyMode, hasSpeakerPermission]);
+
+  // Virtual background: 'none' | 'blur' | <image URL>. Delegated to the LiveKit
+  // wrapper's track processor; only meaningful on the LiveKit backend.
+  const setVideoBackground = useCallback(async (mode: string) => {
+    const wrapper = wrapperRef.current as any;
+    if (!wrapper?.setCameraBackground) {
+      toast({ title: 'Not supported', description: 'Virtual background is unavailable here.', variant: 'destructive' });
+      return;
+    }
+    try {
+      await wrapper.setCameraBackground(mode);
+      setVideoBackgroundState(mode);
+    } catch (e: any) {
+      console.error('[Daily] Failed to set video background:', e);
+      toast({ title: 'Background Error', description: 'Could not apply the background.', variant: 'destructive' });
+    }
+  }, []);
 
   // Start screen share
   const startScreenShare = useCallback(async () => {
@@ -2265,6 +2302,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     hasSpeakerPermission,
     toggleMic,
     toggleCamera,
+    videoBackground,
+    setVideoBackground,
     enableSpeakerMedia,
     startScreenShare,
     stopScreenShare,

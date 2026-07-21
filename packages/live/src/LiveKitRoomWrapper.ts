@@ -24,8 +24,13 @@ import {
   type Participant,
   type RemoteParticipant,
   type LocalParticipant,
+  type LocalVideoTrack,
   type TrackPublication,
 } from 'livekit-client';
+import { BackgroundBlur, VirtualBackground } from '@livekit/track-processors';
+
+/** Virtual-background mode: 'none' | 'blur' | an image URL. */
+export type CameraBackground = 'none' | 'blur' | string;
 import type {
   NormalizedParticipant,
   VideoWrapperCallbacks,
@@ -206,11 +211,43 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     if (!lp || !this.joined) return this.localVideoEnabled;
     try {
       await lp.setCameraEnabled(on);
+      // The camera track is fresh each time it turns on, so re-apply any chosen
+      // virtual background to the new track.
+      if (on && this.cameraBackground !== 'none') await this.applyCameraBackground();
       this.syncLocalMediaState();
     } catch (e) {
       this.callbacks.onCameraError?.(e);
     }
     return this.localVideoEnabled;
+  }
+
+  // ---- virtual background (LiveKit track processors) ----
+  private cameraBackground: CameraBackground = 'none';
+
+  /** Set 'none' | 'blur' | <image URL>. Stored so it re-applies whenever the
+   *  camera restarts; applied immediately if the camera is currently on. */
+  async setCameraBackground(mode: CameraBackground): Promise<void> {
+    this.cameraBackground = mode;
+    await this.applyCameraBackground();
+  }
+
+  getCameraBackground(): CameraBackground { return this.cameraBackground; }
+
+  private async applyCameraBackground(): Promise<void> {
+    const pub = this.room?.localParticipant?.getTrackPublication(Track.Source.Camera);
+    const track = pub?.track as LocalVideoTrack | undefined;
+    if (!track) return; // camera off — applies on next enable
+    try {
+      if (this.cameraBackground === 'none') {
+        await track.stopProcessor();
+      } else if (this.cameraBackground === 'blur') {
+        await track.setProcessor(BackgroundBlur(15));
+      } else {
+        await track.setProcessor(VirtualBackground(this.cameraBackground));
+      }
+    } catch (e) {
+      this.callbacks.onCameraError?.(e);
+    }
   }
 
   async startScreenShare(): Promise<boolean> {
@@ -303,6 +340,14 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       })
       .on(RoomEvent.TrackSubscribed, (track, _pub, p) => this.callbacks.onTrackStarted?.({ track, participant: p }))
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => this.callbacks.onTrackStopped?.({ track, participant: p }))
+      // A remote track being PUBLISHED / UNPUBLISHED (e.g. a screen share starting
+      // or STOPPING) must refresh that participant so tiles recompute. Without the
+      // unpublished case, a viewer's screen-share stage stayed frozen after the host
+      // stopped sharing until some other event forced a re-render (a manual toggle).
+      .on(RoomEvent.TrackPublished, (_pub, p: Participant) =>
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
+      .on(RoomEvent.TrackUnpublished, (_pub, p: Participant) =>
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
       .on(RoomEvent.LocalTrackPublished, () => {
         this.syncLocalMediaState();
         // Refresh the local participant so the video TILES re-attach the new track.
