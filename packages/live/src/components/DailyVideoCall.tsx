@@ -11,7 +11,7 @@ import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -1205,6 +1205,29 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     setWaitingParticipants(waiting);
   }, [isConnected, isHost, participants, showParticipantList]);
 
+  // The host is featured (spotlighted) by default so every participant lands on
+  // the host's video. Fires once, when the host's own participant first appears;
+  // the host can spotlight someone else or clear it afterward.
+  const didInitSpotlightRef = useRef(false);
+  useEffect(() => {
+    if (!isHost || didInitSpotlightRef.current) return;
+    const me = participants.find((p: any) => p.isLocal);
+    if (me) {
+      didInitSpotlightRef.current = true;
+      spotlightParticipant(me.sessionId);
+    }
+  }, [isHost, participants, spotlightParticipant]);
+
+  // Spotlight is broadcast once when set; re-send it whenever the roster grows so
+  // late arrivals land on the same featured participant.
+  const prevParticipantCountRef = useRef(0);
+  useEffect(() => {
+    if (isHost && spotlightedParticipantId && participants.length > prevParticipantCountRef.current) {
+      spotlightParticipant(spotlightedParticipantId);
+    }
+    prevParticipantCountRef.current = participants.length;
+  }, [participants.length, isHost, spotlightedParticipantId, spotlightParticipant]);
+
   // Monitor audio track state from Daily SDK
   useEffect(() => {
     if (!callObject || !isConnected) {
@@ -1422,18 +1445,62 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const screenSharer = participants.find((p: any) =>
     p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
 
-  const pinnedParticipant = pinnedParticipantId
-    ? remoteParticipants.find((p: any) => p.sessionId === pinnedParticipantId)
+  // The main stage features ONE participant. A personal PIN (local to this viewer)
+  // takes priority over the host's SPOTLIGHT (broadcast to everyone). The featured
+  // participant is found among ALL participants, so it can be the local host (who
+  // is spotlighted by default).
+  const featuredId = pinnedParticipantId || spotlightedParticipantId;
+  const featuredParticipant = featuredId
+    ? participants.find((p: any) => p.sessionId === featuredId)
     : null;
-  const otherParticipants = pinnedParticipant
-    ? remoteParticipants.filter((p: any) => p.sessionId !== pinnedParticipant.sessionId)
+  const featuredIsSpotlight = !!featuredParticipant && !pinnedParticipantId;
+  const featuredIsLocal = !!featuredParticipant && featuredParticipant.isLocal;
+  const filmstripParticipants = featuredParticipant
+    ? remoteParticipants.filter((p: any) => p.sessionId !== featuredParticipant.sessionId)
     : remoteParticipants;
+
+  // Per-tile pin / spotlight / co-host controls, shared by the filmstrip and grid.
+  const renderTileControls = (p: any) => {
+    const isPinned = pinnedParticipantId === p.sessionId;
+    const isSpot = spotlightedParticipantId === p.sessionId;
+    const isCoHost = getParticipantRole(p.sessionId) === 'co-host';
+    const base = 'flex items-center justify-center rounded text-white transition-colors px-1.5 py-0.5';
+    return (
+      <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
+        <button
+          onClick={() => pinParticipant(isPinned ? null : p.sessionId)}
+          title={isPinned ? t('dailyVideoCall', 'unpin', 'Unpin') : t('dailyVideoCall', 'pin', 'Pin')}
+          className={`${base} ${isPinned ? 'bg-purple-600' : 'bg-black/60 hover:bg-purple-600'}`}
+        >
+          <Pin className="h-2.5 w-2.5" />
+        </button>
+        {isHost && (
+          <button
+            onClick={() => spotlightParticipant(isSpot ? null : p.sessionId)}
+            title={isSpot ? t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight') : t('dailyVideoCall', 'spotlight', 'Spotlight')}
+            className={`${base} ${isSpot ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+          >
+            <Sparkles className="h-2.5 w-2.5" />
+          </button>
+        )}
+        {isHost && !p.isLocal && (
+          <button
+            onClick={() => assignRole(p.sessionId, isCoHost ? 'attendee' : 'co-host')}
+            title={isCoHost ? t('dailyVideoCall', 'removeCoHost', 'Remove co-host') : t('dailyVideoCall', 'makeCoHost', 'Make co-host')}
+            className={`${base} ${isCoHost ? 'bg-blue-600' : 'bg-black/60 hover:bg-blue-600'}`}
+          >
+            <Shield className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   // Active call screen - all media controls come from useDailyRoom
   return (
     <div 
       ref={containerRef}
-      className={`flex h-full min-h-0 ${showParticipantList ? 'flex-row' : 'flex-col'} bg-gray-900 rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
+      className={`flex h-full min-h-0 flex-col sm:flex-row bg-gray-900 rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
@@ -1487,30 +1554,53 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </div>
             </div>
           </div>
-        ) : pinnedParticipant ? (
-          <div className="flex flex-col h-full gap-2 p-2">
+        ) : featuredParticipant ? (
+          <div className="flex flex-col h-full gap-2 p-1 sm:p-2">
             <div className="relative flex-1 min-h-0 flex items-center justify-center">
               <div className="relative w-full max-w-4xl">
                 <ParticipantVideo
-                  key={pinnedParticipant.sessionId}
-                  participant={pinnedParticipant}
+                  key={featuredParticipant.sessionId}
+                  participant={featuredParticipant}
                   isLarge
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
                 />
-                {isHost && (
-                  <button
-                    onClick={() => pinParticipant(pinnedParticipant.sessionId)}
-                    className="absolute top-2 right-2 z-10 flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
-                  >
-                    <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
-                  </button>
-                )}
+                {/* Feature badge — spotlight (host, global) vs pin (this viewer). */}
+                <div className="absolute top-2 left-2 z-10">
+                  {featuredIsSpotlight ? (
+                    <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
+                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs font-medium bg-purple-600 text-white px-2 py-1 rounded-md shadow">
+                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'pinned', 'Pinned')}
+                    </span>
+                  )}
+                </div>
+                {/* Remove control: anyone can unpin their own pin; only the host can
+                    clear a spotlight. */}
+                <div className="absolute top-2 right-2 z-10">
+                  {!featuredIsSpotlight ? (
+                    <button
+                      onClick={() => pinParticipant(null)}
+                      className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
+                    >
+                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
+                    </button>
+                  ) : isHost ? (
+                    <button
+                      onClick={() => spotlightParticipant(null)}
+                      className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
+                    >
+                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight')}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
-            {otherParticipants.length > 0 && (
+            {filmstripParticipants.length > 0 && (
               <div className="flex gap-2 h-24 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                {otherParticipants.map((participant: any) => (
+                {filmstripParticipants.map((participant: any) => (
                   <div key={participant.sessionId} className="relative h-full aspect-video shrink-0">
                     <ParticipantVideo
                       participant={participant}
@@ -1518,21 +1608,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                       onParticipantJoin={trackParticipantJoin}
                       onParticipantLeave={trackParticipantLeave}
                     />
-                    {isHost && (
-                      <button
-                        onClick={() => pinParticipant(participant.sessionId)}
-                        className="absolute top-1 right-1 z-10 flex items-center gap-1 text-[10px] bg-black/60 hover:bg-purple-600 text-white px-1.5 py-0.5 rounded"
-                      >
-                        <Pin className="h-2.5 w-2.5" /> {t('dailyVideoCall', 'pin', 'Pin')}
-                      </button>
-                    )}
+                    {renderTileControls(participant)}
                   </div>
                 ))}
               </div>
             )}
           </div>
         ) : (
-          <div className={`grid gap-2 p-2 h-full ${
+          <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full ${
             remoteParticipants.length === 1 ? 'grid-cols-1' :
             remoteParticipants.length <= 4 ? 'grid-cols-2' :
             'grid-cols-3'
@@ -1545,14 +1628,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
                 />
-                {isHost && (
-                  <button
-                    onClick={() => pinParticipant(participant.sessionId)}
-                    className="absolute top-1 right-1 z-10 flex items-center gap-1 text-[10px] bg-black/60 hover:bg-purple-600 text-white px-1.5 py-0.5 rounded"
-                  >
-                    <Pin className="h-2.5 w-2.5" /> Pin
-                  </button>
-                )}
+                {renderTileControls(participant)}
               </div>
             ))}
           </div>
@@ -1560,7 +1636,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
         {/* Local video (picture-in-picture) - ALWAYS render video element, just hide when camera off */}
 
-        {localParticipant && remoteParticipants.length > 0 && (
+        {localParticipant && remoteParticipants.length > 0 && !featuredIsLocal && (
           <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-28 sm:w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700">
             {/* Always render video element so ref is available for track attachment */}
             <video

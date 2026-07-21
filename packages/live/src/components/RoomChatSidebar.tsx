@@ -179,7 +179,9 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
   };
 
   return (
-    <div className="fixed right-0 top-0 h-full w-80 bg-gray-900 border-l border-gray-800 flex flex-col z-50">
+    <div className="w-full h-2/5 sm:w-80 sm:h-full shrink-0 bg-gray-900 border-t sm:border-t-0 sm:border-l border-gray-800 flex flex-col z-40">
+      {/* On mobile this docks BELOW the video feed (parent is flex-col); on desktop
+          it's a right-hand sidebar (parent is flex-row). */}
       {/* Header */}
       <CardHeader className="border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">

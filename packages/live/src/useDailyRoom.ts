@@ -1363,9 +1363,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, []);
 
-  // Pin participant (local only)
+  // Pin participant (local only). Toggle semantics: pinning the already-pinned
+  // participant — or passing null — clears the pin. (Previously the "Unpin" button
+  // re-passed the same id and so re-pinned instead of clearing.)
   const pinParticipant = useCallback((participantId: string | null) => {
-    setPinnedParticipantId(participantId);
+    setPinnedParticipantId(prev =>
+      participantId !== null && prev === participantId ? null : participantId
+    );
   }, []);
 
   // Raise hand

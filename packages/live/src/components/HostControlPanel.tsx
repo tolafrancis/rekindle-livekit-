@@ -142,7 +142,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
 
   return (
     <>
-      <Card className="w-96 h-full flex flex-col bg-gray-800 border-l border-gray-700">
+      <Card className="w-full h-2/5 sm:w-96 sm:h-full shrink-0 flex flex-col bg-gray-800 border-t sm:border-t-0 sm:border-l border-gray-700">
         <CardHeader className="border-b border-gray-700 flex-shrink-0 pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-white text-lg flex items-center gap-2">
