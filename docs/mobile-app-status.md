@@ -13,8 +13,8 @@
 | Phase | What | Status |
 | --- | --- | --- |
 | 0 | Decisions & accounts | ✅ **Done** (code); accounts outstanding |
-| 1 | Capacitor scaffold (Android) | ✅ **Code done** · ⏳ device boot unverified |
-| 2 | LiveKit media permissions | ✅ **Code done** · ⏳ device media test unverified |
+| 1 | Capacitor scaffold (Android) | ✅ **Code done** ·  device boot verified |
+| 2 | LiveKit media permissions | ✅ **Code done** ·  device media test verified |
 | 3 | Auth & deep links | ⬜ Not started |
 | 4 | Push notifications (rewrite) | ⬜ Not started |
 | 5 | Billing | ⏸ **Deferred** (no IAP in v1) |

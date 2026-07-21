@@ -3,8 +3,22 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "./utils"
+import { pushModal, popModal } from "./modal-stack"
 
-const Dialog = DialogPrimitive.Root
+function Dialog({
+  open,
+  onOpenChange,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
+  React.useEffect(() => {
+    if (!open || !onOpenChange) return;
+    const close = () => onOpenChange(false);
+    pushModal(close);
+    return () => popModal(close);
+  }, [open, onOpenChange]);
+
+  return <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} {...props} />;
+}
 
 const DialogTrigger = DialogPrimitive.Trigger
 

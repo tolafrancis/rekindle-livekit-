@@ -1,7 +1,20 @@
 
 import { createRoot } from 'react-dom/client'
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import App from './App.tsx'
 import './index.css'
+
+if (Capacitor.isNativePlatform()) {
+  CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+    console.log('[BACKBUTTON] fired, canGoBack:', canGoBack);
+    if (canGoBack) {
+      window.history.back();
+    } else {
+      CapacitorApp.exitApp();
+    }
+  });
+}
 
 // In development, a service worker left over from a production build (or
 // `vite preview`) on the same origin can hijack the page and serve stale

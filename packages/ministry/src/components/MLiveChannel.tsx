@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { supabase } from '@rekindle/supabase';
 import { Button } from '@rekindle/ui/button';
@@ -114,6 +115,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
   const [recordingsChannel, setRecordingsChannel] = useState<LiveChannel | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'broadcast' | 'watch'>('list');
+  const { navigateView: navigateViewMode } = useViewHistory('ministry-live-channel', viewMode, setViewMode);
 
   // Upload image to Supabase Storage
   const uploadImage = async (file: File, bucket: 'channel-logos' | 'channel-featured') => {
@@ -513,19 +515,19 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   // Watch channel
   const watchChannel = (channel: LiveChannel) => {
     setSelectedChannel(channel);
-    setViewMode('watch');
+    navigateViewMode('watch');
   };
 
   // Go live on own channel
   const goLive = (channel: LiveChannel) => {
     setSelectedChannel(channel);
-    setViewMode('broadcast');
+    navigateViewMode('broadcast');
   };
 
   // Handle end broadcast
   const handleEndBroadcast = async () => {
     setSelectedChannel(null);
-    setViewMode('list');
+    navigateViewMode('list');
     await new Promise(resolve => setTimeout(resolve, 300));
     await loadChannels();
   };
@@ -533,7 +535,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   // Handle leave viewer
   const handleLeaveViewer = () => {
     setSelectedChannel(null);
-    setViewMode('list');
+    navigateViewMode('list');
   };
 
   // Render broadcast view

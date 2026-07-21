@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 import { PAYPAL_LINKS } from '@/lib/givingLinks';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -11,6 +12,7 @@ interface LandingPageProps {
 const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
   const { t } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 40);
@@ -45,6 +47,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
         .rk-input:focus { border-color:rgba(167,139,250,.5) !important; background:rgba(255,255,255,.1) !important; }
         .rk-card:hover { transform:translateY(-4px); box-shadow:0 8px 40px rgba(91,45,158,.18) !important; }
         .rk-btn-ghost:hover { border-color:rgba(255,255,255,.45) !important; color:#fff !important; }
+        .rk-desktop-nav { display: flex; }
+        .rk-mobile-trigger { display: none; }
+        @media (max-width: 767px) {
+          .rk-desktop-nav { display: none; }
+          .rk-mobile-trigger { display: flex; }
+        }
       `}</style>
 
       <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: '#fdf9f3', color: '#4a3f6b', overflowX: 'hidden' }}>
@@ -58,10 +66,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
           transition: 'all .3s',
         }}>
           <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.6rem', fontWeight: 700, color: '#fff', letterSpacing: '-.01em' }}>
+            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.6rem', fontWeight: 700, color: '#fff', letterSpacing: '-.01em', whiteSpace: 'nowrap' }}>
               Re<span style={{ color: '#a78bfa' }}>Kindle</span> BC
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '12px 18px' }}>
+            <div className="rk-desktop-nav" style={{ alignItems: 'center', justifyContent: 'flex-end', gap: '12px 18px' }}>
               {[[t('landing', 'navFeatures', "Features"),'features'],[t('landing', 'navPartner', "Partner"),'pricing']].map(([l, id]) => (
                 <button key={l} onClick={() => scrollTo(id)}
                   style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.65)', fontSize: '.9rem', fontWeight: 500, cursor: 'pointer' }}
@@ -82,8 +90,49 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
                 onMouseOut={e => (e.currentTarget.style.opacity = '1')}
               >{t('landing', 'signUp', "Sign Up")}</button>
             </div>
+            <div className="rk-mobile-trigger" style={{ alignItems: 'center', gap: '12px' }}>
+              <button onClick={onSignUp}
+                style={{ background: 'linear-gradient(135deg,#7c3aed,#9333ea)', border: 'none', color: '#fff', fontSize: '.9rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', padding: '9px 20px', borderRadius: 100, boxShadow: '0 4px 16px rgba(124,58,237,.4)' }}
+                onMouseOver={e => (e.currentTarget.style.opacity = '.9')}
+                onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+              >{t('landing', 'signUp', "Sign Up")}</button>
+              <button onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open menu"
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4 }}
+              >
+                <Menu style={{ width: 24, height: 24 }} />
+              </button>
+            </div>
           </div>
         </nav>
+
+        {/* Mobile Slide-Out Panel */}
+        {mobileMenuOpen && (
+          <div style={{
+            position: 'fixed', top: 0, right: 0, height: '100vh', width: '80%', maxWidth: 320,
+            background: 'rgba(15,10,30,.98)', backdropFilter: 'blur(16px)', zIndex: 200,
+            padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, boxShadow: '-8px 0 32px rgba(0,0,0,.5)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 4 }}
+              >
+                <X style={{ width: 24, height: 24 }} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+              {[[t('landing', 'navFeatures', "Features"),'features'],[t('landing', 'navPartner', "Partner"),'pricing']].map(([l, id]) => (
+                <button key={l} onClick={() => { scrollTo(id); setMobileMenuOpen(false); }}
+                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.85)', fontSize: '1.1rem', fontWeight: 500, cursor: 'pointer', textAlign: 'left', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}
+                >{l}</button>
+              ))}
+              <button onClick={() => { onSignIn(); setMobileMenuOpen(false); }}
+                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.85)', fontSize: '1.1rem', fontWeight: 500, cursor: 'pointer', textAlign: 'left', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}
+              >{t('landing', 'signIn', "Sign In")}</button>
+            </div>
+          </div>
+        )}
 
         {/* HERO — waitlist form above the fold */}
         <section style={{
