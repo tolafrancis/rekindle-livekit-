@@ -1099,9 +1099,6 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
           {/* Mode: Meeting vs Webinar */}
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
-            <p className="text-xs text-gray-500">
-              {t('ministryInteractiveMeetings', 'modeTip', 'Tip: sessions of {threshold} people or more default to Webinar. You can always switch it manually.').replace('{threshold}', String(WEBINAR_AUTO_THRESHOLD))}
-            </p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
