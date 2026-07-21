@@ -661,24 +661,26 @@ const ParticipantVideo: React.FC<{
 
       // Try to get the video track
       const track = participant.videoTrack;
-      
+
       if (track && track.readyState === 'live') {
-        console.log('[ParticipantVideo] Attaching video track for:', participant.userName, 'readyState:', track.readyState);
+        // FLICKER FIX: if this exact track is already attached, do nothing.
+        // Reassigning srcObject to a fresh MediaStream reloads the <video> and
+        // flickers on every participant update (mute/unmute, roster refresh, etc.).
+        const cur = videoRef.current.srcObject;
+        if (cur instanceof MediaStream && cur.getVideoTracks()[0] === track) {
+          setVideoAttached(true);
+          return true;
+        }
         try {
-          const stream = new MediaStream([track]);
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch((e) => {
-            console.warn('[ParticipantVideo] Video play failed, will retry:', e.message);
-          });
+          videoRef.current.srcObject = new MediaStream([track]);
+          videoRef.current.play().catch(() => { /* autoplay may defer */ });
           setVideoAttached(true);
           return true;
         } catch (e) {
           console.error('[ParticipantVideo] Error attaching video:', e);
         }
-      } else if (track) {
-        console.log('[ParticipantVideo] Track exists but not ready for:', participant.userName, 'readyState:', track.readyState);
       }
-      
+
       return false;
     };
 
@@ -797,8 +799,11 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
     const attach = () => {
       const el = videoRef.current;
       if (el && track && track.readyState === 'live') {
-        el.srcObject = new MediaStream([track]);
-        el.play().catch(() => { /* autoplay may defer until interaction */ });
+        const cur = el.srcObject;
+        if (!(cur instanceof MediaStream) || cur.getVideoTracks()[0] !== track) {
+          el.srcObject = new MediaStream([track]);
+          el.play().catch(() => { /* autoplay may defer until interaction */ });
+        }
         return;
       }
       if (tries++ < 20) timer = setTimeout(attach, 150); // ~3s window
@@ -1402,9 +1407,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   }
 
   // Whoever is actively screen-sharing (local or remote) — their screen becomes
-  // the main stage. A remote sharer needs the subscribed track; the local sharer
-  // has it immediately.
-  const screenSharer = participants.find((p: any) => p.hasScreenShare && p.screenVideoTrack) || null;
+  // the main stage. Require the track to be LIVE: when a share stops, the track
+  // ends (readyState 'ended') but the participant object can linger a beat; without
+  // this check ScreenShareView kept rendering the dead track as a frozen black
+  // stage instead of falling back to the camera grid.
+  const screenSharer = participants.find((p: any) =>
+    p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
 
   const pinnedParticipant = pinnedParticipantId
     ? remoteParticipants.find((p: any) => p.sessionId === pinnedParticipantId)
