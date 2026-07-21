@@ -6,6 +6,7 @@ import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Badge } from '@rekindle/ui/badge';
 import { toast } from '@rekindle/ui/use-toast';
 import { supabase } from '@rekindle/supabase';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
 import {
   MessageCircle,
   Send,
@@ -18,8 +19,13 @@ import {
   Download,
   FileText,
   Loader2,
+  Lock,
+  ChevronDown,
+  Users,
 } from 'lucide-react';
 import { ChatMessageType, ChatAttachment } from '@rekindle/types/liveChannelTypes';
+
+interface ChatParticipant { sessionId: string; userName: string; isLocal?: boolean }
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 const ATTACHMENT_BUCKET = 'meeting-chat-attachments';
@@ -40,6 +46,8 @@ interface RoomChatSidebarProps {
   /** Members can attach files; guests cannot (upload RLS is authenticated-only). */
   canAttach?: boolean;
   meetingId?: string;
+  /** Roster for the "send privately to…" picker. */
+  participants?: ChatParticipant[];
 }
 
 export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
@@ -50,13 +58,22 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
   onClose,
   canAttach = false,
   meetingId,
+  participants = [],
 }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [recipientId, setRecipientId] = useState<string | null>(null); // null = Everyone
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // People you can DM = everyone but yourself.
+  const others = participants.filter((p) => !p.isLocal && p.sessionId !== currentUserId);
+  const nameOf = (sid?: string | null) => participants.find((p) => p.sessionId === sid)?.userName;
+  // A selected recipient who has since left falls back to Everyone.
+  const recipient = recipientId && others.some((p) => p.sessionId === recipientId) ? recipientId : null;
+  const isPrivate = recipient !== null;
 
   const handleFile = async (file: File | undefined) => {
     if (!file || uploading) return;
@@ -74,7 +91,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
       });
       if (error) throw error;
       const { data: pub } = supabase.storage.from(ATTACHMENT_BUCKET).getPublicUrl(path);
-      await onSendMessage(newMessage.trim(), false, undefined, {
+      await onSendMessage(newMessage.trim(), isPrivate, recipient ?? undefined, {
         url: pub.publicUrl,
         name: file.name,
         type: file.type || 'application/octet-stream',
@@ -112,7 +129,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
 
     setSending(true);
     try {
-      await onSendMessage(newMessage.trim());
+      await onSendMessage(newMessage.trim(), isPrivate, recipient ?? undefined);
       setNewMessage('');
       inputRef.current?.focus();
     } catch (error) {
@@ -291,8 +308,11 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                       {formatTime(message.timestamp)}
                     </span>
                     {message.isPrivate && (
-                      <Badge variant="secondary" className="text-xs mt-1">
-                        Private
+                      <Badge variant="secondary" className="text-xs mt-1 gap-1">
+                        <Lock className="h-3 w-3" />
+                        {isOwnMessage && nameOf(message.recipientId)
+                          ? `Private to ${nameOf(message.recipientId)}`
+                          : 'Private'}
                       </Badge>
                     )}
                   </div>
@@ -305,6 +325,35 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
 
       {/* Input */}
       <CardContent className="border-t border-gray-800 p-4 flex-shrink-0">
+        {/* Recipient picker — send to everyone or privately to one participant. */}
+        {others.length > 0 && chatMode !== 'disabled' && (
+          <div className="mb-2 flex items-center gap-2 text-xs">
+            <span className="text-gray-500">To:</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 font-medium transition-colors ${
+                    isPrivate ? 'bg-purple-600/20 text-purple-300' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  {isPrivate ? <Lock className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                  {isPrivate ? `${nameOf(recipient)} (private)` : 'Everyone'}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-56 overflow-y-auto">
+                <DropdownMenuItem onClick={() => setRecipientId(null)} className="gap-2">
+                  <Users className="h-4 w-4" /> Everyone
+                </DropdownMenuItem>
+                {others.map((p) => (
+                  <DropdownMenuItem key={p.sessionId} onClick={() => setRecipientId(p.sessionId)} className="gap-2">
+                    <Lock className="h-4 w-4 text-purple-500" /> {p.userName}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
         <div className="flex gap-2">
           {/* Attach (members only). Any file, max 10 MB. */}
           {canAttach && chatMode !== 'disabled' && (

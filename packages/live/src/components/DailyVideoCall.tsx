@@ -1961,6 +1961,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           onClose={() => setShowChat(false)}
           canAttach={!!authUser}
           meetingId={meetingId}
+          participants={participants.map((p) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
         />
       )}
     </div>
