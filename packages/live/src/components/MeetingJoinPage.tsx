@@ -90,6 +90,8 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
+import { formatMeetingTime } from '@rekindle/features/meetingTime';
+import RegisterMeetingButton from './RegisterMeetingButton';
 import {
   Loader2,
   Video,
@@ -113,6 +115,9 @@ interface MeetingData {
   title: string;
   description: string;
   scheduled_time: string | null;
+  timezone?: string | null;
+  access_level?: string;
+  host_id?: string;
   duration_minutes: number;
   room_name: string;
   channel_id?: string;
@@ -524,13 +529,25 @@ const MeetingJoinPage: React.FC = () => {
               )}
 
               {meetingData.status === 'scheduled' && (
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
-                  <Clock className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center space-y-3">
+                  <Clock className="h-8 w-8 text-blue-600 mx-auto" />
                   <p className="font-medium">{t('skeleton', 'meetingScheduled', 'Meeting Scheduled')}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
+                  <p className="text-sm text-muted-foreground">
                     {meetingData.scheduled_time
-                      ? t('skeleton', 'startsAt', 'Starts at {time}').replace('{time}', new Date(meetingData.scheduled_time).toLocaleTimeString())
+                      ? t('skeleton', 'startsAt', 'Starts at {time}').replace('{time}', formatMeetingTime(meetingData.scheduled_time, meetingData.timezone))
                       : t('skeleton', 'timeToBeAnnounced', 'Meeting time to be announced')}
+                  </p>
+                  <div className="flex justify-center">
+                    <RegisterMeetingButton
+                      meetingId={meetingData.id}
+                      meetingKind={meetingType}
+                      meetingTitle={meetingData.title}
+                      isHost={!!user && user.id === meetingData.host_id}
+                      allowGuests={meetingData.access_level === 'public'}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('skeleton', 'registerToBeReminded', 'Register to get a reminder before it starts.')}
                   </p>
                 </div>
               )}
@@ -723,13 +740,25 @@ const MeetingJoinPage: React.FC = () => {
             )}
 
             {meetingData.status === 'scheduled' && (
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
-                <Clock className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center space-y-3">
+                <Clock className="h-8 w-8 text-blue-600 mx-auto" />
                 <p className="font-medium">{t('skeleton', 'meetingScheduled', 'Meeting Scheduled')}</p>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-sm text-muted-foreground">
                   {meetingData.scheduled_time
-                    ? t('skeleton', 'willStartAt', 'This meeting will start at {time}').replace('{time}', new Date(meetingData.scheduled_time).toLocaleTimeString())
+                    ? t('skeleton', 'willStartAt', 'This meeting will start at {time}').replace('{time}', formatMeetingTime(meetingData.scheduled_time, meetingData.timezone))
                     : t('skeleton', 'timeToBeAnnounced', 'Meeting time to be announced')}
+                </p>
+                <div className="flex justify-center">
+                  <RegisterMeetingButton
+                    meetingId={meetingData.id}
+                    meetingKind={meetingType}
+                    meetingTitle={meetingData.title}
+                    isHost={!!user && user.id === meetingData.host_id}
+                    allowGuests={meetingData.access_level === 'public'}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('skeleton', 'registerToBeReminded', 'Register to get a reminder before it starts.')}
                 </p>
               </div>
             )}
