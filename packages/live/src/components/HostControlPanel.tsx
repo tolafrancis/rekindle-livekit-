@@ -37,7 +37,10 @@ interface HostControlPanelProps {
   meetingSettings: MeetingSettings;
   isRecording: boolean;
   spotlightedParticipantId: string | null;
+  /** True for host and co-hosts — unlocks the moderation controls. */
   isHost: boolean;
+  /** True only for the real host — recording is bound to the host's RTMP push. */
+  canRecord?: boolean;
   onMuteAll: () => void;
   onDisableAllVideo: () => void;
   onMuteParticipant: (participantId: string) => void;
@@ -71,6 +74,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
   isRecording,
   spotlightedParticipantId,
   isHost,
+  canRecord = false,
   onMuteAll,
   onDisableAllVideo,
   onMuteParticipant,
@@ -639,7 +643,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
                             )}
                           </p>
                         </div>
-                        {isHost && (
+                        {canRecord && (
                           <Button
                             size="sm"
                             variant={isRecording ? 'destructive' : 'default'}

@@ -986,6 +986,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     waitingRoomParticipants,
     meetingSettings,
     isRecording,
+    isModerator,
     spotlightedParticipantId,
     pinnedParticipantId,
     handRaised,
@@ -1474,7 +1475,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         >
           <Pin className="h-2.5 w-2.5" />
         </button>
-        {isHost && (
+        {isModerator && (
           <button
             onClick={() => spotlightParticipant(isSpot ? null : p.sessionId)}
             title={isSpot ? t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight') : t('dailyVideoCall', 'spotlight', 'Spotlight')}
@@ -1483,7 +1484,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             <Sparkles className="h-2.5 w-2.5" />
           </button>
         )}
-        {isHost && !p.isLocal && (
+        {isModerator && !p.isLocal && (
           <button
             onClick={() => assignRole(p.sessionId, isCoHost ? 'attendee' : 'co-host')}
             title={isCoHost ? t('dailyVideoCall', 'removeCoHost', 'Remove co-host') : t('dailyVideoCall', 'makeCoHost', 'Make co-host')}
@@ -1577,8 +1578,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     </span>
                   )}
                 </div>
-                {/* Remove control: anyone can unpin their own pin; only the host can
-                    clear a spotlight. */}
+                {/* Remove control: anyone can unpin their own pin; only a moderator
+                    (host or co-host) can clear a spotlight. */}
                 <div className="absolute top-2 right-2 z-10">
                   {!featuredIsSpotlight ? (
                     <button
@@ -1587,7 +1588,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     >
                       <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
                     </button>
-                  ) : isHost ? (
+                  ) : isModerator ? (
                     <button
                       onClick={() => spotlightParticipant(null)}
                       className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
@@ -1754,8 +1755,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           </div>
         </div>
 
-        {/* Persistent raised-hands panel (host) */}
-        {isHost && raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length > 0 && (
+        {/* Persistent raised-hands panel (moderators) */}
+        {isModerator && raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length > 0 && (
           <div className="absolute top-16 right-2 sm:right-4 z-40 w-56 max-w-[70vw] bg-gray-900/90 backdrop-blur-sm rounded-lg p-3 text-white space-y-2 max-h-[40vh] overflow-y-auto">
             <p className="text-xs font-medium text-gray-300 flex items-center gap-1">
               <Hand className="h-3 w-3" /> {t('dailyVideoCall', 'raisedHandsCount', 'Raised hands ({count})').replace('{count}', String(raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length))}
@@ -1910,8 +1911,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
-            {/* Host Controls button */}
-            {isHost && (
+            {/* Host Controls button (host or co-host) */}
+            {isModerator && (
               <button
                 onClick={() => setShowHostControls(!showHostControls)}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
@@ -1993,15 +1994,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       )}
       </div>
 
-      {/* Host Control Panel */}
-      {showHostControls && isHost && (
+      {/* Host Control Panel (host or co-host) */}
+      {showHostControls && isModerator && (
         <HostControlPanel
           participants={participantStates}
           waitingRoomParticipants={waitingRoomParticipants}
           meetingSettings={meetingSettings}
           isRecording={isMuxRecording}
           spotlightedParticipantId={spotlightedParticipantId}
-          isHost={isHost}
+          isHost={isModerator}
+          canRecord={isHost}
           onMuteAll={() => muteAll()}
           onDisableAllVideo={() => disableAllVideo()}
           onMuteParticipant={(id) => muteParticipant(id)}
