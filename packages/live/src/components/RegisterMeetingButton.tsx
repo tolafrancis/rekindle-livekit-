@@ -146,20 +146,14 @@ export const RegisterMeetingButton: React.FC<Props> = ({
     setRegistrants((data as Registrant[]) || []);
   };
 
-  const countBadge = (
-    <Badge variant="outline" className="border-gray-300 gap-1">
-      <Users className="h-3 w-3" />
-      {count} {count === 1 ? 'registered' : 'registered'}
-    </Badge>
-  );
-
-  // Host view: show the count as a clickable badge that opens the registrant list.
+  // Host view: a clearly-labelled button that opens the registrant list.
   if (isHost) {
     return (
       <>
-        <button type="button" onClick={openList} className={className} title="View registrations">
-          {countBadge}
-        </button>
+        <Button variant="outline" size="sm" onClick={openList} className={className} title="View registrations">
+          <Users className="h-4 w-4 mr-1" />
+          Registrations ({count})
+        </Button>
         <Dialog open={listOpen} onOpenChange={setListOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -186,7 +180,10 @@ export const RegisterMeetingButton: React.FC<Props> = ({
   // Attendee view.
   return (
     <div className={`flex items-center gap-2 ${className || ''}`}>
-      {countBadge}
+      <Badge variant="outline" className="border-gray-300 gap-1">
+        <Users className="h-3 w-3" />
+        {count} registered
+      </Badge>
       {registered ? (
         <Button variant="outline" size="sm" disabled={busy} onClick={cancel} className="border-green-300 text-green-700 hover:bg-green-50">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4 mr-1" />}
