@@ -101,6 +101,9 @@ export interface UseDailyRoomReturn {
   // Media controls
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
+  // Virtual background: 'none' | 'blur' | <image URL>.
+  videoBackground: string;
+  setVideoBackground: (mode: string) => Promise<void>;
   /** Directly enables mic+optional video for an accepted speaker, bypassing the permission gate */
   enableSpeakerMedia: (withVideo: boolean) => Promise<void>;
   startScreenShare: () => Promise<void>;
@@ -200,6 +203,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [videoBackground, setVideoBackgroundState] = useState<string>('none');
   const [audioInputState, setAudioInputState] = useState<'available' | 'blocked' | 'detecting' | 'unavailable'>('unavailable');
 
   // Enhanced state for role-based system
@@ -1802,6 +1806,23 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [attachLocalVideoTrack, isCameraOn, videoDisabledByHost, options.isHost, options.viewerOnlyMode, hasSpeakerPermission]);
 
+  // Virtual background: 'none' | 'blur' | <image URL>. Delegated to the LiveKit
+  // wrapper's track processor; only meaningful on the LiveKit backend.
+  const setVideoBackground = useCallback(async (mode: string) => {
+    const wrapper = wrapperRef.current as any;
+    if (!wrapper?.setCameraBackground) {
+      toast({ title: 'Not supported', description: 'Virtual background is unavailable here.', variant: 'destructive' });
+      return;
+    }
+    try {
+      await wrapper.setCameraBackground(mode);
+      setVideoBackgroundState(mode);
+    } catch (e: any) {
+      console.error('[Daily] Failed to set video background:', e);
+      toast({ title: 'Background Error', description: 'Could not apply the background.', variant: 'destructive' });
+    }
+  }, []);
+
   // Start screen share
   const startScreenShare = useCallback(async () => {
     const wrapper = wrapperRef.current;
@@ -2281,6 +2302,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     hasSpeakerPermission,
     toggleMic,
     toggleCamera,
+    videoBackground,
+    setVideoBackground,
     enableSpeakerMedia,
     startScreenShare,
     stopScreenShare,
