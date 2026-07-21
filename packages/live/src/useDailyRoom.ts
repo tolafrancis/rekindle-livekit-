@@ -1409,7 +1409,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // Send chat message
   const sendChatMessage = useCallback(async (content: string, isPrivate: boolean = false, recipientId?: string) => {
     const localParticipant = participants.find(p => p.isLocal);
-    if (!localParticipant || !user) return;
+    // GUESTS may chat too: no `user` required. Registered users store their uid in
+    // sender_id; a guest stores null (their name is in sender_name). chat_messages
+    // RLS is permissive and sender_id is now nullable (migration 0245).
+    if (!localParticipant) return;
 
     const role = getParticipantRole(localParticipant.sessionId);
 
@@ -1439,7 +1442,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       content,
       meetingId: options.meetingId,
       sessionStartTime,
-      userId: user.id,
+      userId: user?.id ?? null,
       userName: localParticipant.userName
     });
 
@@ -1450,7 +1453,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         .insert({
           meeting_id: options.meetingId,
           session_start_time: sessionStartTime,
-          sender_id: user.id,
+          sender_id: user?.id ?? null,
           sender_name: localParticipant.userName,
           sender_role: role,
           content,
@@ -1474,7 +1477,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // Create message object for app message backup
       const message: ChatMessageType = {
         id: data.id,
-        sender_id: user.id,
+        sender_id: user?.id ?? localParticipant.sessionId,
         sender_name: localParticipant.userName,
         sender_role: role,
         content,
@@ -1511,12 +1514,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Real-time chat subscription and loading
   useEffect(() => {
-    if (!isConnected || !options.meetingId || !sessionStartTimeRef.current || !user) {
+    // Guests subscribe too — no `user` gate — so they SEE the conversation, not
+    // just send into it. chat_messages read RLS (read_all_chat) is USING(true).
+    if (!isConnected || !options.meetingId || !sessionStartTimeRef.current) {
       console.log('[Chat] Subscription NOT starting:', {
         isConnected,
         hasMeetingId: !!options.meetingId,
         hasSessionStart: !!sessionStartTimeRef.current,
-        hasUser: !!user
       });
       return;
     }
@@ -1529,9 +1533,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
 
     console.log('[Chat] Setting up real-time subscription:', {
+      guest: !user,
       meetingId: options.meetingId,
       sessionStartTime,
-      userId: user.id
+      userId: user?.id ?? null
     });
 
     // Load existing messages from current session
@@ -1565,10 +1570,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             recipientId: msg.recipient_id
           }));
 
-          // Filter out private messages not meant for this user
-          const visibleMessages = messages.filter(msg => 
-            !msg.isPrivate || 
-            msg.sender_id === user.id || 
+          // Filter out private messages not meant for this participant. Guests
+          // have no uid, so match on their session id for the sender check too.
+          const selfId = user?.id ?? localParticipant.sessionId;
+          const visibleMessages = messages.filter(msg =>
+            !msg.isPrivate ||
+            msg.sender_id === selfId ||
             msg.recipientId === localParticipant.sessionId
           );
 
@@ -1620,9 +1627,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             recipientId: msg.recipient_id
           };
 
-          // Only add if message is visible to this user
-          if (!newMessage.isPrivate || 
-              newMessage.sender_id === user.id || 
+          // Only add if message is visible to this participant (guest = session id).
+          if (!newMessage.isPrivate ||
+              newMessage.sender_id === (user?.id ?? localParticipant.sessionId) ||
               newMessage.recipientId === localParticipant.sessionId) {
             
             setChatMessages(prev => {
