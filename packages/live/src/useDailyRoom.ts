@@ -17,6 +17,7 @@ import {
   MeetingSettings, 
   WaitingRoomParticipant,
   ChatMessageType,
+  ChatAttachment,
   DEFAULT_MEETING_SETTINGS,
   hasPermission
 } from '@rekindle/types/liveChannelTypes';
@@ -151,7 +152,7 @@ export interface UseDailyRoomReturn {
   
   // Chat messages
   chatMessages: ChatMessageType[];
-  sendChatMessage: (content: string, isPrivate?: boolean, recipientId?: string) => Promise<void>;
+  sendChatMessage: (content: string, isPrivate?: boolean, recipientId?: string, attachment?: ChatAttachment | null) => Promise<void>;
   
   // Session tracking
   sessionStartTime: Date | null;
@@ -1411,7 +1412,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [participants]);
 
   // Send chat message
-  const sendChatMessage = useCallback(async (content: string, isPrivate: boolean = false, recipientId?: string) => {
+  const sendChatMessage = useCallback(async (content: string, isPrivate: boolean = false, recipientId?: string, attachment?: ChatAttachment | null) => {
     const localParticipant = participants.find(p => p.isLocal);
     // GUESTS may chat too: no `user` required. Registered users store their uid in
     // sender_id; a guest stores null (their name is in sender_name). chat_messages
@@ -1463,7 +1464,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           content,
           message_type: role === 'host' ? 'host-announcement' : 'text',
           is_private: isPrivate,
-          recipient_id: recipientId || null
+          recipient_id: recipientId || null,
+          attachment_url: attachment?.url ?? null,
+          attachment_name: attachment?.name ?? null,
+          attachment_type: attachment?.type ?? null,
+          attachment_size: attachment?.size ?? null
         })
         .select()
         .single();
@@ -1488,7 +1493,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         timestamp: new Date(data.created_at),
         messageType: data.message_type as 'text' | 'system' | 'host-announcement',
         isPrivate,
-        recipientId
+        recipientId,
+        attachment: attachment ?? null
       };
 
       // Also send via app message for immediate delivery (backup to database)
@@ -1571,7 +1577,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             timestamp: new Date(msg.created_at),
             messageType: msg.message_type,
             isPrivate: msg.is_private,
-            recipientId: msg.recipient_id
+            recipientId: msg.recipient_id,
+            attachment: msg.attachment_url
+              ? { url: msg.attachment_url, name: msg.attachment_name, type: msg.attachment_type, size: msg.attachment_size }
+              : null
           }));
 
           // Filter out private messages not meant for this participant. Guests
@@ -1620,6 +1629,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           }
           
           const newMessage: ChatMessageType = {
+            attachment: msg.attachment_url
+              ? { url: msg.attachment_url, name: msg.attachment_name, type: msg.attachment_type, size: msg.attachment_size }
+              : null,
             id: msg.id,
             sender_id: msg.sender_id,
             sender_name: msg.sender_name,

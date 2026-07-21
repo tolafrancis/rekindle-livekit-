@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { useAuth } from '@rekindle/features/AuthContext';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
@@ -904,6 +905,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
+  const { user: authUser } = useAuth();  // members can attach files; guests cannot
 
 
   // Track participant join function
@@ -1932,6 +1934,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           currentUserId={userId}
           chatMode={meetingSettings.chatMode}
           onClose={() => setShowChat(false)}
+          canAttach={!!authUser}
+          meetingId={meetingId}
         />
       )}
     </div>

@@ -194,6 +194,13 @@ export interface MeetingSettings {
 }
 
 // Chat message types
+export interface ChatAttachment {
+  url: string;
+  name: string;
+  type: string;   // MIME
+  size: number;   // bytes
+}
+
 export interface ChatMessageType {
   id: string;
   sender_id: string;
@@ -204,6 +211,7 @@ export interface ChatMessageType {
   messageType: 'text' | 'system' | 'host-announcement';
   isPrivate: boolean;
   recipientId?: string;
+  attachment?: ChatAttachment | null;
 }
 
 // Waiting room participant
