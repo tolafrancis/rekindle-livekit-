@@ -4,23 +4,42 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Badge } from '@rekindle/ui/badge';
-import { 
-  MessageCircle, 
-  Send, 
-  X, 
+import { toast } from '@rekindle/ui/use-toast';
+import { supabase } from '@rekindle/supabase';
+import {
+  MessageCircle,
+  Send,
+  X,
   Shield,
   Crown,
   AlertCircle,
-  Ban
+  Ban,
+  Paperclip,
+  Download,
+  FileText,
+  Loader2,
 } from 'lucide-react';
-import { ChatMessageType } from '@rekindle/types/liveChannelTypes';
+import { ChatMessageType, ChatAttachment } from '@rekindle/types/liveChannelTypes';
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+const ATTACHMENT_BUCKET = 'meeting-chat-attachments';
+
+function formatSize(bytes: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 interface RoomChatSidebarProps {
   messages: ChatMessageType[];
-  onSendMessage: (content: string, isPrivate?: boolean, recipientId?: string) => Promise<void>;
+  onSendMessage: (content: string, isPrivate?: boolean, recipientId?: string, attachment?: ChatAttachment | null) => Promise<void>;
   currentUserId: string;
   chatMode?: 'all' | 'host-only' | 'disabled';
   onClose: () => void;
+  /** Members can attach files; guests cannot (upload RLS is authenticated-only). */
+  canAttach?: boolean;
+  meetingId?: string;
 }
 
 export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
@@ -28,12 +47,47 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
   onSendMessage,
   currentUserId,
   chatMode = 'all',
-  onClose
+  onClose,
+  canAttach = false,
+  meetingId,
 }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast({ title: 'File too large', description: 'Attachments must be 10 MB or less.', variant: 'destructive' });
+      return;
+    }
+    setUploading(true);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `chat/${meetingId || 'meeting'}/${crypto.randomUUID()}-${safe}`;
+      const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+      });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from(ATTACHMENT_BUCKET).getPublicUrl(path);
+      await onSendMessage(newMessage.trim(), false, undefined, {
+        url: pub.publicUrl,
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+      });
+      setNewMessage('');
+    } catch (e: any) {
+      toast({ title: 'Upload failed', description: e?.message || 'Could not upload the file.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -202,9 +256,37 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                         </Badge>
                       )}
                     </div>
-                    <p className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-100'} break-words`}>
-                      {message.content}
-                    </p>
+                    {message.content && (
+                      <p className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-100'} break-words`}>
+                        {message.content}
+                      </p>
+                    )}
+                    {message.attachment && (
+                      <a
+                        href={message.attachment.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={message.attachment.name}
+                        className="block mt-1"
+                      >
+                        {message.attachment.type?.startsWith('image/') ? (
+                          <img
+                            src={message.attachment.url}
+                            alt={message.attachment.name}
+                            className="max-w-full max-h-48 rounded-md border border-white/10"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-2 p-2 rounded-md bg-black/20 hover:bg-black/30 transition-colors">
+                            <FileText className="h-5 w-5 shrink-0 text-blue-200" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-white truncate">{message.attachment.name}</p>
+                              <p className="text-[10px] text-gray-300">{formatSize(message.attachment.size)}</p>
+                            </div>
+                            <Download className="h-4 w-4 shrink-0 text-gray-300" />
+                          </div>
+                        )}
+                      </a>
+                    )}
                     <span className={`text-xs ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'} mt-1 block`}>
                       {formatTime(message.timestamp)}
                     </span>
@@ -224,24 +306,48 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
       {/* Input */}
       <CardContent className="border-t border-gray-800 p-4 flex-shrink-0">
         <div className="flex gap-2">
+          {/* Attach (members only). Any file, max 10 MB. */}
+          {canAttach && chatMode !== 'disabled' && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0] || undefined)}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Attach a file (max 10 MB)"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || sending}
+                className="shrink-0 text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              </Button>
+            </>
+          )}
           <Input
             ref={inputRef}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              chatMode === 'disabled' 
-                ? 'Chat is disabled' 
+              chatMode === 'disabled'
+                ? 'Chat is disabled'
                 : chatMode === 'host-only'
                 ? 'Only hosts can send messages'
+                : uploading
+                ? 'Uploading…'
                 : 'Type a message...'
             }
-            disabled={sending || chatMode === 'disabled'}
+            disabled={sending || uploading || chatMode === 'disabled'}
             className="flex-1 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!newMessage.trim() || sending || chatMode === 'disabled'}
+            disabled={!newMessage.trim() || sending || uploading || chatMode === 'disabled'}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {sending ? (
