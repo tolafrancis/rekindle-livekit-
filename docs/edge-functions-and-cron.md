@@ -12,9 +12,12 @@ Project ref: `vpnpembyqbbaaiynfvli`
 
 ## ⏳ PENDING — Meeting reminders (`process-meeting-reminders`)
 
-Added with scheduled-meeting timezones + reminders (migration `0247`, commit
-`4e1be69`). The UI and DB are live; the reminder cron is **not running yet**.
-Until steps 1–2 are done, hosts can set reminder offsets but no reminders fire.
+Added with scheduled-meeting timezones + reminders (migrations `0247` + `0248`).
+Covers **both** meeting kinds — ministry meetings (`ministry_video_meetings`) and
+live-channel meetings (`live_channel_video_meetings`) — and includes anyone who
+**registered** (`meeting_registrations`), guests included. The UI and DB are live;
+the reminder cron is **not running yet**. Until steps 1–2 are done, hosts can set
+reminder offsets and people can register, but no reminders fire.
 
 1. **Deploy the function.** Dashboard → Edge Functions → new function named exactly
    `process-meeting-reminders`. Paste
@@ -28,7 +31,10 @@ Until steps 1–2 are done, hosts can set reminder offsets but no reminders fire
    Functions → secrets:
    - `RESEND_API_KEY` — from resend.com
    - `FROM_EMAIL` — e.g. `notifications@rekindlebc.com` (must be a Resend-verified sender)
-   - `MEETING_APP_ORIGIN` — optional, defaults to `https://rekindlebc.com` (used for join links)
+   - `MEETING_APP_ORIGIN` — consumer/channel app origin for channel-meeting links
+     (defaults to `https://app.rekindlebc.com`)
+   - `MINISTRY_APP_ORIGIN` — ministry app origin for ministry-meeting links
+     (defaults to `https://rekindlebc.com`, else falls back to `MEETING_APP_ORIGIN`)
 
    Without the email secrets, **in-app bell reminders still work**; only the email
    is skipped. `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected.
@@ -36,8 +42,9 @@ Until steps 1–2 are done, hosts can set reminder offsets but no reminders fire
 **Verify:** create a scheduled meeting a few minutes out with the "15 minutes
 before" reminder, wait for a cron tick, and confirm a row lands in
 `public.notifications` (and an email arrives). Inspect the cron with
-`select * from cron.job;`. Recipients = host + active `ministry_members` matching
-the meeting's access level; delivery is idempotent via `meeting_reminder_sends`.
+`select * from cron.job;`. Recipients = host + eligible members/followers (access-
+level aware) + registrants (`meeting_registrations`, guests emailed only); delivery
+is idempotent via `meeting_reminder_sends` (keyed on `recipient_key`).
 
 ---
 

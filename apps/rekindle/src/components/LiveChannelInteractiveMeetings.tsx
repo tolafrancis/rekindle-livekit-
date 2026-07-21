@@ -28,12 +28,21 @@ import {
   Copy, AlertCircle, Loader2,
   PhoneOff, MessageSquare,
   Zap, Circle, Trash2, Crown, Globe, MonitorUp,
-  Sparkles, FileText, Hand, GripVertical, X
+  Sparkles, FileText, Hand, GripVertical, X, Calendar
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  zonedWallTimeToUtcISO,
+  utcISOToZonedInputValue,
+  formatMeetingTime,
+  guessUserTimeZone,
+  commonTimeZones,
+  REMINDER_OFFSET_OPTIONS,
+} from '@rekindle/features/meetingTime';
+import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
 import { toast } from 'sonner';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
@@ -88,6 +97,8 @@ interface LiveChannelVideoMeeting {
   enable_screenshare: boolean;
   is_active: boolean;
   participant_count: number;
+  timezone?: string | null;
+  reminder_offsets?: number[] | null;
   created_at: string;
   updated_at: string;
   started_at?: string;
@@ -100,6 +111,8 @@ interface CreateMeetingFormData {
   mode: 'meeting' | 'webinar';
   meeting_type: 'instant' | 'scheduled';
   scheduled_time: string;
+  timezone: string;
+  reminder_offsets: number[];
   duration_minutes: number;
   max_participants: number;
   access_level: 'public' | 'followers' | 'cohosts';
@@ -565,25 +578,30 @@ const EnhancedVideoCallWrapper = ({
   );
 };
 
-const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
+const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (meeting: LiveChannelVideoMeeting) => void;
   channelId: string;
+  /** When set, the modal edits this meeting instead of creating a new one. */
+  meeting?: LiveChannelVideoMeeting | null;
 }) => {
   const { t } = useLanguage();
   const { user } = useAuth();
+  const isEditing = !!meeting;
   const [isLoading, setIsLoading] = useState(false);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [accessCheck, setAccessCheck] = useState<AccessCheckResult | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  
+
   const [formData, setFormData] = useState<CreateMeetingFormData>({
     title: '',
     description: '',
     mode: 'meeting',
     meeting_type: 'instant',
     scheduled_time: '',
+    timezone: guessUserTimeZone(),
+    reminder_offsets: [],
     duration_minutes: 60,
     max_participants: 50,
     access_level: 'public',
@@ -591,6 +609,28 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
     enable_chat: true,
     enable_screenshare: true,
   });
+  const tzOptions = React.useMemo(() => commonTimeZones(), []);
+
+  // Prefill when opening in edit mode.
+  useEffect(() => {
+    if (!isOpen || !meeting) return;
+    const tz = meeting.timezone || guessUserTimeZone();
+    setFormData({
+      title: meeting.title,
+      description: meeting.description || '',
+      mode: meeting.mode || 'meeting',
+      meeting_type: meeting.meeting_type,
+      scheduled_time: meeting.scheduled_time ? utcISOToZonedInputValue(meeting.scheduled_time, tz) : '',
+      timezone: tz,
+      reminder_offsets: meeting.reminder_offsets || [],
+      duration_minutes: meeting.duration_minutes,
+      max_participants: meeting.max_participants,
+      access_level: meeting.access_level,
+      enable_recording: meeting.enable_recording,
+      enable_chat: meeting.enable_chat,
+      enable_screenshare: meeting.enable_screenshare,
+    });
+  }, [isOpen, meeting]);
 
   useEffect(() => {
     const loadSubscription = async () => {
@@ -638,30 +678,61 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
       return;
     }
 
+    const isScheduled = formData.meeting_type === 'scheduled';
+    const scheduledUtc = isScheduled && formData.scheduled_time
+      ? zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone)
+      : null;
+    if (isScheduled && !scheduledUtc) {
+      toast.error(t('liveChannelInteractiveMeetings', 'invalidScheduledTime', 'Please pick a valid scheduled time.'));
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      const sharedFields = {
+        title: formData.title,
+        description: formData.description,
+        meeting_type: formData.meeting_type,
+        scheduled_time: scheduledUtc,
+        timezone: isScheduled ? formData.timezone : null,
+        reminder_offsets: isScheduled ? formData.reminder_offsets : [],
+        duration_minutes: formData.duration_minutes,
+        max_participants: formData.max_participants,
+        access_level: formData.access_level,
+        enable_recording: formData.enable_recording,
+        enable_chat: formData.enable_chat,
+        enable_screenshare: formData.enable_screenshare,
+      };
+
+      // Editing an existing meeting: update in place, don't touch room/mode/stream.
+      // Changing the schedule clears the reminder ledger so new times re-fire.
+      if (isEditing && meeting) {
+        const { data, error } = await supabase
+          .from('live_channel_video_meetings')
+          .update(sharedFields)
+          .eq('id', meeting.id)
+          .select()
+          .single();
+        if (error) throw error;
+        await supabase.from('meeting_reminder_sends').delete().eq('meeting_id', meeting.id);
+        toast.success(t('liveChannelInteractiveMeetings', 'meetingUpdatedSuccess', 'Meeting updated'));
+        onSuccess(data);
+        onClose();
+        return;
+      }
+
       const roomName = `channel-${channelId}-${Date.now()}`;
-      
       const { data, error } = await supabase
         .from('live_channel_video_meetings')
         .insert({
           channel_id: channelId,
           host_id: user.id,
-          title: formData.title,
-          description: formData.description,
           room_name: roomName,
           mode: formData.mode,
-          meeting_type: formData.meeting_type,
-          scheduled_time: formData.scheduled_time || null,
-          duration_minutes: formData.duration_minutes,
-          max_participants: formData.max_participants,
-          access_level: formData.access_level,
-          enable_recording: formData.enable_recording,
-          enable_chat: formData.enable_chat,
-          enable_screenshare: formData.enable_screenshare,
           is_active: false,
-          participant_count: 0
+          participant_count: 0,
+          ...sharedFields,
         })
         .select()
         .single();
@@ -703,9 +774,15 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t('liveChannelInteractiveMeetings', 'createInteractiveMeeting', 'Create Interactive Meeting')}</DialogTitle>
+          <DialogTitle>
+            {isEditing
+              ? t('liveChannelInteractiveMeetings', 'editInteractiveMeeting', 'Edit Meeting')
+              : t('liveChannelInteractiveMeetings', 'createInteractiveMeeting', 'Create Interactive Meeting')}
+          </DialogTitle>
           <DialogDescription>
-            {t('liveChannelInteractiveMeetings', 'setUpNewMeeting', 'Set up a new video meeting for your channel')}
+            {isEditing
+              ? t('liveChannelInteractiveMeetings', 'editMeetingDesc', 'Update this meeting’s details, schedule, and reminders')
+              : t('liveChannelInteractiveMeetings', 'setUpNewMeeting', 'Set up a new video meeting for your channel')}
           </DialogDescription>
         </DialogHeader>
 
@@ -760,15 +837,79 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
           </div>
 
           {formData.meeting_type === 'scheduled' && (
-            <div className="space-y-2">
-              <Label htmlFor="scheduled_time">{t('liveChannelInteractiveMeetings', 'scheduledTimeLabel', 'Scheduled Time')}</Label>
-              <Input
-                id="scheduled_time"
-                type="datetime-local"
-                value={formData.scheduled_time}
-                onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
-                required
-              />
+            <div className="space-y-4 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="scheduled_time">{t('liveChannelInteractiveMeetings', 'scheduledTimeLabel', 'Scheduled Time')}</Label>
+                  <Input
+                    id="scheduled_time"
+                    type="datetime-local"
+                    value={formData.scheduled_time}
+                    onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timezone">{t('liveChannelInteractiveMeetings', 'timezoneLabel', 'Time Zone')}</Label>
+                  <Select
+                    value={formData.timezone}
+                    onValueChange={(value) => setFormData({ ...formData, timezone: value })}
+                  >
+                    <SelectTrigger id="timezone">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {tzOptions.map((tz) => (
+                        <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {formData.scheduled_time && (
+                <p className="text-xs text-gray-600">
+                  {t('liveChannelInteractiveMeetings', 'scheduledForNote', 'Scheduled for')}{' '}
+                  <span className="font-medium">
+                    {formatMeetingTime(zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone), formData.timezone)}
+                  </span>
+                </p>
+              )}
+
+              <div className="space-y-2">
+                <Label>{t('liveChannelInteractiveMeetings', 'remindersLabel', 'Send reminders (in-app + email)')}</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {REMINDER_OFFSET_OPTIONS.map((opt) => {
+                    const checked = formData.reminder_offsets.includes(opt.minutes);
+                    return (
+                      <label
+                        key={opt.minutes}
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                          checked ? 'border-purple-500 bg-purple-100/60' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="accent-purple-600"
+                          checked={checked}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              reminder_offsets: e.target.checked
+                                ? [...prev.reminder_offsets, opt.minutes]
+                                : prev.reminder_offsets.filter((m) => m !== opt.minutes),
+                            }))
+                          }
+                        />
+                        {t('liveChannelInteractiveMeetings', `reminderOffset_${opt.minutes}`, opt.label)}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500">
+                  {t('liveChannelInteractiveMeetings', 'remindersTip', 'Followers (per access level) and anyone who registers get a notification and email before the meeting.')}
+                </p>
+              </div>
             </div>
           )}
 
@@ -874,7 +1015,9 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
               disabled={isLoading || !accessCheck?.allowed}
             >
               {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {t('liveChannelInteractiveMeetings', 'createMeeting', 'Create Meeting')}
+              {isEditing
+                ? t('liveChannelInteractiveMeetings', 'saveChanges', 'Save Changes')
+                : t('liveChannelInteractiveMeetings', 'createMeeting', 'Create Meeting')}
             </Button>
           </DialogFooter>
         </form>
@@ -948,6 +1091,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   const [error, setError] = useState<string | null>(null);
   const [activeCall, setActiveCall] = useState<LiveChannelVideoMeeting | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<LiveChannelVideoMeeting | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [channelName, setChannelName] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
@@ -1354,6 +1498,12 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
+                            {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
+                              <div className="flex items-center gap-1 font-medium text-gray-800">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
                               <span>{t('liveChannelInteractiveMeetings', 'minutesCount', '{count} minutes').replace('{count}', String(meeting.duration_minutes))}</span>
@@ -1362,9 +1512,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                               <Users className="h-4 w-4" />
                               <span>{meeting.participant_count} / {meeting.max_participants}</span>
                             </div>
+                            {meeting.meeting_type === 'scheduled' && (meeting.reminder_offsets?.length ?? 0) > 0 && (
+                              <div className="flex items-center gap-1 text-purple-700">
+                                <MessageSquare className="h-4 w-4" />
+                                <span>{t('liveChannelInteractiveMeetings', 'reminderCount', '{count} reminders').replace('{count}', String(meeting.reminder_offsets!.length))}</span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-3 mt-3">
+                          <div className="flex flex-wrap items-center gap-3 mt-3">
                             {meeting.enable_chat && (
                               <div className="flex items-center gap-1 text-sm text-gray-600">
                                 <MessageSquare className="h-4 w-4" />
@@ -1376,6 +1532,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                                 <MonitorUp className="h-4 w-4" />
                                 <span>{t('liveChannelInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                               </div>
+                            )}
+                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && (
+                              <RegisterMeetingButton
+                                meetingId={meeting.id}
+                                meetingKind="channel"
+                                meetingTitle={meeting.title}
+                                isHost={meeting.host_id === user?.id}
+                                allowGuests={meeting.access_level === 'public'}
+                              />
                             )}
                           </div>
                         </div>
@@ -1490,6 +1655,12 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
+                            {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
+                              <div className="flex items-center gap-1 font-medium text-gray-800">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
                               <span>{t('liveChannelInteractiveMeetings', 'minutesCount', '{count} minutes').replace('{count}', String(meeting.duration_minutes))}</span>
@@ -1498,9 +1669,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                               <Users className="h-4 w-4" />
                               <span>{meeting.participant_count} / {meeting.max_participants}</span>
                             </div>
+                            {meeting.meeting_type === 'scheduled' && (meeting.reminder_offsets?.length ?? 0) > 0 && (
+                              <div className="flex items-center gap-1 text-purple-700">
+                                <MessageSquare className="h-4 w-4" />
+                                <span>{t('liveChannelInteractiveMeetings', 'reminderCount', '{count} reminders').replace('{count}', String(meeting.reminder_offsets!.length))}</span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-3 mt-3">
+                          <div className="flex flex-wrap items-center gap-3 mt-3">
                             {meeting.enable_chat && (
                               <div className="flex items-center gap-1 text-sm text-gray-600">
                                 <MessageSquare className="h-4 w-4" />
@@ -1512,6 +1689,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                                 <MonitorUp className="h-4 w-4" />
                                 <span>{t('liveChannelInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                               </div>
+                            )}
+                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && (
+                              <RegisterMeetingButton
+                                meetingId={meeting.id}
+                                meetingKind="channel"
+                                meetingTitle={meeting.title}
+                                isHost={meeting.host_id === user?.id}
+                                allowGuests={meeting.access_level === 'public'}
+                              />
                             )}
                           </div>
                         </div>
@@ -1531,6 +1717,17 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </Button>
                           {canDelete && (
                             <>
+                              {meeting.meeting_type === 'scheduled' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setEditingMeeting(meeting)}
+                                  title={t('liveChannelInteractiveMeetings', 'editMeeting', 'Edit meeting')}
+                                >
+                                  <Calendar className="h-4 w-4 mr-1" />
+                                  {t('liveChannelInteractiveMeetings', 'edit', 'Edit')}
+                                </Button>
+                              )}
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1602,11 +1799,11 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       )}
 
       <CreateMeetingModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSuccess={(meeting) => {
+        isOpen={showCreateModal || !!editingMeeting}
+        meeting={editingMeeting}
+        onClose={() => { setShowCreateModal(false); setEditingMeeting(null); }}
+        onSuccess={() => {
           fetchMeetings();
-          toast.success(t('liveChannelInteractiveMeetings', 'meetingCreated', 'Meeting created!'));
         }}
         channelId={channelId}
       />

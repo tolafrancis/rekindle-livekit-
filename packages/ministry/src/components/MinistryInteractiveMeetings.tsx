@@ -45,6 +45,7 @@ import {
   REMINDER_OFFSET_OPTIONS,
 } from '@rekindle/features/meetingTime';
 import { toast } from 'sonner';
+import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
 import SavedMeetingInsights from '@rekindle/live/components/SavedMeetingInsights';
 
@@ -1700,7 +1701,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3 mt-3">
+                        <div className="flex flex-wrap items-center gap-3 mt-3">
                           {meeting.enable_chat && (
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <MessageSquare className="h-4 w-4" />
@@ -1712,6 +1713,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                               <MonitorUp className="h-4 w-4" />
                               <span>{t('ministryInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                             </div>
+                          )}
+                          {meeting.meeting_type === 'scheduled' && !meeting.is_active && (
+                            <RegisterMeetingButton
+                              meetingId={meeting.id}
+                              meetingKind="ministry"
+                              meetingTitle={meeting.title}
+                              isHost={meeting.host_id === user?.id}
+                              allowGuests={meeting.access_level === 'public'}
+                            />
                           )}
                         </div>
                       </div>
@@ -1846,7 +1856,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3 mt-3">
+                        <div className="flex flex-wrap items-center gap-3 mt-3">
                           {meeting.enable_chat && (
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <MessageSquare className="h-4 w-4" />
@@ -1858,6 +1868,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                               <MonitorUp className="h-4 w-4" />
                               <span>{t('ministryInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                             </div>
+                          )}
+                          {meeting.meeting_type === 'scheduled' && !meeting.is_active && (
+                            <RegisterMeetingButton
+                              meetingId={meeting.id}
+                              meetingKind="ministry"
+                              meetingTitle={meeting.title}
+                              isHost={meeting.host_id === user?.id}
+                              allowGuests={meeting.access_level === 'public'}
+                            />
                           )}
                         </div>
                       </div>
