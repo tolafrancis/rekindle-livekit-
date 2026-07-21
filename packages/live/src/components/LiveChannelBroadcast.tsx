@@ -9,6 +9,7 @@ import { isLiveKitBackend } from '../videoBackend';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from './MeetingReactions';
+import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import { MeetingNotesBanner } from './MeetingNotesBanner';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -1389,6 +1390,23 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 {dailyRoom.isCameraOn ? <Video className="h-4 w-4 sm:h-5 sm:w-5" /> : <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" />}
                 <span className="hidden md:inline">{dailyRoom.isCameraOn ? t('liveChannelBroadcast', 'stopVideo', 'Stop Video') : t('liveChannelBroadcast', 'startVideo', 'Start Video')}</span>
               </Button>
+            )}
+
+            {isVideoMode && (
+              <VirtualBackgroundButton
+                value={dailyRoom.videoBackground}
+                onChange={dailyRoom.setVideoBackground}
+                trigger={
+                  <Button
+                    variant={dailyRoom.videoBackground !== 'none' ? 'default' : 'secondary'}
+                    size="sm"
+                    className="rounded-full px-3 sm:px-5 h-10 sm:h-12 flex items-center gap-2"
+                  >
+                    <Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />
+                    <span className="hidden md:inline">{t('liveChannelBroadcast', 'background', 'Background')}</span>
+                  </Button>
+                }
+              />
             )}
 
             <Button

@@ -6,11 +6,12 @@ import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
+import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -990,6 +991,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isScreenSharing,
     toggleMic,
     toggleCamera,
+    videoBackground,
+    setVideoBackground,
     startScreenShare,
     stopScreenShare,
     joinRoom,
@@ -1741,6 +1744,22 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 {isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
               </span>
             </button>
+
+            {/* Virtual background */}
+            <VirtualBackgroundButton
+              value={videoBackground}
+              onChange={setVideoBackground}
+              trigger={
+                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                  <div className={`w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                    <Sparkles className="h-4 w-4 sm:h-7 sm:w-7" />
+                  </div>
+                  <span className="hidden sm:block text-xs font-medium text-gray-300">
+                    {t('dailyVideoCall', 'background', 'Background')}
+                  </span>
+                </button>
+              }
+            />
 
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button
