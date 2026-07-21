@@ -38,6 +38,29 @@ function formatWhen(iso?: string | null): string | null {
   });
 }
 
+/**
+ * Like formatWhen but rendered IN the meeting's zone and labelled with it, e.g.
+ * "Sat, Jul 25, 9:00 PM · Asia/Bangkok (GMT+7)" — so a shared link reads correctly
+ * whatever zone the recipient is in.
+ */
+function formatWhenTz(iso?: string | null, tz?: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const dateStr = d.toLocaleString(undefined, {
+    timeZone: tz || undefined,
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: 'numeric', minute: '2-digit',
+  });
+  if (!tz) return dateStr;
+  let offset = '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset', hour: '2-digit' }).formatToParts(d);
+    offset = parts.find((p) => p.type === 'timeZoneName')?.value || '';
+  } catch { /* invalid tz → omit offset */ }
+  return offset ? `${dateStr} · ${tz} (${offset})` : `${dateStr} · ${tz}`;
+}
+
 // ── Native-or-clipboard share (shared by all three builders) ────────────────
 async function nativeOrCopy(title: string, text: string): Promise<ShareResult> {
   const nav: any = typeof navigator !== 'undefined' ? navigator : undefined;
@@ -66,20 +89,32 @@ export interface MeetingShareInput {
   hostName?: string | null;
   title?: string | null;
   scheduledTime?: string | null;
+  /** IANA zone the meeting was scheduled in — shown next to the time. */
+  timezone?: string | null;
+  /** When true, a scheduled meeting invites people to register (not just view). */
+  registrationEnabled?: boolean;
   url: string;
 }
 
 export function buildMeetingShareText(
-  { hostName, title, scheduledTime, url }: MeetingShareInput,
+  { hostName, title, scheduledTime, timezone, registrationEnabled, url }: MeetingShareInput,
   includeUrl = true,
 ): string {
   const host = (hostName || '').trim();
   const header = host ? `🎥 ${host} Live Meeting` : '🎥 Rekindle Live Meeting';
   const cleanTitle = (title || '').trim() || 'Live Meeting';
-  const when = formatWhen(scheduledTime);
+  const when = formatWhenTz(scheduledTime, timezone);
   const lines = [header, '', `📌 "${cleanTitle}"`];
   if (when) lines.push(`🗓 ${when}`);
-  lines.push('', 'Join us live on Rekindle — tap the link to enter the meeting room.');
+  lines.push('');
+  if (when) {
+    // Scheduled meeting: the link opens a details/registration page, not the room.
+    lines.push(registrationEnabled
+      ? 'Tap the link to register and get a reminder before it starts.'
+      : 'Tap the link for the meeting details and to join when it starts.');
+  } else {
+    lines.push('Join us live on Rekindle — tap the link to enter the meeting room.');
+  }
   if (includeUrl) lines.push('', `🔗 ${url}`);
   return lines.join('\n');
 }

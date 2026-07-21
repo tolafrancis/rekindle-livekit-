@@ -99,6 +99,7 @@ interface LiveChannelVideoMeeting {
   participant_count: number;
   timezone?: string | null;
   reminder_offsets?: number[] | null;
+  registration_enabled?: boolean;
   created_at: string;
   updated_at: string;
   started_at?: string;
@@ -113,6 +114,7 @@ interface CreateMeetingFormData {
   scheduled_time: string;
   timezone: string;
   reminder_offsets: number[];
+  registration_enabled: boolean;
   duration_minutes: number;
   max_participants: number;
   access_level: 'public' | 'followers' | 'cohosts';
@@ -432,7 +434,7 @@ const EnhancedVideoCallWrapper = ({
         <Button
           onClick={async () => {
             const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
-            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
             if (r.method !== 'native') toast.success(t('liveChannelInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
           }}
           variant="secondary"
@@ -602,6 +604,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: 
     scheduled_time: '',
     timezone: guessUserTimeZone(),
     reminder_offsets: [],
+    registration_enabled: false,
     duration_minutes: 60,
     max_participants: 50,
     access_level: 'public',
@@ -623,6 +626,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: 
       scheduled_time: meeting.scheduled_time ? utcISOToZonedInputValue(meeting.scheduled_time, tz) : '',
       timezone: tz,
       reminder_offsets: meeting.reminder_offsets || [],
+      registration_enabled: meeting.registration_enabled ?? false,
       duration_minutes: meeting.duration_minutes,
       max_participants: meeting.max_participants,
       access_level: meeting.access_level,
@@ -697,6 +701,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: 
         scheduled_time: scheduledUtc,
         timezone: isScheduled ? formData.timezone : null,
         reminder_offsets: isScheduled ? formData.reminder_offsets : [],
+        registration_enabled: isScheduled ? formData.registration_enabled : false,
         duration_minutes: formData.duration_minutes,
         max_participants: formData.max_participants,
         access_level: formData.access_level,
@@ -909,6 +914,17 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: 
                 <p className="text-xs text-gray-500">
                   {t('liveChannelInteractiveMeetings', 'remindersTip', 'Followers (per access level) and anyone who registers get a notification and email before the meeting.')}
                 </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2">
+                <div>
+                  <Label className="text-sm">{t('liveChannelInteractiveMeetings', 'enableRegistrationLabel', 'Enable registration')}</Label>
+                  <p className="text-xs text-gray-500">{t('liveChannelInteractiveMeetings', 'enableRegistrationTip', 'Let people RSVP from the meeting link (guests can register with name + email on public meetings).')}</p>
+                </div>
+                <Switch
+                  checked={formData.registration_enabled}
+                  onCheckedChange={(checked) => setFormData({ ...formData, registration_enabled: checked })}
+                />
               </div>
             </div>
           )}
@@ -1533,7 +1549,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                                 <span>{t('liveChannelInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                               </div>
                             )}
-                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && (
+                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && meeting.registration_enabled && (
                               <RegisterMeetingButton
                                 meetingId={meeting.id}
                                 meetingKind="channel"
@@ -1551,7 +1567,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                             size="icon"
                             onClick={async () => {
                               const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
-                              const r = await shareMeeting({ hostName: channelName, title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+                              const r = await shareMeeting({ hostName: channelName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                               if (r.method !== 'native') toast.success(t('liveChannelInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                             }}
                             title={t('liveChannelInteractiveMeetings', 'copyMeetingLink', 'Copy meeting link')}
@@ -1690,7 +1706,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                                 <span>{t('liveChannelInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                               </div>
                             )}
-                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && (
+                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && meeting.registration_enabled && (
                               <RegisterMeetingButton
                                 meetingId={meeting.id}
                                 meetingKind="channel"

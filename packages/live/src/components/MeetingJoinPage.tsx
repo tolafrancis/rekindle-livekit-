@@ -117,6 +117,7 @@ interface MeetingData {
   scheduled_time: string | null;
   timezone?: string | null;
   access_level?: string;
+  registration_enabled?: boolean;
   host_id?: string;
   duration_minutes: number;
   room_name: string;
@@ -537,18 +538,22 @@ const MeetingJoinPage: React.FC = () => {
                       ? t('skeleton', 'startsAt', 'Starts at {time}').replace('{time}', formatMeetingTime(meetingData.scheduled_time, meetingData.timezone))
                       : t('skeleton', 'timeToBeAnnounced', 'Meeting time to be announced')}
                   </p>
-                  <div className="flex justify-center">
-                    <RegisterMeetingButton
-                      meetingId={meetingData.id}
-                      meetingKind={meetingType}
-                      meetingTitle={meetingData.title}
-                      isHost={!!user && user.id === meetingData.host_id}
-                      allowGuests={meetingData.access_level === 'public'}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t('skeleton', 'registerToBeReminded', 'Register to get a reminder before it starts.')}
-                  </p>
+                  {meetingData.registration_enabled && (
+                    <>
+                      <div className="flex justify-center">
+                        <RegisterMeetingButton
+                          meetingId={meetingData.id}
+                          meetingKind={meetingType}
+                          meetingTitle={meetingData.title}
+                          isHost={!!user && user.id === meetingData.host_id}
+                          allowGuests={meetingData.access_level === 'public'}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {t('skeleton', 'registerJoinLater', "Register to get a reminder with the join link. When it's time, open this same link to join.")}
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -748,18 +753,22 @@ const MeetingJoinPage: React.FC = () => {
                     ? t('skeleton', 'willStartAt', 'This meeting will start at {time}').replace('{time}', formatMeetingTime(meetingData.scheduled_time, meetingData.timezone))
                     : t('skeleton', 'timeToBeAnnounced', 'Meeting time to be announced')}
                 </p>
-                <div className="flex justify-center">
-                  <RegisterMeetingButton
-                    meetingId={meetingData.id}
-                    meetingKind={meetingType}
-                    meetingTitle={meetingData.title}
-                    isHost={!!user && user.id === meetingData.host_id}
-                    allowGuests={meetingData.access_level === 'public'}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('skeleton', 'registerToBeReminded', 'Register to get a reminder before it starts.')}
-                </p>
+                {meetingData.registration_enabled && (
+                  <>
+                    <div className="flex justify-center">
+                      <RegisterMeetingButton
+                        meetingId={meetingData.id}
+                        meetingKind={meetingType}
+                        meetingTitle={meetingData.title}
+                        isHost={!!user && user.id === meetingData.host_id}
+                        allowGuests={meetingData.access_level === 'public'}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t('skeleton', 'registerJoinLater', "Register to get a reminder with the join link. When it's time, open this same link to join.")}
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
