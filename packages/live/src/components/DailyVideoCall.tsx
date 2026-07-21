@@ -814,6 +814,51 @@ const ParticipantVideo: React.FC<{
   );
 };
 
+// Renders a participant's SCREEN-SHARE track as the main stage. Previously the UI
+// only showed a Monitor *icon* when hasScreenShare was true — the shared screen
+// track (participant.screenVideoTrack) was never bound to a <video>, so no one
+// could actually see the shared screen. Attaches with a short retry because the
+// remote track can arrive a beat after the participant object updates.
+const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
+  const { t } = useLanguage();
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const track = participant.screenVideoTrack;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attach = () => {
+      const el = videoRef.current;
+      if (el && track && track.readyState === 'live') {
+        el.srcObject = new MediaStream([track]);
+        el.play().catch(() => { /* autoplay may defer until interaction */ });
+        return;
+      }
+      if (tries++ < 20) timer = setTimeout(attach, 150); // ~3s window
+    };
+    attach();
+    return () => { if (timer) clearTimeout(timer); if (videoRef.current) videoRef.current.srcObject = null; };
+  }, [participant.screenVideoTrack]);
+
+  return (
+    <div className="flex flex-col h-full gap-2 p-2">
+      <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black rounded-xl overflow-hidden">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-contain"
+        />
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
+          <Monitor className="h-3.5 w-3.5" />
+          {t('dailyVideoCall', 'isSharingScreen', '{name} is sharing their screen').replace('{name}', participant.userName)}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   roomName,
@@ -1362,6 +1407,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     );
   }
 
+  // Whoever is actively screen-sharing (local or remote) — their screen becomes
+  // the main stage. A remote sharer needs the subscribed track; the local sharer
+  // has it immediately.
+  const screenSharer = participants.find((p: any) => p.hasScreenShare && p.screenVideoTrack) || null;
+
   const pinnedParticipant = pinnedParticipantId
     ? remoteParticipants.find((p: any) => p.sessionId === pinnedParticipantId)
     : null;
@@ -1378,8 +1428,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       {/* Main video area */}
       <div className={`flex-1 min-h-0 flex flex-col`}>
         <div className="relative w-full flex-1 bg-gray-800">
-        {/* Remote grid / pinned view / your-own centered view when alone */}
-        {remoteParticipants.length === 0 ? (
+        {/* A live screen share takes over the main stage (local or remote). */}
+        {screenSharer ? (
+          <ScreenShareView participant={screenSharer} />
+        ) : remoteParticipants.length === 0 ? (
           <div className="flex items-center justify-center h-full p-2 sm:p-4">
             <div className="relative w-full max-w-3xl">
               {localParticipant ? (
