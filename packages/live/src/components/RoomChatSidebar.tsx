@@ -178,6 +178,37 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
     });
   };
 
+  // Attachment renderer shared by every message variant (normal, host announcement,
+  // etc.). A host's messages are typed 'host-announcement', so without this the
+  // announcement branch dropped the image/file and showed an empty bubble.
+  const renderAttachment = (message: ChatMessageType) =>
+    message.attachment ? (
+      <a
+        href={message.attachment.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        download={message.attachment.name}
+        className="block mt-1"
+      >
+        {message.attachment.type?.startsWith('image/') ? (
+          <img
+            src={message.attachment.url}
+            alt={message.attachment.name}
+            className="max-w-full max-h-48 rounded-md border border-white/10"
+          />
+        ) : (
+          <div className="flex items-center gap-2 p-2 rounded-md bg-black/20 hover:bg-black/30 transition-colors">
+            <FileText className="h-5 w-5 shrink-0 text-blue-200" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-white truncate">{message.attachment.name}</p>
+              <p className="text-[10px] text-gray-300">{formatSize(message.attachment.size)}</p>
+            </div>
+            <Download className="h-4 w-4 shrink-0 text-gray-300" />
+          </div>
+        )}
+      </a>
+    ) : null;
+
   return (
     <div className="w-full h-2/5 sm:w-80 sm:h-full shrink-0 bg-gray-900 border-t sm:border-t-0 sm:border-l border-gray-800 flex flex-col z-40">
       {/* On mobile this docks BELOW the video feed (parent is flex-col); on desktop
@@ -247,7 +278,8 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                       <Crown className="h-4 w-4 text-yellow-500" />
                       <span className="text-xs font-medium text-yellow-500">Host Announcement</span>
                     </div>
-                    <p className="text-sm text-white">{message.content}</p>
+                    {message.content && <p className="text-sm text-white">{message.content}</p>}
+                    {renderAttachment(message)}
                     <span className="text-xs text-gray-500 mt-1 block">
                       {formatTime(message.timestamp)}
                     </span>
@@ -280,32 +312,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                         {message.content}
                       </p>
                     )}
-                    {message.attachment && (
-                      <a
-                        href={message.attachment.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={message.attachment.name}
-                        className="block mt-1"
-                      >
-                        {message.attachment.type?.startsWith('image/') ? (
-                          <img
-                            src={message.attachment.url}
-                            alt={message.attachment.name}
-                            className="max-w-full max-h-48 rounded-md border border-white/10"
-                          />
-                        ) : (
-                          <div className="flex items-center gap-2 p-2 rounded-md bg-black/20 hover:bg-black/30 transition-colors">
-                            <FileText className="h-5 w-5 shrink-0 text-blue-200" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-white truncate">{message.attachment.name}</p>
-                              <p className="text-[10px] text-gray-300">{formatSize(message.attachment.size)}</p>
-                            </div>
-                            <Download className="h-4 w-4 shrink-0 text-gray-300" />
-                          </div>
-                        )}
-                      </a>
-                    )}
+                    {renderAttachment(message)}
                     <span className={`text-xs ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'} mt-1 block`}>
                       {formatTime(message.timestamp)}
                     </span>

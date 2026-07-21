@@ -276,13 +276,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [options.viewerOnlyMode, options.isHost, user?.id, options.channelId]);
 
-  // Auto-disable media when speaker permission is removed
+  // Auto-disable media when speaker permission is removed (moderators are exempt —
+  // a co-host keeps publishing until actually demoted). isModeratorRef is read in
+  // the body rather than the deps: it's declared further down, so listing it here
+  // would hit the temporal dead zone during render.
   useEffect(() => {
-    if (options.viewerOnlyMode && !options.isHost && !hasSpeakerPermission) {
+    if (options.viewerOnlyMode && !isModeratorRef.current && !hasSpeakerPermission) {
       // If we lost speaker permission, disable media
       if (isMicOn || isCameraOn) {
         console.log('[Daily] Speaker permission removed, disabling media');
-        
+
         (async () => {
           if (isMicOn) {
             await toggleMic();
@@ -293,7 +296,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         })();
       }
     }
-  }, [hasSpeakerPermission, options.viewerOnlyMode, options.isHost, isMicOn, isCameraOn]);
+  }, [hasSpeakerPermission, options.viewerOnlyMode, isMicOn, isCameraOn]);
 
   // Convert Daily participant to our format
   const convertParticipant = useCallback((participant: DailyParticipant): DailyParticipantInfo => {
@@ -415,6 +418,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const isModerator = options.isHost || localRole === 'host' || localRole === 'co-host';
   const isModeratorRef = useRef(isModerator);
   isModeratorRef.current = isModerator;
+  // A live co-host (or the host) is a full publisher, even in a viewer-only webinar
+  // where attendees join with canPublish:false. Promotion widens their publish grant
+  // server-side (set-role), so treat them as speakers on the client too. This is an
+  // *effective* override — the raw hasSpeakerPermission state is left alone, so a
+  // later demotion cleanly reverts to whatever real speaker permission they hold.
+  const effectiveSpeakerPermission = hasSpeakerPermission || isModerator;
 
   // Assign role to participant
   const assignRole = useCallback(async (participantId: string, role: ParticipantRole) => {
@@ -1742,8 +1751,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Toggle microphone
   const toggleMic = useCallback(async () => {
-    // Check viewer-only mode permission
-    if (options.viewerOnlyMode && !options.isHost && !hasSpeakerPermission) {
+    // Check viewer-only mode permission (moderators — host & live co-hosts — bypass).
+    if (options.viewerOnlyMode && !isModeratorRef.current && !hasSpeakerPermission) {
       console.log('[Daily] toggleMic blocked: No speaker permission in viewer-only mode');
       toast({
         title: 'Permission Required',
@@ -1782,8 +1791,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Toggle camera
   const toggleCamera = useCallback(async () => {
-    // Check viewer-only mode permission
-    if (options.viewerOnlyMode && !options.isHost && !hasSpeakerPermission) {
+    // Check viewer-only mode permission (moderators — host & live co-hosts — bypass).
+    if (options.viewerOnlyMode && !isModeratorRef.current && !hasSpeakerPermission) {
       console.log('[Daily] toggleCamera blocked: No speaker permission in viewer-only mode');
       toast({
         title: 'Permission Required',
@@ -2322,7 +2331,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     handRaised,
     raisedHands,
     audioInputState,
-    hasSpeakerPermission,
+    hasSpeakerPermission: effectiveSpeakerPermission,
     toggleMic,
     toggleCamera,
     videoBackground,
