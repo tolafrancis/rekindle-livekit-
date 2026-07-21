@@ -340,6 +340,14 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       })
       .on(RoomEvent.TrackSubscribed, (track, _pub, p) => this.callbacks.onTrackStarted?.({ track, participant: p }))
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => this.callbacks.onTrackStopped?.({ track, participant: p }))
+      // A remote track being PUBLISHED / UNPUBLISHED (e.g. a screen share starting
+      // or STOPPING) must refresh that participant so tiles recompute. Without the
+      // unpublished case, a viewer's screen-share stage stayed frozen after the host
+      // stopped sharing until some other event forced a re-render (a manual toggle).
+      .on(RoomEvent.TrackPublished, (_pub, p: Participant) =>
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
+      .on(RoomEvent.TrackUnpublished, (_pub, p: Participant) =>
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
       .on(RoomEvent.LocalTrackPublished, () => {
         this.syncLocalMediaState();
         // Refresh the local participant so the video TILES re-attach the new track.
