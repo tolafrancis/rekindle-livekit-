@@ -644,7 +644,6 @@ const ParticipantVideo: React.FC<{
 }> = ({ participant, isLarge = false, onParticipantJoin, onParticipantLeave }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
   const [hasJoined, setHasJoined] = useState(false);
   const [videoAttached, setVideoAttached] = useState(false);
 
@@ -713,31 +712,9 @@ const ParticipantVideo: React.FC<{
     };
   }, [participant.videoTrack, participant.hasVideo, participant.userName]);
 
-  // Attach audio track for remote participants
-  useEffect(() => {
-    if (!audioRef.current || participant.isLocal) return;
-    
-    const track = participant.audioTrack;
-    
-    if (track && track.readyState === 'live') {
-      console.log('[ParticipantVideo] Attaching audio track for:', participant.userName);
-      try {
-        const stream = new MediaStream([track]);
-        audioRef.current.srcObject = stream;
-        audioRef.current.play().catch((e) => {
-          console.warn('[ParticipantVideo] Audio play failed:', e.message);
-          // Try to play on user interaction
-          const playOnInteraction = () => {
-            audioRef.current?.play().catch(console.warn);
-            document.removeEventListener('click', playOnInteraction);
-          };
-          document.addEventListener('click', playOnInteraction);
-        });
-      } catch (e) {
-        console.error('[ParticipantVideo] Error attaching audio:', e);
-      }
-    }
-  }, [participant.audioTrack, participant.isLocal, participant.userName]);
+  // NOTE: audio is intentionally NOT played here. It's handled by the persistent
+  // RemoteAudioLayer so it survives layout changes (screen share / pin / reflow)
+  // that unmount these tiles. Playing it here too would double up.
 
   // Track join/leave
   useEffect(() => {
@@ -757,16 +734,6 @@ const ParticipantVideo: React.FC<{
 
   return (
     <div className={`relative bg-gray-900 rounded-lg overflow-hidden ${isLarge ? 'aspect-video' : 'aspect-square'}`}>
-      {/* Audio element for remote participants - hidden but functional */}
-      {!participant.isLocal && (
-        <audio
-          ref={audioRef}
-          autoPlay
-          playsInline
-          className="hidden"
-        />
-      )}
-      
       {/* Always render video element, just hide if no video */}
       <video
         ref={videoRef}
@@ -858,6 +825,33 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
     </div>
   );
 };
+
+// One hidden <audio> for a remote participant, kept alive regardless of the
+// visual layout. Audio MUST NOT live inside the video tiles: any layout that
+// unmounts them (a screen share taking the stage, pin/unpin, grid reflow) would
+// otherwise silently cut that participant's audio.
+const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
+  const ref = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    const track = participant.audioTrack;
+    const el = ref.current;
+    if (!el || !track || track.readyState !== 'live') return;
+    el.srcObject = new MediaStream([track]);
+    el.play().catch(() => {
+      // Autoplay can be blocked until a user gesture — resume on the next click.
+      const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
+      document.addEventListener('click', resume);
+    });
+    return () => { if (el) el.srcObject = null; };
+  }, [participant.audioTrack]);
+  return <audio ref={ref} autoPlay playsInline className="hidden" />;
+};
+
+// Always-mounted audio for every remote participant, independent of the grid /
+// pinned / screen-share view.
+const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ participants }) => (
+  <>{participants.filter((p) => !p.isLocal && p.audioTrack).map((p) => <RemoteAudio key={p.sessionId} participant={p} />)}</>
+);
 
 
 export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
@@ -1425,12 +1419,34 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       ref={containerRef}
       className={`flex h-full min-h-0 ${showParticipantList ? 'flex-row' : 'flex-col'} bg-gray-900 rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
+      {/* Persistent remote audio — mounted once, independent of the video layout
+          below, so audio never cuts when a screen share takes the stage etc. */}
+      <RemoteAudioLayer participants={remoteParticipants} />
+
       {/* Main video area */}
       <div className={`flex-1 min-h-0 flex flex-col`}>
         <div className="relative w-full flex-1 bg-gray-800">
-        {/* A live screen share takes over the main stage (local or remote). */}
+        {/* A live screen share takes over the main stage (local or remote), with a
+            camera filmstrip beside it so viewers still see the presenter. */}
         {screenSharer ? (
-          <ScreenShareView participant={screenSharer} />
+          <div className="flex flex-col lg:flex-row h-full gap-2 p-2">
+            <div className="flex-1 min-h-0">
+              <ScreenShareView participant={screenSharer} />
+            </div>
+            {remoteParticipants.length > 0 && (
+              <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0 overflow-x-auto lg:overflow-y-auto overflow-y-hidden lg:overflow-x-hidden">
+                {remoteParticipants.map((p: any) => (
+                  <div key={p.sessionId} className="w-28 lg:w-full shrink-0">
+                    <ParticipantVideo
+                      participant={p}
+                      onParticipantJoin={trackParticipantJoin}
+                      onParticipantLeave={trackParticipantLeave}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : remoteParticipants.length === 0 ? (
           <div className="flex items-center justify-center h-full p-2 sm:p-4">
             <div className="relative w-full max-w-3xl">
