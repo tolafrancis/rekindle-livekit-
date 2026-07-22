@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -196,7 +197,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
   
-  const [activeTab, setActiveTab] = useState('home');
+  // Main ministry tab. Back steps through tabs; the hook's state-merge composes
+  // with nested children (MLiveChannel, GiftAid, etc.) and the parent hub.
+  const [activeTab, setActiveTab] = useViewHistory<string>('ministry-space-tab', 'home');
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
