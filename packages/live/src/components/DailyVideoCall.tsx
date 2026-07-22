@@ -42,6 +42,9 @@ interface DailyVideoCallProps {
   enableRecording?: boolean;
   /** When set (webinar mode, host only), push an RTMP stream to this URL so attendees can watch via HLS */
   liveStreamRtmpUrl?: string;
+  /** Fired when a side panel (chat or host controls) opens/closes, so the parent
+   *  overlay can hide its own chrome (Copy Link / End) that would collide with it. */
+  onSidePanelToggle?: (open: boolean) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -642,9 +645,15 @@ const WaitingRoom: React.FC<{
 const ParticipantVideo: React.FC<{
   participant: DailyParticipantInfo;
   isLarge?: boolean;
+  /** Fill the parent box (w/h 100%) instead of using a fixed aspect ratio.
+   *  Used by the mini-player, whose parent already sets the frame size — without
+   *  this the aspect-ratio box collapses to zero width and the video goes blank. */
+  fill?: boolean;
+  /** Hide the name/status overlay (the mini-player draws its own title bar). */
+  hideOverlay?: boolean;
   onParticipantJoin?: (participantId: string, userName: string) => void;
   onParticipantLeave?: (participantId: string) => void;
-}> = ({ participant, isLarge = false, onParticipantJoin, onParticipantLeave }) => {
+}> = ({ participant, isLarge = false, fill = false, hideOverlay = false, onParticipantJoin, onParticipantLeave }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasJoined, setHasJoined] = useState(false);
@@ -738,7 +747,7 @@ const ParticipantVideo: React.FC<{
   const showVideo = videoAttached || participant.hasVideo;
 
   return (
-    <div className={`relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center ${isLarge ? 'aspect-video' : 'aspect-square'}`}>
+    <div className={`relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center ${fill ? 'w-full h-full' : isLarge ? 'aspect-video' : 'aspect-square'}`}>
       {/* Always render video element, just hide if no video */}
       <video
         ref={videoRef}
@@ -760,6 +769,7 @@ const ParticipantVideo: React.FC<{
         </div>
       )}
       
+      {!hideOverlay && (
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
         <div className="flex items-center justify-between">
           <span className="text-white text-sm font-medium truncate">
@@ -778,8 +788,9 @@ const ParticipantVideo: React.FC<{
           </div>
         </div>
       </div>
-      
-      {participant.isOwner && (
+      )}
+
+      {!hideOverlay && participant.isOwner && (
         <Badge className="absolute top-2 left-2 bg-amber-500 text-xs">{t('dailyVideoCall', 'host', 'Host')}</Badge>
       )}
     </div>
@@ -882,6 +893,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRemoveParticipant,
   enableRecording = false,
   liveStreamRtmpUrl,
+  onSidePanelToggle,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // iOS Safari has no Fullscreen API for arbitrary elements (only <video>), so
@@ -906,7 +918,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // Enhanced control panels
   const [showHostControls, setShowHostControls] = useState(false);
   const [showChat, setShowChat] = useState(false);
-  
+
+  // Tell the parent overlay whenever a side panel is open so it can hide its own
+  // top-right chrome (Copy Link / End for All), which would otherwise sit under it.
+  useEffect(() => {
+    onSidePanelToggle?.(showChat || showHostControls);
+  }, [showChat, showHostControls, onSidePanelToggle]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
@@ -1508,9 +1526,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
         <RemoteAudioLayer participants={remoteParticipants} />
         {miniFeature ? (
+          // fill: the mini-player parent already fixes the frame size; without it
+          // the aspect-ratio box collapses to zero width and the video goes blank.
           <ParticipantVideo
             participant={miniFeature}
-            isLarge
+            fill
+            hideOverlay
             onParticipantJoin={trackParticipantJoin}
             onParticipantLeave={trackParticipantLeave}
           />
@@ -1942,9 +1963,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
-            {/* Chat button */}
+            {/* Chat button — opening chat closes Host Controls so only one side
+                panel shows at a time (they otherwise overlap on the right edge). */}
             <button
-              onClick={() => setShowChat(!showChat)}
+              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); }}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
@@ -1969,7 +1991,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             {/* Host Controls button (host or co-host) */}
             {isModerator && (
               <button
-                onClick={() => setShowHostControls(!showHostControls)}
+                onClick={() => { setShowHostControls((v) => !v); setShowChat(false); }}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`

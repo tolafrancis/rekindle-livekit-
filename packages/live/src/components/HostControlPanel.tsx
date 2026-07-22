@@ -146,7 +146,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
 
   return (
     <>
-      <Card className="w-full h-2/5 sm:w-96 sm:h-full shrink-0 flex flex-col bg-gray-800 border-t sm:border-t-0 sm:border-l border-gray-700">
+      <Card className="w-full h-1/2 sm:w-96 sm:h-full shrink-0 flex flex-col min-h-0 bg-gray-800 border-t sm:border-t-0 sm:border-l border-gray-700">
         <CardHeader className="border-b border-gray-700 flex-shrink-0 pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-white text-lg flex items-center gap-2">
@@ -164,7 +164,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
           </div>
         </CardHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
           <TabsList className="mx-4 mt-3 grid grid-cols-3 bg-gray-700/50">
             <TabsTrigger value="participants" className="text-xs">
               Participants
@@ -182,7 +182,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
           </TabsList>
 
           {/* Participants Tab */}
-          <TabsContent value="participants" className="flex-1 flex flex-col px-4 pb-4">
+          <TabsContent value="participants" className="flex-1 flex flex-col min-h-0 px-4 pb-4">
             {isHost && (
               <div className="space-y-2 mb-4">
                 <h3 className="text-sm font-semibold text-gray-300">Quick Actions</h3>
@@ -217,7 +217,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
               </h3>
             </div>
 
-            <ScrollArea className="flex-1 -mx-4 px-4">
+            <ScrollArea className="flex-1 min-h-0 -mx-4 px-4">
               {activeParticipants.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <p className="text-gray-400 text-sm text-center">
@@ -403,7 +403,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
           </TabsContent>
 
           {/* Waiting Room Tab */}
-          <TabsContent value="waiting" className="flex-1 flex flex-col px-4 pb-4">
+          <TabsContent value="waiting" className="flex-1 flex flex-col min-h-0 px-4 pb-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-gray-300">
                 Waiting Room ({waitingRoomParticipants.length})
@@ -421,7 +421,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
               )}
             </div>
 
-            <ScrollArea className="flex-1 -mx-4 px-4">
+            <ScrollArea className="flex-1 min-h-0 -mx-4 px-4">
               {waitingRoomParticipants.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <p className="text-gray-400 text-sm text-center">
@@ -475,8 +475,8 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
           </TabsContent>
 
           {/* Settings Tab */}
-          <TabsContent value="settings" className="flex-1 flex flex-col px-4 pb-4">
-            <ScrollArea className="flex-1 -mx-4 px-4">
+          <TabsContent value="settings" className="flex-1 flex flex-col min-h-0 px-4 pb-4">
+            <ScrollArea className="flex-1 min-h-0 -mx-4 px-4">
               <div className="space-y-4">
                 {/* Meeting Security */}
                 <div className="space-y-3">

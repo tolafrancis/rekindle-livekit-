@@ -57,7 +57,7 @@ import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeeting
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
-import { MeetingReactionsLayer, ReactionBar } from '@rekindle/live/components/MeetingReactions';
+import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@rekindle/live/components/MeetingReactions';
 import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner';
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
@@ -156,6 +156,9 @@ const EnhancedVideoCallWrapper = ({
   const [rtmpUrl, setRtmpUrl] = useState<string | undefined>(undefined);
   // Minimized mini-player: hide reaction bar + overlays for a clean small frame.
   const isPiP = useActiveCallOptional()?.minimized ?? false;
+  // True while a DailyVideoCall side panel (chat / host controls) is open — hides
+  // the Copy Link / End chrome so it doesn't collide with the panel.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -486,7 +489,7 @@ const EnhancedVideoCallWrapper = ({
   }
 
   return (
-    <div className="min-h-screen h-full flex flex-col lg:flex-row">
+    <div className="min-h-[100dvh] h-full flex flex-col lg:flex-row">
       <div className="relative flex-1 min-h-0">
       {/* 
         DailyVideoCall Component - SOLE CONTROLLER OF ALL MEDIA
@@ -512,22 +515,23 @@ const EnhancedVideoCallWrapper = ({
         onRemoveParticipant={handleRemoveParticipant}
         enableRecording={!isWebinar && isHost && meeting.enable_recording}
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
+        onSidePanelToggle={setPanelOpen}
       />
 
-      {/* Floating reactions over the call + a compact bar so everyone can react —
-          available in every meeting, not just webinars. Hidden in the mini-player. */}
+      {/* Floating reactions over the call + a single reaction button that opens a
+          popover just above the control bar — available in every meeting, not just
+          webinars. Hidden in the mini-player. */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
-      {/* Reaction bar sits BELOW the call's own top bar (LIVE/timer) on mobile so
-          the two don't overlap; centered under the header on larger screens. */}
       {!isPiP && (
-        <div className="absolute top-14 sm:top-3 left-1/2 -translate-x-1/2 z-50">
-          <ReactionBar onReact={sendReaction} compact />
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50">
+          <ReactionButton onReact={sendReaction} />
         </div>
       )}
 
-      {/* Additional Features Overlay - UI only, no media control. Hidden in the mini-player. */}
-      {!isPiP && (
+      {/* Additional Features Overlay - UI only, no media control. Hidden in the
+          mini-player, and while a side panel (chat / host controls) is open. */}
+      {!isPiP && !panelOpen && (
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         {/* Copy Meeting Link */}
         <Button

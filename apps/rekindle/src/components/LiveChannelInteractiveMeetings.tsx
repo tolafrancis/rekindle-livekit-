@@ -58,7 +58,7 @@ import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
-import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
+import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@/components/MeetingReactions';
 import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 
@@ -177,6 +177,9 @@ const EnhancedVideoCallWrapper = ({
   // (the mini-player is ~352px wide, above the 300px threshold, so it never fired).
   const isPiP = useActiveCallOptional()?.minimized ?? false;
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // True while a DailyVideoCall side panel (chat / host controls) is open — used to
+  // hide the Copy Link / End chrome so it doesn't collide with the panel.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Draggable host "stage" panel position.
   const [stagePanelPos, setStagePanelPos] = useState({ x: 0, y: 0 });
@@ -410,7 +413,7 @@ const EnhancedVideoCallWrapper = ({
 
   // ── Host / invited speakers (webinar), and everyone (meeting mode) ──
   return (
-    <div ref={wrapperRef} className="relative h-screen">
+    <div ref={wrapperRef} className="relative h-[100dvh]">
       <DailyVideoCall
         roomName={meeting.room_name}
         userName={userName}
@@ -427,22 +430,24 @@ const EnhancedVideoCallWrapper = ({
         onRemoveParticipant={handleRemoveParticipant}
         enableRecording={!isWebinar && isHost && meeting.enable_recording}
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
+        onSidePanelToggle={setPanelOpen}
       />
 
-      {/* Floating reactions + a compact reaction bar — available in every meeting,
-          not just webinars (transport is Supabase realtime broadcast).
-          HIDDEN in PiP mode to prevent overlap with video frame. */}
+      {/* Floating reactions + a single reaction button that opens a popover just
+          above the control bar — available in every meeting, not just webinars
+          (transport is Supabase realtime broadcast). HIDDEN in PiP mode. */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-          <ReactionBar onReact={sendReaction} compact />
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50">
+          <ReactionButton onReact={sendReaction} />
         </div>
       )}
 
       {/* Additional Features Overlay - UI only, no media control. Hidden in the
-          mini-player (the host's maximize/leave chrome is drawn by ActiveCallHost). */}
-      {!isPiP && (
+          mini-player, and while a side panel (chat / host controls) is open so the
+          Copy Link / End buttons don't sit on top of it. */}
+      {!isPiP && !panelOpen && (
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         <Button
           onClick={async () => {
