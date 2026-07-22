@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +44,7 @@ export const MyBookings: React.FC = () => {
   const { t } = useLanguage();
   const [bookings, setBookings] = useState<CounsellingSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('upcoming');
+  const [activeTab, setActiveTab] = useViewHistory<string>('my-bookings', 'upcoming');
   const [joiningSession, setJoiningSession] = useState<string | null>(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [selectedSession, setSelectedSession] = useState<CounsellingSession | null>(null);

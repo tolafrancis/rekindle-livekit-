@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -102,7 +103,7 @@ export const CommunityRevelations: React.FC = () => {
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
 
-  const [activeTab, setActiveTab] = useState<'revelations' | 'testimonies' | 'qa'>('revelations');
+  const [activeTab, setActiveTab] = useViewHistory<'revelations' | 'testimonies' | 'qa'>('community-revelations', 'revelations');
   const { activePrompt, show: showUpgradePrompt, dismiss: dismissUpgradePrompt } = useUpgradePrompt();
 
   // ── Q&A state ──
