@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -128,7 +129,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   const [loading, setLoading]       = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [verifying, setVerifying]   = useState(false);
-  const [activeTab, setActiveTab]   = useState<'connect' | 'templates' | 'settings'>('connect');
+  const [activeTab, setActiveTab]   = useViewHistory<'connect' | 'templates' | 'settings'>('ministry-whatsapp-connect', 'connect');
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [selectedPlan, setSelectedPlan]   = useState<typeof WHATSAPP_PLANS[0] | null>(null);
   const [checkingOut, setCheckingOut]     = useState(false);

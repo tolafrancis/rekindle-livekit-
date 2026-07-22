@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -179,9 +180,9 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
   const [broadcasts, setBroadcasts]     = useState<BroadcastRecord[]>([]);
   const [subscribers, setSubscribers]   = useState<Subscriber[]>([]);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [activeSection, setActiveSection] = useState<
+  const [activeSection, setActiveSection] = useViewHistory<
     'overview' | 'history' | 'subscribers' | 'wallet'
-  >('overview');
+  >('ministry-whatsapp-usage', 'overview');
 
   const plan = wabaConfig?.whatsapp_plan ?? 'basic';
 
