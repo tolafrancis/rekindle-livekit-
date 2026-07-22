@@ -2,6 +2,7 @@
 // Admin dashboard page for bulk TTS generation
 
 import React, { useState } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BulkTTSUploader } from '@/components/BulkTTSUploader';
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export const AdminBulkTTSPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('upload');
+  const [activeTab, setActiveTab] = useViewHistory<string>("admin-bulktts", 'upload');
   
   return (
     <div className="container mx-auto p-6 space-y-6">

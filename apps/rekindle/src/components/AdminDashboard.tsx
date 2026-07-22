@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { CommunityRevelationsManager } from './CommunityRevelationsManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -259,7 +260,7 @@ const MobileMenu: React.FC<{
 // Main Admin Dashboard Component
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false }) => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useViewHistory<string>("admin-dashboard", 'dashboard');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
