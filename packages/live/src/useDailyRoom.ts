@@ -200,6 +200,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   
   // Participants
   const [participants, setParticipants] = useState<DailyParticipantInfo[]>([]);
+  // Always-current mirror so effects can read the roster without listing
+  // `participants` as a dependency (it changes every 2s via the state sync, which
+  // would otherwise tear down long-lived subscriptions like chat on every tick).
+  const participantsRef = useRef(participants);
+  participantsRef.current = participants;
   
   // Media state
   const [isMicOn, setIsMicOn] = useState(false);
@@ -1556,7 +1561,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     return () => clearInterval(interval);
   }, [isConnected, syncParticipantStates]);
 
-  // Real-time chat subscription and loading
+  // Real-time chat subscription and loading. Keyed on the LOCAL participant's
+  // session id (stable for the session), NOT the whole `participants` array — so a
+  // new participant joining (or the 2s state sync) no longer tears the channel down
+  // and reloads, which was dropping the chat on the host's side.
+  const chatLocalSessionId = participants.find(p => p.isLocal)?.sessionId;
   useEffect(() => {
     // Guests subscribe too — no `user` gate — so they SEE the conversation, not
     // just send into it. chat_messages read RLS (read_all_chat) is USING(true).
@@ -1570,7 +1579,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
 
     const sessionStartTime = sessionStartTimeRef.current.toISOString();
-    const localParticipant = participants.find(p => p.isLocal);
+    const localParticipant = participantsRef.current.find(p => p.isLocal);
     if (!localParticipant) {
       console.log('[Chat] No local participant, delaying subscription');
       return;
@@ -1709,7 +1718,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       console.log('[Chat] Cleaning up real-time subscription');
       supabase.removeChannel(channel);
     };
-  }, [isConnected, options.meetingId, participants, user]);
+  }, [isConnected, options.meetingId, chatLocalSessionId, user]);
 
   // enableSpeakerMedia — called by LiveChannelViewer after an invitation is accepted.
   // Bypasses the hasSpeakerPermission gate (the DB row was just written, Realtime fires async).

@@ -37,6 +37,30 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const CHAT_TEXT_LIMIT = 280; // chars shown before a message folds behind "See more"
+
+/** Message text that folds long content behind a "See more" toggle so one long
+ *  message can't blow out the chat panel (and the meeting frame) height. */
+const ChatMessageText: React.FC<{ text: string; className?: string; linkClass?: string }> = ({ text, className, linkClass }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > CHAT_TEXT_LIMIT;
+  const shown = expanded || !isLong ? text : `${text.slice(0, CHAT_TEXT_LIMIT).trimEnd()}… `;
+  return (
+    <p className={`break-words whitespace-pre-wrap ${className || ''}`}>
+      {shown}
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className={`ml-1 text-xs font-medium underline ${linkClass || 'text-blue-400'}`}
+        >
+          {expanded ? 'See less' : 'See more'}
+        </button>
+      )}
+    </p>
+  );
+};
+
 interface RoomChatSidebarProps {
   messages: ChatMessageType[];
   onSendMessage: (content: string, isPrivate?: boolean, recipientId?: string, attachment?: ChatAttachment | null) => Promise<void>;
@@ -279,7 +303,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                       <Crown className="h-4 w-4 text-yellow-500" />
                       <span className="text-xs font-medium text-yellow-500">Host Announcement</span>
                     </div>
-                    {message.content && <p className="text-sm text-white">{message.content}</p>}
+                    {message.content && <ChatMessageText text={message.content} className="text-sm text-white" linkClass="text-blue-300" />}
                     {renderAttachment(message)}
                     <span className="text-xs text-gray-500 mt-1 block">
                       {formatTime(message.timestamp)}
@@ -309,9 +333,11 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                       )}
                     </div>
                     {message.content && (
-                      <p className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-100'} break-words`}>
-                        {message.content}
-                      </p>
+                      <ChatMessageText
+                        text={message.content}
+                        className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-100'}`}
+                        linkClass={isOwnMessage ? 'text-blue-200' : 'text-blue-400'}
+                      />
                     )}
                     {renderAttachment(message)}
                     <span className={`text-xs ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'} mt-1 block`}>
