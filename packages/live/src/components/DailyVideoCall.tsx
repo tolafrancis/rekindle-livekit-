@@ -738,14 +738,14 @@ const ParticipantVideo: React.FC<{
   const showVideo = videoAttached || participant.hasVideo;
 
   return (
-    <div className={`relative bg-gray-900 rounded-lg overflow-hidden ${isLarge ? 'aspect-video' : 'aspect-square'}`}>
+    <div className={`relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center ${isLarge ? 'aspect-video' : 'aspect-square'}`}>
       {/* Always render video element, just hide if no video */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={participant.isLocal}
-        className={`w-full h-full object-cover ${showVideo ? '' : 'hidden'}`}
+        className={`w-full h-full object-contain ${showVideo ? '' : 'hidden'}`}
       />
       
       {/* Avatar fallback when no video */}
@@ -1499,26 +1499,48 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     );
   };
 
+  // Minimized mini-player: a clean, centered, contained video ONLY — no top bar,
+  // control bar, reactions or filmstrip (those belong to full-screen; the host's
+  // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
+  if (activeCallCtx?.minimized) {
+    const miniFeature = screenSharer || featuredParticipant || remoteParticipants[0] || localParticipant;
+    return (
+      <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
+        <RemoteAudioLayer participants={remoteParticipants} />
+        {miniFeature ? (
+          <ParticipantVideo
+            participant={miniFeature}
+            isLarge
+            onParticipantJoin={trackParticipantJoin}
+            onParticipantLeave={trackParticipantLeave}
+          />
+        ) : (
+          <div className="text-xs text-white/50">{t('dailyVideoCall', 'connecting', 'Connecting…')}</div>
+        )}
+      </div>
+    );
+  }
+
   // Active call screen - all media controls come from useDailyRoom
   return (
-    <div 
+    <div
       ref={containerRef}
-      className={`flex h-full min-h-0 flex-col sm:flex-row bg-gray-900 rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
+      className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-gray-900 sm:flex-row ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
       <RemoteAudioLayer participants={remoteParticipants} />
 
       {/* Main video area */}
-      <div className={`flex-1 min-h-0 flex flex-col`}>
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* min-h-0 is required: without it this flex-1 child can't shrink below its
             content, so a screen share (h-full video) grew the panel to the shared
             screen's native resolution instead of fitting within the stage. */}
-        <div className="relative w-full flex-1 min-h-0 bg-gray-800">
+        <div className="relative w-full flex-1 min-h-0 overflow-hidden bg-gray-800">
         {/* A live screen share takes over the main stage (local or remote), with a
             camera filmstrip beside it so viewers still see the presenter. */}
         {screenSharer ? (
-          <div className="flex flex-col lg:flex-row h-full gap-2 p-2">
+          <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
             <div className="flex-1 min-h-0">
               <ScreenShareView participant={screenSharer} />
             </div>
@@ -1619,7 +1641,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             )}
           </div>
         ) : (
-          <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full ${
+          <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
             remoteParticipants.length === 1 ? 'grid-cols-1' :
             remoteParticipants.length <= 4 ? 'grid-cols-2' :
             'grid-cols-3'
@@ -1643,14 +1665,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             so its stream stays attached. Unmounting it (the old behaviour) left it
             blank after removing your own spotlight until a re-render re-attached. */}
         {localParticipant && remoteParticipants.length > 0 && (
-          <div className={`absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-28 sm:w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700 ${featuredIsLocal ? 'hidden' : ''}`}>
+          <div className={`absolute bottom-3 right-3 z-20 aspect-video w-24 max-w-[40vw] overflow-hidden rounded-lg border-2 border-gray-700 bg-gray-800 shadow-lg sm:bottom-4 sm:right-4 sm:w-36 md:w-48 flex items-center justify-center ${featuredIsLocal ? 'hidden' : ''}`}>
             {/* Always render video element so ref is available for track attachment */}
             <video
               ref={localVideoRef}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`}
+              className={`w-full h-full object-contain ${isCameraOn ? '' : 'hidden'}`}
               style={{ transform: 'scaleX(-1)' }} // Mirror the local video
             />
             {/* Spotlight yourself / see that you're spotlighted (moderators). */}
@@ -1698,8 +1720,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         {/* Top bar. Extra right padding reserves room for the wrapper's top-right
             Copy Link / End for All buttons so the meeting's own right controls
             (participant count · mini-player · fullscreen) don't sit under them. */}
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-28 sm:px-4 sm:py-4 sm:pr-72">
-          <div className="flex items-center justify-between gap-2">
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-28 sm:px-4 sm:py-4 sm:pr-72">
+          <div className="pointer-events-auto flex items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse" />

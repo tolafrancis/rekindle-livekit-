@@ -562,6 +562,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         }
         if (data?.error) throw new Error(data.error === 'locked' ? 'This meeting is locked' : data.error);
         if (!data?.url || !data?.token) throw new Error('Invalid response from livekit-token');
+        // Debug: log token info for guest name validation
+        if (!options.isHost) {
+          console.log('[Daily] Guest token generated for:', options.userName);
+        }
         return { url: data.url, token: data.token };
       }
 
@@ -2199,7 +2203,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       setWaitingRoomParticipants((data ?? []).map((r: any) => ({
         session_id: r.user_id,
         user_id: r.user_id,
-        user_name: r.name ?? 'Guest',
+        user_name: (r.name && r.name.trim()) ? r.name : 'Guest',
         joinedWaitingRoomAt: new Date(r.requested_at),
       })));
     };

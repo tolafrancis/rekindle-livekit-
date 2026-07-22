@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
-import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Badge } from '@rekindle/ui/badge';
 import { toast } from '@rekindle/ui/use-toast';
 import { supabase } from '@rekindle/supabase';
@@ -234,7 +233,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
     ) : null;
 
   return (
-    <div className="w-full h-2/5 sm:w-80 sm:h-full shrink-0 bg-gray-900 border-t sm:border-t-0 sm:border-l border-gray-800 flex flex-col z-40">
+    <div className="z-40 flex h-[40vh] min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-gray-800 bg-gray-900 sm:h-full sm:w-80 sm:max-w-[24rem] sm:border-t-0 sm:border-l">
       {/* On mobile this docks BELOW the video feed (parent is flex-col); on desktop
           it's a right-hand sidebar (parent is flex-row). */}
       {/* Header */}
@@ -274,7 +273,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
 
       {/* Messages. min-h-0 is required so a long message SCROLLS inside the panel
           instead of growing it (and the whole meeting frame) taller. */}
-      <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="space-y-3">
           {messages.length === 0 ? (
             <div className="text-center text-gray-500 text-sm py-8">
@@ -357,7 +356,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
             })
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Input */}
       <CardContent className="border-t border-gray-800 p-4 flex-shrink-0">
@@ -428,7 +427,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                 : 'Type a message...'
             }
             disabled={sending || uploading || chatMode === 'disabled'}
-            className="flex-1 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+            className="min-w-0 flex-1 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
           />
           <Button
             onClick={handleSendMessage}

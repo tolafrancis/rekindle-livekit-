@@ -46,7 +46,7 @@ import {
 } from '@rekindle/features/meetingTime';
 import { toast } from 'sonner';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
-import { useActiveCall } from '@rekindle/live/ActiveCallContext';
+import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
 import SavedMeetingInsights from '@rekindle/live/components/SavedMeetingInsights';
 
@@ -154,6 +154,8 @@ const EnhancedVideoCallWrapper = ({
   const isWebinar = meeting.mode === 'webinar';
   const hlsUrl = meeting.hls_playback_url;
   const [rtmpUrl, setRtmpUrl] = useState<string | undefined>(undefined);
+  // Minimized mini-player: hide reaction bar + overlays for a clean small frame.
+  const isPiP = useActiveCallOptional()?.minimized ?? false;
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -513,16 +515,19 @@ const EnhancedVideoCallWrapper = ({
       />
 
       {/* Floating reactions over the call + a compact bar so everyone can react —
-          available in every meeting, not just webinars. */}
-      <MeetingReactionsLayer reactions={reactions} />
-      <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
+          available in every meeting, not just webinars. Hidden in the mini-player. */}
+      {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
+      {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {/* Reaction bar sits BELOW the call's own top bar (LIVE/timer) on mobile so
           the two don't overlap; centered under the header on larger screens. */}
-      <div className="absolute top-14 sm:top-3 left-1/2 -translate-x-1/2 z-50">
-        <ReactionBar onReact={sendReaction} compact />
-      </div>
+      {!isPiP && (
+        <div className="absolute top-14 sm:top-3 left-1/2 -translate-x-1/2 z-50">
+          <ReactionBar onReact={sendReaction} compact />
+        </div>
+      )}
 
-      {/* Additional Features Overlay - UI only, no media control */}
+      {/* Additional Features Overlay - UI only, no media control. Hidden in the mini-player. */}
+      {!isPiP && (
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         {/* Copy Meeting Link */}
         <Button
@@ -552,9 +557,10 @@ const EnhancedVideoCallWrapper = ({
           </Button>
         )}
       </div>
+      )}
 
       {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
-      {isHost && (
+      {isHost && !isPiP && (
         <div className="absolute top-20 left-4 z-50 max-w-xs">
           {showAiPanel ? (
             <div className="space-y-2">
@@ -593,7 +599,7 @@ const EnhancedVideoCallWrapper = ({
       )}
 
       {/* Host: invite raised hands up to the stage, manage presenters (webinar) */}
-      {isHost && isWebinar && (
+      {isHost && isWebinar && !isPiP && (
         <div
           className="absolute bottom-36 left-4 z-50 w-64 max-w-[80vw] bg-gray-900/90 backdrop-blur-sm rounded-lg text-white max-h-[50vh] flex flex-col overflow-hidden"
           style={{

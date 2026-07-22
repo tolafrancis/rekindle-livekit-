@@ -43,7 +43,7 @@ import {
   REMINDER_OFFSET_OPTIONS,
 } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
-import { useActiveCall } from '@rekindle/live/ActiveCallContext';
+import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import { toast } from 'sonner';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
@@ -171,6 +171,12 @@ const EnhancedVideoCallWrapper = ({
   const [notesActive, setNotesActive] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
+
+  // Minimized (mini-player) state comes straight from the ActiveCall host, so the
+  // reaction bar and other overlays hide reliably — a width heuristic was flaky
+  // (the mini-player is ~352px wide, above the 300px threshold, so it never fired).
+  const isPiP = useActiveCallOptional()?.minimized ?? false;
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Draggable host "stage" panel position.
   const [stagePanelPos, setStagePanelPos] = useState({ x: 0, y: 0 });
@@ -404,7 +410,7 @@ const EnhancedVideoCallWrapper = ({
 
   // ── Host / invited speakers (webinar), and everyone (meeting mode) ──
   return (
-    <div className="relative h-screen">
+    <div ref={wrapperRef} className="relative h-screen">
       <DailyVideoCall
         roomName={meeting.room_name}
         userName={userName}
@@ -424,14 +430,19 @@ const EnhancedVideoCallWrapper = ({
       />
 
       {/* Floating reactions + a compact reaction bar — available in every meeting,
-          not just webinars (transport is Supabase realtime broadcast). */}
-      <MeetingReactionsLayer reactions={reactions} />
-      <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-        <ReactionBar onReact={sendReaction} compact />
-      </div>
+          not just webinars (transport is Supabase realtime broadcast).
+          HIDDEN in PiP mode to prevent overlap with video frame. */}
+      {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
+      {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
+      {!isPiP && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
+          <ReactionBar onReact={sendReaction} compact />
+        </div>
+      )}
 
-      {/* Additional Features Overlay - UI only, no media control */}
+      {/* Additional Features Overlay - UI only, no media control. Hidden in the
+          mini-player (the host's maximize/leave chrome is drawn by ActiveCallHost). */}
+      {!isPiP && (
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         <Button
           onClick={async () => {
@@ -459,9 +470,10 @@ const EnhancedVideoCallWrapper = ({
           </Button>
         )}
       </div>
+      )}
 
       {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
-      {isHost && (
+      {isHost && !isPiP && (
         <div className="absolute top-20 left-4 z-50 max-w-xs">
           {showAiPanel ? (
             <div className="space-y-2">
@@ -500,7 +512,7 @@ const EnhancedVideoCallWrapper = ({
       )}
 
       {/* Host stage panel (webinar): invite raised hands / audience up, manage speakers */}
-      {isHost && isWebinar && (
+      {isHost && isWebinar && !isPiP && (
         <div
           className="absolute bottom-36 left-4 z-50 w-64 max-w-[80vw] bg-gray-900/90 backdrop-blur-sm rounded-lg text-white max-h-[50vh] flex flex-col overflow-hidden"
           style={{ transform: `translate(${stagePanelPos.x}px, ${stagePanelPos.y}px)`, touchAction: 'none' }}
