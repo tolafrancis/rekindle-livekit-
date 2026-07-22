@@ -1566,8 +1566,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
                 />
-                {/* Feature badge — spotlight (host, global) vs pin (this viewer). */}
-                <div className="absolute top-2 left-2 z-10">
+                {/* Feature badge — spotlight (host, global) vs pin (this viewer).
+                    Sits below the top status bar so it doesn't overlap it on entry. */}
+                <div className="absolute top-12 sm:top-14 left-2 z-10">
                   {featuredIsSpotlight ? (
                     <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
                       <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
@@ -1579,8 +1580,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   )}
                 </div>
                 {/* Remove control: anyone can unpin their own pin; only a moderator
-                    (host or co-host) can clear a spotlight. */}
-                <div className="absolute top-2 right-2 z-10">
+                    (host or co-host) can clear a spotlight. Below the top bar. */}
+                <div className="absolute top-12 sm:top-14 right-2 z-10">
                   {!featuredIsSpotlight ? (
                     <button
                       onClick={() => pinParticipant(null)}
@@ -1635,10 +1636,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           </div>
         )}
 
-        {/* Local video (picture-in-picture) - ALWAYS render video element, just hide when camera off */}
-
-        {localParticipant && remoteParticipants.length > 0 && !featuredIsLocal && (
-          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-28 sm:w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700">
+        {/* Local video (picture-in-picture). The <video> stays MOUNTED even while
+            the local user is the featured (spotlit) tile — we just hide the PiP —
+            so its stream stays attached. Unmounting it (the old behaviour) left it
+            blank after removing your own spotlight until a re-render re-attached. */}
+        {localParticipant && remoteParticipants.length > 0 && (
+          <div className={`absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-28 sm:w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700 ${featuredIsLocal ? 'hidden' : ''}`}>
             {/* Always render video element so ref is available for track attachment */}
             <video
               ref={localVideoRef}
@@ -1648,6 +1651,17 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`}
               style={{ transform: 'scaleX(-1)' }} // Mirror the local video
             />
+            {/* Spotlight yourself / see that you're spotlighted (moderators). */}
+            {isModerator && (
+              <button
+                onClick={() => spotlightParticipant(spotlightedParticipantId === localParticipant.sessionId ? null : localParticipant.sessionId)}
+                title={spotlightedParticipantId === localParticipant.sessionId ? t('dailyVideoCall', 'youAreSpotlighted', "You're spotlighted — tap to remove") : t('dailyVideoCall', 'spotlightYourself', 'Spotlight yourself')}
+                className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${spotlightedParticipantId === localParticipant.sessionId ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+              >
+                <Sparkles className="h-2.5 w-2.5" />
+                {spotlightedParticipantId === localParticipant.sessionId && <span className="hidden sm:inline">{t('dailyVideoCall', 'spotlightedShort', 'Spotlight')}</span>}
+              </button>
+            )}
             {/* Avatar fallback when camera is off */}
             {!isCameraOn && (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-700">
