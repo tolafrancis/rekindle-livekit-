@@ -116,7 +116,9 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   const [selectedChannel, setSelectedChannel] = useState<LiveChannel | null>(null);
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
   const [recordingsChannel, setRecordingsChannel] = useState<LiveChannel | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'broadcast' | 'watch'>('list');
+  // Full-view switch (list ↔ broadcast/watch). Back returns to the list; composes
+  // with the tab history above and the parent MinistrySpace via the state-merge.
+  const [viewMode, setViewMode] = useViewHistory<'list' | 'broadcast' | 'watch'>('mlivechannel-view', 'list');
 
   // Upload image to Supabase Storage
   const uploadImage = async (file: File, bucket: 'channel-logos' | 'channel-featured') => {
