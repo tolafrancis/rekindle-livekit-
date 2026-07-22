@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { recordDailyActivity } from '../streak';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { toast } from '@rekindle/ui/use-toast';
@@ -84,7 +85,9 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
   const [shareEmail, setShareEmail] = useState('');
   const [shareMessage, setShareMessage] = useState('');
   const [userProgress, setUserProgress] = useState<Record<string, UserProgress>>({});
-  const [view, setView] = useState<'library' | 'series' | 'entry' | 'module'>('library');
+  // Browser Back steps through views (library → module and back) instead of
+  // exiting the section. Companion state (selectedSeries/currentEntry) stays plain.
+  const [view, setView] = useViewHistory<'library' | 'series' | 'entry' | 'module'>('devotional-library', 'library');
   
   // Get devotional access level from subscription
   const devotionalAccessLevel = entitlements.hasUnlimitedDevotionals ? 'unlimited' : 'limited';

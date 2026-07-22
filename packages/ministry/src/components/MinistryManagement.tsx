@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -76,7 +77,7 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useViewHistory<string>('ministry-management', 'overview');
   const [ministry, setMinistry] = useState<Ministry | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLeader, setIsLeader] = useState(false);
