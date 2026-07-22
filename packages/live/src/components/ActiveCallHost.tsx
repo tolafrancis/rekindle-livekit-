@@ -116,13 +116,13 @@ export const ActiveCallHost: React.FC = () => {
               </button>
             </div>
           </div>
-          <button
-            onClick={maximize}
-            className="absolute inset-x-0 bottom-0 z-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 py-2 text-left text-[11px] text-white"
-            title="Return to meeting"
-          >
-            {call.title || 'Meeting in progress — tap to return'}
-          </button>
+          {/* Meeting title next to the grip. The bottom is left free for the call's
+              own mini media controls (mute / camera / react). */}
+          {call.title && (
+            <div className="pointer-events-none absolute left-8 top-1.5 z-0 max-w-[55%] truncate text-[11px] text-white/90">
+              {call.title}
+            </div>
+          )}
         </>
       )}
     </div>

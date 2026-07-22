@@ -6,6 +6,7 @@ import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
+import { ReactionButton } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
@@ -45,6 +46,9 @@ interface DailyVideoCallProps {
   /** Fired when a side panel (chat or host controls) opens/closes, so the parent
    *  overlay can hide its own chrome (Copy Link / End) that would collide with it. */
   onSidePanelToggle?: (open: boolean) => void;
+  /** Broadcast a reaction emoji — wired to the mini-player's reaction button so the
+   *  host can react while the call is minimized (the overlay bar is hidden then). */
+  onReact?: (emoji: string) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -724,7 +728,10 @@ const ParticipantVideo: React.FC<{
         clearTimeout(retryTimeout);
       }
     };
-  }, [participant.videoTrack, participant.hasVideo, participant.userName]);
+    // `fill` is included so switching into the mini-player (a fresh, empty <video>)
+    // re-runs the attach — otherwise the host's own tile could stay a black frame
+    // until the camera was toggled (the old "re-toggle to show" bug).
+  }, [participant.videoTrack, participant.hasVideo, participant.userName, participant.sessionId, fill]);
 
   // NOTE: audio is intentionally NOT played here. It's handled by the persistent
   // RemoteAudioLayer so it survives layout changes (screen share / pin / reflow)
@@ -754,6 +761,11 @@ const ParticipantVideo: React.FC<{
         autoPlay
         playsInline
         muted={participant.isLocal}
+        // A freshly-mounted <video> (e.g. the mini-player tile) sometimes has its
+        // srcObject set before it can play; nudge it to play once it's ready so the
+        // frame actually appears without needing a camera re-toggle.
+        onLoadedMetadata={() => { videoRef.current?.play().catch(() => {}); }}
+        onCanPlay={() => { videoRef.current?.play().catch(() => {}); }}
         className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
       />
       
@@ -894,6 +906,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   enableRecording = false,
   liveStreamRtmpUrl,
   onSidePanelToggle,
+  onReact,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // iOS Safari has no Fullscreen API for arbitrary elements (only <video>), so
@@ -1539,7 +1552,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         {miniFeature ? (
           // fill: the mini-player parent already fixes the frame size; without it
           // the aspect-ratio box collapses to zero width and the video goes blank.
+          // key on the feature's id forces a clean remount (and re-attach) whenever
+          // the featured participant changes while minimized.
           <ParticipantVideo
+            key={`mini-${miniFeature.sessionId}`}
             participant={miniFeature}
             fill
             hideOverlay
@@ -1549,6 +1565,29 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         ) : (
           <div className="text-xs text-white/50">{t('dailyVideoCall', 'connecting', 'Connecting…')}</div>
         )}
+
+        {/* Compact media controls for the mini-player — mute, camera and (if wired)
+            react — so the host doesn't have to maximize just to toggle their mic or
+            camera. Sits bottom-center; the host maximize/leave chrome is up top. */}
+        <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/55 px-1.5 py-1 backdrop-blur-sm">
+          <button
+            onClick={toggleMic}
+            title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
+            aria-label={isMicOn ? 'Mute' : 'Unmute'}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+          </button>
+          <button
+            onClick={toggleCamera}
+            title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
+            aria-label={isCameraOn ? 'Stop video' : 'Start video'}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+          </button>
+          {onReact && <ReactionButton onReact={onReact} />}
+        </div>
       </div>
     );
   }

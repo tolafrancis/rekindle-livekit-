@@ -519,6 +519,7 @@ const EnhancedVideoCallWrapper = ({
         enableRecording={!isWebinar && isHost && meeting.enable_recording}
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
         onSidePanelToggle={setPanelOpen}
+        onReact={sendReaction}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
