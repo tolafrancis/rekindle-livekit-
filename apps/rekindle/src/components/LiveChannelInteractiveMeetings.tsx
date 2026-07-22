@@ -1222,13 +1222,13 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       // Clear the storage
       sessionStorage.removeItem('autoOpenMeetingId');
-      
+
       // Find the meeting
       const meeting = meetings.find(m => m.id === autoOpenMeetingId);
-      
+
       if (meeting) {
-        // Auto-join the meeting
-        doJoinMeeting(meeting);
+        // Auto-join the meeting (pass the guest name explicitly — state isn't set yet)
+        doJoinMeeting(meeting, storedGuestName || undefined);
         
         toast.success(t('liveChannelInteractiveMeetings', 'openingMeeting', 'Opening meeting...'));
       } else {
@@ -1269,7 +1269,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     await doJoinMeeting(meeting);
   };
 
-  const doJoinMeeting = async (meeting: LiveChannelVideoMeeting) => {
+  const doJoinMeeting = async (meeting: LiveChannelVideoMeeting, guestNameOverride?: string) => {
     try {
       if (!meeting.is_active) {
         const { error } = await supabase
@@ -1292,7 +1292,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       if (countError) console.error('Error updating participant count:', countError);
 
-      beginCall(meeting);
+      beginCall(meeting, guestNameOverride);
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('liveChannelInteractiveMeetings', 'failedJoinMeeting', 'Failed to join meeting'));
@@ -1333,8 +1333,10 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
   // Hand the fully-configured meeting element to the app-level ActiveCallHost, which
   // renders it above the tab router so it survives navigation.
-  const beginCall = (meeting: LiveChannelVideoMeeting) => {
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
+  const beginCall = (meeting: LiveChannelVideoMeeting, guestNameOverride?: string) => {
+    // Use the explicitly-passed guest name — relying on the `guestName` state is
+    // racy (it's set in the same tick we join, so the state hasn't applied yet).
+    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestNameOverride || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
     const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
     const isHost = meeting.host_id === user?.id;
     const doLeave = async () => { await leaveMeetingDb(meeting); endCall(); };
@@ -1362,7 +1364,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     setGuestName(name);
     const meeting = pendingJoinMeeting;
     setPendingJoinMeeting(null);
-    await doJoinMeeting(meeting);
+    await doJoinMeeting(meeting, name);
   };
 
   const handleGuestNameCancel = () => {

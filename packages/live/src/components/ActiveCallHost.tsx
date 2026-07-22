@@ -20,7 +20,10 @@ export const ActiveCallHost: React.FC = () => {
         // panel confirms, background picker and chat menus still layer on top.
         minimized
           ? 'fixed bottom-4 right-4 z-[70] w-72 sm:w-96 aspect-video rounded-xl overflow-hidden shadow-2xl border border-gray-700 bg-gray-900'
-          : 'fixed inset-0 z-[70] bg-gray-900'
+          // h-[100dvh] (dynamic viewport) instead of inset-0 so on iOS Safari the
+          // meeting fits the VISIBLE area — otherwise inset-0 extends behind the
+          // browser toolbar and the bottom control bar is cut off / untappable.
+          : 'fixed inset-x-0 top-0 z-[70] h-[100dvh] bg-gray-900'
       }
     >
       {/* The meeting itself. Stays mounted whether full-screen or minimized, so the

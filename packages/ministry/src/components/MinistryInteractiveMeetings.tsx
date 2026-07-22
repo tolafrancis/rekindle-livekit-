@@ -1381,10 +1381,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       
       // Find the meeting
       const meeting = meetings.find(m => m.id === autoOpenMeetingId);
-      
+
       if (meeting) {
-        // Auto-join the meeting
-        doJoinMeeting(meeting);
+        // Auto-join the meeting (pass the guest name explicitly — state isn't set yet)
+        doJoinMeeting(meeting, storedGuestName || undefined);
 
         toast.success(t('ministryInteractiveMeetings', 'openingMeeting', 'Opening meeting...'));
       } else {
@@ -1425,7 +1425,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     await doJoinMeeting(meeting);
   };
 
-  const doJoinMeeting = async (meeting: MinistryVideoMeeting) => {
+  const doJoinMeeting = async (meeting: MinistryVideoMeeting, guestNameOverride?: string) => {
     try {
       if (!meeting.is_active) {
         const { error } = await supabase
@@ -1448,7 +1448,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
       if (countError) console.error('Error updating participant count:', countError);
 
-      beginCall(meeting);
+      beginCall(meeting, guestNameOverride);
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('ministryInteractiveMeetings', 'failedToJoin', 'Failed to join meeting'));
@@ -1479,8 +1479,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
   // Hand the fully-configured meeting element to the app-level ActiveCallHost, which
   // renders it above the router so it survives navigation.
-  const beginCall = (meeting: MinistryVideoMeeting) => {
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || 'Guest';
+  const beginCall = (meeting: MinistryVideoMeeting, guestNameOverride?: string) => {
+    // Use the explicitly-passed guest name — the `guestName` state is set in the
+    // same tick we join, so relying on it here is racy and yields "Guest".
+    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestNameOverride || guestName || 'Guest';
     const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
     const isHost = meeting.host_id === user?.id;
     const doLeave = async () => { await leaveMeetingDb(meeting); endCall(); };
@@ -1507,7 +1509,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     setGuestName(name);
     const meeting = pendingJoinMeeting;
     setPendingJoinMeeting(null);
-    await doJoinMeeting(meeting);
+    await doJoinMeeting(meeting, name);
   };
 
   const handleGuestNameCancel = () => {
