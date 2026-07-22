@@ -7,6 +7,8 @@ import {
   swConfigParams,
   VAPID_KEY,
 } from "./firebase";
+import { Capacitor } from '@capacitor/core';
+import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 
 // Firebase Cloud Messaging (FCM HTTP v1) web push.
 // The client mints an FCM *registration token* via getToken() and stores it in
@@ -29,6 +31,52 @@ async function getFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> 
 
 export async function registerPush(role: "user" | "counsellor"): Promise<boolean> {
   try {
+    if (Capacitor.isNativePlatform()) {
+      const permStatus = await FirebaseMessaging.checkPermissions();
+      let granted = permStatus.receive === 'granted';
+      if (!granted) {
+        const requested = await FirebaseMessaging.requestPermissions();
+        granted = requested.receive === 'granted';
+      }
+      if (!granted) {
+        console.warn("Push notification permission denied (native)");
+        return false;
+      }
+
+      const { token } = await FirebaseMessaging.getToken();
+      if (!token) {
+        console.warn("Failed to obtain native FCM token");
+        return false;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn("No authenticated user");
+        return false;
+      }
+
+      const platform = Capacitor.getPlatform(); // 'android' | 'ios'
+      const { error } = await supabase
+        .from("push_tokens")
+        .upsert(
+          {
+            user_id:      user.id,
+            device_token: token,
+            platform,
+            updated_at:   new Date().toISOString(),
+          },
+          { onConflict: "device_token" },
+        );
+
+      if (error) {
+        console.error("Failed to save native push token:", error);
+        return false;
+      }
+
+      console.log(`Native FCM push registered successfully (${platform})`);
+      return true;
+    }
+
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       console.warn("Push notifications not supported in this browser");
       return false;
@@ -103,6 +151,20 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
 
 export async function unregisterPush(): Promise<boolean> {
   try {
+    if (Capacitor.isNativePlatform()) {
+      const { token } = await FirebaseMessaging.getToken().catch(() => ({ token: null }));
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && token) {
+        await supabase
+          .from("push_tokens")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("device_token", token);
+      }
+      await FirebaseMessaging.deleteToken().catch(() => {});
+      return true;
+    }
+
     const messaging = await getMessagingIfSupported();
     if (!messaging) return false;
 
@@ -136,12 +198,22 @@ export async function unregisterPush(): Promise<boolean> {
 }
 
 export async function checkPushPermission(): Promise<NotificationPermission> {
+  if (Capacitor.isNativePlatform()) {
+    const status = await FirebaseMessaging.checkPermissions();
+    if (status.receive === 'granted') return 'granted';
+    if (status.receive === 'denied') return 'denied';
+    return 'default';
+  }
   if (!("Notification" in window)) return "denied";
   return Notification.permission;
 }
 
 export async function isPushSubscribed(): Promise<boolean> {
   try {
+    if (Capacitor.isNativePlatform()) {
+      const status = await FirebaseMessaging.checkPermissions();
+      return status.receive === 'granted';
+    }
     if (!("serviceWorker" in navigator)) return false;
     if (Notification.permission !== "granted") return false;
     // A live push subscription under the FCM scope means we're subscribed,

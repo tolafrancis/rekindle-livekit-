@@ -13,8 +13,10 @@
     "mobile:android": "vite build && cap sync android && cap open android"
   },
   "dependencies": {
+    "@capacitor-firebase/messaging": "^8.3.0",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
     "@capacitor/core": "^8.4.2",
     "@rekindle/auth": "*",
     "@rekindle/features": "*",
@@ -22,6 +24,7 @@
     "@rekindle/supabase": "*",
     "@rekindle/types": "*",
     "@rekindle/ui": "*",
+    "firebase": "^12.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2"

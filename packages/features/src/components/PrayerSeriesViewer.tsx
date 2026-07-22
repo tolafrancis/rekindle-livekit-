@@ -17,6 +17,7 @@ import { recordDailyActivity } from '../streak';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useUpgradePrompt } from '@rekindle/auth/useUpgradePrompt';
 import { UpgradePromptModal } from './UpgradePromptModal';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { toast } from '@rekindle/ui/use-toast';
 import { 
   postPrayerSeriesStarted,
@@ -255,6 +256,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'series' | 'praying' | 'interactive'>('list');
+  const { navigateView: navigateViewMode } = useViewHistory('prayer-series-viewer', view, setView as (v: string) => void);
   const [hasPostedSeriesStart, setHasPostedSeriesStart] = useState(false);
   
   const [showDurationModal, setShowDurationModal] = useState(false);
@@ -723,7 +725,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
     
     setTimeout(() => {
       console.log('✅ Navigating to interactive view with points:', generatedPrayerPoints.length);
-      setView('interactive');
+      navigateViewMode('interactive');
       setIsPlaying(true);
     }, 100);
   };
@@ -756,7 +758,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    setView('series');
+    navigateViewMode('series');
   };
 
   const handleClosePraying = () => {
@@ -773,7 +775,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    setView('series');
+    navigateViewMode('series');
   };
 
   const startPraying = () => {
@@ -795,7 +797,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
     setIsPraying(true);
     setIsPaused(false);
     setIsPlaying(true);
-    setView('praying');
+    navigateViewMode('praying');
   };
 
   const handleSeriesStart = async (series: PrayerSeries, progress: UserProgress) => {
@@ -1122,7 +1124,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
       });
 
       setTimeout(() => {
-        setView('series');
+        navigateViewMode('series');
         setCurrentDay(null);
       }, 2000);
 
@@ -1182,7 +1184,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
         description: t('prayerSeriesViewer', 'contentMissingReturning', 'Prayer content is missing. Returning to series view.'),
         variant: 'destructive'
       });
-      setView('series');
+      navigateViewMode('series');
       return null;
     }
     
@@ -1490,7 +1492,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           {onBack && (
-            <Button variant="ghost" onClick={() => { setView('list'); setSelectedSeries(null); }}>
+            <Button variant="ghost" onClick={() => { navigateViewMode('list'); setSelectedSeries(null); }}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               {t('prayerSeriesViewer', 'back', 'Back')}
             </Button>
@@ -1748,7 +1750,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
             setGeneratedPrayerPoints([]);
             setSessionType('standard');
             if (view !== 'interactive' && view !== 'praying') {
-              setView('series');
+              navigateViewMode('series');
             }
           }
         }}>
@@ -1832,7 +1834,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
             setTimeRemaining(0);
             setCurrentPointIndex(0);
             if (view !== 'praying') {
-              setView('series');
+              navigateViewMode('series');
             }
           }
         }}>
@@ -2056,7 +2058,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
                   </div>
                 );
               })()}
-              <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
+              <Button onClick={() => { setShowCompletionModal(false); navigateViewMode('series'); }}>
                 {t('prayerSeriesViewer', 'viewSeries', 'View Series')}
               </Button>
             </div>

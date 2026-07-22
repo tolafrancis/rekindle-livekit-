@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { toast } from '@rekindle/ui/use-toast';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
@@ -161,6 +163,18 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const notification = (e as CustomEvent).detail;
+      toast({
+        title: notification.title || 'Notification',
+        description: notification.body || '',
+      });
+    };
+    window.addEventListener('nativePushReceived', handler);
+    return () => window.removeEventListener('nativePushReceived', handler);
+  }, []);
+
   // ThemeProvider MUST wrap the tree: the Sonner toaster calls useTheme(),
   // which throws (blanking the whole app) when no provider is present.
   return (

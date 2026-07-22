@@ -24,6 +24,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import { instrumentalTracks } from '../data/instrumentals';
 import { SocialShareModal } from './SocialShareModal';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
+import { useViewHistory } from '../hooks/useViewHistory';
 import {
   SearchFilterPanel,
   searchFilterIconClass,
@@ -296,6 +297,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'series' | 'reading'>('list');
+  const { navigateView: navigateViewMode } = useViewHistory('devotional-series-viewer', view, setView as (v: string) => void);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showDayShareModal, setShowDayShareModal] = useState(false);
@@ -1257,7 +1259,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     setSpiritPrayerTime(0);
     setIsPlaying(true);
     setIsPaused(false);
-    setView('reading');
+    navigateViewMode('reading');
   };
 
   const handleDevotionalSeriesStart = async (series: Series, progress: UserProgress) => {
@@ -1415,7 +1417,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         });
         setShowCompletionModal(true);
         setTimeout(() => {
-          setView('series');
+          navigateViewMode('series');
           setCurrentDay(null);
         }, 1000);
       } else {
@@ -1427,7 +1429,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         // Show share prompt before navigating away
         setShowDayShareModal(true);
         setTimeout(() => {
-          setView('series');
+          navigateViewMode('series');
           setCurrentDay(null);
           setUnlockMessage(null);
         }, 2000);
@@ -1546,7 +1548,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => {
-                setView('series');
+                navigateViewMode('series');
                 setCurrentDay(null);
                 if (audioRef.current) audioRef.current.pause();
                 stopSpeaking();
@@ -2033,7 +2035,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     if (onBack) {
                       onBack();
                     } else {
-                      setView('list');
+                      navigateViewMode('list');
                       setSelectedSeries(null);
                     }
                   }}
@@ -2483,7 +2485,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 </div>
               );
             })()}
-            <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
+            <Button onClick={() => { setShowCompletionModal(false); navigateViewMode('series'); }}>
               {t('devotionals', 'viewSeries')}
             </Button>
           </div>

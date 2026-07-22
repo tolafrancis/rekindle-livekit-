@@ -2,8 +2,9 @@
 // GraceCounsel AI companion — backend proxy (Supabase Edge Function), no API key in the browser.
 // Features: markdown-rendered replies, multiple sessions, new-session + search.
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, AlertCircle, Plus, Search } from 'lucide-react';
+import { Send, Loader2, AlertCircle, Plus, Search, Menu } from 'lucide-react';
 import { marked } from 'marked';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -40,6 +41,7 @@ export const GraceCounselChat: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -89,6 +91,9 @@ export const GraceCounselChat: React.FC = () => {
     setSessionId(session.id);
     setError(null);
     await loadSessionMessages(session.id);
+    if (Capacitor.isNativePlatform()) {
+      setSidebarOpen(false);
+    }
   };
 
   const startNewSession = async () => {
@@ -104,6 +109,9 @@ export const GraceCounselChat: React.FC = () => {
       setSessions(prev => [data as ChatSession, ...prev]);
       setSearch('');
       await addWelcomeMessage(data.id);
+      if (Capacitor.isNativePlatform()) {
+        setSidebarOpen(false);
+      }
     } catch (err) {
       console.error('New session error:', err);
       setError(t('grace', 'failedNewSession', "Failed to start a new session"));
@@ -234,7 +242,9 @@ export const GraceCounselChat: React.FC = () => {
 
   if (!spiritualCompanion) {
     return (
-      <div className="bg-white rounded-xl shadow-lg h-[600px] flex items-center justify-center">
+      <div className={`bg-white rounded-xl shadow-lg flex items-center justify-center ${
+        Capacitor.isNativePlatform() ? 'h-[calc(100vh-130px)]' : 'h-[600px]'
+      }`}>
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
           <p className="text-gray-600">{t('grace', 'initializing', "Initializing GraceCounsel...")}</p>
@@ -244,7 +254,9 @@ export const GraceCounselChat: React.FC = () => {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg h-[600px] flex overflow-hidden">
+    <div className={`bg-white rounded-xl shadow-lg flex overflow-hidden relative ${
+      Capacitor.isNativePlatform() ? 'h-[calc(100vh-130px)]' : 'h-[600px]'
+    }`}>
       <style>{`
         .gc-markdown p { margin: 0 0 0.5rem; }
         .gc-markdown p:last-child { margin-bottom: 0; }
@@ -258,8 +270,22 @@ export const GraceCounselChat: React.FC = () => {
         .gc-markdown blockquote { border-left: 3px solid #d8b4fe; padding-left: 0.6rem; color: #6b21a8; margin: 0 0 0.5rem; }
       `}</style>
 
+      {/* Backdrop for mobile drawer */}
+      {Capacitor.isNativePlatform() && sidebarOpen && (
+        <div 
+          className="absolute inset-0 bg-black/40 z-20"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sessions sidebar */}
-      <div className="w-56 sm:w-64 border-r flex flex-col bg-gray-50 shrink-0">
+      <div className={`border-r flex flex-col bg-gray-50 shrink-0 transition-all duration-300 ${
+        Capacitor.isNativePlatform()
+          ? `absolute inset-y-0 left-0 w-64 shadow-xl z-30 transform ${
+              sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            }`
+          : 'w-56 sm:w-64'
+      }`}>
         <div className="p-3 border-b space-y-2">
           <button
             onClick={startNewSession}
@@ -306,9 +332,20 @@ export const GraceCounselChat: React.FC = () => {
 
       {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-4">
-          <h3 className="font-bold text-lg">GraceCounsel AI</h3>
-          <p className="text-sm opacity-90">{t('grace', 'subtitle', "Your Scripture-rooted spiritual companion")}</p>
+        <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-4 flex items-center gap-3">
+          {Capacitor.isNativePlatform() && (
+            <button
+              onClick={() => setSidebarOpen(prev => !prev)}
+              className="p-1 rounded hover:bg-white/10 shrink-0"
+              aria-label="Toggle chat history"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+          )}
+          <div>
+            <h3 className="font-bold text-lg">GraceCounsel AI</h3>
+            <p className="text-sm opacity-90">{t('grace', 'subtitle', "Your Scripture-rooted spiritual companion")}</p>
+          </div>
         </div>
 
         {error && (
@@ -362,17 +399,20 @@ export const GraceCounselChat: React.FC = () => {
               onKeyPress={handleKeyPress}
               placeholder={t('grace', 'inputPlaceholder', "Share what's on your heart...")}
               disabled={isLoading}
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}
-              className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
             >
               {isLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> {t('grace', 'sending', "Sending")}</>
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <><Send className="w-4 h-4" /> {t('common', 'send', 'Send')}</>
+                <Send className="w-4 h-4" />
+              )}
+              {!Capacitor.isNativePlatform() && (
+                <span>{isLoading ? t('grace', 'sending', "Sending") : t('common', 'send', 'Send')}</span>
               )}
             </button>
           </div>

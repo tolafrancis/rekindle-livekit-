@@ -1156,7 +1156,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         </>
       )}
 
-      {!ministryWorkspaceActive && !isViewerActive && <header className="bg-white shadow-sm sticky top-0 z-50">
+      {!ministryWorkspaceActive && !isViewerActive && <header className={`bg-white shadow-sm z-50 ${
+        Capacitor.isNativePlatform() ? 'fixed top-0 left-0 right-0' : 'sticky top-0'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl md:text-2xl font-serif font-bold text-purple-700 flex-shrink-0 md:hidden">Rekindle</h1>
           <div className="hidden md:block" />
@@ -1345,7 +1347,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             page content) rather than fixed in this header — see renderMobileNav. */}
       </header>}
 
-      <main className={ministryWorkspaceActive ? 'w-full' : 'mx-auto w-full max-w-7xl px-4 pb-12 pt-4 md:pb-24 md:pt-6'}>
+      <main className={ministryWorkspaceActive ? 'w-full' : 
+        `mx-auto w-full max-w-7xl px-4 pb-12 md:pb-24 md:pt-6 ${
+          Capacitor.isNativePlatform() ? 'pt-16' : 'pt-4'
+        }`
+      }>
         {!ministryWorkspaceActive && <section
           className="relative mb-[14px] overflow-hidden rounded-2xl bg-cover bg-center shadow-sm"
           style={{
@@ -1606,33 +1612,41 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           tiles render inline, so this is only offered on the other tabs to
           keep the page content area clear. */}
       {!ministryWorkspaceActive && activeTab !== 'home' && !isViewerActive && (
-        <div
-          ref={statsContainerRef}
-          className={`fixed z-50 flex flex-col items-center gap-2 md:hidden ${
-            statsPos ? '' : 'bottom-4 left-1/2 -translate-x-1/2'
-          }`}
-          style={statsPos ? { left: statsPos.x, top: statsPos.y } : undefined}
-        >
+        <>
           {showStatsPanel && (
-            <div className="w-[78vw] max-w-xs rounded-2xl border border-gray-100 bg-white p-3 shadow-xl">
-              {renderStatCapsules('grid grid-cols-1 gap-2')}
-            </div>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowStatsPanel(false)}
+            />
           )}
-          <button
-            type="button"
-            onPointerDown={onStatsPointerDown}
-            onPointerMove={onStatsPointerMove}
-            onPointerUp={onStatsPointerUp}
-            onClick={() => { if (!statsDrag.current.moved) setShowStatsPanel((v) => !v); }}
-            aria-label="Your stats"
-            aria-expanded={showStatsPanel}
-            style={{ touchAction: 'none' }}
-            className="flex cursor-grab items-center gap-2 rounded-full bg-purple-600 px-4 py-2.5 text-white shadow-lg transition-colors hover:bg-purple-700 active:cursor-grabbing select-none"
+          <div
+            ref={statsContainerRef}
+            className={`fixed z-50 flex flex-col items-center gap-2 md:hidden ${
+              statsPos ? '' : 'bottom-4 left-1/2 -translate-x-1/2'
+            }`}
+            style={statsPos ? { left: statsPos.x, top: statsPos.y } : undefined}
           >
-            <BarChart3 className="h-5 w-5" />
-            <span className="text-sm font-semibold">Stats</span>
-          </button>
-        </div>
+            {showStatsPanel && (
+              <div className="w-[78vw] max-w-xs rounded-2xl border border-gray-100 bg-white p-3 shadow-xl">
+                {renderStatCapsules('grid grid-cols-1 gap-2')}
+              </div>
+            )}
+            <button
+              type="button"
+              onPointerDown={onStatsPointerDown}
+              onPointerMove={onStatsPointerMove}
+              onPointerUp={onStatsPointerUp}
+              onClick={() => { if (!statsDrag.current.moved) setShowStatsPanel((v) => !v); }}
+              aria-label="Your stats"
+              aria-expanded={showStatsPanel}
+              style={{ touchAction: 'none' }}
+              className="flex cursor-grab items-center gap-2 rounded-full bg-purple-600 px-4 py-2.5 text-white shadow-lg transition-colors hover:bg-purple-700 active:cursor-grabbing select-none"
+            >
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-sm font-semibold">Stats</span>
+            </button>
+          </div>
+        </>
       )}
 
       {/* Global Search Modal */}
