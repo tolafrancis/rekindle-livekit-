@@ -72,6 +72,49 @@ long, all-camera meetings) scales the bandwidth line up from there.
 
 ---
 
+## Cutover readiness — repo swept, it's clean
+
+Full-repo grep for `livekit.rekindlebc.com` / `76.13.219.239` / `wss://`. **No
+functional reference to the old host exists in client or edge-function code** — every
+hit is one of:
+
+| Location | Type | Action on cutover |
+|---|---|---|
+| `packages/live/**`, `apps/**/src/**` (client) | — | **none** — URL comes from the token response |
+| `apps/rekindle/.env` → `VITE_LIVEKIT_URL` | env placeholder, **unused in code** | ignore (optionally delete later) |
+| `apps/ministry/capacitor.config.ts:12` | code comment | cosmetic; update whenever |
+| `docs/mobile-app-build-plan.md`, `docs/livekit-migration-plan.md` | docs | cosmetic |
+| `livekit/config/livekit.yaml`, `livekit/config/Caddyfile`, `livekit/docker-compose.yml`, `livekit/**` | **the old VPS's own config** | retired — only matters to the box you're decommissioning |
+
+So the swap touches **zero app code**. It's entirely: 3 Supabase secrets → redeploy the
+5 functions → register the webhook in the Cloud dashboard.
+
+## Edge-function redeploy checklist
+
+Functions live under `supabase/livekit-*/index.ts`. Deploy = Supabase Dashboard → Edge
+Functions → the function → paste `index.ts` (or `supabase functions deploy <name>` via
+CLI; `supabase/config.toml` exists). The code does **not** change — they just need the
+new secret values, so a redeploy (or secret refresh) is all that's required.
+
+Set these **project-level** secrets once (shared by all five):
+`LIVEKIT_URL=wss://<project>.livekit.cloud`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
+(`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected —
+leave them.)
+
+| Function | Reads `LIVEKIT_URL`? | Reads key/secret? | Notes |
+|---|:---:|:---:|---|
+| `livekit-token` | ✅ | ✅ | Mints tokens **and returns the URL to the client** — the linchpin of the swap. |
+| `livekit-moderation` | ✅ | ✅ | `RoomServiceClient(httpUrl(LIVEKIT_URL), …)` for mute/remove/roles. |
+| `livekit-egress` | ✅ | ✅ | Cloud egress is **separately billed** — verify recording after cutover. |
+| `livekit-ingress` | ✅ | ✅ | Verify only if RTMP ingress is used. |
+| `livekit-webhook` | ❌ | ✅ | Verifies events via `WebhookReceiver(KEY, SECRET)`. **Must register the URL in the Cloud dashboard** → `https://<project-ref>.supabase.co/functions/v1/livekit-webhook` (self-host set this in `livekit.yaml`; Cloud sets it in project → Webhooks). |
+
+Post-cutover smoke test: token issue (join a room) → moderation (mute someone) →
+webhook (room/egress events land) → egress (a recording completes and its
+`playback_url` is written back).
+
+---
+
 ## Requirements (what actually changes)
 
 | Item | Change |
