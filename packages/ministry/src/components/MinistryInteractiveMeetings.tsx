@@ -46,6 +46,7 @@ import {
 } from '@rekindle/features/meetingTime';
 import { toast } from 'sonner';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
+import { useActiveCall } from '@rekindle/live/ActiveCallContext';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
 import SavedMeetingInsights from '@rekindle/live/components/SavedMeetingInsights';
 
@@ -1260,7 +1261,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const [meetings, setMeetings] = useState<MinistryVideoMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeCall, setActiveCall] = useState<MinistryVideoMeeting | null>(null);
+  // The live call is hosted by the app-level ActiveCallHost (survives navigation),
+  // not rendered here. We only start it and reflect "you're in this meeting".
+  const { call, startCall, endCall, maximize } = useActiveCall();
+  const activeCallId = call?.id ?? null;
   const [recordingsMeeting, setRecordingsMeeting] = useState<MinistryVideoMeeting | null>(null);
   const [subTab, setSubTab] = useState<'meetings' | 'recordings'>('meetings');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1362,7 +1366,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   useEffect(() => {
     const autoOpenMeetingId = sessionStorage.getItem('autoOpenMeetingId');
     
-    if (autoOpenMeetingId && meetings.length > 0 && !activeCall) {
+    if (autoOpenMeetingId && meetings.length > 0 && !activeCallId) {
       console.log('[MinistryInteractiveMeetings] Auto-opening meeting:', autoOpenMeetingId);
       
       // Pick up guest name set by Skeleton.tsx for unauthenticated users
@@ -1388,7 +1392,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         console.error('[MinistryInteractiveMeetings] Meeting not found:', autoOpenMeetingId);
       }
     }
-  }, [meetings, activeCall]);
+  }, [meetings, activeCallId]);
 
   const fetchMeetings = async () => {
     setIsLoading(true);
@@ -1444,11 +1448,58 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
       if (countError) console.error('Error updating participant count:', countError);
 
-      setActiveCall(meeting);
+      beginCall(meeting);
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('ministryInteractiveMeetings', 'failedToJoin', 'Failed to join meeting'));
     }
+  };
+
+  // DB side of leaving/ending — self-contained (takes the meeting) so it still works
+  // if this list component has since unmounted (e.g. left from the mini-player).
+  const leaveMeetingDb = async (meeting: MinistryVideoMeeting) => {
+    try {
+      const newCount = Math.max(0, meeting.participant_count - 1);
+      await supabase.from('ministry_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+    } catch (error) {
+      console.error('Error leaving meeting:', error);
+    }
+  };
+
+  const endMeetingDb = async (meeting: MinistryVideoMeeting) => {
+    try {
+      await supabase
+        .from('ministry_video_meetings')
+        .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
+        .eq('id', meeting.id);
+    } catch (error) {
+      console.error('Error ending meeting:', error);
+    }
+  };
+
+  // Hand the fully-configured meeting element to the app-level ActiveCallHost, which
+  // renders it above the router so it survives navigation.
+  const beginCall = (meeting: MinistryVideoMeeting) => {
+    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || 'Guest';
+    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+    const isHost = meeting.host_id === user?.id;
+    const doLeave = async () => { await leaveMeetingDb(meeting); endCall(); };
+    const doEnd = async () => { await endMeetingDb(meeting); endCall(); };
+    startCall({
+      id: meeting.id,
+      title: meeting.title,
+      onLeave: doLeave,
+      node: (
+        <EnhancedVideoCallWrapper
+          meeting={meeting}
+          userName={displayName}
+          userId={participantId}
+          isHost={isHost}
+          onLeave={doLeave}
+          onEndMeeting={isHost ? doEnd : undefined}
+        />
+      ),
+    });
   };
 
   const handleGuestNameConfirm = async (name: string) => {
@@ -1461,28 +1512,6 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
   const handleGuestNameCancel = () => {
     setPendingJoinMeeting(null);
-  };
-
-  const handleEndMeeting = async () => {
-    if (!activeCall) return;
-
-    try {
-      await supabase
-        .from('ministry_video_meetings')
-        .update({
-          is_active: false,
-          ended_at: new Date().toISOString(),
-          participant_count: 0
-        })
-        .eq('id', activeCall.id);
-
-      setActiveCall(null);
-      fetchMeetings();
-      toast.success(t('ministryInteractiveMeetings', 'meetingEnded', 'Meeting ended'));
-    } catch (error) {
-      console.error('Error ending meeting:', error);
-      toast.error(t('ministryInteractiveMeetings', 'failedToEndMeeting', 'Failed to end meeting'));
-    }
   };
 
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
@@ -1541,46 +1570,6 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       setDeletingMeetingId(null);
     }
   };
-
-  const handleLeaveMeeting = async () => {
-    if (!activeCall) return;
-
-    try {
-      const newCount = Math.max(0, activeCall.participant_count - 1);
-      
-      await supabase
-        .from('ministry_video_meetings')
-        .update({ 
-          participant_count: newCount 
-        })
-        .eq('id', activeCall.id);
-
-      setActiveCall(null);
-      fetchMeetings();
-    } catch (error) {
-      console.error('Error leaving meeting:', error);
-    }
-  };
-
-  // If in active call, show the video component
-  // All media control is delegated to DailyVideoCall - no local media state here
-  if (activeCall) {
-    // Determine display name: signed-in user > guest name > fallback
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || 'Guest';
-    // Generate a stable guest ID if user is not signed in
-    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
-
-    return (
-      <EnhancedVideoCallWrapper
-        meeting={activeCall}
-        userName={displayName}
-        userId={participantId}
-        isHost={activeCall.host_id === user?.id}
-        onLeave={handleLeaveMeeting}
-        onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
-      />
-    );
-  }
 
   // Meeting list view
   return (
@@ -1806,13 +1795,20 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             </Button>
                           </>
                         )}
-                        <Button
-                          onClick={() => handleJoinMeeting(meeting)}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          <Play className="h-4 w-4 mr-2" />
-                          {t('ministryInteractiveMeetings', 'joinNow', 'Join Now')}
-                        </Button>
+                        {activeCallId === meeting.id ? (
+                          <Button onClick={() => maximize()} className="bg-green-600 hover:bg-green-700">
+                            <Play className="h-4 w-4 mr-2" />
+                            {t('ministryInteractiveMeetings', 'returnToMeeting', 'Return')}
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={() => handleJoinMeeting(meeting)}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            <Play className="h-4 w-4 mr-2" />
+                            {t('ministryInteractiveMeetings', 'joinNow', 'Join Now')}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>

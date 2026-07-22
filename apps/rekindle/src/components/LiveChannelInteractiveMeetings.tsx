@@ -43,6 +43,7 @@ import {
   REMINDER_OFFSET_OPTIONS,
 } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
+import { useActiveCall } from '@rekindle/live/ActiveCallContext';
 import { toast } from 'sonner';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
@@ -1129,7 +1130,10 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   const [meetings, setMeetings] = useState<LiveChannelVideoMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeCall, setActiveCall] = useState<LiveChannelVideoMeeting | null>(null);
+  // The live call is hosted by the app-level ActiveCallHost (survives tab changes),
+  // not rendered here. We only start it and reflect "you're in this meeting".
+  const { call, startCall, endCall, maximize } = useActiveCall();
+  const activeCallId = call?.id ?? null;
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<LiveChannelVideoMeeting | null>(null);
   const [isOwner, setIsOwner] = useState(false);
@@ -1206,7 +1210,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   useEffect(() => {
     const autoOpenMeetingId = sessionStorage.getItem('autoOpenMeetingId');
     
-    if (autoOpenMeetingId && meetings.length > 0 && !activeCall) {
+    if (autoOpenMeetingId && meetings.length > 0 && !activeCallId) {
       console.log('[LiveChannelInteractiveMeetings] Auto-opening meeting:', autoOpenMeetingId);
 
       // Pick up guest name set by Skeleton.tsx for unauthenticated users
@@ -1232,7 +1236,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
         console.error('[LiveChannelInteractiveMeetings] Meeting not found:', autoOpenMeetingId);
       }
     }
-  }, [meetings, activeCall]);
+  }, [meetings, activeCallId]);
 
   const fetchMeetings = async () => {
     setIsLoading(true);
@@ -1288,11 +1292,69 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       if (countError) console.error('Error updating participant count:', countError);
 
-      setActiveCall(meeting);
+      beginCall(meeting);
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('liveChannelInteractiveMeetings', 'failedJoinMeeting', 'Failed to join meeting'));
     }
+  };
+
+  // DB side of leaving/ending — self-contained (takes the meeting) so it still works
+  // if this list component has since unmounted (e.g. left from the mini-player).
+  const leaveMeetingDb = async (meeting: LiveChannelVideoMeeting) => {
+    const isHost = meeting.host_id === user?.id;
+    const isWebinar = meeting.mode === 'webinar';
+    try {
+      if (isHost && isWebinar) {
+        stopMeetingStream(meeting.id);
+        await supabase
+          .from('live_channel_video_meetings')
+          .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
+          .eq('id', meeting.id);
+      } else {
+        const newCount = Math.max(0, meeting.participant_count - 1);
+        await supabase.from('live_channel_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+      }
+    } catch (error) {
+      console.error('Error leaving meeting:', error);
+    }
+  };
+
+  const endMeetingDb = async (meeting: LiveChannelVideoMeeting) => {
+    try {
+      await supabase
+        .from('live_channel_video_meetings')
+        .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
+        .eq('id', meeting.id);
+    } catch (error) {
+      console.error('Error ending meeting:', error);
+    }
+  };
+
+  // Hand the fully-configured meeting element to the app-level ActiveCallHost, which
+  // renders it above the tab router so it survives navigation.
+  const beginCall = (meeting: LiveChannelVideoMeeting) => {
+    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
+    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+    const isHost = meeting.host_id === user?.id;
+    const doLeave = async () => { await leaveMeetingDb(meeting); endCall(); };
+    const doEnd = async () => { await endMeetingDb(meeting); endCall(); };
+    startCall({
+      id: meeting.id,
+      title: meeting.title,
+      onLeave: doLeave,
+      node: (
+        <EnhancedVideoCallWrapper
+          meeting={meeting}
+          userName={displayName}
+          userId={participantId}
+          isHost={isHost}
+          onLeave={doLeave}
+          channelId={channelId}
+          onEndMeeting={isHost ? doEnd : undefined}
+        />
+      ),
+    });
   };
 
   const handleGuestNameConfirm = async (name: string) => {
@@ -1358,80 +1420,6 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       setRecordingBusyId(null);
     }
   };
-
-  const handleEndMeeting = async () => {
-    if (!activeCall) return;
-
-    try {
-      await supabase
-        .from('live_channel_video_meetings')
-        .update({
-          is_active: false,
-          ended_at: new Date().toISOString(),
-          participant_count: 0
-        })
-        .eq('id', activeCall.id);
-
-      setActiveCall(null);
-      fetchMeetings();
-      toast.success(t('liveChannelInteractiveMeetings', 'meetingEnded', 'Meeting ended'));
-    } catch (error) {
-      console.error('Error ending meeting:', error);
-      toast.error(t('liveChannelInteractiveMeetings', 'failedEndMeeting', 'Failed to end meeting'));
-    }
-  };
-
-  const handleLeaveMeeting = async () => {
-    if (!activeCall) return;
-
-    const isHost = activeCall.host_id === user?.id;
-    const isWebinar = activeCall.mode === 'webinar';
-
-    try {
-      // A webinar's host IS the sole broadcaster, so hanging up (not just "End for
-      // All") kills the stream — end it for everyone instead of leaving the
-      // audience on a blank Mux slate with no notice.
-      if (isHost && isWebinar) {
-        stopMeetingStream(activeCall.id);
-        await supabase
-          .from('live_channel_video_meetings')
-          .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
-          .eq('id', activeCall.id);
-      } else {
-        const newCount = Math.max(0, activeCall.participant_count - 1);
-        await supabase
-          .from('live_channel_video_meetings')
-          .update({ participant_count: newCount })
-          .eq('id', activeCall.id);
-      }
-
-      setActiveCall(null);
-      fetchMeetings();
-    } catch (error) {
-      console.error('Error leaving meeting:', error);
-    }
-  };
-
-  // If in active call, show the video component
-  // All media control is delegated to DailyVideoCall - no local media state here
-  if (activeCall) {
-    // Determine display name: signed-in user > guest name > fallback
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
-    // Generate a stable guest ID if user is not signed in
-    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
-
-    return (
-      <EnhancedVideoCallWrapper
-        meeting={activeCall}
-        userName={displayName}
-        userId={participantId}
-        isHost={activeCall.host_id === user?.id}
-        onLeave={handleLeaveMeeting}
-        channelId={channelId}
-        onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
-      />
-    );
-  }
 
   // Meeting list view
   return (
@@ -1652,13 +1640,20 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                               </Button>
                             </>
                           )}
-                          <Button
-                            onClick={() => handleJoinMeeting(meeting)}
-                            className="bg-blue-600 hover:bg-blue-700"
-                          >
-                            <Play className="h-4 w-4 mr-2" />
-                            {t('liveChannelInteractiveMeetings', 'joinNow', 'Join Now')}
-                          </Button>
+                          {activeCallId === meeting.id ? (
+                            <Button onClick={() => maximize()} className="bg-green-600 hover:bg-green-700">
+                              <Play className="h-4 w-4 mr-2" />
+                              {t('liveChannelInteractiveMeetings', 'returnToMeeting', 'Return')}
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={() => handleJoinMeeting(meeting)}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              <Play className="h-4 w-4 mr-2" />
+                              {t('liveChannelInteractiveMeetings', 'joinNow', 'Join Now')}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>

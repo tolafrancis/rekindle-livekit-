@@ -20,6 +20,8 @@ import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
+import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
 import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
 import AuthScreen from './screens/AuthScreen';
 
@@ -167,6 +169,7 @@ export default function App() {
     <ThemeProvider defaultTheme="light">
       <AuthProvider>
         <LanguageProvider>
+          <ActiveCallProvider>
           {/* Toast renderers — without these mounted, every toast() call in the
               ministry app (channel/meeting copy confirmations, etc.) is silent.
               Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
@@ -174,7 +177,11 @@ export default function App() {
           <Sonner />
           <BrowserRouter>
             <AppRoutes />
+            {/* Persistent meeting layer — keeps a live call mounted across
+                navigation and shows the minimized mini-player. */}
+            <ActiveCallHost />
           </BrowserRouter>
+          </ActiveCallProvider>
         </LanguageProvider>
       </AuthProvider>
     </ThemeProvider>

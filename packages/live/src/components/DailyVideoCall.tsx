@@ -11,11 +11,12 @@ import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useAuth } from '@rekindle/features/AuthContext';
+import { useActiveCallOptional } from '../ActiveCallContext';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
@@ -910,6 +911,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const { toast } = useToast();
   const { t } = useLanguage();
   const { user: authUser } = useAuth();  // members can attach files; guests cannot
+  const activeCallCtx = useActiveCallOptional(); // present when hosted by ActiveCallHost
 
 
   // Track participant join function
@@ -1751,6 +1753,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <Users className="h-4 w-4" />
                 <span>{participantCount}</span>
               </div>
+              {/* Shrink into a floating mini-player so the user can browse other tabs
+                  while the call keeps running (only when hosted by ActiveCallHost). */}
+              {activeCallCtx && !activeCallCtx.minimized && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => activeCallCtx.minimize()}
+                  className="text-white hover:bg-white/20"
+                  title={t('dailyVideoCall', 'minimizeToMiniPlayer', 'Minimize to mini-player')}
+                >
+                  <PictureInPicture2 className="h-5 w-5" />
+                </Button>
+              )}
               {supportsFullscreen && (
                 <Button
                   variant="ghost"
