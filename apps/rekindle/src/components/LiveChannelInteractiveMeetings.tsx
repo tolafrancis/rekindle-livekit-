@@ -413,7 +413,13 @@ const EnhancedVideoCallWrapper = ({
 
   // ── Host / invited speakers (webinar), and everyone (meeting mode) ──
   return (
-    <div ref={wrapperRef} className="relative h-[100dvh]">
+    <div
+      ref={wrapperRef}
+      // In the mini-player, fill the host's small frame (h-full). Forcing viewport
+      // height here made the video render full-height and object-contain letterbox
+      // it, so the clipped mini-player showed only the black bar → blank frame.
+      className={isPiP ? 'relative h-full w-full' : 'relative h-[100dvh]'}
+    >
       <DailyVideoCall
         roomName={meeting.room_name}
         userName={userName}

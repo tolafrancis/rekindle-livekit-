@@ -754,7 +754,7 @@ const ParticipantVideo: React.FC<{
         autoPlay
         playsInline
         muted={participant.isLocal}
-        className={`w-full h-full object-contain ${showVideo ? '' : 'hidden'}`}
+        className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
       />
       
       {/* Avatar fallback when no video */}
@@ -1521,7 +1521,18 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // control bar, reactions or filmstrip (those belong to full-screen; the host's
   // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
   if (activeCallCtx?.minimized) {
-    const miniFeature = screenSharer || featuredParticipant || remoteParticipants[0] || localParticipant;
+    // Prefer whoever is actually on-camera so the tiny frame isn't a black tile:
+    // screen share → featured (if it has video) → any remote with video → local →
+    // finally fall back to featured/first-remote/local even without video.
+    const hasVid = (p: any) => !!p && (p.hasVideo || !!p.videoTrack);
+    const miniFeature =
+      screenSharer ||
+      (hasVid(featuredParticipant) ? featuredParticipant : null) ||
+      remoteParticipants.find(hasVid) ||
+      (hasVid(localParticipant) ? localParticipant : null) ||
+      featuredParticipant ||
+      remoteParticipants[0] ||
+      localParticipant;
     return (
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
         <RemoteAudioLayer participants={remoteParticipants} />

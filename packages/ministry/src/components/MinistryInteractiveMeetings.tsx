@@ -489,7 +489,10 @@ const EnhancedVideoCallWrapper = ({
   }
 
   return (
-    <div className="min-h-[100dvh] h-full flex flex-col lg:flex-row">
+    // In the mini-player, fill the host's small frame (h-full) instead of forcing
+    // viewport height — otherwise the video renders full-height and object-contain
+    // letterboxes it, so the clipped mini-player shows only the black bar (blank).
+    <div className={isPiP ? 'h-full w-full flex flex-col lg:flex-row' : 'min-h-[100dvh] h-full flex flex-col lg:flex-row'}>
       <div className="relative flex-1 min-h-0">
       {/* 
         DailyVideoCall Component - SOLE CONTROLLER OF ALL MEDIA
