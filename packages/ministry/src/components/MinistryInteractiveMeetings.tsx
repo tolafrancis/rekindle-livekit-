@@ -468,8 +468,16 @@ const EnhancedVideoCallWrapper = ({
     );
   }
 
+  const nativeStyle = Capacitor.isNativePlatform() ? {
+    position: 'fixed' as const,
+    inset: 0,
+    zIndex: 9999,
+    backgroundColor: '#111827',
+    display: 'flex',
+    flexDirection: 'column' as const,
+  } : {};
   return (
-    <div className={`min-h-screen flex flex-col lg:flex-row ${Capacitor.isNativePlatform() ? 'h-[100dvh] w-full' : 'h-full'}`}>
+    <div className={`min-h-screen flex flex-col lg:flex-row ${Capacitor.isNativePlatform() ? 'h-[100dvh] w-full' : 'h-full'}`} style={nativeStyle}>
       <div className="relative flex-1 min-h-0">
       {/* 
         DailyVideoCall Component - SOLE CONTROLLER OF ALL MEDIA
@@ -1282,6 +1290,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       if (countError) console.error('Error updating participant count:', countError);
 
       setActiveCall(meeting);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('viewer:active', { detail: true }));
+        if ((window as any).AndroidBridge) (window as any).AndroidBridge.setCallActive(true);
+      }
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('ministryInteractiveMeetings', 'failedToJoin', 'Failed to join meeting'));
@@ -1314,6 +1326,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         .eq('id', activeCall.id);
 
       setActiveCall(null);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('viewer:active', { detail: false }));
+        if ((window as any).AndroidBridge) (window as any).AndroidBridge.setCallActive(false);
+      }
       fetchMeetings();
       toast.success(t('ministryInteractiveMeetings', 'meetingEnded', 'Meeting ended'));
     } catch (error) {

@@ -950,7 +950,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
       {/* Sticky header + navigation (kept together so the nav never overlaps
           the variable-height header on mobile). */}
-      <div className="sticky top-0 z-40">
+      <div className="sticky top-0 z-40" style={typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.() && (window as any).__viewerActive ? {display:'none'} : {}}>
         {/* Ministry Header */}
         <div className="shadow-md" style={{ backgroundColor: themeColor }}>
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3">

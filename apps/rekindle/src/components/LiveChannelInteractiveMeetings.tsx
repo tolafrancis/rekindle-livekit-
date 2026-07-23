@@ -139,6 +139,15 @@ const EnhancedVideoCallWrapper = ({
   const { t } = useLanguage();
   const [meetingEnded, setMeetingEnded] = useState(false);
 
+  const nativeStyle = Capacitor.isNativePlatform() ? {
+    position: 'fixed' as const,
+    inset: 0,
+    zIndex: 200,
+    backgroundColor: '#111827',
+    display: 'flex',
+    flexDirection: 'column' as const,
+  } : {};
+
   // Webinar/livestream mode: the host (and any speakers the host invites up) join
   // the Daily call; everyone else watches the HLS output with live reactions,
   // chat, and the option to raise a hand to be invited up. The audience never
@@ -323,7 +332,7 @@ const EnhancedVideoCallWrapper = ({
 
   if (meetingEnded && !isHost) {
     return (
-      <div className="relative h-screen flex flex-col items-center justify-center bg-gray-900 text-center text-gray-200 gap-3 p-6">
+      <div className="relative h-screen flex flex-col items-center justify-center bg-gray-900 text-center text-gray-200 gap-3 p-6" style={nativeStyle}>
         <PhoneOff className="h-10 w-10 text-gray-400" />
         <div>
           <p className="font-medium text-lg">{t('liveChannelInteractiveMeetings', 'hostEndedMeeting', 'The host has ended this meeting')}</p>
@@ -336,7 +345,7 @@ const EnhancedVideoCallWrapper = ({
   // ── Webinar audience (not a presenter): HLS + reactions + chat + raise hand ──
   if (isWebinar && !isPresenter) {
     return (
-      <div className="min-h-screen h-full bg-black flex flex-col sm:flex-row">
+      <div className="min-h-screen h-full bg-black flex flex-col sm:flex-row" style={nativeStyle}>
         <div className="relative sm:flex-1 min-h-0 flex flex-col">
           <div className="w-full aspect-video sm:flex-1 sm:aspect-auto sm:min-h-0">
             {hlsUrl ? (
@@ -400,10 +409,10 @@ const EnhancedVideoCallWrapper = ({
 
   // ── Host / invited speakers (webinar), and everyone (meeting mode) ──
   return (
-    <div className={Capacitor.isNativePlatform() 
-      ? 'fixed inset-0 z-[100] bg-gray-900 flex flex-col' 
-      : 'relative h-screen'
-    }>
+    <div 
+      className={Capacitor.isNativePlatform() ? 'bg-gray-900 flex flex-col' : 'relative h-screen'}
+      style={nativeStyle}
+    >
       <DailyVideoCall
         roomName={meeting.room_name}
         userName={userName}
@@ -1131,8 +1140,18 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       if (countError) console.error('Error updating participant count:', countError);
 
       setActiveCall(meeting);
+      window.dispatchEvent(new CustomEvent('viewer:active', { detail: true }));
       if (Capacitor.isNativePlatform()) {
         window.dispatchEvent(new CustomEvent('call:active', { detail: true }));
+        // Direct native bridge call for back button guard
+        if ((window as any).AndroidBridge) {
+          try {
+            (window as any).AndroidBridge.setCallActive(true);
+            console.log('[PiP] AndroidBridge.setCallActive(true) called');
+          } catch(e) {
+            console.error('[PiP] AndroidBridge call failed:', e);
+          }
+        }
       }
     } catch (error) {
       console.error('Error joining meeting:', error);
@@ -1251,8 +1270,17 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       }
 
       setActiveCall(null);
+      window.dispatchEvent(new CustomEvent('viewer:active', { detail: false }));
       if (Capacitor.isNativePlatform()) {
         window.dispatchEvent(new CustomEvent('call:active', { detail: false }));
+        if ((window as any).AndroidBridge) {
+          try {
+            (window as any).AndroidBridge.setCallActive(false);
+            console.log('[PiP] AndroidBridge.setCallActive(false) called');
+          } catch(e) {
+            console.error('[PiP] AndroidBridge call failed:', e);
+          }
+        }
       }
       fetchMeetings();
     } catch (error) {
