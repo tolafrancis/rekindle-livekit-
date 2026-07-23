@@ -6,14 +6,30 @@ import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import App from './App.tsx'
 import './index.css'
 
+let callIsActive = false;
+
 if (Capacitor.isNativePlatform()) {
+  window.addEventListener('call:active', (e: Event) => {
+    const active = (e as CustomEvent).detail as boolean;
+    callIsActive = active;
+    if ((window as any).AndroidBridge) {
+      (window as any).AndroidBridge.setCallActive(active);
+    }
+  });
+
   CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+    if (callIsActive) return; // ignore back while in a call
     console.log('[BACKBUTTON] fired, canGoBack:', canGoBack);
     if (canGoBack) {
       window.history.back();
     } else {
       CapacitorApp.exitApp();
     }
+  });
+
+  window.addEventListener('pipModeChanged', (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    window.dispatchEvent(new CustomEvent('pip:changed', { detail }));
   });
 
   FirebaseMessaging.addListener('notificationReceived', (event) => {

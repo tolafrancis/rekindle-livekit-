@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +29,7 @@ import {
   Copy, AlertCircle, Loader2,
   PhoneOff, MessageSquare,
   Zap, Circle, Trash2, Crown, Globe, MonitorUp,
-  Sparkles, FileText, Hand, GripVertical, X
+  Sparkles, FileText, Hand, GripVertical, X, Minimize2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
@@ -122,7 +123,8 @@ const EnhancedVideoCallWrapper = ({
   isHost, 
   onLeave, 
   channelId, 
-  onEndMeeting 
+  onEndMeeting,
+  onMinimize
 }: { 
   meeting: LiveChannelVideoMeeting; 
   userName: string;
@@ -131,6 +133,7 @@ const EnhancedVideoCallWrapper = ({
   onLeave: () => void;
   channelId: string;
   onEndMeeting?: () => void;
+  onMinimize?: (minimized: boolean) => void;
 }) => {
   const { t } = useLanguage();
   const [meetingEnded, setMeetingEnded] = useState(false);
@@ -369,7 +372,16 @@ const EnhancedVideoCallWrapper = ({
             )}
           </div>
 
-          <div className="absolute top-3 right-3 z-50">
+          <div className="absolute top-3 right-3 z-50 flex gap-2">
+            {Capacitor.isNativePlatform() && (
+              <Button 
+                onClick={() => onMinimize?.(true)} 
+                size="sm" 
+                className="bg-gray-700 hover:bg-gray-600 text-white shadow-lg"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </Button>
+            )}
             <Button onClick={onLeave} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
               <PhoneOff className="h-4 w-4 mr-2" />
               {t('liveChannelInteractiveMeetings', 'leave', 'Leave')}
@@ -387,7 +399,10 @@ const EnhancedVideoCallWrapper = ({
 
   // ── Host / invited speakers (webinar), and everyone (meeting mode) ──
   return (
-    <div className="relative h-screen">
+    <div className={Capacitor.isNativePlatform() 
+      ? 'fixed inset-0 z-[100] bg-gray-900 flex flex-col' 
+      : 'relative h-screen'
+    }>
       <DailyVideoCall
         roomName={meeting.room_name}
         userName={userName}
@@ -416,6 +431,15 @@ const EnhancedVideoCallWrapper = ({
 
       {/* Additional Features Overlay - UI only, no media control */}
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
+        {Capacitor.isNativePlatform() && (
+          <Button 
+            onClick={() => onMinimize?.(true)} 
+            size="sm" 
+            className="bg-gray-700 hover:bg-gray-600 text-white shadow-lg"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </Button>
+        )}
         <Button
           onClick={async () => {
             const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
@@ -947,6 +971,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCall, setActiveCall] = useState<LiveChannelVideoMeeting | null>(null);
+  const [meetingMinimized, setMeetingMinimized] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [channelName, setChannelName] = useState<string | null>(null);
@@ -1228,30 +1253,18 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     }
   };
 
-  // If in active call, show the video component
-  // All media control is delegated to DailyVideoCall - no local media state here
-  if (activeCall) {
-    // Determine display name: signed-in user > guest name > fallback
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
-    // Generate a stable guest ID if user is not signed in
-    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+  // Determine display name: signed-in user > guest name > fallback
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
+  // Generate a stable guest ID if user is not signed in
+  const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
 
-    return (
-      <EnhancedVideoCallWrapper
-        meeting={activeCall}
-        userName={displayName}
-        userId={participantId}
-        isHost={activeCall.host_id === user?.id}
-        onLeave={handleLeaveMeeting}
-        channelId={channelId}
-        onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
-      />
-    );
-  }
+  const showList = !activeCall || (Capacitor.isNativePlatform() && meetingMinimized);
 
   // Meeting list view
   return (
-    <div className="space-y-6">
+    <div className={showList ? "space-y-6" : ""}>
+      {showList && (
+        <>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">{t('liveChannelInteractiveMeetings', 'interactiveMeetings', 'Interactive Meetings')}</h2>
@@ -1600,6 +1613,8 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           )}
         </>
       )}
+        </>
+      )}
 
       <CreateMeetingModal
         isOpen={showCreateModal}
@@ -1648,6 +1663,45 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           )}
         </DialogContent>
       </Dialog>
+
+      {activeCall && (
+        <>
+          {/* Full screen meeting - shown when not minimized */}
+          {(!meetingMinimized || !Capacitor.isNativePlatform()) && (
+            <EnhancedVideoCallWrapper
+              meeting={activeCall}
+              userName={displayName}
+              userId={participantId}
+              isHost={activeCall.host_id === user?.id}
+              onLeave={() => { handleLeaveMeeting(); setMeetingMinimized(false); }}
+              channelId={channelId}
+              onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
+              onMinimize={setMeetingMinimized}
+            />
+          )}
+          
+          {/* Mini-player button - native only, shown when minimized */}
+          {Capacitor.isNativePlatform() && meetingMinimized && (
+            <div 
+              className="fixed bottom-24 right-4 z-[100] bg-purple-600 rounded-xl shadow-xl overflow-hidden cursor-pointer"
+              style={{ width: 160, height: 90 }}
+              onClick={() => setMeetingMinimized(false)}
+            >
+              <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                <div className="text-white text-xs text-center">
+                  <div className="text-lg mb-1">📹</div>
+                  <div>Tap to return</div>
+                  <div className="text-gray-400 text-[10px]">{activeCall.title || 'Meeting'}</div>
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleLeaveMeeting(); setMeetingMinimized(false); }}
+                className="absolute top-1 right-1 bg-red-600 rounded-full w-5 h-5 flex items-center justify-center text-white text-xs"
+              >×</button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };

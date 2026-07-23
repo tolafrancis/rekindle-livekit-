@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -643,7 +644,8 @@ const ParticipantVideo: React.FC<{
   isLarge?: boolean;
   onParticipantJoin?: (participantId: string, userName: string) => void;
   onParticipantLeave?: (participantId: string) => void;
-}> = ({ participant, isLarge = false, onParticipantJoin, onParticipantLeave }) => {
+  isInPiP?: boolean;
+}> = ({ participant, isLarge = false, onParticipantJoin, onParticipantLeave, isInPiP = false }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasJoined, setHasJoined] = useState(false);
@@ -737,7 +739,7 @@ const ParticipantVideo: React.FC<{
   const showVideo = videoAttached || participant.hasVideo;
 
   return (
-    <div className={`relative bg-gray-900 rounded-lg overflow-hidden ${isLarge ? 'aspect-video' : 'aspect-square'}`}>
+    <div className={`relative bg-gray-900 ${isInPiP ? 'rounded-none h-full w-full' : 'rounded-lg overflow-hidden'} ${!isInPiP && (isLarge ? 'aspect-video' : 'aspect-square')}`}>
       {/* Always render video element, just hide if no video */}
       <video
         ref={videoRef}
@@ -759,26 +761,28 @@ const ParticipantVideo: React.FC<{
         </div>
       )}
       
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-        <div className="flex items-center justify-between">
-          <span className="text-white text-sm font-medium truncate">
-            {participant.userName}
-            {participant.isLocal && ` ${t('dailyVideoCall', 'youSuffix', '(You)')}`}
-          </span>
-          <div className="flex items-center gap-1">
-            {participant.hasAudio ? (
-              <Mic className="h-4 w-4 text-green-400" />
-            ) : (
-              <MicOff className="h-4 w-4 text-red-400" />
-            )}
-            {participant.hasScreenShare && (
-              <Monitor className="h-4 w-4 text-blue-400" />
-            )}
+      {!isInPiP && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+          <div className="flex items-center justify-between">
+            <span className="text-white text-sm font-medium truncate">
+              {participant.userName}
+              {participant.isLocal && ` ${t('dailyVideoCall', 'youSuffix', '(You)')}`}
+            </span>
+            <div className="flex items-center gap-1">
+              {participant.hasAudio ? (
+                <Mic className="h-4 w-4 text-green-400" />
+              ) : (
+                <MicOff className="h-4 w-4 text-red-400" />
+              )}
+              {participant.hasScreenShare && (
+                <Monitor className="h-4 w-4 text-blue-400" />
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
       
-      {participant.isOwner && (
+      {!isInPiP && participant.isOwner && (
         <Badge className="absolute top-2 left-2 bg-amber-500 text-xs">{t('dailyVideoCall', 'host', 'Host')}</Badge>
       )}
     </div>
@@ -790,7 +794,7 @@ const ParticipantVideo: React.FC<{
 // track (participant.screenVideoTrack) was never bound to a <video>, so no one
 // could actually see the shared screen. Attaches with a short retry because the
 // remote track can arrive a beat after the participant object updates.
-const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
+const ScreenShareView: React.FC<{ participant: DailyParticipantInfo; isInPiP?: boolean }> = ({ participant, isInPiP = false }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -815,8 +819,8 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
   }, [participant.screenVideoTrack]);
 
   return (
-    <div className="flex flex-col h-full gap-2 p-2">
-      <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black rounded-xl overflow-hidden">
+    <div className={`flex flex-col h-full ${isInPiP ? 'gap-0 p-0' : 'gap-2 p-2'}`}>
+      <div className={`relative flex-1 min-h-0 flex items-center justify-center bg-black ${isInPiP ? 'rounded-none' : 'rounded-xl'} overflow-hidden`}>
         {/* absolute inset-0 pins the video to the container box, so a large shared
             screen (e.g. 2560x1440) is letterboxed to fit (object-contain) and can
             NEVER grow the panel to its native resolution. */}
@@ -827,10 +831,12 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
           muted
           className="absolute inset-0 h-full w-full object-contain"
         />
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
-          <Monitor className="h-3.5 w-3.5" />
-          {t('dailyVideoCall', 'isSharingScreen', '{name} is sharing their screen').replace('{name}', participant.userName)}
-        </div>
+        {!isInPiP && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
+            <Monitor className="h-3.5 w-3.5" />
+            {t('dailyVideoCall', 'isSharingScreen', '{name} is sharing their screen').replace('{name}', participant.userName)}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -905,6 +911,35 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // Enhanced control panels
   const [showHostControls, setShowHostControls] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [isInPiP, setIsInPiP] = useState(false);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const handlePipChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      console.log('[DailyVideoCall] pip:changed event received:', detail);
+      let active = false;
+      if (typeof detail === 'string') {
+        try {
+          const parsed = JSON.parse(detail);
+          active = !!parsed.isInPiP;
+        } catch (err) {
+          console.error('[DailyVideoCall] Failed to parse pip detail string:', err);
+        }
+      } else if (detail && typeof detail === 'object') {
+        active = !!(detail as any).isInPiP;
+      } else if (typeof detail === 'boolean') {
+        active = detail;
+      }
+      setIsInPiP(active);
+    };
+
+    window.addEventListener('pip:changed', handlePipChanged);
+    return () => {
+      window.removeEventListener('pip:changed', handlePipChanged);
+    };
+  }, []);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -1055,6 +1090,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       }
     }
   });
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    window.dispatchEvent(new CustomEvent('call:active', { detail: isConnected }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('call:active', { detail: false }));
+    };
+  }, [isConnected]);
 
   // One-time nudge: the room joins MUTED (mic + camera OFF) to avoid the auto-
   // enable timing race, so tell the user to turn them on. Restores the pre-
@@ -1433,7 +1476,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   return (
     <div 
       ref={containerRef}
-      className={`flex h-full min-h-0 ${showParticipantList ? 'flex-row' : 'flex-col'} bg-gray-900 rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
+      className={`flex min-h-0 ${showParticipantList && !isInPiP ? 'flex-row' : 'flex-col'} bg-gray-900 overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''} ${
+        isInPiP 
+          ? 'h-full w-full rounded-none' 
+          : Capacitor.isNativePlatform() 
+            ? 'h-full w-full rounded-none' 
+            : 'h-full rounded-xl'
+      }`}
     >
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
@@ -1448,11 +1497,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         {/* A live screen share takes over the main stage (local or remote), with a
             camera filmstrip beside it so viewers still see the presenter. */}
         {screenSharer ? (
-          <div className="flex flex-col lg:flex-row h-full gap-2 p-2">
+          <div className={`flex flex-col lg:flex-row h-full ${isInPiP ? 'gap-0 p-0' : 'gap-2 p-2'}`}>
             <div className="flex-1 min-h-0">
-              <ScreenShareView participant={screenSharer} />
+              <ScreenShareView participant={screenSharer} isInPiP={isInPiP} />
             </div>
-            {remoteParticipants.length > 0 && (
+            {remoteParticipants.length > 0 && !isInPiP && (
               <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0 overflow-x-auto lg:overflow-y-auto overflow-y-hidden lg:overflow-x-hidden">
                 {remoteParticipants.map((p: any) => (
                   <div key={p.sessionId} className="w-28 lg:w-full shrink-0">
@@ -1460,6 +1509,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                       participant={p}
                       onParticipantJoin={trackParticipantJoin}
                       onParticipantLeave={trackParticipantLeave}
+                      isInPiP={isInPiP}
                     />
                   </div>
                 ))}
@@ -1467,38 +1517,42 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             )}
           </div>
         ) : remoteParticipants.length === 0 ? (
-          <div className="flex items-center justify-center h-full p-2 sm:p-4">
-            <div className="relative w-full max-w-3xl">
+          <div className={`flex items-center justify-center h-full ${isInPiP ? 'p-0' : 'p-2 sm:p-4'}`}>
+            <div className={`relative w-full ${isInPiP ? 'h-full' : 'max-w-3xl'}`}>
               {localParticipant ? (
                 <ParticipantVideo
                   participant={localParticipant}
                   isLarge
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
+                  isInPiP={isInPiP}
                 />
               ) : (
                 <div className="aspect-video bg-gray-800 rounded-xl flex items-center justify-center">
                   <Users className="h-12 w-12 text-white/40" />
                 </div>
               )}
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/80 text-xs bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full">
-                <Users className="h-3.5 w-3.5 opacity-70" />
-                {t('dailyVideoCall', 'waitingForOthers', 'Waiting for others to join…')}
-              </div>
+              {!isInPiP && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/80 text-xs bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full">
+                  <Users className="h-3.5 w-3.5 opacity-70" />
+                  {t('dailyVideoCall', 'waitingForOthers', 'Waiting for others to join…')}
+                </div>
+              )}
             </div>
           </div>
         ) : pinnedParticipant ? (
-          <div className="flex flex-col h-full gap-2 p-2">
+          <div className={`flex flex-col h-full ${isInPiP ? 'gap-0 p-0' : 'gap-2 p-2'}`}>
             <div className="relative flex-1 min-h-0 flex items-center justify-center">
-              <div className="relative w-full max-w-4xl">
+              <div className={`relative w-full ${isInPiP ? 'h-full' : 'max-w-4xl'}`}>
                 <ParticipantVideo
                   key={pinnedParticipant.sessionId}
                   participant={pinnedParticipant}
                   isLarge
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
+                  isInPiP={isInPiP}
                 />
-                {isHost && (
+                {isHost && !isInPiP && (
                   <button
                     onClick={() => pinParticipant(pinnedParticipant.sessionId)}
                     className="absolute top-2 right-2 z-10 flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
@@ -1508,7 +1562,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 )}
               </div>
             </div>
-            {otherParticipants.length > 0 && (
+            {otherParticipants.length > 0 && !isInPiP && (
               <div className="flex gap-2 h-24 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
                 {otherParticipants.map((participant: any) => (
                   <div key={participant.sessionId} className="relative h-full aspect-video shrink-0">
@@ -1532,20 +1586,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             )}
           </div>
         ) : (
-          <div className={`grid gap-2 p-2 h-full ${
+          <div className={`grid h-full ${isInPiP ? 'gap-0 p-0' : 'gap-2 p-2'} ${
             remoteParticipants.length === 1 ? 'grid-cols-1' :
             remoteParticipants.length <= 4 ? 'grid-cols-2' :
             'grid-cols-3'
           }`}>
             {remoteParticipants.map(participant => (
-              <div key={participant.sessionId} className="relative">
+              <div key={participant.sessionId} className={`relative ${isInPiP ? 'h-full w-full' : ''}`}>
                 <ParticipantVideo
                   participant={participant}
                   isLarge={remoteParticipants.length === 1}
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
+                  isInPiP={isInPiP}
                 />
-                {isHost && (
+                {isHost && !isInPiP && (
                   <button
                     onClick={() => pinParticipant(participant.sessionId)}
                     className="absolute top-1 right-1 z-10 flex items-center gap-1 text-[10px] bg-black/60 hover:bg-purple-600 text-white px-1.5 py-0.5 rounded"
@@ -1560,7 +1615,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
         {/* Local video (picture-in-picture) - ALWAYS render video element, just hide when camera off */}
 
-        {localParticipant && remoteParticipants.length > 0 && (
+        {localParticipant && remoteParticipants.length > 0 && !isInPiP && (
           <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-28 sm:w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700">
             {/* Always render video element so ref is available for track attachment */}
             <video
@@ -1603,7 +1658,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
 
         {/* Top bar */}
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-2 sm:p-4">
+        <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-2 sm:p-4 ${isInPiP ? 'hidden' : ''}`}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
@@ -1702,7 +1757,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       </div>
 
       {/* Controls bar - all controls from useDailyRoom (Daily SDK) */}
-      {showControls && (
+      {showControls && !isInPiP && (
         <div className="bg-gray-900 border-t border-gray-800 p-2 sm:p-6">
           <div className="flex items-center justify-center gap-1.5 sm:gap-6 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Mic toggle - controlled by Daily SDK via useDailyRoom */}
@@ -1918,7 +1973,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       </div>
 
       {/* Host Control Panel */}
-      {showHostControls && isHost && (
+      {showHostControls && isHost && !isInPiP && (
         <HostControlPanel
           participants={participantStates}
           waitingRoomParticipants={waitingRoomParticipants}
@@ -1952,7 +2007,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       )}
 
       {/* Chat Sidebar */}
-      {showChat && (
+      {showChat && !isInPiP && (
         <RoomChatSidebar
           messages={chatMessages}
           onSendMessage={sendChatMessage}

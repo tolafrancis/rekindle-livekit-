@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -468,7 +469,7 @@ const EnhancedVideoCallWrapper = ({
   }
 
   return (
-    <div className="min-h-screen h-full flex flex-col lg:flex-row">
+    <div className={`min-h-screen flex flex-col lg:flex-row ${Capacitor.isNativePlatform() ? 'h-[100dvh] w-full' : 'h-full'}`}>
       <div className="relative flex-1 min-h-0">
       {/* 
         DailyVideoCall Component - SOLE CONTROLLER OF ALL MEDIA
