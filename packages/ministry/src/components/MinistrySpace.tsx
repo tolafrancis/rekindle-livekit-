@@ -197,6 +197,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const entitlements = useUserEntitlements();
   
   const [activeTab, setActiveTab] = useState('home');
+  const [meetingActive, setMeetingActive] = useState(false);
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
@@ -205,6 +206,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
   const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);
+  useEffect(() => {
+    const handler = (e: Event) => setMeetingActive((e as CustomEvent).detail as boolean);
+    window.addEventListener('viewer:active', handler);
+    return () => window.removeEventListener('viewer:active', handler);
+  }, []);
 
   // ── Ministry Community: Revelations ──
   const [mRevLoading, setMRevLoading] = useState(true);
@@ -950,7 +956,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
       {/* Sticky header + navigation (kept together so the nav never overlaps
           the variable-height header on mobile). */}
-      <div className="sticky top-0 z-40" style={typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.() && (window as any).__viewerActive ? {display:'none'} : {}}>
+      {!meetingActive && <div className="sticky top-0 z-40">
         {/* Ministry Header */}
         <div className="shadow-md" style={{ backgroundColor: themeColor }}>
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3">
@@ -1143,7 +1149,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Ministry Tier Upgrade Banner */}
       {showMinistryFeatureUpgradePrompt && (
