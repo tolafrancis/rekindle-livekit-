@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor } from '@capacitor/core';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -1130,6 +1131,9 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       if (countError) console.error('Error updating participant count:', countError);
 
       setActiveCall(meeting);
+      if (Capacitor.isNativePlatform()) {
+        window.dispatchEvent(new CustomEvent('call:active', { detail: true }));
+      }
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('liveChannelInteractiveMeetings', 'failedJoinMeeting', 'Failed to join meeting'));
@@ -1247,6 +1251,9 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       }
 
       setActiveCall(null);
+      if (Capacitor.isNativePlatform()) {
+        window.dispatchEvent(new CustomEvent('call:active', { detail: false }));
+      }
       fetchMeetings();
     } catch (error) {
       console.error('Error leaving meeting:', error);
@@ -1666,40 +1673,46 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       {activeCall && (
         <>
-          {/* Full screen meeting - shown when not minimized */}
-          {(!meetingMinimized || !Capacitor.isNativePlatform()) && (
-            <EnhancedVideoCallWrapper
-              meeting={activeCall}
-              userName={displayName}
-              userId={participantId}
-              isHost={activeCall.host_id === user?.id}
-              onLeave={() => { handleLeaveMeeting(); setMeetingMinimized(false); }}
-              channelId={channelId}
-              onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
-              onMinimize={setMeetingMinimized}
-            />
-          )}
+          {/* Full screen meeting via Portal - escapes overflow-hidden ancestors */}
+          {(!meetingMinimized || !Capacitor.isNativePlatform()) && 
+            createPortal(
+              <EnhancedVideoCallWrapper
+                meeting={activeCall}
+                userName={displayName}
+                userId={participantId}
+                isHost={activeCall.host_id === user?.id}
+                onLeave={() => { handleLeaveMeeting(); setMeetingMinimized(false); }}
+                channelId={channelId}
+                onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
+                onMinimize={setMeetingMinimized}
+              />,
+              document.body
+            )
+          }
           
-          {/* Mini-player button - native only, shown when minimized */}
-          {Capacitor.isNativePlatform() && meetingMinimized && (
-            <div 
-              className="fixed bottom-24 right-4 z-[100] bg-purple-600 rounded-xl shadow-xl overflow-hidden cursor-pointer"
-              style={{ width: 160, height: 90 }}
-              onClick={() => setMeetingMinimized(false)}
-            >
-              <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                <div className="text-white text-xs text-center">
-                  <div className="text-lg mb-1">📹</div>
-                  <div>Tap to return</div>
-                  <div className="text-gray-400 text-[10px]">{activeCall.title || 'Meeting'}</div>
+          {/* Mini-player - also via Portal */}
+          {Capacitor.isNativePlatform() && meetingMinimized && 
+            createPortal(
+              <div 
+                className="fixed bottom-24 right-4 z-[100] bg-purple-600 rounded-xl shadow-xl overflow-hidden cursor-pointer"
+                style={{ width: 160, height: 90 }}
+                onClick={() => setMeetingMinimized(false)}
+              >
+                <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                  <div className="text-white text-xs text-center">
+                    <div className="text-lg mb-1">📹</div>
+                    <div>Tap to return</div>
+                    <div className="text-gray-400 text-[10px]">{activeCall.title || 'Meeting'}</div>
+                  </div>
                 </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleLeaveMeeting(); setMeetingMinimized(false); }}
-                className="absolute top-1 right-1 bg-red-600 rounded-full w-5 h-5 flex items-center justify-center text-white text-xs"
-              >×</button>
-            </div>
-          )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleLeaveMeeting(); setMeetingMinimized(false); }}
+                  className="absolute top-1 right-1 bg-red-600 rounded-full w-5 h-5 flex items-center justify-center text-white text-xs"
+                >×</button>
+              </div>,
+              document.body
+            )
+          }
         </>
       )}
     </div>
