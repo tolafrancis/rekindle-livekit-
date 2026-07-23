@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -171,7 +172,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   const { t } = useLanguage();
   // ===== STATE =====
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'prayer-topics' | 'prayer-series' | 'statistics' | 'prayer-watch'>('prayer-topics');
+  const [activeTab, setActiveTab] = useViewHistory<'prayer-topics' | 'prayer-series' | 'statistics' | 'prayer-watch'>("admin-prayer-library", 'prayer-topics');
   const [searchTerm, setSearchTerm] = useState('');
   
   // Data states

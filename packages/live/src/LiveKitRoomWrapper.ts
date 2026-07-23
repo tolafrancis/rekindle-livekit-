@@ -119,7 +119,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   async joinMeeting(
     url: string,
     token: string,
-    _userName: string,
+    userName: string,
     viewerOnly = false,
   ): Promise<boolean> {
     if (this.previewState.isActive) await this.stopAllPreviews();
@@ -134,6 +134,16 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       await room.connect(url, token);
       this.joined = true;
       this.joining = false;
+      
+      // Set local participant name explicitly — ensures guest display names persist.
+      // The LiveKit token should include the name, but set it explicitly as a backup.
+      if (userName && this.room?.localParticipant) {
+        try {
+          this.room.localParticipant.setName(userName);
+        } catch (err) {
+          console.warn('[LiveKitRoomWrapper] Could not set local participant name:', err);
+        }
+      }
 
       // Join MUTED: mic + camera start OFF (unless viewer-only, which can't publish
       // anyway). Auto-publishing on join raced the browser permission prompt +

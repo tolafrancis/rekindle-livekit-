@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -89,7 +90,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
   const hasMinistrySubscription = profile?.subscription_tier === 'ministry';
   
   // State
-  const [activeTab, setActiveTab] = useState<'create' | 'manage' | 'groups'>('create');
+  const [activeTab, setActiveTab] = useViewHistory<'create' | 'manage' | 'groups'>('ministry-devotional-creator', 'create');
   const [devotionals, setDevotionals] = useState<MinistryDevotional[]>([]);
   const [groups, setGroups] = useState<MinistryGroup[]>([]);
   const [loading, setLoading] = useState(false);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -55,7 +56,7 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ onUpdate }) =>
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('30');
-  const [activeView, setActiveView] = useState<'fees' | 'donations'>('fees');
+  const [activeView, setActiveView] = useViewHistory<'fees' | 'donations'>('billing-overview', 'fees');
 
   const [stats, setStats] = useState({
     totalRevenue: 0,

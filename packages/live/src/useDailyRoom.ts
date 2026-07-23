@@ -84,6 +84,8 @@ export interface UseDailyRoomReturn {
   // Meeting settings and state
   meetingSettings: MeetingSettings;
   isRecording: boolean;
+  /** True host (DB) OR a co-host promoted live — gets full in-call moderator controls. */
+  isModerator: boolean;
   spotlightedParticipantId: string | null;
   pinnedParticipantId: string | null;
   
@@ -198,6 +200,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   
   // Participants
   const [participants, setParticipants] = useState<DailyParticipantInfo[]>([]);
+  // Always-current mirror so effects can read the roster without listing
+  // `participants` as a dependency (it changes every 2s via the state sync, which
+  // would otherwise tear down long-lived subscriptions like chat on every tick).
+  const participantsRef = useRef(participants);
+  participantsRef.current = participants;
   
   // Media state
   const [isMicOn, setIsMicOn] = useState(false);
@@ -274,13 +281,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [options.viewerOnlyMode, options.isHost, user?.id, options.channelId]);
 
-  // Auto-disable media when speaker permission is removed
+  // Auto-disable media when speaker permission is removed (moderators are exempt —
+  // a co-host keeps publishing until actually demoted). isModeratorRef is read in
+  // the body rather than the deps: it's declared further down, so listing it here
+  // would hit the temporal dead zone during render.
   useEffect(() => {
-    if (options.viewerOnlyMode && !options.isHost && !hasSpeakerPermission) {
+    if (options.viewerOnlyMode && !isModeratorRef.current && !hasSpeakerPermission) {
       // If we lost speaker permission, disable media
       if (isMicOn || isCameraOn) {
         console.log('[Daily] Speaker permission removed, disabling media');
-        
+
         (async () => {
           if (isMicOn) {
             await toggleMic();
@@ -291,7 +301,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         })();
       }
     }
-  }, [hasSpeakerPermission, options.viewerOnlyMode, options.isHost, isMicOn, isCameraOn]);
+  }, [hasSpeakerPermission, options.viewerOnlyMode, isMicOn, isCameraOn]);
 
   // Convert Daily participant to our format
   const convertParticipant = useCallback((participant: DailyParticipant): DailyParticipantInfo => {
@@ -400,10 +410,37 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     return participantRoles.get(participantId) || 'attendee';
   }, [participantRoles]);
 
+  // A "moderator" is the true host (from the DB, via options.isHost) OR a co-host
+  // promoted live (role carried in LiveKit participant metadata). Co-hosts get the
+  // same in-call controls; the livekit-moderation edge fn authorizes both server
+  // side, so this is only the client-side gate. Kept in a ref so the many
+  // moderation callbacks can read the CURRENT value without being re-created (and
+  // without re-subscribing) every time a role changes.
+  const localSelf = participants.find(p => p.isLocal);
+  const localRole: ParticipantRole = localSelf
+    ? getParticipantRole(localSelf.sessionId)
+    : (options.isHost ? 'host' : 'attendee');
+  const isModerator = options.isHost || localRole === 'host' || localRole === 'co-host';
+  const isModeratorRef = useRef(isModerator);
+  isModeratorRef.current = isModerator;
+  // A live co-host (or the host) is a full publisher, even in a viewer-only webinar
+  // where attendees join with canPublish:false. Promotion widens their publish grant
+  // server-side (set-role), so treat them as speakers on the client too. This is an
+  // *effective* override — the raw hasSpeakerPermission state is left alone, so a
+  // later demotion cleanly reverts to whatever real speaker permission they hold.
+  const effectiveSpeakerPermission = hasSpeakerPermission || isModerator;
+
   // Assign role to participant
   const assignRole = useCallback(async (participantId: string, role: ParticipantRole) => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can assign roles', variant: 'destructive' });
+    if (!isModeratorRef.current) {
+      toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can assign roles', variant: 'destructive' });
+      return;
+    }
+    // Protect the host: a co-host may not promote anyone to host nor change the
+    // existing host's role — only the true host can. (The server grants co-hosts
+    // set-role, so this guard has to live here.)
+    if (!options.isHost && (role === 'host' || getParticipantRole(participantId) === 'host')) {
+      toast({ title: 'Permission Denied', description: 'Only the host can change the host role', variant: 'destructive' });
       return;
     }
 
@@ -525,6 +562,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         }
         if (data?.error) throw new Error(data.error === 'locked' ? 'This meeting is locked' : data.error);
         if (!data?.url || !data?.token) throw new Error('Invalid response from livekit-token');
+        // Debug: log token info for guest name validation
+        if (!options.isHost) {
+          console.log('[Daily] Guest token generated for:', options.userName);
+        }
         return { url: data.url, token: data.token };
       }
 
@@ -884,8 +925,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Mute specific participant (can only mute, not unmute)
   const muteParticipant = useCallback(async (participantId: string) => {
-    const role = getParticipantRole(participantId);
-    if (!options.isHost && role !== 'co-host') {
+    if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can mute participants', variant: 'destructive' });
       return;
     }
@@ -931,8 +971,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Allow participant to unmute themselves
   const allowUnmute = useCallback(async (participantId: string) => {
-    const role = getParticipantRole(participantId);
-    if (!options.isHost && role !== 'co-host') {
+    if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can manage participants', variant: 'destructive' });
       return;
     }
@@ -976,8 +1015,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Request participant to unmute (does not force)
   const requestUnmute = useCallback(async (participantId: string, participantName: string) => {
-    const role = getParticipantRole(participantId);
-    if (!options.isHost && role !== 'co-host') {
+    if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can make requests', variant: 'destructive' });
       return;
     }
@@ -1002,8 +1040,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Mute all participants
   const muteAll = useCallback(async (except: string[] = []) => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can mute all', variant: 'destructive' });
+    if (!isModeratorRef.current) {
+      toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can mute all', variant: 'destructive' });
       return;
     }
 
@@ -1021,8 +1059,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Disable participant video (can only disable, not enable)
   const disableParticipantVideo = useCallback(async (participantId: string) => {
-    const role = getParticipantRole(participantId);
-    if (!options.isHost && role !== 'co-host') {
+    if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can control video', variant: 'destructive' });
       return;
     }
@@ -1068,8 +1105,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Allow participant to enable their own video
   const allowVideo = useCallback(async (participantId: string) => {
-    const role = getParticipantRole(participantId);
-    if (!options.isHost && role !== 'co-host') {
+    if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can manage participants', variant: 'destructive' });
       return;
     }
@@ -1113,8 +1149,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Request participant to enable video (does not force)
   const requestVideo = useCallback(async (participantId: string, participantName: string) => {
-    const role = getParticipantRole(participantId);
-    if (!options.isHost && role !== 'co-host') {
+    if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can make requests', variant: 'destructive' });
       return;
     }
@@ -1139,8 +1174,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Disable all video
   const disableAllVideo = useCallback(async (except: string[] = []) => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can disable all video', variant: 'destructive' });
+    if (!isModeratorRef.current) {
+      toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can disable all video', variant: 'destructive' });
       return;
     }
 
@@ -1158,8 +1193,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Remove participant from meeting
   const removeParticipant = useCallback(async (participantId: string) => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can remove participants', variant: 'destructive' });
+    if (!isModeratorRef.current) {
+      toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can remove participants', variant: 'destructive' });
       return;
     }
 
@@ -1186,8 +1221,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Admit participant from waiting room
   const admitFromWaitingRoom = useCallback(async (participantId: string) => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can admit participants', variant: 'destructive' });
+    if (!isModeratorRef.current) {
+      toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can admit participants', variant: 'destructive' });
       return;
     }
 
@@ -1212,7 +1247,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Admit all from waiting room
   const admitAllFromWaitingRoom = useCallback(async () => {
-    if (!options.isHost) return;
+    if (!isModeratorRef.current) return;
 
     for (const participant of waitingRoomParticipants) {
       if (isLiveKitBackend()) {
@@ -1231,7 +1266,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Reject from waiting room
   const rejectFromWaitingRoom = useCallback(async (participantId: string) => {
-    if (!options.isHost) return;
+    if (!isModeratorRef.current) return;
 
     setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
 
@@ -1250,8 +1285,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Lock/unlock meeting
   const lockMeeting = useCallback(async (locked: boolean) => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can lock meetings', variant: 'destructive' });
+    if (!isModeratorRef.current) {
+      toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can lock meetings', variant: 'destructive' });
       return;
     }
 
@@ -1272,7 +1307,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Update meeting settings
   const updateMeetingSettings = useCallback(async (settings: Partial<MeetingSettings>) => {
-    if (!options.isHost) return;
+    if (!isModeratorRef.current) return;
 
     setMeetingSettings(prev => ({ ...prev, ...settings }));
 
@@ -1363,9 +1398,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, []);
 
-  // Pin participant (local only)
+  // Pin participant (local only). Toggle semantics: pinning the already-pinned
+  // participant — or passing null — clears the pin. (Previously the "Unpin" button
+  // re-passed the same id and so re-pinned instead of clearing.)
   const pinParticipant = useCallback((participantId: string | null) => {
-    setPinnedParticipantId(participantId);
+    setPinnedParticipantId(prev =>
+      participantId !== null && prev === participantId ? null : participantId
+    );
   }, []);
 
   // Raise hand
@@ -1526,7 +1565,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     return () => clearInterval(interval);
   }, [isConnected, syncParticipantStates]);
 
-  // Real-time chat subscription and loading
+  // Real-time chat subscription and loading. Keyed on the LOCAL participant's
+  // session id (stable for the session), NOT the whole `participants` array — so a
+  // new participant joining (or the 2s state sync) no longer tears the channel down
+  // and reloads, which was dropping the chat on the host's side.
+  const chatLocalSessionId = participants.find(p => p.isLocal)?.sessionId;
   useEffect(() => {
     // Guests subscribe too — no `user` gate — so they SEE the conversation, not
     // just send into it. chat_messages read RLS (read_all_chat) is USING(true).
@@ -1540,7 +1583,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
 
     const sessionStartTime = sessionStartTimeRef.current.toISOString();
-    const localParticipant = participants.find(p => p.isLocal);
+    const localParticipant = participantsRef.current.find(p => p.isLocal);
     if (!localParticipant) {
       console.log('[Chat] No local participant, delaying subscription');
       return;
@@ -1679,7 +1722,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       console.log('[Chat] Cleaning up real-time subscription');
       supabase.removeChannel(channel);
     };
-  }, [isConnected, options.meetingId, participants, user]);
+  }, [isConnected, options.meetingId, chatLocalSessionId, user]);
 
   // enableSpeakerMedia — called by LiveChannelViewer after an invitation is accepted.
   // Bypasses the hasSpeakerPermission gate (the DB row was just written, Realtime fires async).
@@ -1721,8 +1764,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Toggle microphone
   const toggleMic = useCallback(async () => {
-    // Check viewer-only mode permission
-    if (options.viewerOnlyMode && !options.isHost && !hasSpeakerPermission) {
+    // Check viewer-only mode permission (moderators — host & live co-hosts — bypass).
+    if (options.viewerOnlyMode && !isModeratorRef.current && !hasSpeakerPermission) {
       console.log('[Daily] toggleMic blocked: No speaker permission in viewer-only mode');
       toast({
         title: 'Permission Required',
@@ -1761,8 +1804,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Toggle camera
   const toggleCamera = useCallback(async () => {
-    // Check viewer-only mode permission
-    if (options.viewerOnlyMode && !options.isHost && !hasSpeakerPermission) {
+    // Check viewer-only mode permission (moderators — host & live co-hosts — bypass).
+    if (options.viewerOnlyMode && !isModeratorRef.current && !hasSpeakerPermission) {
       console.log('[Daily] toggleCamera blocked: No speaker permission in viewer-only mode');
       toast({
         title: 'Permission Required',
@@ -2147,7 +2190,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // §3D — LiveKit waiting room, host side: mirror the meeting_waiting_room table
   // (status='waiting') into waitingRoomParticipants via Supabase realtime.
   useEffect(() => {
-    if (!isLiveKitBackend() || !options.isHost || !isConnected) return;
+    // Co-hosts moderate too, so they also mirror the waiting room (not just the host).
+    if (!isLiveKitBackend() || !isModerator || !isConnected) return;
     const meetingKey = options.meetingId ?? options.roomName;
 
     const load = async () => {
@@ -2159,7 +2203,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       setWaitingRoomParticipants((data ?? []).map((r: any) => ({
         session_id: r.user_id,
         user_id: r.user_id,
-        user_name: r.name ?? 'Guest',
+        user_name: (r.name && r.name.trim()) ? r.name : 'Guest',
         joinedWaitingRoomAt: new Date(r.requested_at),
       })));
     };
@@ -2170,7 +2214,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_waiting_room', filter: `meeting_id=eq.${meetingKey}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [options.isHost, options.meetingId, options.roomName, isConnected]);
+  }, [isModerator, options.meetingId, options.roomName, isConnected]);
 
   // §3D — waiting room, guest side: while gated (connectionError==='waiting-room'),
   // watch our own row; on 'admitted' reconnect (livekit-token now issues a token).
@@ -2291,6 +2335,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     waitingRoomParticipants,
     meetingSettings,
     isRecording,
+    isModerator,
     spotlightedParticipantId,
     pinnedParticipantId,
     isMicOn,
@@ -2299,7 +2344,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     handRaised,
     raisedHands,
     audioInputState,
-    hasSpeakerPermission,
+    hasSpeakerPermission: effectiveSpeakerPermission,
     toggleMic,
     toggleCamera,
     videoBackground,

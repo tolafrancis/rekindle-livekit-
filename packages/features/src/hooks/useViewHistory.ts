@@ -1,57 +1,83 @@
-import { useCallback, useEffect, useRef } from 'react';
-
-type HistoryState = { __viewHistoryId: string; view: string };
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
- * Syncs a local view-switching useState with browser history so the Android
- * hardware back button (and browser back) steps through views correctly,
- * instead of exiting the app or popping an unrelated parent's history.
+ * Syncs a component-local "which view is showing" useState with the browser
+ * history, so browser Back/Forward step through in-app view changes one at a time
+ * instead of skipping them (or exiting the site).
  *
- * @param id - unique string identifying this component instance (so multiple 
- *   independent history stacks don't collide, e.g. "devotional-library", 
- *   "prayer-series", "ministry-live-channel")
- * @param currentView - the current view value from your existing useState
- * @param setView - the existing setState setter
- * @param isActive - (optional) pass false to disable this hook's popstate 
- *   listener entirely, e.g. when a PARENT component (like MinistrySpace) 
- *   should own popstate instead — mirrors the ministryWorkspaceActive guard 
- *   pattern we used in AppLayout.tsx
+ * How it works
+ * - Each view change (via `navigateView`) pushes ONE history entry.
+ * - The view is stored in `history.state` under a per-component key (`vh:<id>`),
+ *   MERGED with whatever is already there — so nested components (a viewer inside
+ *   MinistrySpace inside AppLayout) each keep their own key and compose without
+ *   clobbering each other's entries.
+ * - On `popstate` (Back/Forward) the view is restored from the entry's state; if
+ *   this component's key is absent from the entry we popped to, it falls back to
+ *   `initialView` (i.e. we've stepped back past where this view was opened).
+ * - On mount the initial view is READ BACK from `history.state` too, so a component
+ *   that remounts (e.g. its parent tab was restored by Back) reappears on the view
+ *   the user was actually on, not the default.
+ *
+ * `id` MUST be unique per mounted component instance that uses the hook, so keys
+ * don't collide (e.g. 'devotional-library', 'prayer-series-viewer').
+ *
+ * Companion state (e.g. `selectedSeries`) stays as ordinary useState — keep it in
+ * sync alongside `navigateView`; only the discrete "view" needs history.
  */
-export function useViewHistory(
+export function useViewHistory<T extends string>(
   id: string,
-  currentView: string,
-  setView: (v: string) => void,
-  isActive: boolean = true
-) {
-  const mounted = useRef(false);
+  initialView: T,
+): [T, (next: T, opts?: { replace?: boolean }) => void] {
+  const key = `vh:${id}`;
 
-  const navigateView = useCallback((view: string) => {
-    setView(view);
-    if (!isActive) return;
-    const currentState = (window.history.state && typeof window.history.state === 'object') ? window.history.state : {};
-    window.history.pushState({ ...currentState, __viewHistoryId: id, view }, '');
-  }, [id, isActive, setView]);
-
-  useEffect(() => {
-    if (!isActive) return;
-    if (!mounted.current) {
-      const currentState = (window.history.state && typeof window.history.state === 'object') ? window.history.state : {};
-      window.history.replaceState({ ...currentState, __viewHistoryId: id, view: currentView }, '');
-      mounted.current = true;
+  const readFromHistory = (): T | undefined => {
+    if (typeof window === 'undefined') return undefined;
+    const s = window.history.state;
+    if (s && typeof s === 'object' && key in (s as Record<string, unknown>)) {
+      return (s as Record<string, unknown>)[key] as T;
     }
-  }, [id, currentView, isActive]);
+    return undefined;
+  };
+
+  const [view, setViewState] = useState<T>(() => readFromHistory() ?? initialView);
+
+  // Refs so the popstate/navigate callbacks always see current values without
+  // re-subscribing (and so navigateView is stable).
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const initialRef = useRef(initialView);
+  initialRef.current = initialView;
+
+  const navigateView = useCallback(
+    (next: T, opts?: { replace?: boolean }) => {
+      if (next === viewRef.current) return;
+      setViewState(next);
+      if (typeof window === 'undefined') return;
+      const cur = window.history.state;
+      const base = cur && typeof cur === 'object' ? { ...(cur as Record<string, unknown>) } : {};
+      const merged = { ...base, [key]: next };
+      // Preserve the current URL — this is an in-page view change, not a route change.
+      const url = window.location.href;
+      if (opts?.replace) window.history.replaceState(merged, '', url);
+      else window.history.pushState(merged, '', url);
+    },
+    [key],
+  );
 
   useEffect(() => {
-    if (!isActive) return;
-    const onPopState = (e: PopStateEvent) => {
-      const state = e.state as HistoryState | null;
-      if (state?.__viewHistoryId === id && state.view) {
-        setView(state.view);
-      }
+    const onPop = (e: PopStateEvent) => {
+      const s = e.state;
+      const restored =
+        s && typeof s === 'object' && key in (s as Record<string, unknown>)
+          ? ((s as Record<string, unknown>)[key] as T)
+          : initialRef.current;
+      if (restored !== viewRef.current) setViewState(restored);
     };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [id, isActive, setView]);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [key]);
 
-  return { navigateView };
+  return [view, navigateView];
 }
+
+export default useViewHistory;

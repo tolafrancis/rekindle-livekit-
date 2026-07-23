@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
@@ -195,7 +196,7 @@ export const SponsorshipSystem: React.FC = () => {
   const { t } = useLanguage();
   const { user, profile, isPartner: authIsPartner } = useAuth() as any;
   const isPartner = authIsPartner ?? !!(profile?.partner_expires_at && new Date(profile.partner_expires_at) > new Date());
-  const [activeTab, setActiveTab] = useState('partners');
+  const [activeTab, setActiveTab] = useViewHistory<string>('sponsorship-system', 'partners');
   const [selectedTier, setSelectedTier] = useState<'individual' | 'ministry' | null>(null);
   const [currency, setCurrency] = useState<'USD' | 'NGN'>('USD');
   const [amount, setAmount] = useState('');

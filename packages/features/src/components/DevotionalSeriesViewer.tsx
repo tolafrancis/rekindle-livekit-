@@ -15,6 +15,7 @@ import { consumeDeepLink } from '../deepLink';
 import { getCategoryColor } from '../categoryDisplay';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { LanguageFallbackMessage, LanguageFallbackBadge } from './LanguageFallbackMessage';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useLocalizedScripture } from '../useLocalizedScripture';
@@ -24,7 +25,6 @@ import { toast } from '@rekindle/ui/use-toast';
 import { instrumentalTracks } from '../data/instrumentals';
 import { SocialShareModal } from './SocialShareModal';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
-import { useViewHistory } from '../hooks/useViewHistory';
 import {
   SearchFilterPanel,
   searchFilterIconClass,
@@ -296,8 +296,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [currentDay, setCurrentDay] = useState<SeriesDay | null>(null);
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'list' | 'series' | 'reading'>('list');
-  const { navigateView: navigateViewMode } = useViewHistory('devotional-series-viewer', view, setView as (v: string) => void);
+  // Browser Back steps list → series → reading and back, one view at a time.
+  const [view, setView] = useViewHistory<'list' | 'series' | 'reading'>('devotional-series-viewer', 'list');
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showDayShareModal, setShowDayShareModal] = useState(false);
@@ -1259,7 +1259,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     setSpiritPrayerTime(0);
     setIsPlaying(true);
     setIsPaused(false);
-    navigateViewMode('reading');
+    setView('reading');
   };
 
   const handleDevotionalSeriesStart = async (series: Series, progress: UserProgress) => {
@@ -1417,7 +1417,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         });
         setShowCompletionModal(true);
         setTimeout(() => {
-          navigateViewMode('series');
+          setView('series');
           setCurrentDay(null);
         }, 1000);
       } else {
@@ -1429,7 +1429,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         // Show share prompt before navigating away
         setShowDayShareModal(true);
         setTimeout(() => {
-          navigateViewMode('series');
+          setView('series');
           setCurrentDay(null);
           setUnlockMessage(null);
         }, 2000);
@@ -1548,7 +1548,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => {
-                navigateViewMode('series');
+                setView('series');
                 setCurrentDay(null);
                 if (audioRef.current) audioRef.current.pause();
                 stopSpeaking();
@@ -2035,7 +2035,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     if (onBack) {
                       onBack();
                     } else {
-                      navigateViewMode('list');
+                      setView('list');
                       setSelectedSeries(null);
                     }
                   }}
@@ -2485,7 +2485,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 </div>
               );
             })()}
-            <Button onClick={() => { setShowCompletionModal(false); navigateViewMode('series'); }}>
+            <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
               {t('devotionals', 'viewSeries')}
             </Button>
           </div>

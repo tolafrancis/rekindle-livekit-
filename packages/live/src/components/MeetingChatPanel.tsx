@@ -34,7 +34,7 @@ export const MeetingChatPanel: React.FC<MeetingChatPanelProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-gray-900 text-white border-l border-gray-800">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-gray-800 bg-gray-900 text-white">
       <div className="flex items-center justify-between p-3 border-b border-gray-800 shrink-0">
         <span className="flex items-center gap-2 text-sm font-medium">
           <MessageCircle className="h-4 w-4" /> Chat
@@ -46,14 +46,14 @@ export const MeetingChatPanel: React.FC<MeetingChatPanelProps> = ({
         )}
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2">
         {messages.length === 0 ? (
           <p className="text-xs text-gray-500">No messages yet. Say hello!</p>
         ) : (
           messages.map(m => (
             <div key={m.id} className="text-sm leading-snug">
               <span className={`font-medium ${m.user_id === userId ? 'text-purple-300' : 'text-gray-300'}`}>
-                {m.user_name || 'Guest'}:{' '}
+                {(m.user_name && m.user_name.trim()) ? m.user_name : 'Guest'}:{' '}
               </span>
               <span className="text-gray-100 break-words">{m.content}</span>
             </div>

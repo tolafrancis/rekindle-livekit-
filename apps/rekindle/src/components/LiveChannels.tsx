@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
-import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { UpgradePromptModal } from './UpgradePromptModal';
 import { supabase } from '@/lib/supabase';
 import { Button } from './ui/button';
@@ -160,8 +160,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Active view state
   const [selectedChannel, setSelectedChannel] = useState<LiveChannel | null>(null);
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'broadcast' | 'watch' | 'recordings'>('list');
-  const { navigateView: navigateViewMode } = useViewHistory('live-channels', viewMode, setViewMode);
+  // Full-view switch (list ↔ broadcast/watch/recordings). Back returns to the list
+  // instead of exiting the channels tab. selectedChannel stays plain companion state.
+  const [viewMode, setViewMode] = useViewHistory<'list' | 'broadcast' | 'watch' | 'recordings'>('live-channels-view', 'list');
 
   // Safe helper function to get live channel count
   const getLiveChannelCount = async (): Promise<number> => {
@@ -598,20 +599,20 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Watch channel
   const watchChannel = (channel: LiveChannel) => {
     setSelectedChannel(channel);
-    navigateViewMode('watch');
+    setViewMode('watch');
   };
 
   // Go live on own channel
   const goLive = (channel: LiveChannel) => {
     setSelectedChannel(channel);
-    navigateViewMode('broadcast');
+    setViewMode('broadcast');
   };
 
   // Handle end broadcast
   const handleEndBroadcast = async () => {
     console.log('[LiveChannels] Broadcast ended, refreshing channels...');
     setSelectedChannel(null);
-    navigateViewMode('list');
+    setViewMode('list');
     // Force refresh after a small delay to ensure database updates have propagated
     await new Promise(resolve => setTimeout(resolve, 300));
     await loadChannels();
@@ -621,7 +622,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Handle leave viewer
   const handleLeaveViewer = () => {
     setSelectedChannel(null);
-    navigateViewMode('list');
+    setViewMode('list');
   };
 
   // Render broadcast view
@@ -642,7 +643,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
         onLeave={handleLeaveViewer}
         isFollowing={followingIds.has(selectedChannel.id)}
         onToggleFollow={() => toggleFollow(selectedChannel)}
-        onViewRecordings={() => navigateViewMode('recordings')}
+        onViewRecordings={() => setViewMode('recordings')}
       />
     );
   }
@@ -656,7 +657,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           variant="ghost"
           className="mb-4"
           onClick={() => {
-            navigateViewMode('list');
+            setViewMode('list');
             setSelectedChannel(null);
           }}
         >
@@ -982,7 +983,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                     onGoLive={() => goLive(channel)}
                     onViewRecordings={() => {
                       setSelectedChannel(channel);
-                      navigateViewMode('recordings');
+                      setViewMode('recordings');
                     }}
                   />
                   {/* Attractive "connect to socials" entry point — opens the same

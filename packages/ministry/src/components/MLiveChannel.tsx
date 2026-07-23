@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
-import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { supabase } from '@rekindle/supabase';
 import { Button } from '@rekindle/ui/button';
@@ -95,7 +95,9 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState('discover');
+  // Nested inside MinistrySpace — the hook's state-merge composes with the parent
+  // tab history so Back steps through these tabs then back out to MinistrySpace.
+  const [activeTab, setActiveTab] = useViewHistory<string>('mlivechannel-tab', 'discover');
   
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -114,8 +116,9 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   const [selectedChannel, setSelectedChannel] = useState<LiveChannel | null>(null);
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
   const [recordingsChannel, setRecordingsChannel] = useState<LiveChannel | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'broadcast' | 'watch'>('list');
-  const { navigateView: navigateViewMode } = useViewHistory('ministry-live-channel', viewMode, setViewMode);
+  // Full-view switch (list ↔ broadcast/watch). Back returns to the list; composes
+  // with the tab history above and the parent MinistrySpace via the state-merge.
+  const [viewMode, setViewMode] = useViewHistory<'list' | 'broadcast' | 'watch'>('mlivechannel-view', 'list');
 
   // Upload image to Supabase Storage
   const uploadImage = async (file: File, bucket: 'channel-logos' | 'channel-featured') => {
@@ -515,19 +518,19 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   // Watch channel
   const watchChannel = (channel: LiveChannel) => {
     setSelectedChannel(channel);
-    navigateViewMode('watch');
+    setViewMode('watch');
   };
 
   // Go live on own channel
   const goLive = (channel: LiveChannel) => {
     setSelectedChannel(channel);
-    navigateViewMode('broadcast');
+    setViewMode('broadcast');
   };
 
   // Handle end broadcast
   const handleEndBroadcast = async () => {
     setSelectedChannel(null);
-    navigateViewMode('list');
+    setViewMode('list');
     await new Promise(resolve => setTimeout(resolve, 300));
     await loadChannels();
   };
@@ -535,7 +538,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   // Handle leave viewer
   const handleLeaveViewer = () => {
     setSelectedChannel(null);
-    navigateViewMode('list');
+    setViewMode('list');
   };
 
   // Render broadcast view

@@ -409,13 +409,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   // activeTab → URL path. Skip PATHLESS_TABS, and never overwrite a content deep-link
   // path (2+ segments) — only bare tab paths or the root get rewritten.
+  const tabUrlSyncedRef = useRef(false);
   useEffect(() => {
     if (PATHLESS_TABS.has(activeTab)) return;
     const segs = location.pathname.split('/').filter(Boolean);
     const onDeepLink = segs.length >= 2; // e.g. /books/:id — leave it alone
     if (!onDeepLink && segs[0] !== activeTab) {
-      navigate('/' + activeTab, { replace: true });
+      // First run just normalizes the URL (replace — no history entry). Every later
+      // tab change PUSHES, so browser Back steps through tabs instead of exiting the
+      // app. The `segs[0] !== activeTab` guard above stops a re-push when a Back has
+      // already moved the URL here (the URL→activeTab effect then updates the tab).
+      navigate('/' + activeTab, { replace: !tabUrlSyncedRef.current });
     }
+    tabUrlSyncedRef.current = true;
   }, [activeTab]);
   
   console.log('[AppLayout] initialTab received:', initialTab);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -160,7 +161,7 @@ function StatCard({ icon: Icon, label, value, sub, colour }: {
 
 export const AdminWhatsAppManager: React.FC = () => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'overview' | 'wallets' | 'waba' | 'broadcasts' | 'transactions' | 'subscribers' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useViewHistory<'overview' | 'wallets' | 'waba' | 'broadcasts' | 'transactions' | 'subscribers' | 'settings'>("admin-whatsapp", 'overview');
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [planFilter, setPlanFilter] = useState('all');

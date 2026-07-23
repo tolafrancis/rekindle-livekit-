@@ -1,4 +1,5 @@
 import React from 'react';
+import { Smile } from 'lucide-react';
 import { FloatingReaction } from '../useMeetingReactions';
 
 // Ministry-flavored reaction set
@@ -58,3 +59,69 @@ export const ReactionBar: React.FC<{
     ))}
   </div>
 );
+
+/**
+ * A single compact button that opens a popover of the reaction emojis, instead of
+ * showing all six inline. Meant to sit just above the control bar; the popover opens
+ * UPWARD and clamps to the viewport width so it never spills off-screen, and it
+ * dismisses on outside click or Escape.
+ */
+export const ReactionButton: React.FC<{
+  onReact: (emoji: string) => void;
+}> = ({ onReact }) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-gray-900/90 px-2 py-1.5 shadow-lg backdrop-blur-sm max-w-[calc(100vw-1.5rem)]"
+        >
+          {REACTIONS.map((r) => (
+            <button
+              key={r.emoji}
+              onClick={() => {
+                onReact(r.emoji);
+                setOpen(false);
+              }}
+              title={r.label}
+              aria-label={r.label}
+              className="px-1.5 py-0.5 text-2xl leading-none transition-transform hover:scale-125 active:scale-90"
+            >
+              {r.emoji}
+            </button>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Reactions"
+        aria-expanded={open}
+        title="Reactions"
+        className={`flex h-10 w-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
+          open ? 'bg-purple-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
+        }`}
+      >
+        <Smile className="h-5 w-5" />
+      </button>
+    </div>
+  );
+};

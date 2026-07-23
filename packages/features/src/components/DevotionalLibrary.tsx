@@ -10,10 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { recordDailyActivity } from '../streak';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { toast } from '@rekindle/ui/use-toast';
-import { useViewHistory } from '../hooks/useViewHistory';
 import { DevotionalModule } from './DevotionalModule';
 import DevotionalSeriesViewer from './DevotionalSeriesViewer';
 import { 
@@ -85,8 +85,9 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
   const [shareEmail, setShareEmail] = useState('');
   const [shareMessage, setShareMessage] = useState('');
   const [userProgress, setUserProgress] = useState<Record<string, UserProgress>>({});
-  const [view, setView] = useState<'library' | 'series' | 'entry' | 'module'>('library');
-  const { navigateView: navigateViewMode } = useViewHistory('devotional-library', view, setView as (v: string) => void);
+  // Browser Back steps through views (library → module and back) instead of
+  // exiting the section. Companion state (selectedSeries/currentEntry) stays plain.
+  const [view, setView] = useViewHistory<'library' | 'series' | 'entry' | 'module'>('devotional-library', 'library');
   
   // Get devotional access level from subscription
   const devotionalAccessLevel = entitlements.hasUnlimitedDevotionals ? 'unlimited' : 'limited';
@@ -262,13 +263,13 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
         if (isMounted.current) {
           setSelectedSeries(seriesData);
           setCurrentEntry(firstEntry);
-          navigateViewMode('module');
+          setView('module');
         }
       } else {
         if (isMounted.current) {
           setSelectedSeries(seriesData);
           setCurrentEntry(entryData);
-          navigateViewMode('module');
+          setView('module');
         }
       }
     } catch (err: any) {
@@ -504,7 +505,7 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
           await loadSeries();
           setSelectedSeries(null);
           setCurrentEntry(null);
-          navigateViewMode('library');
+          setView('library');
           toast({ 
             title: t('devotionals', 'devotionalCompleteExcl', 'Devotional Complete!'), 
             description: t('devotionals', 'progressBeenSaved', 'Your progress has been saved.'),
@@ -514,12 +515,12 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
         onClose={() => {
           setSelectedSeries(null);
           setCurrentEntry(null);
-          navigateViewMode('library');
+          setView('library');
         }}
       />
     );
   }
- 
+
   // Show loading if we're in module view but data isn't ready
   if (view === 'module') {
     return (
@@ -530,7 +531,7 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
           <Button 
             variant="outline" 
             className="mt-4"
-            onClick={() => navigateViewMode('library')}
+            onClick={() => setView('library')}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Library

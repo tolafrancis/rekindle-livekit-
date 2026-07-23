@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -116,7 +117,7 @@ const LANGUAGES = [
 
 export const AdminCounsellorManager: React.FC = () => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('applications');
+  const [activeTab, setActiveTab] = useViewHistory<string>("admin-counsellor", 'applications');
   const [counsellors, setCounsellors] = useState<Counsellor[]>([]);
   const [sessions, setSessions] = useState<CounsellingSession[]>([]);
   const [applications, setApplications] = useState<CounsellorApplication[]>([]);

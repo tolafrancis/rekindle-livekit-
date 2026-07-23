@@ -11,6 +11,8 @@ import MemberMinistryProfile from "@/components/registration/MemberMinistryProfi
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { ActiveCallProvider } from "@rekindle/live/ActiveCallContext";
+import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import AdminPage from "./pages/AdminPage";
@@ -64,6 +66,7 @@ const App = () => {
         <TooltipProvider>
           <AuthProvider>
             <LanguageProvider>
+              <ActiveCallProvider>
               <Toaster />
               <Sonner />
               <BrowserRouter>
@@ -122,7 +125,11 @@ const App = () => {
                 </Routes>
                 {/* Universal back-to-top — available on every route, no per-page wiring */}
                 <BackToTop />
+                {/* Persistent meeting layer — keeps a live call mounted across tab
+                    navigation and shows the minimized mini-player. */}
+                <ActiveCallHost />
               </BrowserRouter>
+              </ActiveCallProvider>
             </LanguageProvider>
           </AuthProvider>
         </TooltipProvider>

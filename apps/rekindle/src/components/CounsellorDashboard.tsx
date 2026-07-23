@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -93,7 +94,7 @@ export const CounsellorDashboard: React.FC = () => {
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
   
-  const [activeTab, setActiveTab] = useState('sessions');
+  const [activeTab, setActiveTab] = useViewHistory<string>('counsellor-dashboard', 'sessions');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<CounsellorProfile | null>(null);

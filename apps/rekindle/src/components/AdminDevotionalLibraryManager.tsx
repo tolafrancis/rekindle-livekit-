@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -164,7 +165,7 @@ interface Entry {
 
 export const AdminDevotionalLibraryManager: React.FC = () => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'series' | 'entries' | 'categories'>('series');
+  const [activeTab, setActiveTab] = useViewHistory<'series' | 'entries' | 'categories'>("admin-devotional-library", 'series');
   const [categories, setCategories] = useState<Category[]>([]);
   const [series, setSeries] = useState<Series[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);

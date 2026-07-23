@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
@@ -168,7 +169,7 @@ export const ProfileSettings: React.FC = () => {
   }
 
   const [saving, setSaving] = useState(false);
-  const [section, setSection] = useState<string>('profile');
+  const [section, setSection] = useViewHistory<string>('profile-settings', 'profile');
   // Lets other screens deep-link into a specific settings section, e.g. the home
   // "set up reminders" tip opens the Daily Reminders section directly.
   useEffect(() => {

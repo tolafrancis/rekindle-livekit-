@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -196,8 +197,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
   
-  const [activeTab, setActiveTab] = useState('home');
-  const [meetingActive, setMeetingActive] = useState(false);
+  // Main ministry tab. Back steps through tabs; the hook's state-merge composes
+  // with nested children (MLiveChannel, GiftAid, etc.) and the parent hub.
+  const [activeTab, setActiveTab] = useViewHistory<string>('ministry-space-tab', 'home');
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
@@ -206,11 +208,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
   const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);
-  useEffect(() => {
-    const handler = (e: Event) => setMeetingActive((e as CustomEvent).detail as boolean);
-    window.addEventListener('viewer:active', handler);
-    return () => window.removeEventListener('viewer:active', handler);
-  }, []);
 
   // ── Ministry Community: Revelations ──
   const [mRevLoading, setMRevLoading] = useState(true);
@@ -674,43 +671,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const ownsSubtab = (gid: string) => gid in SUBTAB;
   const activeGroup = GROUPS.find(g => g.id === activeTab || g.children?.some(c => c.id === activeTab)) ?? GROUPS[0];
   const goToGroup = (g: NavGroup) => {
-    const newTab = (!g.children || ownsSubtab(g.id)) ? g.id : g.children[0].id;
-    setActiveTab(newTab);
-    window.history.pushState({ ministrySpace: true, tab: newTab }, '');
+    if (!g.children || ownsSubtab(g.id)) { setActiveTab(g.id); return; }
+    setActiveTab(g.children[0].id); // admin group → first child
   };
-
   const goToChild = (g: NavGroup, childId: string) => {
-    if (ownsSubtab(g.id)) {
-      setActiveTab(g.id);
-      SUBTAB[g.id].set(childId);
-      window.history.pushState({ ministrySpace: true, tab: g.id, subTab: childId }, '');
-      return;
-    }
-    setActiveTab(childId);
-    window.history.pushState({ ministrySpace: true, tab: childId }, '');
+    if (ownsSubtab(g.id)) { setActiveTab(g.id); SUBTAB[g.id].set(childId); return; }
+    setActiveTab(childId); // admin group child
   };
-
-  useEffect(() => {
-    window.history.pushState({ ministrySpace: true, tab: 'home' }, '');
-  }, []);
-
-  useEffect(() => {
-    const onPopState = (event: PopStateEvent) => {
-      if (event.state?.ministrySpace) {
-        setActiveTab(event.state.tab);
-        if (event.state.subTab && ownsSubtab(event.state.tab)) {
-          SUBTAB[event.state.tab].set(event.state.subTab);
-        }
-      } else {
-        // Popped past all of Ministry Space's own history entries — 
-        // actually leaving Ministry Space now.
-        onExit();
-      }
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [onExit]);
-
   const isChildActive = (g: NavGroup, childId: string) =>
     ownsSubtab(g.id) ? activeTab === g.id && SUBTAB[g.id].value === childId : activeTab === childId;
   const isGroupActive = (g: NavGroup) => activeGroup.id === g.id;
@@ -956,7 +923,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
       {/* Sticky header + navigation (kept together so the nav never overlaps
           the variable-height header on mobile). */}
-      {!meetingActive && <div className="sticky top-0 z-40">
+      <div className="sticky top-0 z-40">
         {/* Ministry Header */}
         <div className="shadow-md" style={{ backgroundColor: themeColor }}>
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3">
@@ -1029,17 +996,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             Hamburger (labelled) menu + horizontal icon tabs. */}
         <div className="bg-white border-b md:hidden">
           <div className="max-w-7xl mx-auto px-2 sm:px-4">
-            <div className="flex items-center gap-1.5 py-2">
-              {/* Standalone Back to Rekindle button */}
-              <button
-                onClick={onExit}
-                aria-label={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
-                title={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 bg-gray-100 hover:bg-gray-200 shrink-0"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-
+            <div className="flex items-center gap-1 py-2">
               {/* Mobile menu button: tap to reveal navigation with text labels */}
               <div className="relative sm:hidden shrink-0">
                 <button
@@ -1149,7 +1106,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
           </div>
         </div>
-      </div>}
+      </div>
 
       {/* Ministry Tier Upgrade Banner */}
       {showMinistryFeatureUpgradePrompt && (
