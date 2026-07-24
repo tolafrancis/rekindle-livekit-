@@ -1140,12 +1140,13 @@ export function PrayerLibrary() {
     };
 
     // Convert sessionData to prayer points format
-    const prayerPoints: PrayerPoint[] = sessionData.prayer_points?.map((point: any, index: number) => ({
-      id: point.id || `point-${index}`,
-      title: point.title || point.content || `Prayer Point ${index + 1}`,
+    const prayerPoints: PrayerPoint[] = sessionData.prayer_points?.map((point: any) => ({
+      title: point.title || '',
       content: point.content || point.title || '',
-      duration_seconds: point.duration_seconds || 60,
-      order_index: point.order_index ?? index
+      scripture: point.scripture || undefined,
+      scriptureText: point.scriptureText || undefined,
+      reflection: point.reflection || undefined,
+      duration: point.duration || 60,
     })) || [];
 
     // Determine session type based on duration
@@ -1212,9 +1213,9 @@ export function PrayerLibrary() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="prayer-topics">{t('prayers', 'prayerTopics', 'Prayer Topics')}</TabsTrigger>
-          <TabsTrigger value="prayer-series">{t('prayers', 'series', 'Prayer Series')}</TabsTrigger>
-          <TabsTrigger value="prayer-watch">{t('prayers', 'prayerWatch', 'Prayer Watch')}</TabsTrigger>
+          <TabsTrigger value="prayer-topics" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerTopics', 'Prayer Topics')}</TabsTrigger>
+          <TabsTrigger value="prayer-series" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'series', 'Prayer Series')}</TabsTrigger>
+          <TabsTrigger value="prayer-watch" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerWatch', 'Prayer Watch')}</TabsTrigger>
         </TabsList>
 
         {/* ===== PRAYER TOPICS TAB ===== */}
