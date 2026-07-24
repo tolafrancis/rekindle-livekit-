@@ -169,6 +169,26 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
     }
   };
 
+  // Lets a screenshot or copied image go straight from the clipboard into the
+  // chat (e.g. Win+Shift+S, or a copied image) without saving to disk first
+  // and picking it via the file dialog. Gated by the same canAttach permission
+  // as the paperclip button — pasted images still go through the same upload path.
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (!canAttach || uploading || chatMode === 'disabled') return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleFile(file);
+        }
+        break;
+      }
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'host':
@@ -417,6 +437,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
+            onPaste={handlePaste}
             placeholder={
               chatMode === 'disabled'
                 ? 'Chat is disabled'

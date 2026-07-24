@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@rekindle/supabase';
+import type { ChatAttachment } from '@rekindle/types/liveChannelTypes';
 
 export interface MeetingChatMessage {
   id: string;
@@ -7,6 +8,7 @@ export interface MeetingChatMessage {
   user_name: string | null;
   content: string;
   created_at: string;
+  attachment?: ChatAttachment | null;
 }
 
 /**
@@ -21,7 +23,7 @@ export function useMeetingChat(meetingId: string, userId: string, userName: stri
     try {
       const { data } = await supabase
         .from('meeting_chat')
-        .select('id, user_id, user_name, content, created_at')
+        .select('id, user_id, user_name, content, created_at, attachment')
         .eq('meeting_id', meetingId)
         .order('created_at', { ascending: true })
         .limit(300);
@@ -59,12 +61,12 @@ export function useMeetingChat(meetingId: string, userId: string, userName: stri
     };
   }, [meetingId, load]);
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, attachment?: ChatAttachment | null) => {
     const text = content.trim();
-    if (!text) return;
+    if (!text && !attachment) return;
     const { error } = await supabase
       .from('meeting_chat')
-      .insert({ meeting_id: meetingId, user_id: userId, user_name: userName, content: text });
+      .insert({ meeting_id: meetingId, user_id: userId, user_name: userName, content: text, attachment: attachment || null });
     if (error) console.error('[useMeetingChat] send failed:', error.message, error);
     else load();
   }, [meetingId, userId, userName, load]);
