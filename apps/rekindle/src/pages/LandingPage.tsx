@@ -9,6 +9,10 @@ interface LandingPageProps {
   onSignUp: () => void;
 }
 
+// The Ministry app is a separate deployment (see project docs) — Ministry
+// Partner checkout lives there, gated behind its own login, not in this app.
+const MINISTRY_APP_URL = import.meta.env.VITE_MINISTRY_APP_URL || 'https://rekindlebc.com';
+
 const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
   const { t } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
@@ -70,7 +74,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
               Re<span style={{ color: '#a78bfa' }}>Kindle</span> BC
             </span>
             <div className="rk-desktop-nav" style={{ alignItems: 'center', justifyContent: 'flex-end', gap: '12px 18px' }}>
-              {[[t('landing', 'navFeatures', "Features"),'features'],[t('landing', 'navPartner', "Partner"),'pricing']].map(([l, id]) => (
+              {[[t('landing', 'navFeatures', "Features"),'features'],[t('landing', 'navMinistryCrm', "Ministry CRM"),'ministry-crm'],[t('landing', 'navGiftAid', "Gift Aid"),'gift-aid'],[t('landing', 'navPartner', "Partner"),'pricing']].map(([l, id]) => (
                 <button key={l} onClick={() => scrollTo(id)}
                   style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.65)', fontSize: '.9rem', fontWeight: 500, cursor: 'pointer' }}
                   onMouseOver={e => (e.currentTarget.style.color = '#fff')}
@@ -245,7 +249,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
                 <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '2rem', color: '#fff', marginBottom: 16 }}>{t('landing', 'indivTitle', "Your personal sanctuary for spiritual growth")}</h2>
                 <p style={{ color: 'rgba(255,255,255,.6)', fontSize: '.98rem', lineHeight: 1.75, marginBottom: 28 }}>{t('landing', 'indivDesc', "Whether you are a new believer or a seasoned disciple, ReKindle gives you the structure and community to deepen your walk with God daily.")}</p>
                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {[t('landing', 'indiv1', "Daily devotional library with unlimited access"),t('landing', 'indiv2', "Audio devotionals — listen anywhere, hands-free"),t('landing', 'indiv3', "Offline access — download and read without a signal"),t('landing', 'indiv4', "GraceCounsel AI spiritual companion"),t('landing', 'indiv5', "Prayer streak tracking & accountability"),t('landing', 'indiv6', "Scripture memory & Bible reading plans"),t('landing', 'indiv7', "Book a Christian counsellor anytime"),t('landing', 'indiv8', "WhatsApp reminders for devotionals & prayer")].map(item => (
+                  {[t('landing', 'indiv1', "Daily devotional library with unlimited access"),t('landing', 'indiv2', "Audio devotionals — listen anywhere, hands-free"),t('landing', 'indiv3', "Offline access — download and read without a signal"),t('landing', 'indiv4', "GraceCounsel AI spiritual companion"),t('landing', 'indiv5', "Prayer streak tracking & accountability"),t('landing', 'indiv6', "Scripture memory & Bible reading plans"),t('landing', 'indiv7', "Book a Christian counsellor anytime")].map(item => (
                     <li key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, color: 'rgba(255,255,255,.75)', fontSize: '.92rem' }}>
                       <span style={{ background: 'rgba(167,139,250,.2)', color: '#a78bfa', width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.7rem', flexShrink: 0, marginTop: 2 }}>✓</span>
                       {item}
@@ -258,13 +262,114 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
                 <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '2rem', color: '#0f0a1e', marginBottom: 16 }}>{t('landing', 'minTitle', "Everything your ministry needs to reach and disciple")}</h2>
                 <p style={{ color: '#4a3f6b', fontSize: '.98rem', lineHeight: 1.75, marginBottom: 28 }}>{t('landing', 'minDesc', "Give your church or ministry the infrastructure to communicate at scale, host live events, and disciple your congregation.")}</p>
                 <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {[t('landing', 'min1', "WhatsApp broadcast with Meta WABA or Twilio"),t('landing', 'min2', "Email & push broadcast messaging"),t('landing', 'min3', "Live meetings with recordings & replays"),t('landing', 'min4', "Team management with role permissions"),t('landing', 'min5', "Ministry branding & custom dashboard"),t('landing', 'min6', "Advanced analytics & CSV exports")].map(item => (
+                  {[t('landing', 'min1', "WhatsApp broadcast with Meta WABA or Twilio"),t('landing', 'min2', "Email & push broadcast messaging"),t('landing', 'min3', "Live broadcast with recordings & replays"),t('landing', 'min9', "Stream live on YouTube & Facebook"),t('landing', 'min4', "Team management with role permissions"),t('landing', 'min5', "Ministry branding & custom dashboard"),t('landing', 'min6', "Advanced analytics & CSV exports"),t('landing', 'min7', "Ministry CRM: members, volunteers, donors & events"),t('landing', 'min8', "UK Gift Aid claims with direct HMRC submission")].map(item => (
                     <li key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, color: '#4a3f6b', fontSize: '.92rem' }}>
                       <span style={{ background: 'rgba(124,58,237,.12)', color: '#7c3aed', width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.7rem', flexShrink: 0, marginTop: 2 }}>✓</span>
                       {item}
                     </li>
                   ))}
                 </ul>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 28 }}>
+                  <button onClick={() => scrollTo('ministry-crm')} style={{
+                    background: '#7c3aed', color: '#fff', padding: '11px 22px', borderRadius: 100,
+                    fontSize: '.88rem', fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+                    transition: 'opacity .2s',
+                  }}
+                    onMouseOver={e => (e.currentTarget.style.opacity = '.88')}
+                    onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+                  >{t('landing', 'crmCta', "Explore Ministry CRM")} →</button>
+                  <button onClick={() => scrollTo('gift-aid')} style={{
+                    background: 'transparent', color: '#7c3aed', padding: '11px 22px', borderRadius: 100,
+                    fontSize: '.88rem', fontWeight: 600, border: '1.5px solid rgba(124,58,237,.3)', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+                    transition: 'all .2s',
+                  }}
+                    onMouseOver={e => { e.currentTarget.style.background = '#ede9fe'; }}
+                    onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >{t('landing', 'giftAidCta', "Learn about Gift Aid")} →</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* MINISTRY CRM */}
+        <section id="ministry-crm" style={{ background: '#fff', padding: '100px 0' }}>
+          <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 24px' }}>
+            <p className="rk-reveal" style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: 12 }}>{t('landing', 'crmEyebrow', "Ministry CRM")}</p>
+            <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#0f0a1e', maxWidth: 640 }}>{t('landing', 'crmTitle', "One CRM to run your entire church, ministry, or charity")}</h2>
+            <p className="rk-reveal" style={{ color: '#7c6fa0', fontSize: '1.05rem', maxWidth: 560, marginTop: 14 }}>{t('landing', 'crmSubtitle', "Replace spreadsheets and disconnected tools with a Ministry CRM purpose-built for churches and faith-based charities — members, volunteers, giving, events, and outreach, all in one place.")}</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 24, marginTop: 56 }}>
+              {[
+                { icon: '👥', title: t('landing', 'crmFeat1Title', "Member & Visitor Management"), desc: t('landing', 'crmFeat1Desc', "Maintain a complete directory of members, visitors, and first-timers with household groupings, custom fields, tags, and follow-up pipelines.") },
+                { icon: '🤝', title: t('landing', 'crmFeat2Title', "Volunteer Management"), desc: t('landing', 'crmFeat2Desc', "Recruit, schedule, and track volunteers across ministries and teams — from serving rotas to availability and skills.") },
+                { icon: '💷', title: t('landing', 'crmFeat3Title', "Donor & Contribution Tracking"), desc: t('landing', 'crmFeat3Desc', "Record giving by fund or campaign, generate giving statements, and see donor history at a glance — fully linked to Gift Aid.") },
+                { icon: '📅', title: t('landing', 'crmFeat4Title', "Event & Attendance Management"), desc: t('landing', 'crmFeat4Desc', "Plan services and events, manage RSVPs and check-in, and track attendance trends across your congregation over time.") },
+                { icon: '✉️', title: t('landing', 'crmFeat5Title', "Communication Tools"), desc: t('landing', 'crmFeat5Desc', "Reach your congregation by WhatsApp, email, SMS, and push notification — segmented lists, templates, and delivery analytics.") },
+                { icon: '📡', title: t('landing', 'crmFeat6Title', "Multi-Platform Live Broadcasting"), desc: t('landing', 'crmFeat6Desc', "Connect your ministry to YouTube and Facebook and go live straight from OBS or any RTMP encoder — simulcast one stream everywhere your congregation gathers.") },
+                { icon: '🔗', title: t('landing', 'crmFeat7Title', "Integration With Every Module"), desc: t('landing', 'crmFeat7Desc', "Members, giving, Gift Aid, events, and broadcasting all share one record — no duplicate data entry, no disconnected systems.") },
+              ].map(({ icon, title, desc }) => (
+                <div key={title} className="rk-reveal rk-card"
+                  style={{ background: '#fdf9f3', borderRadius: 16, padding: '36px 28px', border: '1px solid rgba(124,58,237,.08)', transition: 'transform .25s, box-shadow .25s', cursor: 'default' }}>
+                  <div style={{ width: 48, height: 48, background: '#ede9fe', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', marginBottom: 20 }}>{icon}</div>
+                  <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.2rem', color: '#0f0a1e', marginBottom: 10 }}>{title}</h3>
+                  <p style={{ color: '#7c6fa0', fontSize: '.9rem', lineHeight: 1.7 }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+            <div className="rk-reveal" style={{ marginTop: 48, textAlign: 'center' }}>
+              <button onClick={onSignUp} style={{
+                background: 'linear-gradient(135deg,#7c3aed,#9333ea)', color: '#fff',
+                padding: '15px 34px', borderRadius: 100, fontSize: '1.02rem', fontWeight: 600,
+                border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+                boxShadow: '0 4px 24px rgba(124,58,237,.45)', transition: 'opacity .2s',
+              }}
+                onMouseOver={e => (e.currentTarget.style.opacity = '.9')}
+                onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+              >{t('landing', 'crmCta', "Explore Ministry CRM")} →</button>
+            </div>
+          </div>
+        </section>
+
+        {/* GIFT AID */}
+        <section id="gift-aid" style={{ background: '#fdf9f3', padding: '100px 0' }}>
+          <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 60, alignItems: 'start' }}>
+              <div>
+                <p className="rk-reveal" style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: 12 }}>{t('landing', 'giftAidEyebrow', "For UK Ministries & Charities")}</p>
+                <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#0f0a1e' }}>{t('landing', 'giftAidTitle', "Gift Aid, fully managed — from declaration to HMRC")}</h2>
+                <p className="rk-reveal" style={{ color: '#7c6fa0', fontSize: '1.02rem', lineHeight: 1.8, marginTop: 20 }}>
+                  {t('landing', 'giftAidIntro1', "Gift Aid lets UK charities and churches reclaim 25p from HMRC for every £1 given by a UK taxpayer — at no extra cost to the donor. It's one of the simplest ways to grow your ministry's income, but the paperwork of declarations, eligibility checks, and claims can be a real burden.")}
+                </p>
+                <p className="rk-reveal" style={{ color: '#7c6fa0', fontSize: '1.02rem', lineHeight: 1.8, marginTop: 14 }}>
+                  {t('landing', 'giftAidIntro2', "ReKindle manages the entire Gift Aid lifecycle for your ministry or charity — so every eligible donation is captured and claimed, automatically.")}
+                </p>
+                <div className="rk-reveal" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 32 }}>
+                  <button onClick={onSignUp} style={{
+                    background: 'linear-gradient(135deg,#7c3aed,#9333ea)', color: '#fff',
+                    padding: '15px 34px', borderRadius: 100, fontSize: '1.02rem', fontWeight: 600,
+                    border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif',
+                    boxShadow: '0 4px 24px rgba(124,58,237,.45)', transition: 'opacity .2s',
+                  }}
+                    onMouseOver={e => (e.currentTarget.style.opacity = '.9')}
+                    onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+                  >{t('landing', 'giftAidCta', "Learn about Gift Aid")} →</button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {[
+                  { icon: '✍️', title: t('landing', 'giftAidFeat1Title', "Donor Declaration Management"), desc: t('landing', 'giftAidFeat1Desc', "Collect, store, and manage Gift Aid declarations digitally — donors sign once and every future gift is automatically covered.") },
+                  { icon: '✅', title: t('landing', 'giftAidFeat2Title', "Automatic Eligibility & Claim Calculation"), desc: t('landing', 'giftAidFeat2Desc', "Every donation is checked against active declarations and HMRC eligibility rules, with claim values calculated automatically.") },
+                  { icon: '🏛️', title: t('landing', 'giftAidFeat3Title', "Direct Submission to HMRC"), desc: t('landing', 'giftAidFeat3Desc', "Submit Gift Aid claims straight to HMRC from your ministry dashboard — no separate spreadsheets, no manual Government Gateway uploads.") },
+                  { icon: '📊', title: t('landing', 'giftAidFeat4Title', "Reporting & Audit Trail"), desc: t('landing', 'giftAidFeat4Desc', "Real-time claim status, donor-level history, and exportable reports keep your ministry ready for HMRC compliance checks at any time.") },
+                ].map(({ icon, title, desc }) => (
+                  <div key={title} className="rk-reveal rk-card" style={{ background: '#fff', borderRadius: 16, padding: '24px 26px', border: '1px solid rgba(124,58,237,.08)', display: 'flex', gap: 18, alignItems: 'flex-start', transition: 'transform .25s, box-shadow .25s' }}>
+                    <div style={{ width: 44, height: 44, flexShrink: 0, background: '#ede9fe', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>{icon}</div>
+                    <div>
+                      <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.1rem', color: '#0f0a1e', marginBottom: 6 }}>{title}</h3>
+                      <p style={{ color: '#7c6fa0', fontSize: '.88rem', lineHeight: 1.6 }}>{desc}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -279,9 +384,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 20, marginTop: 56, alignItems: 'start' }}>
               {[
                 { name: t('landing', 'tierFreeName', "Free"),               price: '$0',      unit: t('landing', 'tierFreeUnit', "forever"),        desc: t('landing', 'tierFreeDesc', "Everything you need for your daily walk"),      popular: false, cta: t('landing', 'tierFreeCta', "Get Started"),          features: [t('landing', 'tierFree1', "Daily devotionals with audio"),t('landing', 'tierFree2', "Offline access to devotionals"),t('landing', 'tierFree3', "Community prayer wall"),t('landing', 'tierFree4', "Join live channels"),t('landing', 'tierFree5', "GraceCounsel AI companion"),t('landing', 'tierFree6', "Prayer streaks & Scripture memory"),t('landing', 'tierFree7', "Book a counsellor")] },
-                { name: t('landing', 'tierIndivName', "Individual Partner"), price: t('landing', 'tierIndivPrice', "Give"),    unit: t('landing', 'tierIndivUnit', "any amount"),     desc: t('landing', 'tierIndivDesc', "For believers who want to sow into the mission"), popular: true,  cta: t('landing', 'tierIndivCta', "Become a Partner"),      href: PAYPAL_LINKS.custom,    features: [t('landing', 'tierIndiv1', "Everything in Free"),t('landing', 'tierIndiv2', "Help keep ReKindle free for all"),t('landing', 'tierIndiv3', "Supporter badge"),t('landing', 'tierIndiv4', "Priority support"),t('landing', 'tierIndiv5', "Early access to new features")] },
-                { name: t('landing', 'tierMinName', "Ministry Partner"),   price: t('landing', 'tierMinPrice', "Partner"), unit: t('landing', 'tierMinUnit', "your ministry"),  desc: t('landing', 'tierMinDesc', "For churches, ministries & networks"),          popular: false, cta: t('landing', 'tierMinCta', "Partner Your Ministry"), href: PAYPAL_LINKS.custom,    features: [t('landing', 'tierMin1', "Create & host live channels"),t('landing', 'tierMin2', "Broadcast & WhatsApp outreach"),t('landing', 'tierMin3', "Team & member management"),t('landing', 'tierMin4', "Ministry branding"),t('landing', 'tierMin5', "Devotional & prayer campaigns")] },
-              ].map(({ name, price, unit, desc, popular, cta, href, features }, i) => (
+                { name: t('landing', 'tierIndivName', "Individual Partner"), price: t('landing', 'tierIndivPrice', "Give"),    unit: t('landing', 'tierIndivUnit', "any amount"),     desc: t('landing', 'tierIndivDesc', "For believers who want to sow into the mission"), popular: true,  cta: t('landing', 'tierIndivCta', "Become a Partner"),      href: PAYPAL_LINKS.custom,    features: [t('landing', 'tierIndiv1', "Everything in Free"),t('landing', 'tierIndiv2', "Help keep ReKindle free for all"),t('landing', 'tierIndiv3', "Supporter badge"),t('landing', 'tierIndiv4', "Priority support"),t('landing', 'tierIndiv5', "Early access to new features"),t('landing', 'tierIndiv6', "Create your own live channel"),t('landing', 'tierIndiv7', "Video Conferencing & Meetings")] },
+                { name: t('landing', 'tierMinName', "Ministry Partner"),   price: t('landing', 'tierMinPrice', "Partner"), unit: t('landing', 'tierMinUnit', "your ministry"),  desc: t('landing', 'tierMinDesc', "For churches, ministries & networks"),          popular: false, cta: t('landing', 'tierMinCta', "Partner Your Ministry"), externalHref: `${MINISTRY_APP_URL}/settings/billing`, features: [t('landing', 'tierMin1', "Create & host live channels"),t('landing', 'tierMin2', "Broadcast & WhatsApp outreach"),t('landing', 'tierMin3', "Team & member management"),t('landing', 'tierMin4', "Ministry branding"),t('landing', 'tierMin5', "Devotional & prayer campaigns"),t('landing', 'tierMin6', "Full Ministry CRM suite"),t('landing', 'tierMin7', "UK Gift Aid claims & direct HMRC submission"),t('landing', 'tierMin8', "Simulcast to YouTube & Facebook via OBS"),t('landing', 'tierMin9', "Video Conferencing & Meetings")] },
+              ].map(({ name, price, unit, desc, popular, cta, href, externalHref, features }, i) => (
                 <div key={name} className="rk-reveal" style={{
                   background: popular ? 'linear-gradient(145deg,#2d1f5e,#1a0d3d)' : '#fff',
                   border: popular ? 'none' : '1px solid rgba(124,58,237,.1)',
@@ -304,7 +409,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp }) => {
                       </li>
                     ))}
                   </ul>
-                  <button onClick={() => href ? window.open(href, '_blank', 'noopener,noreferrer') : onSignUp()}
+                  <button onClick={() => externalHref ? (window.location.href = externalHref) : href ? window.open(href, '_blank', 'noopener,noreferrer') : onSignUp()}
                     style={{ width: '100%', padding: '10px', borderRadius: 100, fontSize: '.85rem', fontWeight: 600, border: popular ? 'none' : '1.5px solid rgba(124,58,237,.3)', background: popular ? '#7c3aed' : 'transparent', color: popular ? '#fff' : '#7c3aed', cursor: 'pointer', transition: 'all .2s' }}
                     onMouseOver={e => { e.currentTarget.style.background = popular ? '#6d28d9' : '#ede9fe'; }}
                     onMouseOut={e => { e.currentTarget.style.background = popular ? '#7c3aed' : 'transparent'; }}

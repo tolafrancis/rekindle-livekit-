@@ -35,6 +35,8 @@ interface Subscription {
   current_period_end: string;
   amount_cents: number;
   currency: string;
+  country: string | null;
+  payment_provider: string | null;
 }
 
 interface Ministry {
@@ -48,54 +50,45 @@ interface SubscriptionPlansManagerProps {
   onUpdate: () => void;
 }
 
+// Ministry Partner tiers (mirrors the seed rows in ministry_partner_plans —
+// see the admin "Partner Plans" tab for the source of truth on pricing/features;
+// this is just used to quick-fill sensible defaults when editing a subscription row).
 const PLAN_CONFIGS = {
-  basic: {
-    name: 'Basic',
-    member_limit: 100,
-    storage_limit_mb: 1024,
-    api_calls_limit: 5000,
-    broadcast_limit: 50,
-    video_minutes_limit: 500,
+  tier_1: {
+    name: 'Tier 1',
+    member_limit: 99,
+    storage_limit_mb: 2048,
+    api_calls_limit: 10000,
+    broadcast_limit: -1,
+    video_minutes_limit: -1,
     white_label_enabled: false,
     custom_domain_enabled: false,
     priority_support: false,
-    price: 0
+    price: 2000 // $20/mo in cents
   },
-  standard: {
-    name: 'Standard',
-    member_limit: 500,
+  tier_2: {
+    name: 'Tier 2',
+    member_limit: 300,
     storage_limit_mb: 5120,
     api_calls_limit: 25000,
-    broadcast_limit: 200,
-    video_minutes_limit: 2000,
+    broadcast_limit: -1,
+    video_minutes_limit: -1,
     white_label_enabled: false,
     custom_domain_enabled: false,
     priority_support: false,
-    price: 2999
+    price: 5000 // $50/mo
   },
-  premium: {
-    name: 'Premium',
-    member_limit: 2000,
+  tier_3: {
+    name: 'Tier 3',
+    member_limit: -1,
     storage_limit_mb: 20480,
     api_calls_limit: 100000,
-    broadcast_limit: 1000,
-    video_minutes_limit: 10000,
+    broadcast_limit: -1,
+    video_minutes_limit: -1,
     white_label_enabled: true,
     custom_domain_enabled: false,
     priority_support: true,
-    price: 9999
-  },
-  enterprise: {
-    name: 'Enterprise',
-    member_limit: 10000,
-    storage_limit_mb: 102400,
-    api_calls_limit: 500000,
-    broadcast_limit: 5000,
-    video_minutes_limit: 50000,
-    white_label_enabled: true,
-    custom_domain_enabled: true,
-    priority_support: true,
-    price: 29999
+    price: 7500 // $75/mo
   }
 };
 
@@ -237,6 +230,32 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
     }
   };
 
+  const handleApprovePayPal = async (subId: string, ministryId: string) => {
+    try {
+      const { error } = await supabase
+        .from('ministry_subscriptions')
+        .update({ status: 'active' })
+        .eq('id', subId);
+      if (error) throw error;
+
+      await supabase.from('ministry_groups').update({ subscription_status: 'active' }).eq('id', ministryId);
+      await supabase.from('ministry_audit_logs').insert({
+        ministry_id: ministryId,
+        actor_id: user?.id,
+        actor_type: 'platform_admin',
+        action: 'paypal_subscription_approved',
+        resource_type: 'subscription',
+        resource_id: subId
+      });
+
+      toast({ title: t('subscriptionPlansManager', 'success', 'Success'), description: t('subscriptionPlansManager', 'paypalApproved', 'PayPal subscription approved and activated') });
+      loadData();
+      onUpdate();
+    } catch (err: any) {
+      toast({ title: t('subscriptionPlansManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    }
+  };
+
   const getUsagePercentage = (used: number, limit: number) => {
     if (!limit) return 0;
     return Math.min(100, Math.round((used / limit) * 100));
@@ -271,10 +290,10 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
         {Object.entries(PLAN_CONFIGS).map(([key, config]) => {
           const count = subscriptions.filter(s => s.plan_type === key && s.status === 'active').length;
           return (
-            <Card key={key} className={`${key === 'enterprise' ? 'bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200' : ''}`}>
+            <Card key={key} className={`${key === 'tier_3' ? 'bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200' : ''}`}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <Badge variant={key === 'enterprise' ? 'default' : 'secondary'} className="capitalize">
+                  <Badge variant={key === 'tier_3' ? 'default' : 'secondary'} className="capitalize">
                     {config.name}
                   </Badge>
                   <span className="text-2xl font-bold">{count}</span>
@@ -307,14 +326,13 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('subscriptionPlansManager', 'allPlans', 'All Plans')}</SelectItem>
-                <SelectItem value="basic">{t('subscriptionPlansManager', 'basic', 'Basic')}</SelectItem>
-                <SelectItem value="standard">{t('subscriptionPlansManager', 'standard', 'Standard')}</SelectItem>
-                <SelectItem value="premium">{t('subscriptionPlansManager', 'premium', 'Premium')}</SelectItem>
-                <SelectItem value="enterprise">{t('subscriptionPlansManager', 'enterprise', 'Enterprise')}</SelectItem>
+                <SelectItem value="tier_1">{t('subscriptionPlansManager', 'tier1', 'Tier 1')}</SelectItem>
+                <SelectItem value="tier_2">{t('subscriptionPlansManager', 'tier2', 'Tier 2')}</SelectItem>
+                <SelectItem value="tier_3">{t('subscriptionPlansManager', 'tier3', 'Tier 3')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="w-44">
                 <SelectValue placeholder={t('subscriptionPlansManager', 'status', 'Status')} />
               </SelectTrigger>
               <SelectContent>
@@ -323,6 +341,7 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                 <SelectItem value="inactive">{t('subscriptionPlansManager', 'inactive', 'Inactive')}</SelectItem>
                 <SelectItem value="past_due">{t('subscriptionPlansManager', 'pastDue', 'Past Due')}</SelectItem>
                 <SelectItem value="canceled">{t('subscriptionPlansManager', 'canceled', 'Canceled')}</SelectItem>
+                <SelectItem value="pending_paypal_confirmation">{t('subscriptionPlansManager', 'pendingPaypal', 'Pending PayPal')}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" onClick={loadData}>
@@ -353,6 +372,7 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                   <th className="text-left p-4 font-medium">{t('subscriptionPlansManager', 'apiUsage', 'API Usage')}</th>
                   <th className="text-left p-4 font-medium">{t('subscriptionPlansManager', 'storage', 'Storage')}</th>
                   <th className="text-left p-4 font-medium">{t('subscriptionPlansManager', 'features', 'Features')}</th>
+                  <th className="text-left p-4 font-medium">{t('subscriptionPlansManager', 'countryProvider', 'Country / Provider')}</th>
                   <th className="text-left p-4 font-medium">{t('subscriptionPlansManager', 'actions', 'Actions')}</th>
                 </tr>
               </thead>
@@ -375,17 +395,18 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                         </div>
                       </td>
                       <td className="p-4">
-                        <Badge variant={sub.plan_type === 'enterprise' ? 'default' : 'secondary'} className="capitalize">
-                          {sub.plan_type}
+                        <Badge variant={sub.plan_type === 'tier_3' ? 'default' : 'secondary'} className="capitalize">
+                          {sub.plan_type?.replace('_', ' ')}
                         </Badge>
                       </td>
                       <td className="p-4">
                         <Badge variant={sub.status === 'active' ? 'default' : 'secondary'} className={
                           sub.status === 'active' ? 'bg-green-100 text-green-700' :
                           sub.status === 'past_due' ? 'bg-red-100 text-red-700' :
+                          sub.status === 'pending_paypal_confirmation' ? 'bg-amber-100 text-amber-700' :
                           ''
                         }>
-                          {sub.status}
+                          {sub.status === 'pending_paypal_confirmation' ? 'Pending PayPal' : sub.status}
                         </Badge>
                       </td>
                       <td className="p-4">
@@ -410,7 +431,7 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                       </td>
                       <td className="p-4">
                         <span className="text-sm">
-                          {(sub.storage_limit_mb / 1024).toFixed(1)} GB
+                          {sub.storage_limit_mb ? `${(sub.storage_limit_mb / 1024).toFixed(1)} GB` : '—'}
                         </span>
                       </td>
                       <td className="p-4">
@@ -436,12 +457,29 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                         </div>
                       </td>
                       <td className="p-4">
+                        <div className="text-sm">
+                          <div>{sub.country || '—'}</div>
+                          <div className="text-gray-400 capitalize">{sub.payment_provider || '—'}</div>
+                        </div>
+                      </td>
+                      <td className="p-4">
                         <div className="flex gap-1">
+                          {sub.status === 'pending_paypal_confirmation' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-green-700"
+                              onClick={() => handleApprovePayPal(sub.id, sub.ministry_id)}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              {t('subscriptionPlansManager', 'approve', 'Approve')}
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" onClick={() => handleEditSubscription(sub)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="sm"
                             onClick={() => handleResetUsage(sub.id, sub.ministry_id)}
                           >
@@ -476,10 +514,9 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="basic">{t('subscriptionPlansManager', 'basic', 'Basic')}</SelectItem>
-                    <SelectItem value="standard">{t('subscriptionPlansManager', 'standard', 'Standard')}</SelectItem>
-                    <SelectItem value="premium">{t('subscriptionPlansManager', 'premium', 'Premium')}</SelectItem>
-                    <SelectItem value="enterprise">{t('subscriptionPlansManager', 'enterprise', 'Enterprise')}</SelectItem>
+                    <SelectItem value="tier_1">{t('subscriptionPlansManager', 'tier1', 'Tier 1')}</SelectItem>
+                    <SelectItem value="tier_2">{t('subscriptionPlansManager', 'tier2', 'Tier 2')}</SelectItem>
+                    <SelectItem value="tier_3">{t('subscriptionPlansManager', 'tier3', 'Tier 3')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -498,6 +535,7 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                     <SelectItem value="inactive">{t('subscriptionPlansManager', 'inactive', 'Inactive')}</SelectItem>
                     <SelectItem value="past_due">{t('subscriptionPlansManager', 'pastDue', 'Past Due')}</SelectItem>
                     <SelectItem value="canceled">{t('subscriptionPlansManager', 'canceled', 'Canceled')}</SelectItem>
+                    <SelectItem value="pending_paypal_confirmation">{t('subscriptionPlansManager', 'pendingPaypal', 'Pending PayPal')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
