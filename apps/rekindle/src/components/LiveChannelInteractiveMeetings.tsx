@@ -1163,6 +1163,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   const [editingMeeting, setEditingMeeting] = useState<LiveChannelVideoMeeting | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [channelName, setChannelName] = useState<string | null>(null);
+  const [ministryId, setMinistryId] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [canCreateMeeting, setCanCreateMeeting] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
@@ -1185,12 +1186,13 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       const { data } = await supabase
         .from('live_channels')
-        .select('owner_id, name')
+        .select('owner_id, name, ministry_id')
         .eq('id', channelId)
         .single();
 
       setIsOwner(data?.owner_id === user.id);
       setChannelName(data?.name || null);
+      setMinistryId(data?.ministry_id || null);
     };
 
     checkOwnership();
@@ -1306,6 +1308,23 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           .eq('id', meeting.id);
 
         if (error) throw error;
+
+        // Trigger push notification to ministry members
+        if (ministryId) {
+          supabase.functions.invoke('send-push-notification', {
+            body: {
+              targetAudience: 'ministry_members',
+              ministryId,
+              title: `👥 Meeting Started`,
+              body: `"${meeting.title}" has started. Tap to join now!`,
+              link: `/channel/${channelId}/meeting/${meeting.id}`,
+              senderName: channelName || 'Ministry',
+              notificationType: 'meeting_started',
+              push: true,
+              inApp: true,
+            }
+          }).catch(e => console.warn('[Meeting] Start notification failed:', e?.message));
+        }
       }
 
       const { error: countError } = await supabase
