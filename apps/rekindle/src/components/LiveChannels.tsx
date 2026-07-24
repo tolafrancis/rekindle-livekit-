@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
@@ -159,7 +160,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Active view state
   const [selectedChannel, setSelectedChannel] = useState<LiveChannel | null>(null);
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'broadcast' | 'watch' | 'recordings'>('list');
+  // Full-view switch (list ↔ broadcast/watch/recordings). Back returns to the list
+  // instead of exiting the channels tab. selectedChannel stays plain companion state.
+  const [viewMode, setViewMode] = useViewHistory<'list' | 'broadcast' | 'watch' | 'recordings'>('live-channels-view', 'list');
 
   // Safe helper function to get live channel count
   const getLiveChannelCount = async (): Promise<number> => {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -62,7 +63,7 @@ interface SupportTicket {
 const PlatformAdminMinistries: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('ministries');
+  const [activeTab, setActiveTab] = useViewHistory<string>("platform-admin-ministries", 'ministries');
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [subscriptions, setSubscriptions] = useState<Record<string, Subscription>>({});
   const [tickets, setTickets] = useState<SupportTicket[]>([]);

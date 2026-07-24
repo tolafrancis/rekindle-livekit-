@@ -19,3 +19,10 @@ dist
 # OS junk
 .DS_Store
 **/.DS_Store
+
+# Supabase CLI local link/session state
+supabase/.temp
+
+# IDE metadata (machine-local, not project config)
+.idea
+**/.idea

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -32,7 +33,7 @@ interface LeaderboardUser {
 export const CommunityLeaderboard: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('xp');
+  const [activeTab, setActiveTab] = useViewHistory<string>('community-leaderboard', 'xp');
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [userRank, setUserRank] = useState<LeaderboardUser | null>(null);
   const [loading, setLoading] = useState(true);

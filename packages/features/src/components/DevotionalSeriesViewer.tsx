@@ -15,6 +15,7 @@ import { consumeDeepLink } from '../deepLink';
 import { getCategoryColor } from '../categoryDisplay';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { LanguageFallbackMessage, LanguageFallbackBadge } from './LanguageFallbackMessage';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useLocalizedScripture } from '../useLocalizedScripture';
@@ -295,7 +296,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [currentDay, setCurrentDay] = useState<SeriesDay | null>(null);
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'list' | 'series' | 'reading'>('list');
+  // Browser Back steps list → series → reading and back, one view at a time.
+  const [view, setView] = useViewHistory<'list' | 'series' | 'reading'>('devotional-series-viewer', 'list');
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showDayShareModal, setShowDayShareModal] = useState(false);

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1051029806700",
+    "project_id": "rekindle-bc",
+    "storage_bucket": "rekindle-bc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051029806700:android:4bd7b3e73da43ecd450249",
+        "android_client_info": {
+          "package_name": "com.rekindlebc.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDl5Ctl6OU5AkvD8MFIWjfri_lIVqTSiHY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051029806700:android:239028d257492d1e450249",
+        "android_client_info": {
+          "package_name": "com.rekindlebc.ministry"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDl5Ctl6OU5AkvD8MFIWjfri_lIVqTSiHY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

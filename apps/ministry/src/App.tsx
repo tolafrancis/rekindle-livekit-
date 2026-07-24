@@ -1,8 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { toast } from '@rekindle/ui/use-toast';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
@@ -13,13 +16,16 @@ import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
-import { User, CreditCard, Globe, LogOut } from 'lucide-react';
+import { User, CreditCard, Globe, LogOut, ArrowLeft } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
+import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
 import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
+import LandingPage from '@rekindle/features/components/LandingPage';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -38,12 +44,22 @@ function BrandedHeader() {
   const { name, logoUrl, whiteLabel } = useMinistryBranding();
   const { currentMinistry } = useCurrentMinistry();
   const { profile, signOut } = useAuth();
+  const location = useLocation();
   // Billing & Domain are leader/admin concerns; regular members see only Account.
   const canManage = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
+  // Native builds ship with no purchase surfaces (Phase 0 — Apple 3.1.1).
+  const showBilling = canManage && canShowPurchaseUI();
   const firstName = (profile?.full_name || '').trim().split(' ')[0];
   const iconBtn = 'flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm transition-transform hover:scale-105';
   return (
     <header className="flex h-14 items-center gap-3 border-b px-3 sm:px-4">
+      {location.pathname !== '/' && (
+        <Link to="/" aria-label="All Ministries" title="All Ministries"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+          <span className="hidden sm:inline">All Ministries</span>
+        </Link>
+      )}
       {logoUrl ? <img src={logoUrl} alt="" className="h-8 w-8 rounded object-cover" /> : null}
       <Link to="/" className="font-semibold truncate hover:opacity-80">{name ?? 'Ministry'}</Link>
       {!whiteLabel && <span className="text-xs text-muted-foreground hidden sm:inline">· ReKindle</span>}
@@ -52,15 +68,15 @@ function BrandedHeader() {
         <Link to="/settings/account" aria-label="Account" title="Account" className={`${iconBtn} bg-gradient-to-br from-indigo-500 to-purple-600`}>
           <User className="h-4 w-4" />
         </Link>
+        {showBilling && (
+          <Link to="/settings/billing" aria-label="Billing" title="Billing" className={`${iconBtn} bg-gradient-to-br from-sky-500 to-blue-600`}>
+            <CreditCard className="h-4 w-4" />
+          </Link>
+        )}
         {canManage && (
-          <>
-            <Link to="/settings/billing" aria-label="Billing" title="Billing" className={`${iconBtn} bg-gradient-to-br from-sky-500 to-blue-600`}>
-              <CreditCard className="h-4 w-4" />
-            </Link>
-            <Link to="/settings/domain" aria-label="Domain" title="Domain" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
-              <Globe className="h-4 w-4" />
-            </Link>
-          </>
+          <Link to="/settings/domain" aria-label="Domain" title="Domain" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
+            <Globe className="h-4 w-4" />
+          </Link>
         )}
         <button onClick={() => void signOut()} aria-label="Sign out" title="Sign out" className={`${iconBtn} bg-gradient-to-br from-rose-500 to-red-600`}>
           <LogOut className="h-4 w-4" />
@@ -102,10 +118,27 @@ function AuthedShell() {
 }
 
 // Layout route: gates auth, then provides the current-ministry context to its children.
+// The root path is special-cased for logged-out visitors: rather than bouncing
+// straight to /auth, it shows the shared marketing landing page (same one the
+// consumer app uses) — rekindlebc.com and app.rekindlebc.com present the same
+// front door. Other authed paths (settings/*) still redirect to /auth as before.
 function AuthedArea() {
   const { user, loading, initialized } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   if (loading || !initialized) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth" replace />;
+  if (!user) {
+    if (location.pathname === '/') {
+      return (
+        <LandingPage
+          appContext="ministry"
+          onSignIn={() => navigate('/auth')}
+          onSignUp={() => navigate('/auth', { state: { mode: 'signup' } })}
+        />
+      );
+    }
+    return <Navigate to="/auth" replace />;
+  }
   return (
     <CurrentMinistryProvider>
       <AuthedShell />
@@ -115,8 +148,9 @@ function AuthedArea() {
 
 function AuthRoute() {
   const { user, loading, initialized } = useAuth();
+  const location = useLocation();
   if (loading || !initialized) return <LoadingScreen />;
-  return user ? <Navigate to="/" replace /> : <AuthScreen />;
+  return user ? <Navigate to="/" replace /> : <AuthScreen initialView={(location.state as { mode?: 'login' | 'signup' } | null)?.mode} />;
 }
 
 function AppRoutes() {
@@ -143,7 +177,12 @@ function AppRoutes() {
       <Route element={<AuthedArea />}>
         <Route path="/" element={<MinistriesHub />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
-        <Route path="/settings/billing" element={<BillingSettings />} />
+        {/* Billing is web-only: native builds ship without purchase surfaces
+            (Phase 0 — Apple 3.1.1). Deep-linking it natively lands on Home. */}
+        <Route
+          path="/settings/billing"
+          element={canShowPurchaseUI() ? <BillingSettings /> : <Navigate to="/" replace />}
+        />
         <Route path="/settings/domain" element={<CustomDomainSettings />} />
       </Route>
 
@@ -153,12 +192,25 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const notification = (e as CustomEvent).detail;
+      toast({
+        title: notification.title || 'Notification',
+        description: notification.body || '',
+      });
+    };
+    window.addEventListener('nativePushReceived', handler);
+    return () => window.removeEventListener('nativePushReceived', handler);
+  }, []);
+
   // ThemeProvider MUST wrap the tree: the Sonner toaster calls useTheme(),
   // which throws (blanking the whole app) when no provider is present.
   return (
     <ThemeProvider defaultTheme="light">
       <AuthProvider>
         <LanguageProvider>
+          <ActiveCallProvider>
           {/* Toast renderers — without these mounted, every toast() call in the
               ministry app (channel/meeting copy confirmations, etc.) is silent.
               Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
@@ -166,7 +218,11 @@ export default function App() {
           <Sonner />
           <BrowserRouter>
             <AppRoutes />
+            {/* Persistent meeting layer — keeps a live call mounted across
+                navigation and shows the minimized mini-player. */}
+            <ActiveCallHost />
           </BrowserRouter>
+          </ActiveCallProvider>
         </LanguageProvider>
       </AuthProvider>
     </ThemeProvider>

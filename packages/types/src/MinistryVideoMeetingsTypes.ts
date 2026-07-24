@@ -24,6 +24,10 @@ export interface MinistryVideoMeeting {
   is_active: boolean;
   is_recurring: boolean;
   recurrence_pattern: string | null;
+  /** IANA zone the host scheduled in (e.g. 'America/New_York'); null for instant meetings. */
+  timezone: string | null;
+  /** Minutes-before-start reminder offsets the host enabled (e.g. [1440, 60]). */
+  reminder_offsets: number[];
   meeting_type: MeetingType;
   access_level: MeetingAccessLevel;
   enable_recording: boolean;

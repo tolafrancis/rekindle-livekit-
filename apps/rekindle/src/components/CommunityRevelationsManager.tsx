@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,7 +67,7 @@ export const CommunityRevelationsManager: React.FC<CommunityRevelationsManagerPr
 
   const { t } = useLanguage();
 
-  const [activeTab, setActiveTab] = useState<'revelations' | 'testimonies'>('revelations');
+  const [activeTab, setActiveTab] = useViewHistory<'revelations' | 'testimonies'>("community-revelations-manager", 'revelations');
 
   // ── Revelations state ──
   const [revelations, setRevelations] = useState<Revelation[]>([]);

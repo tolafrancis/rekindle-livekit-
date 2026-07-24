@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -102,7 +104,11 @@ interface MinistriesHubProps {
 const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledActiveView, onActiveViewChange, onWorkspaceChange }) => {
   const { user, profile, isAdmin: authIsAdmin, isPartner } = useAuth();
   const { t } = useLanguage();
-  const [internalActiveView, setInternalActiveView] = useState<MinistryHubView>('discover');
+  const navigate = useNavigate();
+  // Uncontrolled view (ministry app) rides browser history: entering a ministry
+  // ('ministry-space') and switching hub tabs push entries, so Back steps through
+  // them then out. When a parent controls activeView it owns history instead.
+  const [internalActiveView, setInternalActiveView] = useViewHistory<MinistryHubView>('ministries-hub', 'my-ministries');
   const activeView = controlledActiveView ?? internalActiveView;
   const setActiveView = useCallback((view: MinistryHubView) => {
     setInternalActiveView(view);
@@ -818,7 +824,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               <Crown className="h-12 w-12 mx-auto text-amber-500 mb-4" />
               <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'premiumFeature', 'Premium Feature')}</h3>
               <p className="text-gray-500 mb-4">{t('ministriesHub', 'upgradeToManage', 'Upgrade to Ministry tier to create and manage ministries')}</p>
-              <Button>{t('ministriesHub', 'upgradeNow', 'Upgrade Now')}</Button>
+              <Button onClick={() => navigate('/settings/billing')}>{t('ministriesHub', 'upgradeNow', 'Upgrade Now')}</Button>
             </Card>
           ) : (
             <div className="space-y-4">

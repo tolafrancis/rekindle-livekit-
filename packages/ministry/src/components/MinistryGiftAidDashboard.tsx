@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -58,7 +59,9 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
   const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
-  const [view, setView] = useState<'donations' | 'claims' | 'declarations' | 'reports'>('donations');
+  // Nested inside MinistrySpace — the hook's state-merge composes with the parent
+  // tab history, so Back steps through these sections then back out to the tab.
+  const [view, setView] = useViewHistory<'donations' | 'claims' | 'declarations' | 'reports'>('ministry-giftaid', 'donations');
   const [csvBusy, setCsvBusy] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [rows, setRows] = useState<EligibleDonationRow[]>([]);

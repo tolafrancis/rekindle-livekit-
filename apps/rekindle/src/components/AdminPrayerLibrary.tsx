@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -10,15 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { PrayerPointsEditor } from './PrayerPointsEditor';
 import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { TranslateNowButton } from "@/components/TranslateNowButton";
-import { 
-  Plus, Edit, Trash2, Save, BookOpen, Clock, 
-  Loader2, Search, RefreshCw, Star, Eye, EyeOff, 
+import { generatePrayerContent } from '@/lib/generatePrayerContent';
+import {
+  Plus, Edit, Trash2, Save, BookOpen, Clock,
+  Loader2, Search, RefreshCw, Star, Eye, EyeOff,
   Calendar, CheckCircle, AlertCircle, X, Timer,
-  Flame, BarChart3, Users, Link, Upload, Image as ImageIcon
+  Flame, BarChart3, Users, Link, Upload, Image as ImageIcon, Sparkles
 } from 'lucide-react';
 
 // Inline cover-image field: paste a URL or upload a file
@@ -171,7 +174,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   const { t } = useLanguage();
   // ===== STATE =====
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'prayer-topics' | 'prayer-series' | 'statistics' | 'prayer-watch'>('prayer-topics');
+  const [activeTab, setActiveTab] = useViewHistory<'prayer-topics' | 'prayer-series' | 'statistics' | 'prayer-watch'>("admin-prayer-library", 'prayer-topics');
   const [searchTerm, setSearchTerm] = useState('');
   
   // Data states
@@ -308,6 +311,90 @@ export const AdminPrayerLibrary: React.FC = () => {
       });
     } catch (err) {
       console.error('Error loading stats:', err);
+    }
+  };
+
+  // ===== AI CONTENT GENERATION =====
+  const [generatingTopic, setGeneratingTopic] = useState(false);
+  const [generatingWatch, setGeneratingWatch] = useState(false);
+  const [generatingDay, setGeneratingDay] = useState<Record<number, boolean>>({});
+  const [topicPointCount, setTopicPointCount] = useState(10);
+  const [watchPointCount, setWatchPointCount] = useState(10);
+  const [dayPointCount, setDayPointCount] = useState<Record<number, number>>({});
+
+  const generateTopicWithAI = async () => {
+    if (!topicForm.title.trim()) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'enterTitleFirst', 'Please enter a title first'), variant: 'destructive' });
+      return;
+    }
+    setGeneratingTopic(true);
+    try {
+      const result = await generatePrayerContent(topicForm.title, 'topic', undefined, topicPointCount);
+      setTopicForm(f => ({
+        ...f,
+        description: result.description || f.description,
+        scripture_reference: result.scripture_reference || f.scripture_reference,
+        scripture_text: result.scripture_text || f.scripture_text,
+        scriptures: result.scriptures.length ? result.scriptures : f.scriptures,
+        prayer_points: result.prayer_points.length ? result.prayer_points : f.prayer_points,
+      }));
+      toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'aiContentGenerated', 'AI-generated content added — review before saving') });
+    } catch (err: any) {
+      console.error('Topic AI generation error:', err);
+      toast({ title: t('adminPrayerLibrary', 'generationFailed', 'Generation failed'), description: err?.message || 'Could not generate content', variant: 'destructive' });
+    } finally {
+      setGeneratingTopic(false);
+    }
+  };
+
+  const generateWatchWithAI = async () => {
+    if (!prayerWatchForm.title.trim()) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'enterTitleFirst', 'Please enter a title first'), variant: 'destructive' });
+      return;
+    }
+    setGeneratingWatch(true);
+    try {
+      const result = await generatePrayerContent(prayerWatchForm.title, 'watch', undefined, watchPointCount);
+      setPrayerWatchForm(f => ({
+        ...f,
+        content: result.description || f.content,
+        scripture_reference: result.scripture_reference || f.scripture_reference,
+        scripture_text: result.scripture_text || f.scripture_text,
+        scriptures: result.scriptures.length ? result.scriptures : f.scriptures,
+        prayer_points: result.prayer_points.length ? result.prayer_points : f.prayer_points,
+      }));
+      toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'aiContentGenerated', 'AI-generated content added — review before saving') });
+    } catch (err: any) {
+      console.error('Prayer watch AI generation error:', err);
+      toast({ title: t('adminPrayerLibrary', 'generationFailed', 'Generation failed'), description: err?.message || 'Could not generate content', variant: 'destructive' });
+    } finally {
+      setGeneratingWatch(false);
+    }
+  };
+
+  const generateDayWithAI = async (dayNumber: number) => {
+    const day = seriesDays.find(d => d.day_number === dayNumber);
+    if (!day || !day.title.trim()) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'enterTitleFirst', 'Please enter a title first'), variant: 'destructive' });
+      return;
+    }
+    setGeneratingDay(prev => ({ ...prev, [dayNumber]: true }));
+    try {
+      const result = await generatePrayerContent(day.title, 'series_day', selectedSeriesForDays?.title, dayPointCount[dayNumber] ?? 10);
+      setSeriesDays(prev => prev.map(d => (d.day_number === dayNumber ? {
+        ...d,
+        prayer_text: result.description || d.prayer_text,
+        scripture_reference: result.scripture_reference || d.scripture_reference,
+        scripture_text: result.scripture_text || d.scripture_text,
+        scriptures: result.scriptures.length ? result.scriptures : d.scriptures,
+        prayer_points: result.prayer_points.length ? result.prayer_points : d.prayer_points,
+      } : d)));
+      toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'aiContentGenerated', 'AI-generated content added — review before saving') });
+    } catch (err: any) {
+      console.error('Series day AI generation error:', err);
+      toast({ title: t('adminPrayerLibrary', 'generationFailed', 'Generation failed'), description: err?.message || 'Could not generate content', variant: 'destructive' });
+    } finally {
+      setGeneratingDay(prev => ({ ...prev, [dayNumber]: false }));
     }
   };
 
@@ -807,37 +894,8 @@ export const AdminPrayerLibrary: React.FC = () => {
     ));
   };
 
-  const addPrayerPoint = (dayNumber: number) => {
-    setSeriesDays(prev => prev.map(d => {
-      if (d.day_number === dayNumber) {
-        return {
-          ...d,
-          prayer_points: [...d.prayer_points, { title: '', content: '', duration: 60 }]
-        };
-      }
-      return d;
-    }));
-  };
-
-  const updatePrayerPoint = (dayNumber: number, pointIndex: number, field: string, value: any) => {
-    setSeriesDays(prev => prev.map(d => {
-      if (d.day_number === dayNumber) {
-        const newPoints = [...d.prayer_points];
-        newPoints[pointIndex] = { ...newPoints[pointIndex], [field]: value };
-        return { ...d, prayer_points: newPoints };
-      }
-      return d;
-    }));
-  };
-
-  const removePrayerPoint = (dayNumber: number, pointIndex: number) => {
-    setSeriesDays(prev => prev.map(d => {
-      if (d.day_number === dayNumber) {
-        const newPoints = d.prayer_points.filter((_, i) => i !== pointIndex);
-        return { ...d, prayer_points: newPoints };
-      }
-      return d;
-    }));
+  const setDayPrayerPoints = (dayNumber: number, points: any[]) => {
+    setSeriesDays(prev => prev.map(d => (d.day_number === dayNumber ? { ...d, prayer_points: points } : d)));
   };
 
   const saveDays = async () => {
@@ -1463,11 +1521,28 @@ export const AdminPrayerLibrary: React.FC = () => {
           <div className="space-y-4">
             <div>
               <Label>{t('adminPrayerLibrary', 'titleRequiredLabel', 'Title *')}</Label>
-              <Input
-                value={topicForm.title}
-                onChange={(e) => setTopicForm({ ...topicForm, title: e.target.value })}
-                placeholder={t('adminPrayerLibrary', 'topicTitlePlaceholder', 'e.g., Prayer for Healing')}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={topicForm.title}
+                  onChange={(e) => setTopicForm({ ...topicForm, title: e.target.value })}
+                  placeholder={t('adminPrayerLibrary', 'topicTitlePlaceholder', 'e.g., Prayer for Healing')}
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  value={topicPointCount}
+                  onChange={(e) => setTopicPointCount(Math.max(3, Math.min(25, parseInt(e.target.value, 10) || 10)))}
+                  className="w-16"
+                  min="3"
+                  max="25"
+                  title={t('adminPrayerLibrary', 'numPrayerPoints', 'Number of prayer points to generate')}
+                />
+                <Button type="button" variant="outline" onClick={generateTopicWithAI} disabled={generatingTopic}>
+                  {generatingTopic ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  <span className="ml-1.5 hidden sm:inline">{t('adminPrayerLibrary', 'aiGenerate', 'AI Generate')}</span>
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{t('adminPrayerLibrary', 'numPrayerPointsHint', '# = number of AI-generated prayer points (3-25)')}</p>
             </div>
 
             <div>
@@ -1607,82 +1682,10 @@ export const AdminPrayerLibrary: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>{t('adminPrayerLibrary', 'prayerPoints', 'Prayer Points')}</Label>
-                <Button 
-                  type="button"
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const newPoint = { title: '', content: '', duration: 60 };
-                    setTopicForm({ ...topicForm, prayer_points: [...topicForm.prayer_points, newPoint] });
-                  }}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  {t('adminPrayerLibrary', 'addPoint', 'Add Point')}
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {topicForm.prayer_points.map((point, idx) => (
-                  <div key={idx} className="p-3 border rounded-lg bg-gray-50">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 space-y-2">
-                        <Input
-                          value={point.title || ''}
-                          onChange={(e) => {
-                            const newPoints = [...topicForm.prayer_points];
-                            newPoints[idx] = { ...newPoints[idx], title: e.target.value };
-                            setTopicForm({ ...topicForm, prayer_points: newPoints });
-                          }}
-                          placeholder={t('adminPrayerLibrary', 'pointTitlePlaceholder', 'Point title')}
-                        />
-                        <Textarea
-                          value={point.content || ''}
-                          onChange={(e) => {
-                            const newPoints = [...topicForm.prayer_points];
-                            newPoints[idx] = { ...newPoints[idx], content: e.target.value };
-                            setTopicForm({ ...topicForm, prayer_points: newPoints });
-                          }}
-                          placeholder={t('adminPrayerLibrary', 'prayerContentPlaceholder', 'Prayer content...')}
-                          rows={2}
-                        />
-                        <div className="flex items-center gap-2">
-                          <Label className="text-xs">{t('adminPrayerLibrary', 'durationSec', 'Duration (sec):')}</Label>
-                          <Input
-                            type="number"
-                            value={point.duration || 60}
-                            onChange={(e) => {
-                              const newPoints = [...topicForm.prayer_points];
-                              newPoints[idx] = { ...newPoints[idx], duration: parseInt(e.target.value) || 60 };
-                              setTopicForm({ ...topicForm, prayer_points: newPoints });
-                            }}
-                            className="w-20"
-                            min="1"
-                          />
-                        </div>
-                      </div>
-                      <Button 
-                        type="button"
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => {
-                          const newPoints = topicForm.prayer_points.filter((_, i) => i !== idx);
-                          setTopicForm({ ...topicForm, prayer_points: newPoints });
-                        }}
-                      >
-                        <X className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {topicForm.prayer_points.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-4">
-                    {t('adminPrayerLibrary', 'noPrayerPointsYet', 'No prayer points yet. Click "Add Point" to create one.')}
-                  </p>
-                )}
-              </div>
-            </div>
+            <PrayerPointsEditor
+              points={topicForm.prayer_points}
+              onChange={(points) => setTopicForm({ ...topicForm, prayer_points: points })}
+            />
 
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
@@ -1908,11 +1911,37 @@ export const AdminPrayerLibrary: React.FC = () => {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <Label>{t('adminPrayerLibrary', 'prayerTitleLabel', 'Prayer Title *')}</Label>
-                            <Input
-                              value={day.title}
-                              onChange={(e) => updateDayField(day.day_number, 'title', e.target.value)}
-                              placeholder={t('adminPrayerLibrary', 'prayerTitlePlaceholder', 'e.g., Prayer for Breakthrough')}
-                            />
+                            <div className="flex gap-2">
+                              <Input
+                                value={day.title}
+                                onChange={(e) => updateDayField(day.day_number, 'title', e.target.value)}
+                                placeholder={t('adminPrayerLibrary', 'prayerTitlePlaceholder', 'e.g., Prayer for Breakthrough')}
+                                className="flex-1"
+                              />
+                              <Input
+                                type="number"
+                                value={dayPointCount[day.day_number] ?? 10}
+                                onChange={(e) => setDayPointCount(prev => ({
+                                  ...prev,
+                                  [day.day_number]: Math.max(3, Math.min(25, parseInt(e.target.value, 10) || 10)),
+                                }))}
+                                className="w-14"
+                                min="3"
+                                max="25"
+                                title={t('adminPrayerLibrary', 'numPrayerPoints', 'Number of prayer points to generate')}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                title={t('adminPrayerLibrary', 'aiGenerate', 'AI Generate')}
+                                onClick={() => generateDayWithAI(day.day_number)}
+                                disabled={!!generatingDay[day.day_number]}
+                              >
+                                {generatingDay[day.day_number] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                              </Button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">{t('adminPrayerLibrary', 'numPrayerPointsHint', '# = number of AI-generated prayer points (3-25)')}</p>
                           </div>
                           <div>
                             <Label>{t('adminPrayerLibrary', 'durationMinutes', 'Duration (minutes)')}</Label>
@@ -2052,54 +2081,10 @@ export const AdminPrayerLibrary: React.FC = () => {
                         </div>
 
                         <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <Label>{t('adminPrayerLibrary', 'prayerPoints', 'Prayer Points')}</Label>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => addPrayerPoint(day.day_number)}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              {t('adminPrayerLibrary', 'addPoint', 'Add Point')}
-                            </Button>
-                          </div>
-                          <div className="space-y-3">
-                            {day.prayer_points.map((point, idx) => (
-                              <div key={idx} className="p-3 border rounded-lg bg-gray-50">
-                                <div className="flex items-start gap-2">
-                                  <div className="flex-1 space-y-2">
-                                    <Input
-                                      value={point.title}
-                                      onChange={(e) => updatePrayerPoint(day.day_number, idx, 'title', e.target.value)}
-                                      placeholder={t('adminPrayerLibrary', 'pointTitlePlaceholder', 'Point title')}
-                                    />
-                                    <Textarea
-                                      value={point.content}
-                                      onChange={(e) => updatePrayerPoint(day.day_number, idx, 'content', e.target.value)}
-                                      placeholder={t('adminPrayerLibrary', 'prayerContentPlaceholder', 'Prayer content...')}
-                                      rows={2}
-                                    />
-                                    <div className="flex items-center gap-2">
-                                      <Label className="text-xs">{t('adminPrayerLibrary', 'durationSec', 'Duration (sec):')}</Label>
-                                      <Input
-                                        type="number"
-                                        value={point.duration}
-                                        onChange={(e) => updatePrayerPoint(day.day_number, idx, 'duration', parseInt(e.target.value) || 60)}
-                                        className="w-20"
-                                      />
-                                    </div>
-                                  </div>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon"
-                                    onClick={() => removePrayerPoint(day.day_number, idx)}
-                                  >
-                                    <X className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <PrayerPointsEditor
+                            points={day.prayer_points}
+                            onChange={(points) => setDayPrayerPoints(day.day_number, points)}
+                          />
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -2163,11 +2148,28 @@ export const AdminPrayerLibrary: React.FC = () => {
 
             <div>
               <Label>{t('adminPrayerLibrary', 'titleRequiredLabel', 'Title *')}</Label>
-              <Input
-                value={prayerWatchForm.title}
-                onChange={(e) => setPrayerWatchForm({ ...prayerWatchForm, title: e.target.value })}
-                placeholder={t('adminPrayerLibrary', 'watchTitlePlaceholder', 'e.g., Morning Prayer Watch')}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={prayerWatchForm.title}
+                  onChange={(e) => setPrayerWatchForm({ ...prayerWatchForm, title: e.target.value })}
+                  placeholder={t('adminPrayerLibrary', 'watchTitlePlaceholder', 'e.g., Morning Prayer Watch')}
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  value={watchPointCount}
+                  onChange={(e) => setWatchPointCount(Math.max(3, Math.min(25, parseInt(e.target.value, 10) || 10)))}
+                  className="w-16"
+                  min="3"
+                  max="25"
+                  title={t('adminPrayerLibrary', 'numPrayerPoints', 'Number of prayer points to generate')}
+                />
+                <Button type="button" variant="outline" onClick={generateWatchWithAI} disabled={generatingWatch}>
+                  {generatingWatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  <span className="ml-1.5 hidden sm:inline">{t('adminPrayerLibrary', 'aiGenerate', 'AI Generate')}</span>
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{t('adminPrayerLibrary', 'numPrayerPointsHint', '# = number of AI-generated prayer points (3-25)')}</p>
             </div>
 
             <div>
@@ -2308,82 +2310,10 @@ export const AdminPrayerLibrary: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>{t('adminPrayerLibrary', 'prayerPoints', 'Prayer Points')}</Label>
-                <Button 
-                  type="button"
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const newPoint = { title: '', content: '', duration: 60 };
-                    setPrayerWatchForm({ ...prayerWatchForm, prayer_points: [...prayerWatchForm.prayer_points, newPoint] });
-                  }}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  {t('adminPrayerLibrary', 'addPoint', 'Add Point')}
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {prayerWatchForm.prayer_points.map((point, idx) => (
-                  <div key={idx} className="p-3 border rounded-lg bg-gray-50">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 space-y-2">
-                        <Input
-                          value={point.title || ''}
-                          onChange={(e) => {
-                            const newPoints = [...prayerWatchForm.prayer_points];
-                            newPoints[idx] = { ...newPoints[idx], title: e.target.value };
-                            setPrayerWatchForm({ ...prayerWatchForm, prayer_points: newPoints });
-                          }}
-                          placeholder={t('adminPrayerLibrary', 'pointTitlePlaceholder', 'Point title')}
-                        />
-                        <Textarea
-                          value={point.content || ''}
-                          onChange={(e) => {
-                            const newPoints = [...prayerWatchForm.prayer_points];
-                            newPoints[idx] = { ...newPoints[idx], content: e.target.value };
-                            setPrayerWatchForm({ ...prayerWatchForm, prayer_points: newPoints });
-                          }}
-                          placeholder={t('adminPrayerLibrary', 'prayerContentPlaceholder', 'Prayer content...')}
-                          rows={2}
-                        />
-                        <div className="flex items-center gap-2">
-                          <Label className="text-xs">{t('adminPrayerLibrary', 'durationSec', 'Duration (sec):')}</Label>
-                          <Input
-                            type="number"
-                            value={point.duration || 60}
-                            onChange={(e) => {
-                              const newPoints = [...prayerWatchForm.prayer_points];
-                              newPoints[idx] = { ...newPoints[idx], duration: parseInt(e.target.value) || 60 };
-                              setPrayerWatchForm({ ...prayerWatchForm, prayer_points: newPoints });
-                            }}
-                            className="w-20"
-                            min="1"
-                          />
-                        </div>
-                      </div>
-                      <Button 
-                        type="button"
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => {
-                          const newPoints = prayerWatchForm.prayer_points.filter((_, i) => i !== idx);
-                          setPrayerWatchForm({ ...prayerWatchForm, prayer_points: newPoints });
-                        }}
-                      >
-                        <X className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {prayerWatchForm.prayer_points.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-4">
-                    {t('adminPrayerLibrary', 'noPrayerPointsYet', 'No prayer points yet. Click "Add Point" to create one.')}
-                  </p>
-                )}
-              </div>
-            </div>
+            <PrayerPointsEditor
+              points={prayerWatchForm.prayer_points}
+              onChange={(points) => setPrayerWatchForm({ ...prayerWatchForm, prayer_points: points })}
+            />
 
             <div className="flex items-center gap-2">
               <Switch

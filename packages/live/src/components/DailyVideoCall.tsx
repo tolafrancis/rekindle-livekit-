@@ -6,14 +6,18 @@ import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
+import { ReactionButton } from './MeetingReactions';
+import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { useAuth } from '@rekindle/features/AuthContext';
+import { useActiveCallOptional } from '../ActiveCallContext';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
@@ -39,6 +43,12 @@ interface DailyVideoCallProps {
   enableRecording?: boolean;
   /** When set (webinar mode, host only), push an RTMP stream to this URL so attendees can watch via HLS */
   liveStreamRtmpUrl?: string;
+  /** Fired when a side panel (chat or host controls) opens/closes, so the parent
+   *  overlay can hide its own chrome (Copy Link / End) that would collide with it. */
+  onSidePanelToggle?: (open: boolean) => void;
+  /** Broadcast a reaction emoji — wired to the mini-player's reaction button so the
+   *  host can react while the call is minimized (the overlay bar is hidden then). */
+  onReact?: (emoji: string) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -639,9 +649,15 @@ const WaitingRoom: React.FC<{
 const ParticipantVideo: React.FC<{
   participant: DailyParticipantInfo;
   isLarge?: boolean;
+  /** Fill the parent box (w/h 100%) instead of using a fixed aspect ratio.
+   *  Used by the mini-player, whose parent already sets the frame size — without
+   *  this the aspect-ratio box collapses to zero width and the video goes blank. */
+  fill?: boolean;
+  /** Hide the name/status overlay (the mini-player draws its own title bar). */
+  hideOverlay?: boolean;
   onParticipantJoin?: (participantId: string, userName: string) => void;
   onParticipantLeave?: (participantId: string) => void;
-}> = ({ participant, isLarge = false, onParticipantJoin, onParticipantLeave }) => {
+}> = ({ participant, isLarge = false, fill = false, hideOverlay = false, onParticipantJoin, onParticipantLeave }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasJoined, setHasJoined] = useState(false);
@@ -712,7 +728,10 @@ const ParticipantVideo: React.FC<{
         clearTimeout(retryTimeout);
       }
     };
-  }, [participant.videoTrack, participant.hasVideo, participant.userName]);
+    // `fill` is included so switching into the mini-player (a fresh, empty <video>)
+    // re-runs the attach — otherwise the host's own tile could stay a black frame
+    // until the camera was toggled (the old "re-toggle to show" bug).
+  }, [participant.videoTrack, participant.hasVideo, participant.userName, participant.sessionId, fill]);
 
   // NOTE: audio is intentionally NOT played here. It's handled by the persistent
   // RemoteAudioLayer so it survives layout changes (screen share / pin / reflow)
@@ -735,14 +754,19 @@ const ParticipantVideo: React.FC<{
   const showVideo = videoAttached || participant.hasVideo;
 
   return (
-    <div className={`relative bg-gray-900 rounded-lg overflow-hidden ${isLarge ? 'aspect-video' : 'aspect-square'}`}>
+    <div className={`relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center ${fill ? 'w-full h-full' : isLarge ? 'aspect-video' : 'aspect-square'}`}>
       {/* Always render video element, just hide if no video */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={participant.isLocal}
-        className={`w-full h-full object-cover ${showVideo ? '' : 'hidden'}`}
+        // A freshly-mounted <video> (e.g. the mini-player tile) sometimes has its
+        // srcObject set before it can play; nudge it to play once it's ready so the
+        // frame actually appears without needing a camera re-toggle.
+        onLoadedMetadata={() => { videoRef.current?.play().catch(() => {}); }}
+        onCanPlay={() => { videoRef.current?.play().catch(() => {}); }}
+        className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
       />
       
       {/* Avatar fallback when no video */}
@@ -757,6 +781,7 @@ const ParticipantVideo: React.FC<{
         </div>
       )}
       
+      {!hideOverlay && (
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
         <div className="flex items-center justify-between">
           <span className="text-white text-sm font-medium truncate">
@@ -775,8 +800,9 @@ const ParticipantVideo: React.FC<{
           </div>
         </div>
       </div>
-      
-      {participant.isOwner && (
+      )}
+
+      {!hideOverlay && participant.isOwner && (
         <Badge className="absolute top-2 left-2 bg-amber-500 text-xs">{t('dailyVideoCall', 'host', 'Host')}</Badge>
       )}
     </div>
@@ -815,12 +841,15 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
   return (
     <div className="flex flex-col h-full gap-2 p-2">
       <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black rounded-xl overflow-hidden">
+        {/* absolute inset-0 pins the video to the container box, so a large shared
+            screen (e.g. 2560x1440) is letterboxed to fit (object-contain) and can
+            NEVER grow the panel to its native resolution. */}
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-contain"
+          className="absolute inset-0 h-full w-full object-contain"
         />
         <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
           <Monitor className="h-3.5 w-3.5" />
@@ -876,6 +905,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRemoveParticipant,
   enableRecording = false,
   liveStreamRtmpUrl,
+  onSidePanelToggle,
+  onReact,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // iOS Safari has no Fullscreen API for arbitrary elements (only <video>), so
@@ -900,10 +931,18 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // Enhanced control panels
   const [showHostControls, setShowHostControls] = useState(false);
   const [showChat, setShowChat] = useState(false);
-  
+
+  // Tell the parent overlay whenever a side panel is open so it can hide its own
+  // top-right chrome (Copy Link / End for All), which would otherwise sit under it.
+  useEffect(() => {
+    onSidePanelToggle?.(showChat || showHostControls);
+  }, [showChat, showHostControls, onSidePanelToggle]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
+  const { user: authUser } = useAuth();  // members can attach files; guests cannot
+  const activeCallCtx = useActiveCallOptional(); // present when hosted by ActiveCallHost
 
 
   // Track participant join function
@@ -980,6 +1019,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     waitingRoomParticipants,
     meetingSettings,
     isRecording,
+    isModerator,
     spotlightedParticipantId,
     pinnedParticipantId,
     handRaised,
@@ -988,6 +1028,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isScreenSharing,
     toggleMic,
     toggleCamera,
+    videoBackground,
+    setVideoBackground,
     startScreenShare,
     stopScreenShare,
     joinRoom,
@@ -1196,6 +1238,29 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     console.log('[DailyVideoCall] Waiting room participants:', waiting.length);
     setWaitingParticipants(waiting);
   }, [isConnected, isHost, participants, showParticipantList]);
+
+  // The host is featured (spotlighted) by default so every participant lands on
+  // the host's video. Fires once, when the host's own participant first appears;
+  // the host can spotlight someone else or clear it afterward.
+  const didInitSpotlightRef = useRef(false);
+  useEffect(() => {
+    if (!isHost || didInitSpotlightRef.current) return;
+    const me = participants.find((p: any) => p.isLocal);
+    if (me) {
+      didInitSpotlightRef.current = true;
+      spotlightParticipant(me.sessionId);
+    }
+  }, [isHost, participants, spotlightParticipant]);
+
+  // Spotlight is broadcast once when set; re-send it whenever the roster grows so
+  // late arrivals land on the same featured participant.
+  const prevParticipantCountRef = useRef(0);
+  useEffect(() => {
+    if (isHost && spotlightedParticipantId && participants.length > prevParticipantCountRef.current) {
+      spotlightParticipant(spotlightedParticipantId);
+    }
+    prevParticipantCountRef.current = participants.length;
+  }, [participants.length, isHost, spotlightedParticipantId, spotlightParticipant]);
 
   // Monitor audio track state from Daily SDK
   useEffect(() => {
@@ -1414,30 +1479,139 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const screenSharer = participants.find((p: any) =>
     p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
 
-  const pinnedParticipant = pinnedParticipantId
-    ? remoteParticipants.find((p: any) => p.sessionId === pinnedParticipantId)
+  // The main stage features ONE participant. A personal PIN (local to this viewer)
+  // takes priority over the host's SPOTLIGHT (broadcast to everyone). The featured
+  // participant is found among ALL participants, so it can be the local host (who
+  // is spotlighted by default).
+  const featuredId = pinnedParticipantId || spotlightedParticipantId;
+  const featuredParticipant = featuredId
+    ? participants.find((p: any) => p.sessionId === featuredId)
     : null;
-  const otherParticipants = pinnedParticipant
-    ? remoteParticipants.filter((p: any) => p.sessionId !== pinnedParticipant.sessionId)
+  const featuredIsSpotlight = !!featuredParticipant && !pinnedParticipantId;
+  const featuredIsLocal = !!featuredParticipant && featuredParticipant.isLocal;
+  const filmstripParticipants = featuredParticipant
+    ? remoteParticipants.filter((p: any) => p.sessionId !== featuredParticipant.sessionId)
     : remoteParticipants;
+
+  // Per-tile pin / spotlight / co-host controls, shared by the filmstrip and grid.
+  const renderTileControls = (p: any) => {
+    const isPinned = pinnedParticipantId === p.sessionId;
+    const isSpot = spotlightedParticipantId === p.sessionId;
+    const isCoHost = getParticipantRole(p.sessionId) === 'co-host';
+    const base = 'flex items-center justify-center rounded text-white transition-colors px-1.5 py-0.5';
+    return (
+      <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
+        <button
+          onClick={() => pinParticipant(isPinned ? null : p.sessionId)}
+          title={isPinned ? t('dailyVideoCall', 'unpin', 'Unpin') : t('dailyVideoCall', 'pin', 'Pin')}
+          className={`${base} ${isPinned ? 'bg-purple-600' : 'bg-black/60 hover:bg-purple-600'}`}
+        >
+          <Pin className="h-2.5 w-2.5" />
+        </button>
+        {isModerator && (
+          <button
+            onClick={() => spotlightParticipant(isSpot ? null : p.sessionId)}
+            title={isSpot ? t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight') : t('dailyVideoCall', 'spotlight', 'Spotlight')}
+            className={`${base} ${isSpot ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+          >
+            <Sparkles className="h-2.5 w-2.5" />
+          </button>
+        )}
+        {isModerator && !p.isLocal && (
+          <button
+            onClick={() => assignRole(p.sessionId, isCoHost ? 'attendee' : 'co-host')}
+            title={isCoHost ? t('dailyVideoCall', 'removeCoHost', 'Remove co-host') : t('dailyVideoCall', 'makeCoHost', 'Make co-host')}
+            className={`${base} ${isCoHost ? 'bg-blue-600' : 'bg-black/60 hover:bg-blue-600'}`}
+          >
+            <Shield className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // Minimized mini-player: a clean, centered, contained video ONLY — no top bar,
+  // control bar, reactions or filmstrip (those belong to full-screen; the host's
+  // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
+  if (activeCallCtx?.minimized) {
+    // Prefer whoever is actually on-camera so the tiny frame isn't a black tile:
+    // screen share → featured (if it has video) → any remote with video → local →
+    // finally fall back to featured/first-remote/local even without video.
+    const hasVid = (p: any) => !!p && (p.hasVideo || !!p.videoTrack);
+    const miniFeature =
+      screenSharer ||
+      (hasVid(featuredParticipant) ? featuredParticipant : null) ||
+      remoteParticipants.find(hasVid) ||
+      (hasVid(localParticipant) ? localParticipant : null) ||
+      featuredParticipant ||
+      remoteParticipants[0] ||
+      localParticipant;
+    return (
+      <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
+        <RemoteAudioLayer participants={remoteParticipants} />
+        {miniFeature ? (
+          // fill: the mini-player parent already fixes the frame size; without it
+          // the aspect-ratio box collapses to zero width and the video goes blank.
+          // key on the feature's id forces a clean remount (and re-attach) whenever
+          // the featured participant changes while minimized.
+          <ParticipantVideo
+            key={`mini-${miniFeature.sessionId}`}
+            participant={miniFeature}
+            fill
+            hideOverlay
+            onParticipantJoin={trackParticipantJoin}
+            onParticipantLeave={trackParticipantLeave}
+          />
+        ) : (
+          <div className="text-xs text-white/50">{t('dailyVideoCall', 'connecting', 'Connecting…')}</div>
+        )}
+
+        {/* Compact media controls for the mini-player — mute, camera and (if wired)
+            react — so the host doesn't have to maximize just to toggle their mic or
+            camera. Sits bottom-center; the host maximize/leave chrome is up top. */}
+        <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/55 px-1.5 py-1 backdrop-blur-sm">
+          <button
+            onClick={toggleMic}
+            title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
+            aria-label={isMicOn ? 'Mute' : 'Unmute'}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+          </button>
+          <button
+            onClick={toggleCamera}
+            title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
+            aria-label={isCameraOn ? 'Stop video' : 'Start video'}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+          </button>
+          {onReact && <ReactionButton onReact={onReact} />}
+        </div>
+      </div>
+    );
+  }
 
   // Active call screen - all media controls come from useDailyRoom
   return (
-    <div 
+    <div
       ref={containerRef}
-      className={`flex h-full min-h-0 ${showParticipantList ? 'flex-row' : 'flex-col'} bg-gray-900 rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
+      className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-gray-900 sm:flex-row ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
       <RemoteAudioLayer participants={remoteParticipants} />
 
       {/* Main video area */}
-      <div className={`flex-1 min-h-0 flex flex-col`}>
-        <div className="relative w-full flex-1 bg-gray-800">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        {/* min-h-0 is required: without it this flex-1 child can't shrink below its
+            content, so a screen share (h-full video) grew the panel to the shared
+            screen's native resolution instead of fitting within the stage. */}
+        <div className="relative w-full flex-1 min-h-0 overflow-hidden bg-gray-800">
         {/* A live screen share takes over the main stage (local or remote), with a
             camera filmstrip beside it so viewers still see the presenter. */}
         {screenSharer ? (
-          <div className="flex flex-col lg:flex-row h-full gap-2 p-2">
+          <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
             <div className="flex-1 min-h-0">
               <ScreenShareView participant={screenSharer} />
             </div>
@@ -1476,30 +1650,54 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </div>
             </div>
           </div>
-        ) : pinnedParticipant ? (
-          <div className="flex flex-col h-full gap-2 p-2">
+        ) : featuredParticipant ? (
+          <div className="flex flex-col h-full gap-2 p-1 sm:p-2">
             <div className="relative flex-1 min-h-0 flex items-center justify-center">
               <div className="relative w-full max-w-4xl">
                 <ParticipantVideo
-                  key={pinnedParticipant.sessionId}
-                  participant={pinnedParticipant}
+                  key={featuredParticipant.sessionId}
+                  participant={featuredParticipant}
                   isLarge
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
                 />
-                {isHost && (
-                  <button
-                    onClick={() => pinParticipant(pinnedParticipant.sessionId)}
-                    className="absolute top-2 right-2 z-10 flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
-                  >
-                    <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
-                  </button>
-                )}
+                {/* Feature badge — spotlight (host, global) vs pin (this viewer).
+                    Sits below the top status bar so it doesn't overlap it on entry. */}
+                <div className="absolute top-12 sm:top-14 left-2 z-10">
+                  {featuredIsSpotlight ? (
+                    <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
+                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs font-medium bg-purple-600 text-white px-2 py-1 rounded-md shadow">
+                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'pinned', 'Pinned')}
+                    </span>
+                  )}
+                </div>
+                {/* Remove control: anyone can unpin their own pin; only a moderator
+                    (host or co-host) can clear a spotlight. Below the top bar. */}
+                <div className="absolute top-12 sm:top-14 right-2 z-10">
+                  {!featuredIsSpotlight ? (
+                    <button
+                      onClick={() => pinParticipant(null)}
+                      className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
+                    >
+                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
+                    </button>
+                  ) : isModerator ? (
+                    <button
+                      onClick={() => spotlightParticipant(null)}
+                      className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
+                    >
+                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight')}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
-            {otherParticipants.length > 0 && (
+            {filmstripParticipants.length > 0 && (
               <div className="flex gap-2 h-24 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                {otherParticipants.map((participant: any) => (
+                {filmstripParticipants.map((participant: any) => (
                   <div key={participant.sessionId} className="relative h-full aspect-video shrink-0">
                     <ParticipantVideo
                       participant={participant}
@@ -1507,21 +1705,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                       onParticipantJoin={trackParticipantJoin}
                       onParticipantLeave={trackParticipantLeave}
                     />
-                    {isHost && (
-                      <button
-                        onClick={() => pinParticipant(participant.sessionId)}
-                        className="absolute top-1 right-1 z-10 flex items-center gap-1 text-[10px] bg-black/60 hover:bg-purple-600 text-white px-1.5 py-0.5 rounded"
-                      >
-                        <Pin className="h-2.5 w-2.5" /> {t('dailyVideoCall', 'pin', 'Pin')}
-                      </button>
-                    )}
+                    {renderTileControls(participant)}
                   </div>
                 ))}
               </div>
             )}
           </div>
         ) : (
-          <div className={`grid gap-2 p-2 h-full ${
+          <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
             remoteParticipants.length === 1 ? 'grid-cols-1' :
             remoteParticipants.length <= 4 ? 'grid-cols-2' :
             'grid-cols-3'
@@ -1534,32 +1725,38 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   onParticipantJoin={trackParticipantJoin}
                   onParticipantLeave={trackParticipantLeave}
                 />
-                {isHost && (
-                  <button
-                    onClick={() => pinParticipant(participant.sessionId)}
-                    className="absolute top-1 right-1 z-10 flex items-center gap-1 text-[10px] bg-black/60 hover:bg-purple-600 text-white px-1.5 py-0.5 rounded"
-                  >
-                    <Pin className="h-2.5 w-2.5" /> Pin
-                  </button>
-                )}
+                {renderTileControls(participant)}
               </div>
             ))}
           </div>
         )}
 
-        {/* Local video (picture-in-picture) - ALWAYS render video element, just hide when camera off */}
-
+        {/* Local video (picture-in-picture). The <video> stays MOUNTED even while
+            the local user is the featured (spotlit) tile — we just hide the PiP —
+            so its stream stays attached. Unmounting it (the old behaviour) left it
+            blank after removing your own spotlight until a re-render re-attached. */}
         {localParticipant && remoteParticipants.length > 0 && (
-          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 w-28 sm:w-48 aspect-video bg-gray-800 rounded-lg overflow-hidden shadow-lg border-2 border-gray-700">
+          <div className={`absolute bottom-3 right-3 z-20 aspect-video w-24 max-w-[40vw] overflow-hidden rounded-lg border-2 border-gray-700 bg-gray-800 shadow-lg sm:bottom-4 sm:right-4 sm:w-36 md:w-48 flex items-center justify-center ${featuredIsLocal ? 'hidden' : ''}`}>
             {/* Always render video element so ref is available for track attachment */}
             <video
               ref={localVideoRef}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover ${isCameraOn ? '' : 'hidden'}`}
+              className={`w-full h-full object-contain ${isCameraOn ? '' : 'hidden'}`}
               style={{ transform: 'scaleX(-1)' }} // Mirror the local video
             />
+            {/* Spotlight yourself / see that you're spotlighted (moderators). */}
+            {isModerator && (
+              <button
+                onClick={() => spotlightParticipant(spotlightedParticipantId === localParticipant.sessionId ? null : localParticipant.sessionId)}
+                title={spotlightedParticipantId === localParticipant.sessionId ? t('dailyVideoCall', 'youAreSpotlighted', "You're spotlighted — tap to remove") : t('dailyVideoCall', 'spotlightYourself', 'Spotlight yourself')}
+                className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${spotlightedParticipantId === localParticipant.sessionId ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+              >
+                <Sparkles className="h-2.5 w-2.5" />
+                {spotlightedParticipantId === localParticipant.sessionId && <span className="hidden sm:inline">{t('dailyVideoCall', 'spotlightedShort', 'Spotlight')}</span>}
+              </button>
+            )}
             {/* Avatar fallback when camera is off */}
             {!isCameraOn && (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-700">
@@ -1591,9 +1788,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         )}
 
 
-        {/* Top bar */}
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-2 sm:p-4">
-          <div className="flex items-center justify-between gap-2">
+        {/* Top bar. Extra right padding reserves room for the wrapper's top-right
+            Copy Link / End for All buttons so the meeting's own right controls
+            (participant count · mini-player · fullscreen) don't sit under them. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-28 sm:px-4 sm:py-4 sm:pr-72">
+          <div className="pointer-events-auto flex items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse" />
@@ -1649,6 +1848,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <Users className="h-4 w-4" />
                 <span>{participantCount}</span>
               </div>
+              {/* Shrink into a floating mini-player so the user can browse other tabs
+                  while the call keeps running (only when hosted by ActiveCallHost). */}
+              {activeCallCtx && !activeCallCtx.minimized && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => activeCallCtx.minimize()}
+                  className="text-white hover:bg-white/20"
+                  title={t('dailyVideoCall', 'minimizeToMiniPlayer', 'Minimize to mini-player')}
+                >
+                  <PictureInPicture2 className="h-5 w-5" />
+                </Button>
+              )}
               {supportsFullscreen && (
                 <Button
                   variant="ghost"
@@ -1667,8 +1879,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           </div>
         </div>
 
-        {/* Persistent raised-hands panel (host) */}
-        {isHost && raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length > 0 && (
+        {/* Persistent raised-hands panel (moderators) */}
+        {isModerator && raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length > 0 && (
           <div className="absolute top-16 right-2 sm:right-4 z-40 w-56 max-w-[70vw] bg-gray-900/90 backdrop-blur-sm rounded-lg p-3 text-white space-y-2 max-h-[40vh] overflow-y-auto">
             <p className="text-xs font-medium text-gray-300 flex items-center gap-1">
               <Hand className="h-3 w-3" /> {t('dailyVideoCall', 'raisedHandsCount', 'Raised hands ({count})').replace('{count}', String(raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length))}
@@ -1690,26 +1902,28 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         )}
       </div>
 
-      {/* Controls bar - all controls from useDailyRoom (Daily SDK) */}
+      {/* Controls bar - all controls from useDailyRoom (Daily SDK).
+          pb uses the iOS safe-area inset so the buttons clear the home indicator /
+          browser chrome and stay tappable on mobile (they were being cut off). */}
       {showControls && (
-        <div className="bg-gray-900 border-t border-gray-800 p-2 sm:p-6">
-          <div className="flex items-center justify-center gap-1.5 sm:gap-6 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="bg-gray-900 border-t border-gray-800 px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6">
+          <div className="flex items-center justify-center gap-2 sm:gap-6 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Mic toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={toggleMic}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${isMicOn 
                   ? 'bg-gray-700 hover:bg-gray-600 text-white' 
                   : 'bg-red-600 hover:bg-red-700 text-white'}
               `}>
                 {isMicOn ? (
-                  <Mic className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <Mic className="h-5 w-5 sm:h-7 sm:w-7" />
                 ) : (
-                  <MicOff className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <MicOff className="h-5 w-5 sm:h-7 sm:w-7" />
                 )}
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1723,16 +1937,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${isCameraOn 
                   ? 'bg-gray-700 hover:bg-gray-600 text-white' 
                   : 'bg-red-600 hover:bg-red-700 text-white'}
               `}>
                 {isCameraOn ? (
-                  <Video className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <Video className="h-5 w-5 sm:h-7 sm:w-7" />
                 ) : (
-                  <VideoOff className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <VideoOff className="h-5 w-5 sm:h-7 sm:w-7" />
                 )}
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1740,22 +1954,38 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
+            {/* Virtual background */}
+            <VirtualBackgroundButton
+              value={videoBackground}
+              onChange={setVideoBackground}
+              trigger={
+                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                  <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                    <Sparkles className="h-5 w-5 sm:h-7 sm:w-7" />
+                  </div>
+                  <span className="hidden sm:block text-xs font-medium text-gray-300">
+                    {t('dailyVideoCall', 'background', 'Background')}
+                  </span>
+                </button>
+              }
+            />
+
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={isScreenSharing ? stopScreenShare : startScreenShare}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${isScreenSharing 
                   ? 'bg-blue-600 hover:bg-blue-700 text-white' 
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
                 {isScreenSharing ? (
-                  <MonitorOff className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <MonitorOff className="h-5 w-5 sm:h-7 sm:w-7" />
                 ) : (
-                  <Monitor className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <Monitor className="h-5 w-5 sm:h-7 sm:w-7" />
                 )}
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1770,32 +2000,33 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${handRaised 
                   ? 'bg-amber-600 hover:bg-amber-700 text-white' 
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
-                <Hand className="h-4 w-4 sm:h-7 sm:w-7" />
+                <Hand className="h-5 w-5 sm:h-7 sm:w-7" />
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
                 {handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
               </span>
             </button>
 
-            {/* Chat button */}
+            {/* Chat button — opening chat closes Host Controls so only one side
+                panel shows at a time (they otherwise overlap on the right edge). */}
             <button
-              onClick={() => setShowChat(!showChat)}
+              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); }}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
                 ${showChat 
                   ? 'bg-purple-600 hover:bg-purple-700 text-white' 
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
-                <MessageSquare className="h-4 w-4 sm:h-7 sm:w-7" />
+                <MessageSquare className="h-5 w-5 sm:h-7 sm:w-7" />
                 {chatMessages.length > 0 && !showChat && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {chatMessages.length > 9 ? '9+' : chatMessages.length}
@@ -1807,20 +2038,20 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
-            {/* Host Controls button */}
-            {isHost && (
+            {/* Host Controls button (host or co-host) */}
+            {isModerator && (
               <button
-                onClick={() => setShowHostControls(!showHostControls)}
+                onClick={() => { setShowHostControls((v) => !v); setShowChat(false); }}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`
-                  w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                   transition-all duration-200 transform group-hover:scale-105
                   ${showHostControls 
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
                     : 'bg-gray-700 hover:bg-gray-600 text-white'}
                 `}>
-                  <Users className="h-4 w-4 sm:h-7 sm:w-7" />
+                  <Users className="h-5 w-5 sm:h-7 sm:w-7" />
                   {waitingRoomParticipants.length > 0 && (
                     <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                       {waitingRoomParticipants.length}
@@ -1841,7 +2072,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`
-                  w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
+                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
                   transition-all duration-200 transform group-hover:scale-105
                   ${isMuxRecording
                     ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -1854,9 +2085,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   {recordingStatus === 'starting' || recordingStatus === 'stopping' ? (
                     <Loader2 className="h-4 w-4 sm:h-7 sm:w-7 animate-spin" />
                   ) : isMuxRecording ? (
-                    <Square className="h-4 w-4 sm:h-7 sm:w-7" />
+                    <Square className="h-5 w-5 sm:h-7 sm:w-7" />
                   ) : (
-                    <Circle className="h-4 w-4 sm:h-7 sm:w-7" />
+                    <Circle className="h-5 w-5 sm:h-7 sm:w-7" />
                   )}
                 </div>
                 <span className="hidden sm:block text-xs font-medium text-gray-300">
@@ -1875,11 +2106,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className="
-                w-9 h-9 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 bg-red-600 hover:bg-red-700 text-white
                 transition-all duration-200 transform group-hover:scale-105
               ">
-                <PhoneOff className="h-4 w-4 sm:h-7 sm:w-7" />
+                <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
                 {isHost ? t('dailyVideoCall', 'endForAll', 'End for All') : t('dailyVideoCall', 'leave', 'Leave')}
@@ -1890,15 +2121,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       )}
       </div>
 
-      {/* Host Control Panel */}
-      {showHostControls && isHost && (
+      {/* Host Control Panel (host or co-host) */}
+      {showHostControls && isModerator && (
         <HostControlPanel
           participants={participantStates}
           waitingRoomParticipants={waitingRoomParticipants}
           meetingSettings={meetingSettings}
           isRecording={isMuxRecording}
           spotlightedParticipantId={spotlightedParticipantId}
-          isHost={isHost}
+          isHost={isModerator}
+          canRecord={isHost}
           onMuteAll={() => muteAll()}
           onDisableAllVideo={() => disableAllVideo()}
           onMuteParticipant={(id) => muteParticipant(id)}
@@ -1932,6 +2164,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           currentUserId={userId}
           chatMode={meetingSettings.chatMode}
           onClose={() => setShowChat(false)}
+          canAttach={!!authUser}
+          meetingId={meetingId}
+          participants={participants.map((p) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
         />
       )}
     </div>

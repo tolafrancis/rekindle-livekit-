@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -84,7 +85,7 @@ export const AdminLiveChannelManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState('channels');
+  const [activeTab, setActiveTab] = useViewHistory<string>("admin-livechannel", 'channels');
 
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);

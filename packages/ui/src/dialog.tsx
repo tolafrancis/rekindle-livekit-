@@ -3,8 +3,57 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "./utils"
+import { registerModal, unregisterModal } from "./modal-stack"
 
-const Dialog = DialogPrimitive.Root
+/**
+ * Dialog Root, wrapped so the browser Back button closes it (via the modal stack)
+ * instead of navigating away. Works for controlled dialogs (`open`/`onOpenChange`)
+ * and trigger-driven ones (state tracked through `onOpenChange`).
+ */
+const Dialog: React.FC<React.ComponentProps<typeof DialogPrimitive.Root>> = ({
+  open,
+  onOpenChange,
+  ...props
+}) => {
+  const idRef = React.useRef<string | null>(null)
+  // Keep the latest onOpenChange so the registered close() is never stale.
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
+
+  const register = React.useCallback(() => {
+    if (!idRef.current) idRef.current = registerModal(() => onOpenChangeRef.current?.(false))
+  }, [])
+  const unregister = React.useCallback(() => {
+    if (idRef.current) {
+      unregisterModal(idRef.current)
+      idRef.current = null
+    }
+  }, [])
+
+  // Controlled dialogs: follow the `open` prop.
+  React.useEffect(() => {
+    if (open === undefined) return
+    if (open) register()
+    else unregister()
+  }, [open, register, unregister])
+
+  // Always clean up if the dialog unmounts while open.
+  React.useEffect(() => unregister, [unregister])
+
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      if (open === undefined) {
+        // Uncontrolled (trigger-driven): track via the change events.
+        if (next) register()
+        else unregister()
+      }
+      onOpenChangeRef.current?.(next)
+    },
+    [open, register, unregister],
+  )
+
+  return <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange} {...props} />
+}
 
 const DialogTrigger = DialogPrimitive.Trigger
 

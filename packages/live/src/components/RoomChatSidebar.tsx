@@ -2,25 +2,75 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
-import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Badge } from '@rekindle/ui/badge';
-import { 
-  MessageCircle, 
-  Send, 
-  X, 
+import { toast } from '@rekindle/ui/use-toast';
+import { supabase } from '@rekindle/supabase';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
+import {
+  MessageCircle,
+  Send,
+  X,
   Shield,
   Crown,
   AlertCircle,
-  Ban
+  Ban,
+  Paperclip,
+  Download,
+  FileText,
+  Loader2,
+  Lock,
+  ChevronDown,
+  Users,
 } from 'lucide-react';
-import { ChatMessageType } from '@rekindle/types/liveChannelTypes';
+import { ChatMessageType, ChatAttachment } from '@rekindle/types/liveChannelTypes';
+
+interface ChatParticipant { sessionId: string; userName: string; isLocal?: boolean }
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+const ATTACHMENT_BUCKET = 'meeting-chat-attachments';
+
+function formatSize(bytes: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const CHAT_TEXT_LIMIT = 280; // chars shown before a message folds behind "See more"
+
+/** Message text that folds long content behind a "See more" toggle so one long
+ *  message can't blow out the chat panel (and the meeting frame) height. */
+const ChatMessageText: React.FC<{ text: string; className?: string; linkClass?: string }> = ({ text, className, linkClass }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > CHAT_TEXT_LIMIT;
+  const shown = expanded || !isLong ? text : `${text.slice(0, CHAT_TEXT_LIMIT).trimEnd()}… `;
+  return (
+    <p className={`break-words whitespace-pre-wrap ${className || ''}`}>
+      {shown}
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className={`ml-1 text-xs font-medium underline ${linkClass || 'text-blue-400'}`}
+        >
+          {expanded ? 'See less' : 'See more'}
+        </button>
+      )}
+    </p>
+  );
+};
 
 interface RoomChatSidebarProps {
   messages: ChatMessageType[];
-  onSendMessage: (content: string, isPrivate?: boolean, recipientId?: string) => Promise<void>;
+  onSendMessage: (content: string, isPrivate?: boolean, recipientId?: string, attachment?: ChatAttachment | null) => Promise<void>;
   currentUserId: string;
   chatMode?: 'all' | 'host-only' | 'disabled';
   onClose: () => void;
+  /** Members can attach files; guests cannot (upload RLS is authenticated-only). */
+  canAttach?: boolean;
+  meetingId?: string;
+  /** Roster for the "send privately to…" picker. */
+  participants?: ChatParticipant[];
 }
 
 export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
@@ -28,12 +78,56 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
   onSendMessage,
   currentUserId,
   chatMode = 'all',
-  onClose
+  onClose,
+  canAttach = false,
+  meetingId,
+  participants = [],
 }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [recipientId, setRecipientId] = useState<string | null>(null); // null = Everyone
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // People you can DM = everyone but yourself.
+  const others = participants.filter((p) => !p.isLocal && p.sessionId !== currentUserId);
+  const nameOf = (sid?: string | null) => participants.find((p) => p.sessionId === sid)?.userName;
+  // A selected recipient who has since left falls back to Everyone.
+  const recipient = recipientId && others.some((p) => p.sessionId === recipientId) ? recipientId : null;
+  const isPrivate = recipient !== null;
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast({ title: 'File too large', description: 'Attachments must be 10 MB or less.', variant: 'destructive' });
+      return;
+    }
+    setUploading(true);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `chat/${meetingId || 'meeting'}/${crypto.randomUUID()}-${safe}`;
+      const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+      });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from(ATTACHMENT_BUCKET).getPublicUrl(path);
+      await onSendMessage(newMessage.trim(), isPrivate, recipient ?? undefined, {
+        url: pub.publicUrl,
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+      });
+      setNewMessage('');
+    } catch (e: any) {
+      toast({ title: 'Upload failed', description: e?.message || 'Could not upload the file.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -58,7 +152,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
 
     setSending(true);
     try {
-      await onSendMessage(newMessage.trim());
+      await onSendMessage(newMessage.trim(), isPrivate, recipient ?? undefined);
       setNewMessage('');
       inputRef.current?.focus();
     } catch (error) {
@@ -107,8 +201,41 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
     });
   };
 
+  // Attachment renderer shared by every message variant (normal, host announcement,
+  // etc.). A host's messages are typed 'host-announcement', so without this the
+  // announcement branch dropped the image/file and showed an empty bubble.
+  const renderAttachment = (message: ChatMessageType) =>
+    message.attachment ? (
+      <a
+        href={message.attachment.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        download={message.attachment.name}
+        className="block mt-1"
+      >
+        {message.attachment.type?.startsWith('image/') ? (
+          <img
+            src={message.attachment.url}
+            alt={message.attachment.name}
+            className="max-w-full max-h-48 rounded-md border border-white/10"
+          />
+        ) : (
+          <div className="flex items-center gap-2 p-2 rounded-md bg-black/20 hover:bg-black/30 transition-colors">
+            <FileText className="h-5 w-5 shrink-0 text-blue-200" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-white truncate">{message.attachment.name}</p>
+              <p className="text-[10px] text-gray-300">{formatSize(message.attachment.size)}</p>
+            </div>
+            <Download className="h-4 w-4 shrink-0 text-gray-300" />
+          </div>
+        )}
+      </a>
+    ) : null;
+
   return (
-    <div className="fixed right-0 top-0 h-full w-80 bg-gray-900 border-l border-gray-800 flex flex-col z-50">
+    <div className="z-40 flex h-[40vh] min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-gray-800 bg-gray-900 sm:h-full sm:w-80 sm:max-w-[24rem] sm:border-t-0 sm:border-l">
+      {/* On mobile this docks BELOW the video feed (parent is flex-col); on desktop
+          it's a right-hand sidebar (parent is flex-row). */}
       {/* Header */}
       <CardHeader className="border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -144,8 +271,9 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
         )}
       </CardHeader>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+      {/* Messages. min-h-0 is required so a long message SCROLLS inside the panel
+          instead of growing it (and the whole meeting frame) taller. */}
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="space-y-3">
           {messages.length === 0 ? (
             <div className="text-center text-gray-500 text-sm py-8">
@@ -174,7 +302,8 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                       <Crown className="h-4 w-4 text-yellow-500" />
                       <span className="text-xs font-medium text-yellow-500">Host Announcement</span>
                     </div>
-                    <p className="text-sm text-white">{message.content}</p>
+                    {message.content && <ChatMessageText text={message.content} className="text-sm text-white" linkClass="text-blue-300" />}
+                    {renderAttachment(message)}
                     <span className="text-xs text-gray-500 mt-1 block">
                       {formatTime(message.timestamp)}
                     </span>
@@ -202,15 +331,23 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                         </Badge>
                       )}
                     </div>
-                    <p className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-100'} break-words`}>
-                      {message.content}
-                    </p>
+                    {message.content && (
+                      <ChatMessageText
+                        text={message.content}
+                        className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-100'}`}
+                        linkClass={isOwnMessage ? 'text-blue-200' : 'text-blue-400'}
+                      />
+                    )}
+                    {renderAttachment(message)}
                     <span className={`text-xs ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'} mt-1 block`}>
                       {formatTime(message.timestamp)}
                     </span>
                     {message.isPrivate && (
-                      <Badge variant="secondary" className="text-xs mt-1">
-                        Private
+                      <Badge variant="secondary" className="text-xs mt-1 gap-1">
+                        <Lock className="h-3 w-3" />
+                        {isOwnMessage && nameOf(message.recipientId)
+                          ? `Private to ${nameOf(message.recipientId)}`
+                          : 'Private'}
                       </Badge>
                     )}
                   </div>
@@ -219,29 +356,82 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
             })
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Input */}
       <CardContent className="border-t border-gray-800 p-4 flex-shrink-0">
+        {/* Recipient picker — send to everyone or privately to one participant. */}
+        {others.length > 0 && chatMode !== 'disabled' && (
+          <div className="mb-2 flex items-center gap-2 text-xs">
+            <span className="text-gray-500">To:</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={`flex items-center gap-1 rounded-md px-2 py-1 font-medium transition-colors ${
+                    isPrivate ? 'bg-purple-600/20 text-purple-300' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  {isPrivate ? <Lock className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                  {isPrivate ? `${nameOf(recipient)} (private)` : 'Everyone'}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-56 overflow-y-auto">
+                <DropdownMenuItem onClick={() => setRecipientId(null)} className="gap-2">
+                  <Users className="h-4 w-4" /> Everyone
+                </DropdownMenuItem>
+                {others.map((p) => (
+                  <DropdownMenuItem key={p.sessionId} onClick={() => setRecipientId(p.sessionId)} className="gap-2">
+                    <Lock className="h-4 w-4 text-purple-500" /> {p.userName}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
         <div className="flex gap-2">
+          {/* Attach (members only). Any file, max 10 MB. */}
+          {canAttach && chatMode !== 'disabled' && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0] || undefined)}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Attach a file (max 10 MB)"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || sending}
+                className="shrink-0 text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              </Button>
+            </>
+          )}
           <Input
             ref={inputRef}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              chatMode === 'disabled' 
-                ? 'Chat is disabled' 
+              chatMode === 'disabled'
+                ? 'Chat is disabled'
                 : chatMode === 'host-only'
                 ? 'Only hosts can send messages'
+                : uploading
+                ? 'Uploading…'
                 : 'Type a message...'
             }
-            disabled={sending || chatMode === 'disabled'}
-            className="flex-1 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+            disabled={sending || uploading || chatMode === 'disabled'}
+            className="min-w-0 flex-1 bg-gray-800 border-gray-700 text-white placeholder-gray-500"
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!newMessage.trim() || sending || chatMode === 'disabled'}
+            disabled={!newMessage.trim() || sending || uploading || chatMode === 'disabled'}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {sending ? (

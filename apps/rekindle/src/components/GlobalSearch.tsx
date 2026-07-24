@@ -229,11 +229,11 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ open, onClose }) => {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-60 flex items-start justify-center px-4 py-8">
+    <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 py-8">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-      <div className="relative w-full max-w-3xl bg-white rounded-xl shadow-lg overflow-hidden z-70">
-        <div className="flex items-center gap-3 p-4 border-b">
+      <div className="relative w-full max-w-3xl bg-white rounded-xl shadow-lg overflow-hidden z-[70]">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 p-4 border-b">
           <div className="flex-1">
             <input
               className="w-full px-4 py-3 rounded-lg border focus:outline-none"
@@ -243,7 +243,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ open, onClose }) => {
               autoFocus
             />
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center justify-between md:justify-start">
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as any)}

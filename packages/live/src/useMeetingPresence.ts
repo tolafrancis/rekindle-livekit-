@@ -38,7 +38,10 @@ export function useMeetingPresence(
           arr.forEach((m: any) => {
             if (m?.userId && !seen.has(m.userId)) {
               seen.add(m.userId);
-              list.push({ userId: m.userId, userName: m.userName || 'Guest', isGuest: !!m.isGuest });
+              // Use the tracked userName; only fallback to Guest if truly empty.
+              // Guests should have their entered name here; if missing, it's a data issue.
+              const displayName = m.userName && m.userName.trim() ? m.userName : 'Guest';
+              list.push({ userId: m.userId, userName: displayName, isGuest: !!m.isGuest });
             }
           });
         });

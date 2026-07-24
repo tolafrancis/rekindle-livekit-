@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -189,7 +190,7 @@ export const AdminPreTranslationTool: React.FC = () => {
     new Set(ASIAN_LANGUAGE_CODES)
   );
   const [jobs, setJobs] = useState<TranslationJob[]>([]);
-  const [activeTab, setActiveTab] = useState<'ui-strings' | 'content'>('ui-strings');
+  const [activeTab, setActiveTab] = useViewHistory<'ui-strings' | 'content'>("admin-pretranslate", 'ui-strings');
   const [processingJob, setProcessingJob] = useState<string | null>(null);
   
   // Statistics

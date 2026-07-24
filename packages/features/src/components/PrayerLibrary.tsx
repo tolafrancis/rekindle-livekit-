@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { cachedRead } from '../offlineContentCache';
 import { consumeDeepLink } from '../deepLink';
 import { useAuth } from '../AuthContext';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { useLanguage } from '../LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useLocalizedScripture, useLocalizedScriptures } from '../useLocalizedScripture';
@@ -354,7 +355,10 @@ export function PrayerLibrary() {
   const loadingRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'prayer-topics' | 'prayer-series' | 'prayer-watch'>('prayer-topics');
+  const [activeTab, setActiveTab] = useViewHistory<'prayer-topics' | 'prayer-series' | 'prayer-watch'>('prayer-library-tab', 'prayer-topics');
+  // browse (library) ↔ series (full-screen PrayerSeriesViewer). Rendering is gated
+  // on libView; selectedSeriesId stays plain companion state.
+  const [libView, setLibView] = useViewHistory<'browse' | 'series'>('prayer-library-view', 'browse');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -406,7 +410,7 @@ export function PrayerLibrary() {
   // Open a prayer series arriving from a shared link (/prayer-series/:id).
   useEffect(() => {
     const dl = consumeDeepLink('prayer-series');
-    if (dl?.id) setSelectedSeriesId(dl.id);
+    if (dl?.id) { setSelectedSeriesId(dl.id); setLibView('series'); }
   }, []);
 
   // Tell the app shell when a prayer session or series viewer is open so it can
@@ -905,6 +909,7 @@ export function PrayerLibrary() {
 
   const openSeriesInViewer = (seriesId: string) => {
     setSelectedSeriesId(seriesId);
+    setLibView('series');
   };
 
   const toggleBookmark = async (seriesId: string) => {
@@ -1098,12 +1103,12 @@ export function PrayerLibrary() {
     );
   }
 
-  if (selectedSeriesId) {
+  if (libView === 'series' && selectedSeriesId) {
     return (
       <div>
         <Button
           variant="ghost"
-          onClick={() => setSelectedSeriesId(null)}
+          onClick={() => { setSelectedSeriesId(null); setLibView('browse'); }}
           className="mb-4"
         >
           <ChevronRight className="h-4 w-4 mr-2 rotate-180" />
@@ -1135,12 +1140,13 @@ export function PrayerLibrary() {
     };
 
     // Convert sessionData to prayer points format
-    const prayerPoints: PrayerPoint[] = sessionData.prayer_points?.map((point: any, index: number) => ({
-      id: point.id || `point-${index}`,
-      title: point.title || point.content || `Prayer Point ${index + 1}`,
+    const prayerPoints: PrayerPoint[] = sessionData.prayer_points?.map((point: any) => ({
+      title: point.title || '',
       content: point.content || point.title || '',
-      duration_seconds: point.duration_seconds || 60,
-      order_index: point.order_index ?? index
+      scripture: point.scripture || undefined,
+      scriptureText: point.scriptureText || undefined,
+      reflection: point.reflection || undefined,
+      duration: point.duration || 60,
     })) || [];
 
     // Determine session type based on duration
@@ -1207,9 +1213,9 @@ export function PrayerLibrary() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="prayer-topics">{t('prayers', 'prayerTopics', 'Prayer Topics')}</TabsTrigger>
-          <TabsTrigger value="prayer-series">{t('prayers', 'series', 'Prayer Series')}</TabsTrigger>
-          <TabsTrigger value="prayer-watch">{t('prayers', 'prayerWatch', 'Prayer Watch')}</TabsTrigger>
+          <TabsTrigger value="prayer-topics" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerTopics', 'Prayer Topics')}</TabsTrigger>
+          <TabsTrigger value="prayer-series" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'series', 'Prayer Series')}</TabsTrigger>
+          <TabsTrigger value="prayer-watch" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerWatch', 'Prayer Watch')}</TabsTrigger>
         </TabsList>
 
         {/* ===== PRAYER TOPICS TAB ===== */}

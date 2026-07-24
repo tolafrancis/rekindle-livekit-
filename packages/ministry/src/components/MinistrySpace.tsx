@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -46,6 +47,7 @@ import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
@@ -195,7 +197,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
   
-  const [activeTab, setActiveTab] = useState('home');
+  // Main ministry tab. Back steps through tabs; the hook's state-merge composes
+  // with nested children (MLiveChannel, GiftAid, etc.) and the parent hub.
+  const [activeTab, setActiveTab] = useViewHistory<string>('ministry-space-tab', 'home');
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
@@ -293,7 +297,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const hasMinistryAccess = hasOwnMinistryAccess || ownerHasMinistryAccess;
 
   // Block access if neither the user nor the ministry's owner has Ministry tier.
-  const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess;
+  // Hidden in native builds: no purchase/upgrade surfaces there (Phase 0 — Apple 3.1.1).
+  const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess && canShowPurchaseUI();
 
   const loadMinistryData = useCallback(async () => {
     setLoading(true);
@@ -922,6 +927,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* Ministry Header */}
         <div className="shadow-md" style={{ backgroundColor: themeColor }}>
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3">
+            {/* Back to the ministries list — always visible, not buried in a menu. */}
+            <button
+              onClick={onExit}
+              className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t('ministrySpace', 'allMinistries', 'All Ministries')}
+            </button>
             <div className="flex items-start justify-between gap-2">
               {/* Identity */}
               <div className="flex items-center gap-3 min-w-0">
@@ -1117,7 +1130,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </div>
               <Button
                 className="bg-purple-600 hover:bg-purple-700 text-white ml-4"
-                onClick={() => window.location.href = '/subscribe'}
+                onClick={() => navigate('/settings/billing')}
               >
                 <Crown className="h-4 w-4 mr-2" />
                 {t('ministrySpace', 'upgradeNow', 'Upgrade Now')}

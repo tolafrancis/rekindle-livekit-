@@ -8,6 +8,7 @@
     "./utils": "./src/utils.ts",
     "./use-toast": "./src/use-toast.ts",
     "./useSwipe": "./src/useSwipe.ts",
+    "./modal-stack": "./src/modal-stack.ts",
     "./*": "./src/*.tsx"
   },
   "dependencies": {

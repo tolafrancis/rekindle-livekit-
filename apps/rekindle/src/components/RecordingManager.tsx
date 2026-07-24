@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import Hls from 'hls.js';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -426,7 +427,7 @@ export const RecordingManager = ({ channelId }: { channelId: string }) => {
   const [showAccessManager, setShowAccessManager] = useState(false);
   const [showMetadataEditor, setShowMetadataEditor] = useState(false);
   const [showPlayer, setShowPlayer] = useState(false);
-  const [activeTab, setActiveTab] = useState('recordings');
+  const [activeTab, setActiveTab] = useViewHistory<string>('recording-manager', 'recordings');
 
   useEffect(() => {
     loadRecordings();

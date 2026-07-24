@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
+import { useViewHistory } from '../hooks/useViewHistory';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from './viewerGestures';
 import { recordDailyActivity } from '../streak';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
@@ -173,7 +174,7 @@ const generatePrayerPointsFromDay = (day: PrayerDay): PrayerPoint[] => {
     if (validPoints.length > 0) {
       console.log('✅ Using existing prayer points:', validPoints.length);
       return validPoints.map(point => ({
-        title: point.title || 'Prayer Point',
+        title: point.title || '',
         content: point.content || point.title || 'Pray about this topic.',
         scripture: point.scripture,
         scriptureText: point.scriptureText,
@@ -254,7 +255,8 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
   const [currentDay, setCurrentDay] = useState<PrayerDay | null>(null);
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'list' | 'series' | 'praying' | 'interactive'>('list');
+  // Browser Back steps list → series → praying/interactive and back.
+  const [view, setView] = useViewHistory<'list' | 'series' | 'praying' | 'interactive'>('prayer-series-viewer', 'list');
   const [hasPostedSeriesStart, setHasPostedSeriesStart] = useState(false);
   
   const [showDurationModal, setShowDurationModal] = useState(false);

@@ -9,6 +9,7 @@ import { isLiveKitBackend } from '../videoBackend';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from './MeetingReactions';
+import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import { MeetingNotesBanner } from './MeetingNotesBanner';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -144,6 +145,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   const [coHosts, setCoHosts] = useState<ChannelCoHost[]>([]);
   const [viewerCount, setViewerCount] = useState(0);
   const [showViewers, setShowViewers] = useState(false);
+  const viewersPopoverRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
@@ -221,6 +223,17 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     updateViewerCount(c);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audienceViewers.length, hasStarted]);
+
+  useEffect(() => {
+    if (!showViewers) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (viewersPopoverRef.current && !viewersPopoverRef.current.contains(e.target as Node)) {
+        setShowViewers(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showViewers]);
 
   // Bridge the host's Daily room to Mux once the call object is actually ready.
   // The hook exposes callObject from a ref, so it's null right after joinRoom —
@@ -1226,7 +1239,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               )}
             </div>
             <div className="flex items-center gap-4 text-gray-300">
-              <div className="relative">
+              <div className="relative" ref={viewersPopoverRef}>
                 <button
                   onClick={() => setShowViewers(v => !v)}
                   className="flex items-center gap-1 hover:text-white transition-colors"
@@ -1389,6 +1402,23 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 {dailyRoom.isCameraOn ? <Video className="h-4 w-4 sm:h-5 sm:w-5" /> : <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" />}
                 <span className="hidden md:inline">{dailyRoom.isCameraOn ? t('liveChannelBroadcast', 'stopVideo', 'Stop Video') : t('liveChannelBroadcast', 'startVideo', 'Start Video')}</span>
               </Button>
+            )}
+
+            {isVideoMode && (
+              <VirtualBackgroundButton
+                value={dailyRoom.videoBackground}
+                onChange={dailyRoom.setVideoBackground}
+                trigger={
+                  <Button
+                    variant={dailyRoom.videoBackground !== 'none' ? 'default' : 'secondary'}
+                    size="sm"
+                    className="rounded-full px-3 sm:px-5 h-10 sm:h-12 flex items-center gap-2"
+                  >
+                    <Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />
+                    <span className="hidden md:inline">{t('liveChannelBroadcast', 'background', 'Background')}</span>
+                  </Button>
+                }
+              />
             )}
 
             <Button

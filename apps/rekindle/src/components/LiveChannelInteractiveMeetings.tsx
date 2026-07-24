@@ -28,12 +28,22 @@ import {
   Copy, AlertCircle, Loader2,
   PhoneOff, MessageSquare,
   Zap, Circle, Trash2, Crown, Globe, MonitorUp,
-  Sparkles, FileText, Hand, GripVertical, X
+  Sparkles, FileText, Hand, GripVertical, X, Calendar
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  zonedWallTimeToUtcISO,
+  utcISOToZonedInputValue,
+  formatMeetingTime,
+  guessUserTimeZone,
+  commonTimeZones,
+  REMINDER_OFFSET_OPTIONS,
+} from '@rekindle/features/meetingTime';
+import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
+import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import { toast } from 'sonner';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
@@ -48,7 +58,7 @@ import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
-import { MeetingReactionsLayer, ReactionBar } from '@/components/MeetingReactions';
+import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@/components/MeetingReactions';
 import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 
@@ -88,6 +98,9 @@ interface LiveChannelVideoMeeting {
   enable_screenshare: boolean;
   is_active: boolean;
   participant_count: number;
+  timezone?: string | null;
+  reminder_offsets?: number[] | null;
+  registration_enabled?: boolean;
   created_at: string;
   updated_at: string;
   started_at?: string;
@@ -100,6 +113,9 @@ interface CreateMeetingFormData {
   mode: 'meeting' | 'webinar';
   meeting_type: 'instant' | 'scheduled';
   scheduled_time: string;
+  timezone: string;
+  reminder_offsets: number[];
+  registration_enabled: boolean;
   duration_minutes: number;
   max_participants: number;
   access_level: 'public' | 'followers' | 'cohosts';
@@ -153,7 +169,17 @@ const EnhancedVideoCallWrapper = ({
   const { hasMinistryAccess } = useUserEntitlements();
   // True while AI notes run anywhere in the meeting — drives the consent banner.
   const [notesActive, setNotesActive] = useState(false);
+  const [showAiPanel, setShowAiPanel] = useState(false);
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
+
+  // Minimized (mini-player) state comes straight from the ActiveCall host, so the
+  // reaction bar and other overlays hide reliably — a width heuristic was flaky
+  // (the mini-player is ~352px wide, above the 300px threshold, so it never fired).
+  const isPiP = useActiveCallOptional()?.minimized ?? false;
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  // True while a DailyVideoCall side panel (chat / host controls) is open — used to
+  // hide the Copy Link / End chrome so it doesn't collide with the panel.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Draggable host "stage" panel position.
   const [stagePanelPos, setStagePanelPos] = useState({ x: 0, y: 0 });
@@ -387,7 +413,13 @@ const EnhancedVideoCallWrapper = ({
 
   // ── Host / invited speakers (webinar), and everyone (meeting mode) ──
   return (
-    <div className="relative h-screen">
+    <div
+      ref={wrapperRef}
+      // In the mini-player, fill the host's small frame (h-full). Forcing viewport
+      // height here made the video render full-height and object-contain letterbox
+      // it, so the clipped mini-player showed only the black bar → blank frame.
+      className={isPiP ? 'relative h-full w-full' : 'relative h-[100dvh]'}
+    >
       <DailyVideoCall
         roomName={meeting.room_name}
         userName={userName}
@@ -404,27 +436,35 @@ const EnhancedVideoCallWrapper = ({
         onRemoveParticipant={handleRemoveParticipant}
         enableRecording={!isWebinar && isHost && meeting.enable_recording}
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
+        onSidePanelToggle={setPanelOpen}
+        onReact={sendReaction}
       />
 
-      {/* Floating reactions + a compact reaction bar — available in every meeting,
-          not just webinars (transport is Supabase realtime broadcast). */}
-      <MeetingReactionsLayer reactions={reactions} />
-      <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-        <ReactionBar onReact={sendReaction} compact />
-      </div>
+      {/* Floating reactions + a single reaction button that opens a popover just
+          above the control bar — available in every meeting, not just webinars
+          (transport is Supabase realtime broadcast). HIDDEN in PiP mode. */}
+      {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
+      {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
+      {!isPiP && (
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50">
+          <ReactionButton onReact={sendReaction} />
+        </div>
+      )}
 
-      {/* Additional Features Overlay - UI only, no media control */}
+      {/* Additional Features Overlay - UI only, no media control. Hidden in the
+          mini-player, and while a side panel (chat / host controls) is open so the
+          Copy Link / End buttons don't sit on top of it. */}
+      {!isPiP && !panelOpen && (
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         <Button
           onClick={async () => {
             const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
-            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
             if (r.method !== 'native') toast.success(t('liveChannelInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
           }}
           variant="secondary"
           size="sm"
-          className="bg-gray-800/80 backdrop-blur-sm hover:bg-gray-700"
+          className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
         >
           <Copy className="h-4 w-4 sm:mr-2" />
           <span className="hidden sm:inline">{t('liveChannelInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
@@ -442,25 +482,49 @@ const EnhancedVideoCallWrapper = ({
           </Button>
         )}
       </div>
+      )}
 
-      {/* ── AI Recording & Transcription Overlay (bottom-left) ── */}
-      <div className="absolute bottom-24 left-4 z-50 space-y-2 max-w-xs">
-        <MeetingRecordingPanel
-          meetingId={meeting.id}
-          meetingTitle={meeting.title}
-          speakerName={userName}
-          userId={userId}
-          isHost={isHost}
-          tableName="live_channel_video_meetings"
-          enableRecording={meeting.enable_recording}
-          inCallOverlay={true}
-          canTakeNotes={hasMinistryAccess}
-          onStateChange={(s) => setNotesActive(s === 'recording')}
-        />
-      </div>
+      {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
+      {isHost && !isPiP && (
+        <div className="absolute top-20 left-4 z-50 max-w-xs">
+          {showAiPanel ? (
+            <div className="space-y-2">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowAiPanel(false)}
+                  className="bg-gray-900/80 backdrop-blur-sm text-white/80 hover:text-white rounded-full p-1.5"
+                  title={t('liveChannelInteractiveMeetings', 'hideAiFeatures', 'Hide AI features')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <MeetingRecordingPanel
+                meetingId={meeting.id}
+                meetingTitle={meeting.title}
+                speakerName={userName}
+                userId={userId}
+                isHost={isHost}
+                tableName="live_channel_video_meetings"
+                enableRecording={meeting.enable_recording}
+                inCallOverlay={true}
+                canTakeNotes={hasMinistryAccess}
+                onStateChange={(s) => setNotesActive(s === 'recording')}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAiPanel(true)}
+              className="flex items-center gap-1.5 bg-gray-900/80 backdrop-blur-sm text-white rounded-full px-3 py-2 text-sm hover:bg-gray-800"
+              title={t('liveChannelInteractiveMeetings', 'aiFeatures', 'AI features')}
+            >
+              <Sparkles className="h-4 w-4" /> {t('liveChannelInteractiveMeetings', 'ai', 'AI')}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Host stage panel (webinar): invite raised hands / audience up, manage speakers */}
-      {isHost && isWebinar && (
+      {isHost && isWebinar && !isPiP && (
         <div
           className="absolute bottom-36 left-4 z-50 w-64 max-w-[80vw] bg-gray-900/90 backdrop-blur-sm rounded-lg text-white max-h-[50vh] flex flex-col overflow-hidden"
           style={{ transform: `translate(${stagePanelPos.x}px, ${stagePanelPos.y}px)`, touchAction: 'none' }}
@@ -565,25 +629,31 @@ const EnhancedVideoCallWrapper = ({
   );
 };
 
-const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
+const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (meeting: LiveChannelVideoMeeting) => void;
   channelId: string;
+  /** When set, the modal edits this meeting instead of creating a new one. */
+  meeting?: LiveChannelVideoMeeting | null;
 }) => {
   const { t } = useLanguage();
   const { user } = useAuth();
+  const isEditing = !!meeting;
   const [isLoading, setIsLoading] = useState(false);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [accessCheck, setAccessCheck] = useState<AccessCheckResult | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  
+
   const [formData, setFormData] = useState<CreateMeetingFormData>({
     title: '',
     description: '',
     mode: 'meeting',
     meeting_type: 'instant',
     scheduled_time: '',
+    timezone: guessUserTimeZone(),
+    reminder_offsets: [],
+    registration_enabled: false,
     duration_minutes: 60,
     max_participants: 50,
     access_level: 'public',
@@ -591,6 +661,29 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
     enable_chat: true,
     enable_screenshare: true,
   });
+  const tzOptions = React.useMemo(() => commonTimeZones(), []);
+
+  // Prefill when opening in edit mode.
+  useEffect(() => {
+    if (!isOpen || !meeting) return;
+    const tz = meeting.timezone || guessUserTimeZone();
+    setFormData({
+      title: meeting.title,
+      description: meeting.description || '',
+      mode: meeting.mode || 'meeting',
+      meeting_type: meeting.meeting_type,
+      scheduled_time: meeting.scheduled_time ? utcISOToZonedInputValue(meeting.scheduled_time, tz) : '',
+      timezone: tz,
+      reminder_offsets: meeting.reminder_offsets || [],
+      registration_enabled: meeting.registration_enabled ?? false,
+      duration_minutes: meeting.duration_minutes,
+      max_participants: meeting.max_participants,
+      access_level: meeting.access_level,
+      enable_recording: meeting.enable_recording,
+      enable_chat: meeting.enable_chat,
+      enable_screenshare: meeting.enable_screenshare,
+    });
+  }, [isOpen, meeting]);
 
   useEffect(() => {
     const loadSubscription = async () => {
@@ -638,30 +731,62 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
       return;
     }
 
+    const isScheduled = formData.meeting_type === 'scheduled';
+    const scheduledUtc = isScheduled && formData.scheduled_time
+      ? zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone)
+      : null;
+    if (isScheduled && !scheduledUtc) {
+      toast.error(t('liveChannelInteractiveMeetings', 'invalidScheduledTime', 'Please pick a valid scheduled time.'));
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      const sharedFields = {
+        title: formData.title,
+        description: formData.description,
+        meeting_type: formData.meeting_type,
+        scheduled_time: scheduledUtc,
+        timezone: isScheduled ? formData.timezone : null,
+        reminder_offsets: isScheduled ? formData.reminder_offsets : [],
+        registration_enabled: isScheduled ? formData.registration_enabled : false,
+        duration_minutes: formData.duration_minutes,
+        max_participants: formData.max_participants,
+        access_level: formData.access_level,
+        enable_recording: formData.enable_recording,
+        enable_chat: formData.enable_chat,
+        enable_screenshare: formData.enable_screenshare,
+      };
+
+      // Editing an existing meeting: update in place, don't touch room/mode/stream.
+      // Changing the schedule clears the reminder ledger so new times re-fire.
+      if (isEditing && meeting) {
+        const { data, error } = await supabase
+          .from('live_channel_video_meetings')
+          .update(sharedFields)
+          .eq('id', meeting.id)
+          .select()
+          .single();
+        if (error) throw error;
+        await supabase.from('meeting_reminder_sends').delete().eq('meeting_id', meeting.id);
+        toast.success(t('liveChannelInteractiveMeetings', 'meetingUpdatedSuccess', 'Meeting updated'));
+        onSuccess(data);
+        onClose();
+        return;
+      }
+
       const roomName = `channel-${channelId}-${Date.now()}`;
-      
       const { data, error } = await supabase
         .from('live_channel_video_meetings')
         .insert({
           channel_id: channelId,
           host_id: user.id,
-          title: formData.title,
-          description: formData.description,
           room_name: roomName,
           mode: formData.mode,
-          meeting_type: formData.meeting_type,
-          scheduled_time: formData.scheduled_time || null,
-          duration_minutes: formData.duration_minutes,
-          max_participants: formData.max_participants,
-          access_level: formData.access_level,
-          enable_recording: formData.enable_recording,
-          enable_chat: formData.enable_chat,
-          enable_screenshare: formData.enable_screenshare,
           is_active: false,
-          participant_count: 0
+          participant_count: 0,
+          ...sharedFields,
         })
         .select()
         .single();
@@ -703,9 +828,15 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t('liveChannelInteractiveMeetings', 'createInteractiveMeeting', 'Create Interactive Meeting')}</DialogTitle>
+          <DialogTitle>
+            {isEditing
+              ? t('liveChannelInteractiveMeetings', 'editInteractiveMeeting', 'Edit Meeting')
+              : t('liveChannelInteractiveMeetings', 'createInteractiveMeeting', 'Create Interactive Meeting')}
+          </DialogTitle>
           <DialogDescription>
-            {t('liveChannelInteractiveMeetings', 'setUpNewMeeting', 'Set up a new video meeting for your channel')}
+            {isEditing
+              ? t('liveChannelInteractiveMeetings', 'editMeetingDesc', 'Update this meeting’s details, schedule, and reminders')
+              : t('liveChannelInteractiveMeetings', 'setUpNewMeeting', 'Set up a new video meeting for your channel')}
           </DialogDescription>
         </DialogHeader>
 
@@ -760,15 +891,90 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
           </div>
 
           {formData.meeting_type === 'scheduled' && (
-            <div className="space-y-2">
-              <Label htmlFor="scheduled_time">{t('liveChannelInteractiveMeetings', 'scheduledTimeLabel', 'Scheduled Time')}</Label>
-              <Input
-                id="scheduled_time"
-                type="datetime-local"
-                value={formData.scheduled_time}
-                onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
-                required
-              />
+            <div className="space-y-4 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="scheduled_time">{t('liveChannelInteractiveMeetings', 'scheduledTimeLabel', 'Scheduled Time')}</Label>
+                  <Input
+                    id="scheduled_time"
+                    type="datetime-local"
+                    value={formData.scheduled_time}
+                    onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timezone">{t('liveChannelInteractiveMeetings', 'timezoneLabel', 'Time Zone')}</Label>
+                  <Select
+                    value={formData.timezone}
+                    onValueChange={(value) => setFormData({ ...formData, timezone: value })}
+                  >
+                    <SelectTrigger id="timezone">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {tzOptions.map((tz) => (
+                        <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {formData.scheduled_time && (
+                <p className="text-xs text-gray-600">
+                  {t('liveChannelInteractiveMeetings', 'scheduledForNote', 'Scheduled for')}{' '}
+                  <span className="font-medium">
+                    {formatMeetingTime(zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone), formData.timezone)}
+                  </span>
+                </p>
+              )}
+
+              <div className="space-y-2">
+                <Label>{t('liveChannelInteractiveMeetings', 'remindersLabel', 'Send reminders (in-app + email)')}</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {REMINDER_OFFSET_OPTIONS.map((opt) => {
+                    const checked = formData.reminder_offsets.includes(opt.minutes);
+                    return (
+                      <label
+                        key={opt.minutes}
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                          checked ? 'border-purple-500 bg-purple-100/60' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="accent-purple-600"
+                          checked={checked}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              reminder_offsets: e.target.checked
+                                ? [...prev.reminder_offsets, opt.minutes]
+                                : prev.reminder_offsets.filter((m) => m !== opt.minutes),
+                            }))
+                          }
+                        />
+                        {t('liveChannelInteractiveMeetings', `reminderOffset_${opt.minutes}`, opt.label)}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500">
+                  {t('liveChannelInteractiveMeetings', 'remindersTip', 'Followers (per access level) and anyone who registers get a notification and email before the meeting.')}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2">
+                <div>
+                  <Label className="text-sm">{t('liveChannelInteractiveMeetings', 'enableRegistrationLabel', 'Enable registration')}</Label>
+                  <p className="text-xs text-gray-500">{t('liveChannelInteractiveMeetings', 'enableRegistrationTip', 'Let people RSVP from the meeting link (guests can register with name + email on public meetings).')}</p>
+                </div>
+                <Switch
+                  checked={formData.registration_enabled}
+                  onCheckedChange={(checked) => setFormData({ ...formData, registration_enabled: checked })}
+                />
+              </div>
             </div>
           )}
 
@@ -874,7 +1080,9 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId }: {
               disabled={isLoading || !accessCheck?.allowed}
             >
               {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {t('liveChannelInteractiveMeetings', 'createMeeting', 'Create Meeting')}
+              {isEditing
+                ? t('liveChannelInteractiveMeetings', 'saveChanges', 'Save Changes')
+                : t('liveChannelInteractiveMeetings', 'createMeeting', 'Create Meeting')}
             </Button>
           </DialogFooter>
         </form>
@@ -946,8 +1154,12 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   const [meetings, setMeetings] = useState<LiveChannelVideoMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeCall, setActiveCall] = useState<LiveChannelVideoMeeting | null>(null);
+  // The live call is hosted by the app-level ActiveCallHost (survives tab changes),
+  // not rendered here. We only start it and reflect "you're in this meeting".
+  const { call, startCall, endCall, maximize } = useActiveCall();
+  const activeCallId = call?.id ?? null;
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<LiveChannelVideoMeeting | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [channelName, setChannelName] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
@@ -1022,7 +1234,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   useEffect(() => {
     const autoOpenMeetingId = sessionStorage.getItem('autoOpenMeetingId');
     
-    if (autoOpenMeetingId && meetings.length > 0 && !activeCall) {
+    if (autoOpenMeetingId && meetings.length > 0 && !activeCallId) {
       console.log('[LiveChannelInteractiveMeetings] Auto-opening meeting:', autoOpenMeetingId);
 
       // Pick up guest name set by Skeleton.tsx for unauthenticated users
@@ -1034,13 +1246,13 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       // Clear the storage
       sessionStorage.removeItem('autoOpenMeetingId');
-      
+
       // Find the meeting
       const meeting = meetings.find(m => m.id === autoOpenMeetingId);
-      
+
       if (meeting) {
-        // Auto-join the meeting
-        doJoinMeeting(meeting);
+        // Auto-join the meeting (pass the guest name explicitly — state isn't set yet)
+        doJoinMeeting(meeting, storedGuestName || undefined);
         
         toast.success(t('liveChannelInteractiveMeetings', 'openingMeeting', 'Opening meeting...'));
       } else {
@@ -1048,7 +1260,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
         console.error('[LiveChannelInteractiveMeetings] Meeting not found:', autoOpenMeetingId);
       }
     }
-  }, [meetings, activeCall]);
+  }, [meetings, activeCallId]);
 
   const fetchMeetings = async () => {
     setIsLoading(true);
@@ -1081,7 +1293,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     await doJoinMeeting(meeting);
   };
 
-  const doJoinMeeting = async (meeting: LiveChannelVideoMeeting) => {
+  const doJoinMeeting = async (meeting: LiveChannelVideoMeeting, guestNameOverride?: string) => {
     try {
       if (!meeting.is_active) {
         const { error } = await supabase
@@ -1104,11 +1316,71 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       if (countError) console.error('Error updating participant count:', countError);
 
-      setActiveCall(meeting);
+      beginCall(meeting, guestNameOverride);
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('liveChannelInteractiveMeetings', 'failedJoinMeeting', 'Failed to join meeting'));
     }
+  };
+
+  // DB side of leaving/ending — self-contained (takes the meeting) so it still works
+  // if this list component has since unmounted (e.g. left from the mini-player).
+  const leaveMeetingDb = async (meeting: LiveChannelVideoMeeting) => {
+    const isHost = meeting.host_id === user?.id;
+    const isWebinar = meeting.mode === 'webinar';
+    try {
+      if (isHost && isWebinar) {
+        stopMeetingStream(meeting.id);
+        await supabase
+          .from('live_channel_video_meetings')
+          .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
+          .eq('id', meeting.id);
+      } else {
+        const newCount = Math.max(0, meeting.participant_count - 1);
+        await supabase.from('live_channel_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+      }
+    } catch (error) {
+      console.error('Error leaving meeting:', error);
+    }
+  };
+
+  const endMeetingDb = async (meeting: LiveChannelVideoMeeting) => {
+    try {
+      await supabase
+        .from('live_channel_video_meetings')
+        .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
+        .eq('id', meeting.id);
+    } catch (error) {
+      console.error('Error ending meeting:', error);
+    }
+  };
+
+  // Hand the fully-configured meeting element to the app-level ActiveCallHost, which
+  // renders it above the tab router so it survives navigation.
+  const beginCall = (meeting: LiveChannelVideoMeeting, guestNameOverride?: string) => {
+    // Use the explicitly-passed guest name — relying on the `guestName` state is
+    // racy (it's set in the same tick we join, so the state hasn't applied yet).
+    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestNameOverride || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
+    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+    const isHost = meeting.host_id === user?.id;
+    const doLeave = async () => { await leaveMeetingDb(meeting); endCall(); };
+    const doEnd = async () => { await endMeetingDb(meeting); endCall(); };
+    startCall({
+      id: meeting.id,
+      title: meeting.title,
+      onLeave: doLeave,
+      node: (
+        <EnhancedVideoCallWrapper
+          meeting={meeting}
+          userName={displayName}
+          userId={participantId}
+          isHost={isHost}
+          onLeave={doLeave}
+          channelId={channelId}
+          onEndMeeting={isHost ? doEnd : undefined}
+        />
+      ),
+    });
   };
 
   const handleGuestNameConfirm = async (name: string) => {
@@ -1116,7 +1388,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     setGuestName(name);
     const meeting = pendingJoinMeeting;
     setPendingJoinMeeting(null);
-    await doJoinMeeting(meeting);
+    await doJoinMeeting(meeting, name);
   };
 
   const handleGuestNameCancel = () => {
@@ -1174,80 +1446,6 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       setRecordingBusyId(null);
     }
   };
-
-  const handleEndMeeting = async () => {
-    if (!activeCall) return;
-
-    try {
-      await supabase
-        .from('live_channel_video_meetings')
-        .update({
-          is_active: false,
-          ended_at: new Date().toISOString(),
-          participant_count: 0
-        })
-        .eq('id', activeCall.id);
-
-      setActiveCall(null);
-      fetchMeetings();
-      toast.success(t('liveChannelInteractiveMeetings', 'meetingEnded', 'Meeting ended'));
-    } catch (error) {
-      console.error('Error ending meeting:', error);
-      toast.error(t('liveChannelInteractiveMeetings', 'failedEndMeeting', 'Failed to end meeting'));
-    }
-  };
-
-  const handleLeaveMeeting = async () => {
-    if (!activeCall) return;
-
-    const isHost = activeCall.host_id === user?.id;
-    const isWebinar = activeCall.mode === 'webinar';
-
-    try {
-      // A webinar's host IS the sole broadcaster, so hanging up (not just "End for
-      // All") kills the stream — end it for everyone instead of leaving the
-      // audience on a blank Mux slate with no notice.
-      if (isHost && isWebinar) {
-        stopMeetingStream(activeCall.id);
-        await supabase
-          .from('live_channel_video_meetings')
-          .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
-          .eq('id', activeCall.id);
-      } else {
-        const newCount = Math.max(0, activeCall.participant_count - 1);
-        await supabase
-          .from('live_channel_video_meetings')
-          .update({ participant_count: newCount })
-          .eq('id', activeCall.id);
-      }
-
-      setActiveCall(null);
-      fetchMeetings();
-    } catch (error) {
-      console.error('Error leaving meeting:', error);
-    }
-  };
-
-  // If in active call, show the video component
-  // All media control is delegated to DailyVideoCall - no local media state here
-  if (activeCall) {
-    // Determine display name: signed-in user > guest name > fallback
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || t('liveChannelInteractiveMeetings', 'guest', 'Guest');
-    // Generate a stable guest ID if user is not signed in
-    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
-
-    return (
-      <EnhancedVideoCallWrapper
-        meeting={activeCall}
-        userName={displayName}
-        userId={participantId}
-        isHost={activeCall.host_id === user?.id}
-        onLeave={handleLeaveMeeting}
-        channelId={channelId}
-        onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
-      />
-    );
-  }
 
   // Meeting list view
   return (
@@ -1354,6 +1552,12 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
+                            {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
+                              <div className="flex items-center gap-1 font-medium text-gray-800">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
                               <span>{t('liveChannelInteractiveMeetings', 'minutesCount', '{count} minutes').replace('{count}', String(meeting.duration_minutes))}</span>
@@ -1362,9 +1566,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                               <Users className="h-4 w-4" />
                               <span>{meeting.participant_count} / {meeting.max_participants}</span>
                             </div>
+                            {meeting.meeting_type === 'scheduled' && (meeting.reminder_offsets?.length ?? 0) > 0 && (
+                              <div className="flex items-center gap-1 text-purple-700">
+                                <MessageSquare className="h-4 w-4" />
+                                <span>{t('liveChannelInteractiveMeetings', 'reminderCount', '{count} reminders').replace('{count}', String(meeting.reminder_offsets!.length))}</span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-3 mt-3">
+                          <div className="flex flex-wrap items-center gap-3 mt-3">
                             {meeting.enable_chat && (
                               <div className="flex items-center gap-1 text-sm text-gray-600">
                                 <MessageSquare className="h-4 w-4" />
@@ -1377,6 +1587,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                                 <span>{t('liveChannelInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                               </div>
                             )}
+                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && meeting.registration_enabled && (
+                              <RegisterMeetingButton
+                                meetingId={meeting.id}
+                                meetingKind="channel"
+                                meetingTitle={meeting.title}
+                                isHost={meeting.host_id === user?.id}
+                                allowGuests={meeting.access_level === 'public'}
+                              />
+                            )}
                           </div>
                         </div>
 
@@ -1386,7 +1605,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                             size="icon"
                             onClick={async () => {
                               const link = `${publicAppOrigin()}/channel/${channelId}/meeting/${meeting.id}`;
-                              const r = await shareMeeting({ hostName: channelName, title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+                              const r = await shareMeeting({ hostName: channelName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                               if (r.method !== 'native') toast.success(t('liveChannelInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                             }}
                             title={t('liveChannelInteractiveMeetings', 'copyMeetingLink', 'Copy meeting link')}
@@ -1447,13 +1666,20 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                               </Button>
                             </>
                           )}
-                          <Button
-                            onClick={() => handleJoinMeeting(meeting)}
-                            className="bg-blue-600 hover:bg-blue-700"
-                          >
-                            <Play className="h-4 w-4 mr-2" />
-                            {t('liveChannelInteractiveMeetings', 'joinNow', 'Join Now')}
-                          </Button>
+                          {activeCallId === meeting.id ? (
+                            <Button onClick={() => maximize()} className="bg-green-600 hover:bg-green-700">
+                              <Play className="h-4 w-4 mr-2" />
+                              {t('liveChannelInteractiveMeetings', 'returnToMeeting', 'Return')}
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={() => handleJoinMeeting(meeting)}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              <Play className="h-4 w-4 mr-2" />
+                              {t('liveChannelInteractiveMeetings', 'joinNow', 'Join Now')}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1490,6 +1716,12 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
+                            {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
+                              <div className="flex items-center gap-1 font-medium text-gray-800">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
                               <span>{t('liveChannelInteractiveMeetings', 'minutesCount', '{count} minutes').replace('{count}', String(meeting.duration_minutes))}</span>
@@ -1498,9 +1730,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                               <Users className="h-4 w-4" />
                               <span>{meeting.participant_count} / {meeting.max_participants}</span>
                             </div>
+                            {meeting.meeting_type === 'scheduled' && (meeting.reminder_offsets?.length ?? 0) > 0 && (
+                              <div className="flex items-center gap-1 text-purple-700">
+                                <MessageSquare className="h-4 w-4" />
+                                <span>{t('liveChannelInteractiveMeetings', 'reminderCount', '{count} reminders').replace('{count}', String(meeting.reminder_offsets!.length))}</span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-3 mt-3">
+                          <div className="flex flex-wrap items-center gap-3 mt-3">
                             {meeting.enable_chat && (
                               <div className="flex items-center gap-1 text-sm text-gray-600">
                                 <MessageSquare className="h-4 w-4" />
@@ -1512,6 +1750,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                                 <MonitorUp className="h-4 w-4" />
                                 <span>{t('liveChannelInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                               </div>
+                            )}
+                            {meeting.meeting_type === 'scheduled' && !meeting.is_active && meeting.registration_enabled && (
+                              <RegisterMeetingButton
+                                meetingId={meeting.id}
+                                meetingKind="channel"
+                                meetingTitle={meeting.title}
+                                isHost={meeting.host_id === user?.id}
+                                allowGuests={meeting.access_level === 'public'}
+                              />
                             )}
                           </div>
                         </div>
@@ -1531,6 +1778,17 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </Button>
                           {canDelete && (
                             <>
+                              {meeting.meeting_type === 'scheduled' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setEditingMeeting(meeting)}
+                                  title={t('liveChannelInteractiveMeetings', 'editMeeting', 'Edit meeting')}
+                                >
+                                  <Calendar className="h-4 w-4 mr-1" />
+                                  {t('liveChannelInteractiveMeetings', 'edit', 'Edit')}
+                                </Button>
+                              )}
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1602,11 +1860,11 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       )}
 
       <CreateMeetingModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSuccess={(meeting) => {
+        isOpen={showCreateModal || !!editingMeeting}
+        meeting={editingMeeting}
+        onClose={() => { setShowCreateModal(false); setEditingMeeting(null); }}
+        onSuccess={() => {
           fetchMeetings();
-          toast.success(t('liveChannelInteractiveMeetings', 'meetingCreated', 'Meeting created!'));
         }}
         channelId={channelId}
       />

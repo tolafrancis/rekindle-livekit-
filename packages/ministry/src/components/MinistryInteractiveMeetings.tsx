@@ -36,7 +36,17 @@ import { supabase } from '@rekindle/supabase';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import {
+  zonedWallTimeToUtcISO,
+  utcISOToZonedInputValue,
+  formatMeetingTime,
+  guessUserTimeZone,
+  commonTimeZones,
+  REMINDER_OFFSET_OPTIONS,
+} from '@rekindle/features/meetingTime';
 import { toast } from 'sonner';
+import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
+import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
 import SavedMeetingInsights from '@rekindle/live/components/SavedMeetingInsights';
 
@@ -47,7 +57,7 @@ import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeeting
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
-import { MeetingReactionsLayer, ReactionBar } from '@rekindle/live/components/MeetingReactions';
+import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@rekindle/live/components/MeetingReactions';
 import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner';
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
@@ -88,6 +98,9 @@ interface MinistryVideoMeeting {
   is_active: boolean;
   participant_count: number;
   mode?: 'meeting' | 'webinar';
+  timezone?: string | null;
+  reminder_offsets?: number[] | null;
+  registration_enabled?: boolean;
   hls_playback_url?: string;
   cf_live_input_uid?: string;
   created_at: string;
@@ -101,6 +114,9 @@ interface CreateMeetingFormData {
   description: string;
   meeting_type: 'instant' | 'scheduled';
   scheduled_time: string;
+  timezone: string;
+  reminder_offsets: number[];
+  registration_enabled: boolean;
   duration_minutes: number;
   max_participants: number;
   access_level: 'public' | 'members' | 'leaders';
@@ -138,6 +154,11 @@ const EnhancedVideoCallWrapper = ({
   const isWebinar = meeting.mode === 'webinar';
   const hlsUrl = meeting.hls_playback_url;
   const [rtmpUrl, setRtmpUrl] = useState<string | undefined>(undefined);
+  // Minimized mini-player: hide reaction bar + overlays for a clean small frame.
+  const isPiP = useActiveCallOptional()?.minimized ?? false;
+  // True while a DailyVideoCall side panel (chat / host controls) is open — hides
+  // the Copy Link / End chrome so it doesn't collide with the panel.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -468,7 +489,10 @@ const EnhancedVideoCallWrapper = ({
   }
 
   return (
-    <div className="min-h-screen h-full flex flex-col lg:flex-row">
+    // In the mini-player, fill the host's small frame (h-full) instead of forcing
+    // viewport height — otherwise the video renders full-height and object-contain
+    // letterboxes it, so the clipped mini-player shows only the black bar (blank).
+    <div className={isPiP ? 'h-full w-full flex flex-col lg:flex-row' : 'min-h-[100dvh] h-full flex flex-col lg:flex-row'}>
       <div className="relative flex-1 min-h-0">
       {/* 
         DailyVideoCall Component - SOLE CONTROLLER OF ALL MEDIA
@@ -494,30 +518,35 @@ const EnhancedVideoCallWrapper = ({
         onRemoveParticipant={handleRemoveParticipant}
         enableRecording={!isWebinar && isHost && meeting.enable_recording}
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
+        onSidePanelToggle={setPanelOpen}
+        onReact={sendReaction}
       />
 
-      {/* Floating reactions over the call + a compact bar so everyone can react —
-          available in every meeting, not just webinars. */}
-      <MeetingReactionsLayer reactions={reactions} />
-      <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>
-      {/* Reaction bar sits BELOW the call's own top bar (LIVE/timer) on mobile so
-          the two don't overlap; centered under the header on larger screens. */}
-      <div className="absolute top-14 sm:top-3 left-1/2 -translate-x-1/2 z-50">
-        <ReactionBar onReact={sendReaction} compact />
-      </div>
+      {/* Floating reactions over the call + a single reaction button that opens a
+          popover just above the control bar — available in every meeting, not just
+          webinars. Hidden in the mini-player. */}
+      {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
+      {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
+      {!isPiP && (
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50">
+          <ReactionButton onReact={sendReaction} />
+        </div>
+      )}
 
-      {/* Additional Features Overlay - UI only, no media control */}
+      {/* Additional Features Overlay - UI only, no media control. Hidden in the
+          mini-player, and while a side panel (chat / host controls) is open. */}
+      {!isPiP && !panelOpen && (
       <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 z-50">
         {/* Copy Meeting Link */}
         <Button
           onClick={async () => {
             const link = `${publicAppOrigin()}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
-            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
           }}
           variant="secondary"
           size="sm"
-          className="bg-gray-800/80 backdrop-blur-sm hover:bg-gray-700"
+          className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
         >
           <Copy className="h-4 w-4 sm:mr-2" />
           <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
@@ -536,9 +565,10 @@ const EnhancedVideoCallWrapper = ({
           </Button>
         )}
       </div>
+      )}
 
       {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
-      {isHost && (
+      {isHost && !isPiP && (
         <div className="absolute top-20 left-4 z-50 max-w-xs">
           {showAiPanel ? (
             <div className="space-y-2">
@@ -577,7 +607,7 @@ const EnhancedVideoCallWrapper = ({
       )}
 
       {/* Host: invite raised hands up to the stage, manage presenters (webinar) */}
-      {isHost && isWebinar && (
+      {isHost && isWebinar && !isPiP && (
         <div
           className="absolute bottom-36 left-4 z-50 w-64 max-w-[80vw] bg-gray-900/90 backdrop-blur-sm rounded-lg text-white max-h-[50vh] flex flex-col overflow-hidden"
           style={{
@@ -697,24 +727,30 @@ const EnhancedVideoCallWrapper = ({
 /* ======================================================
    CREATE MEETING MODAL
 ====================================================== */
-const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
+const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (meeting: MinistryVideoMeeting) => void;
   ministryId: string;
+  /** When set, the modal edits this meeting instead of creating a new one. */
+  meeting?: MinistryVideoMeeting | null;
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const isEditing = !!meeting;
   const [isLoading, setIsLoading] = useState(false);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [accessCheck, setAccessCheck] = useState<AccessCheckResult | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
-  
+
   const [formData, setFormData] = useState<CreateMeetingFormData>({
     title: '',
     description: '',
     meeting_type: 'instant',
     scheduled_time: '',
+    timezone: guessUserTimeZone(),
+    reminder_offsets: [],
+    registration_enabled: false,
     duration_minutes: 60,
     max_participants: 50,
     access_level: 'members',
@@ -724,6 +760,32 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
     mode: 'meeting',
   });
   const [modeTouched, setModeTouched] = useState(false);
+  const tzOptions = React.useMemo(() => commonTimeZones(), []);
+
+  // Prefill when opening in edit mode; reset to defaults for create.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (meeting) {
+      const tz = meeting.timezone || guessUserTimeZone();
+      setModeTouched(true);
+      setFormData({
+        title: meeting.title,
+        description: meeting.description || '',
+        meeting_type: meeting.meeting_type,
+        scheduled_time: meeting.scheduled_time ? utcISOToZonedInputValue(meeting.scheduled_time, tz) : '',
+        timezone: tz,
+        reminder_offsets: meeting.reminder_offsets || [],
+        registration_enabled: meeting.registration_enabled ?? false,
+        duration_minutes: meeting.duration_minutes,
+        max_participants: meeting.max_participants,
+        access_level: meeting.access_level,
+        enable_recording: meeting.enable_recording,
+        enable_chat: meeting.enable_chat,
+        enable_screenshare: meeting.enable_screenshare,
+        mode: meeting.mode || 'meeting',
+      });
+    }
+  }, [isOpen, meeting]);
 
   // "Pick the cheap path automatically": large sessions default to webinar
   const WEBINAR_AUTO_THRESHOLD = 15;
@@ -773,30 +835,66 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
       return;
     }
 
+    // A scheduled meeting stores a real UTC instant computed from the host's
+    // wall-clock time in the chosen zone. Instant meetings carry no schedule.
+    const isScheduled = formData.meeting_type === 'scheduled';
+    const scheduledUtc = isScheduled && formData.scheduled_time
+      ? zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone)
+      : null;
+    if (isScheduled && !scheduledUtc) {
+      toast.error(t('ministryInteractiveMeetings', 'invalidScheduledTime', 'Please pick a valid scheduled time.'));
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      const sharedFields = {
+        title: formData.title,
+        description: formData.description,
+        meeting_type: formData.meeting_type,
+        scheduled_time: scheduledUtc,
+        timezone: isScheduled ? formData.timezone : null,
+        reminder_offsets: isScheduled ? formData.reminder_offsets : [],
+        registration_enabled: isScheduled ? formData.registration_enabled : false,
+        duration_minutes: formData.duration_minutes,
+        max_participants: formData.max_participants,
+        access_level: formData.access_level,
+        enable_recording: formData.enable_recording,
+        enable_chat: formData.enable_chat,
+        enable_screenshare: formData.enable_screenshare,
+      };
+
+      if (isEditing && meeting) {
+        // Editing an existing meeting: don't touch room_name/mode/provisioning.
+        // Changing the schedule clears the reminder ledger so the new times fire.
+        const { data, error } = await supabase
+          .from('ministry_video_meetings')
+          .update(sharedFields)
+          .eq('id', meeting.id)
+          .select()
+          .single();
+        if (error) throw error;
+
+        await supabase.from('meeting_reminder_sends').delete().eq('meeting_id', meeting.id);
+
+        toast.success(t('ministryInteractiveMeetings', 'meetingUpdatedSuccess', 'Meeting updated'));
+        onSuccess(data);
+        onClose();
+        return;
+      }
+
       const roomName = `ministry-${ministryId}-${Date.now()}`;
-      
       const { data, error } = await supabase
         .from('ministry_video_meetings')
         .insert({
           ministry_id: ministryId,
           host_id: user.id,
-          title: formData.title,
-          description: formData.description,
           room_name: roomName,
-          meeting_type: formData.meeting_type,
-          scheduled_time: formData.scheduled_time || null,
-          duration_minutes: formData.duration_minutes,
-          max_participants: formData.max_participants,
-          access_level: formData.access_level,
-          enable_recording: formData.enable_recording,
-          enable_chat: formData.enable_chat,
-          enable_screenshare: formData.enable_screenshare,
           mode: formData.mode,
           is_active: false,
-          participant_count: 0
+          participant_count: 0,
+          ...sharedFields,
         })
         .select()
         .single();
@@ -821,7 +919,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
       onSuccess(data);
       onClose();
     } catch (error: any) {
-      console.error('Error creating meeting:', error);
+      console.error('Error saving meeting:', error);
       toast.error(error.message || t('ministryInteractiveMeetings', 'failedToCreate', 'Failed to create meeting'));
     } finally {
       setIsLoading(false);
@@ -832,9 +930,15 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t('ministryInteractiveMeetings', 'createMinistryMeeting', 'Create Ministry Meeting')}</DialogTitle>
+          <DialogTitle>
+            {isEditing
+              ? t('ministryInteractiveMeetings', 'editMinistryMeeting', 'Edit Meeting')
+              : t('ministryInteractiveMeetings', 'createMinistryMeeting', 'Create Ministry Meeting')}
+          </DialogTitle>
           <DialogDescription>
-            {t('ministryInteractiveMeetings', 'createMeetingDesc', 'Set up a new video meeting for your ministry')}
+            {isEditing
+              ? t('ministryInteractiveMeetings', 'editMeetingDesc', 'Update this meeting’s details, schedule, and reminders')
+              : t('ministryInteractiveMeetings', 'createMeetingDesc', 'Set up a new video meeting for your ministry')}
           </DialogDescription>
         </DialogHeader>
 
@@ -889,15 +993,90 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
           </div>
 
           {formData.meeting_type === 'scheduled' && (
-            <div className="space-y-2">
-              <Label htmlFor="scheduled_time">{t('ministryInteractiveMeetings', 'scheduledTimeLabel', 'Scheduled Time')}</Label>
-              <Input
-                id="scheduled_time"
-                type="datetime-local"
-                value={formData.scheduled_time}
-                onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
-                required
-              />
+            <div className="space-y-4 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="scheduled_time">{t('ministryInteractiveMeetings', 'scheduledTimeLabel', 'Scheduled Time')}</Label>
+                  <Input
+                    id="scheduled_time"
+                    type="datetime-local"
+                    value={formData.scheduled_time}
+                    onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timezone">{t('ministryInteractiveMeetings', 'timezoneLabel', 'Time Zone')}</Label>
+                  <Select
+                    value={formData.timezone}
+                    onValueChange={(value) => setFormData({ ...formData, timezone: value })}
+                  >
+                    <SelectTrigger id="timezone">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {tzOptions.map((tz) => (
+                        <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {formData.scheduled_time && (
+                <p className="text-xs text-gray-600">
+                  {t('ministryInteractiveMeetings', 'scheduledForNote', 'Scheduled for')}{' '}
+                  <span className="font-medium">
+                    {formatMeetingTime(zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone), formData.timezone)}
+                  </span>
+                </p>
+              )}
+
+              <div className="space-y-2">
+                <Label>{t('ministryInteractiveMeetings', 'remindersLabel', 'Send reminders (in-app + email)')}</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {REMINDER_OFFSET_OPTIONS.map((opt) => {
+                    const checked = formData.reminder_offsets.includes(opt.minutes);
+                    return (
+                      <label
+                        key={opt.minutes}
+                        className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                          checked ? 'border-purple-500 bg-purple-100/60' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="accent-purple-600"
+                          checked={checked}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              reminder_offsets: e.target.checked
+                                ? [...prev.reminder_offsets, opt.minutes]
+                                : prev.reminder_offsets.filter((m) => m !== opt.minutes),
+                            }))
+                          }
+                        />
+                        {t('ministryInteractiveMeetings', `reminderOffset_${opt.minutes}`, opt.label)}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500">
+                  {t('ministryInteractiveMeetings', 'remindersTip', 'Eligible members (and you) get a notification and email at each selected time before the meeting.')}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2">
+                <div>
+                  <Label className="text-sm">{t('ministryInteractiveMeetings', 'enableRegistrationLabel', 'Enable registration')}</Label>
+                  <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'enableRegistrationTip', 'Let people RSVP from the meeting link (guests can register with name + email on public meetings).')}</p>
+                </div>
+                <Switch
+                  checked={formData.registration_enabled}
+                  onCheckedChange={(checked) => setFormData({ ...formData, registration_enabled: checked })}
+                />
+              </div>
             </div>
           )}
 
@@ -935,9 +1114,6 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
           {/* Mode: Meeting vs Webinar */}
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
-            <p className="text-xs text-gray-500">
-              {t('ministryInteractiveMeetings', 'modeTip', 'Tip: sessions of {threshold} people or more default to Webinar. You can always switch it manually.').replace('{threshold}', String(WEBINAR_AUTO_THRESHOLD))}
-            </p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -1025,7 +1201,9 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId }: {
               disabled={isLoading || !accessCheck?.allowed}
             >
               {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {t('ministryInteractiveMeetings', 'createMeeting', 'Create Meeting')}
+              {isEditing
+                ? t('ministryInteractiveMeetings', 'saveChanges', 'Save Changes')
+                : t('ministryInteractiveMeetings', 'createMeeting', 'Create Meeting')}
             </Button>
           </DialogFooter>
         </form>
@@ -1097,10 +1275,14 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const [meetings, setMeetings] = useState<MinistryVideoMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeCall, setActiveCall] = useState<MinistryVideoMeeting | null>(null);
+  // The live call is hosted by the app-level ActiveCallHost (survives navigation),
+  // not rendered here. We only start it and reflect "you're in this meeting".
+  const { call, startCall, endCall, maximize } = useActiveCall();
+  const activeCallId = call?.id ?? null;
   const [recordingsMeeting, setRecordingsMeeting] = useState<MinistryVideoMeeting | null>(null);
   const [subTab, setSubTab] = useState<'meetings' | 'recordings'>('meetings');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<MinistryVideoMeeting | null>(null);
   const [isLeader, setIsLeader] = useState(false);
   const [ministryName, setMinistryName] = useState<string | null>(null);
   const [canCreateMeeting, setCanCreateMeeting] = useState(false);
@@ -1198,7 +1380,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   useEffect(() => {
     const autoOpenMeetingId = sessionStorage.getItem('autoOpenMeetingId');
     
-    if (autoOpenMeetingId && meetings.length > 0 && !activeCall) {
+    if (autoOpenMeetingId && meetings.length > 0 && !activeCallId) {
       console.log('[MinistryInteractiveMeetings] Auto-opening meeting:', autoOpenMeetingId);
       
       // Pick up guest name set by Skeleton.tsx for unauthenticated users
@@ -1213,10 +1395,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       
       // Find the meeting
       const meeting = meetings.find(m => m.id === autoOpenMeetingId);
-      
+
       if (meeting) {
-        // Auto-join the meeting
-        doJoinMeeting(meeting);
+        // Auto-join the meeting (pass the guest name explicitly — state isn't set yet)
+        doJoinMeeting(meeting, storedGuestName || undefined);
 
         toast.success(t('ministryInteractiveMeetings', 'openingMeeting', 'Opening meeting...'));
       } else {
@@ -1224,7 +1406,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         console.error('[MinistryInteractiveMeetings] Meeting not found:', autoOpenMeetingId);
       }
     }
-  }, [meetings, activeCall]);
+  }, [meetings, activeCallId]);
 
   const fetchMeetings = async () => {
     setIsLoading(true);
@@ -1257,7 +1439,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     await doJoinMeeting(meeting);
   };
 
-  const doJoinMeeting = async (meeting: MinistryVideoMeeting) => {
+  const doJoinMeeting = async (meeting: MinistryVideoMeeting, guestNameOverride?: string) => {
     try {
       if (!meeting.is_active) {
         const { error } = await supabase
@@ -1280,11 +1462,60 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
       if (countError) console.error('Error updating participant count:', countError);
 
-      setActiveCall(meeting);
+      beginCall(meeting, guestNameOverride);
     } catch (error) {
       console.error('Error joining meeting:', error);
       toast.error(t('ministryInteractiveMeetings', 'failedToJoin', 'Failed to join meeting'));
     }
+  };
+
+  // DB side of leaving/ending — self-contained (takes the meeting) so it still works
+  // if this list component has since unmounted (e.g. left from the mini-player).
+  const leaveMeetingDb = async (meeting: MinistryVideoMeeting) => {
+    try {
+      const newCount = Math.max(0, meeting.participant_count - 1);
+      await supabase.from('ministry_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+    } catch (error) {
+      console.error('Error leaving meeting:', error);
+    }
+  };
+
+  const endMeetingDb = async (meeting: MinistryVideoMeeting) => {
+    try {
+      await supabase
+        .from('ministry_video_meetings')
+        .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
+        .eq('id', meeting.id);
+    } catch (error) {
+      console.error('Error ending meeting:', error);
+    }
+  };
+
+  // Hand the fully-configured meeting element to the app-level ActiveCallHost, which
+  // renders it above the router so it survives navigation.
+  const beginCall = (meeting: MinistryVideoMeeting, guestNameOverride?: string) => {
+    // Use the explicitly-passed guest name — the `guestName` state is set in the
+    // same tick we join, so relying on it here is racy and yields "Guest".
+    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestNameOverride || guestName || 'Guest';
+    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+    const isHost = meeting.host_id === user?.id;
+    const doLeave = async () => { await leaveMeetingDb(meeting); endCall(); };
+    const doEnd = async () => { await endMeetingDb(meeting); endCall(); };
+    startCall({
+      id: meeting.id,
+      title: meeting.title,
+      onLeave: doLeave,
+      node: (
+        <EnhancedVideoCallWrapper
+          meeting={meeting}
+          userName={displayName}
+          userId={participantId}
+          isHost={isHost}
+          onLeave={doLeave}
+          onEndMeeting={isHost ? doEnd : undefined}
+        />
+      ),
+    });
   };
 
   const handleGuestNameConfirm = async (name: string) => {
@@ -1292,33 +1523,11 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     setGuestName(name);
     const meeting = pendingJoinMeeting;
     setPendingJoinMeeting(null);
-    await doJoinMeeting(meeting);
+    await doJoinMeeting(meeting, name);
   };
 
   const handleGuestNameCancel = () => {
     setPendingJoinMeeting(null);
-  };
-
-  const handleEndMeeting = async () => {
-    if (!activeCall) return;
-
-    try {
-      await supabase
-        .from('ministry_video_meetings')
-        .update({
-          is_active: false,
-          ended_at: new Date().toISOString(),
-          participant_count: 0
-        })
-        .eq('id', activeCall.id);
-
-      setActiveCall(null);
-      fetchMeetings();
-      toast.success(t('ministryInteractiveMeetings', 'meetingEnded', 'Meeting ended'));
-    } catch (error) {
-      console.error('Error ending meeting:', error);
-      toast.error(t('ministryInteractiveMeetings', 'failedToEndMeeting', 'Failed to end meeting'));
-    }
   };
 
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
@@ -1377,46 +1586,6 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       setDeletingMeetingId(null);
     }
   };
-
-  const handleLeaveMeeting = async () => {
-    if (!activeCall) return;
-
-    try {
-      const newCount = Math.max(0, activeCall.participant_count - 1);
-      
-      await supabase
-        .from('ministry_video_meetings')
-        .update({ 
-          participant_count: newCount 
-        })
-        .eq('id', activeCall.id);
-
-      setActiveCall(null);
-      fetchMeetings();
-    } catch (error) {
-      console.error('Error leaving meeting:', error);
-    }
-  };
-
-  // If in active call, show the video component
-  // All media control is delegated to DailyVideoCall - no local media state here
-  if (activeCall) {
-    // Determine display name: signed-in user > guest name > fallback
-    const displayName = profile?.full_name || user?.email?.split('@')[0] || guestName || 'Guest';
-    // Generate a stable guest ID if user is not signed in
-    const participantId = user?.id || `guest-${guestName?.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
-
-    return (
-      <EnhancedVideoCallWrapper
-        meeting={activeCall}
-        userName={displayName}
-        userId={participantId}
-        isHost={activeCall.host_id === user?.id}
-        onLeave={handleLeaveMeeting}
-        onEndMeeting={activeCall.host_id === user?.id ? handleEndMeeting : undefined}
-      />
-    );
-  }
 
   // Meeting list view
   return (
@@ -1528,6 +1697,12 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
+                          {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
+                            <div className="flex items-center gap-1 font-medium text-gray-800">
+                              <Calendar className="h-4 w-4 text-purple-600" />
+                              <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-1">
                             <Clock className="h-4 w-4" />
                             <span>{t('ministryInteractiveMeetings', 'durationMinutes', '{count} minutes').replace('{count}', String(meeting.duration_minutes))}</span>
@@ -1536,9 +1711,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             <Users className="h-4 w-4" />
                             <span>{meeting.participant_count} / {meeting.max_participants}</span>
                           </div>
+                          {meeting.meeting_type === 'scheduled' && (meeting.reminder_offsets?.length ?? 0) > 0 && (
+                            <div className="flex items-center gap-1 text-purple-700" title={t('ministryInteractiveMeetings', 'remindersOn', 'Reminders on')}>
+                              <MessageSquare className="h-4 w-4" />
+                              <span>{t('ministryInteractiveMeetings', 'reminderCount', '{count} reminders').replace('{count}', String(meeting.reminder_offsets!.length))}</span>
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-3 mt-3">
+                        <div className="flex flex-wrap items-center gap-3 mt-3">
                           {meeting.enable_chat && (
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <MessageSquare className="h-4 w-4" />
@@ -1551,6 +1732,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                               <span>{t('ministryInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                             </div>
                           )}
+                          {meeting.meeting_type === 'scheduled' && !meeting.is_active && meeting.registration_enabled && (
+                            <RegisterMeetingButton
+                              meetingId={meeting.id}
+                              meetingKind="ministry"
+                              meetingTitle={meeting.title}
+                              isHost={meeting.host_id === user?.id}
+                              allowGuests={meeting.access_level === 'public'}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -1560,7 +1750,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           size="icon"
                           onClick={async () => {
                             const link = `${publicAppOrigin()}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
-                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                           }}
                           title={t('ministryInteractiveMeetings', 'copyMeetingLink', 'Copy meeting link')}
@@ -1621,13 +1811,20 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             </Button>
                           </>
                         )}
-                        <Button
-                          onClick={() => handleJoinMeeting(meeting)}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          <Play className="h-4 w-4 mr-2" />
-                          {t('ministryInteractiveMeetings', 'joinNow', 'Join Now')}
-                        </Button>
+                        {activeCallId === meeting.id ? (
+                          <Button onClick={() => maximize()} className="bg-green-600 hover:bg-green-700">
+                            <Play className="h-4 w-4 mr-2" />
+                            {t('ministryInteractiveMeetings', 'returnToMeeting', 'Return')}
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={() => handleJoinMeeting(meeting)}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            <Play className="h-4 w-4 mr-2" />
+                            {t('ministryInteractiveMeetings', 'joinNow', 'Join Now')}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1662,6 +1859,12 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
+                          {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
+                            <div className="flex items-center gap-1 font-medium text-gray-800">
+                              <Calendar className="h-4 w-4 text-purple-600" />
+                              <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-1">
                             <Clock className="h-4 w-4" />
                             <span>{t('ministryInteractiveMeetings', 'durationMinutes', '{count} minutes').replace('{count}', String(meeting.duration_minutes))}</span>
@@ -1670,9 +1873,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             <Users className="h-4 w-4" />
                             <span>{meeting.participant_count} / {meeting.max_participants}</span>
                           </div>
+                          {meeting.meeting_type === 'scheduled' && (meeting.reminder_offsets?.length ?? 0) > 0 && (
+                            <div className="flex items-center gap-1 text-purple-700" title={t('ministryInteractiveMeetings', 'remindersOn', 'Reminders on')}>
+                              <MessageSquare className="h-4 w-4" />
+                              <span>{t('ministryInteractiveMeetings', 'reminderCount', '{count} reminders').replace('{count}', String(meeting.reminder_offsets!.length))}</span>
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-3 mt-3">
+                        <div className="flex flex-wrap items-center gap-3 mt-3">
                           {meeting.enable_chat && (
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <MessageSquare className="h-4 w-4" />
@@ -1685,6 +1894,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                               <span>{t('ministryInteractiveMeetings', 'screenShare', 'Screen Share')}</span>
                             </div>
                           )}
+                          {meeting.meeting_type === 'scheduled' && !meeting.is_active && meeting.registration_enabled && (
+                            <RegisterMeetingButton
+                              meetingId={meeting.id}
+                              meetingKind="ministry"
+                              meetingTitle={meeting.title}
+                              isHost={meeting.host_id === user?.id}
+                              allowGuests={meeting.access_level === 'public'}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -1694,7 +1912,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           size="icon"
                           onClick={async () => {
                             const link = `${publicAppOrigin()}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
-                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, url: link });
+                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                           }}
                           title={t('ministryInteractiveMeetings', 'copyMeetingLink', 'Copy meeting link')}
@@ -1703,6 +1921,17 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         </Button>
                         {isLeader && (
                           <>
+                            {meeting.meeting_type === 'scheduled' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setEditingMeeting(meeting)}
+                                title={t('ministryInteractiveMeetings', 'editMeeting', 'Edit meeting')}
+                              >
+                                <Calendar className="h-4 w-4 mr-1" />
+                                {t('ministryInteractiveMeetings', 'edit', 'Edit')}
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
@@ -1773,11 +2002,11 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       )}
 
       <CreateMeetingModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSuccess={(meeting) => {
+        isOpen={showCreateModal || !!editingMeeting}
+        meeting={editingMeeting}
+        onClose={() => { setShowCreateModal(false); setEditingMeeting(null); }}
+        onSuccess={() => {
           fetchMeetings();
-          toast.success(t('ministryInteractiveMeetings', 'meetingCreated', 'Meeting created!'));
         }}
         ministryId={ministryId}
       />

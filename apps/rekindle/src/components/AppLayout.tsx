@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -145,6 +145,7 @@ const TAB_TO_NAV_KEY: Record<string, string> = {
   'ai': 'aiCompanion',
   'music': 'musicLibrary',
   'billing': 'billing',
+  'subscription': 'subscription',
   'sponsor': 'donate',
   'referral': 'referral',
   'profile': 'profile',
@@ -287,7 +288,6 @@ const SECONDARY_NAV: Record<string, SecondaryNavItem[]> = {
     { id: 'wall', label: 'Prayer Wall', labelKey: 'prayerWall', icon: LayoutGrid, tab: 'wall' },
   ],
   ministries: [
-    { id: 'discover', label: 'Discover', labelKey: 'discover', icon: Globe, ministryView: 'discover' },
     { id: 'my-ministries', label: 'My Ministries', labelKey: 'myMinistries', icon: Heart, ministryView: 'my-ministries' },
     { id: 'manage', label: 'Manage', labelKey: 'manage', icon: Settings, ministryView: 'manage' },
   ],
@@ -367,8 +367,39 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     const fromPath = tabFromPath(window.location.pathname);
     if (fromPath) return fromPath;
     if (initialTab && TAB_TO_NAV_KEY[initialTab]) return initialTab;
+    // Landing page CTAs (e.g. "Become a Partner") set this before triggering
+    // signup, so a brand-new account lands directly on the intended tab.
+    const postAuthTab = sessionStorage.getItem('rk_post_auth_tab');
+    if (postAuthTab && TAB_TO_NAV_KEY[postAuthTab]) {
+      sessionStorage.removeItem('rk_post_auth_tab');
+      return postAuthTab;
+    }
     return 'home';
   });
+
+  const [ministryWorkspaceActive, setMinistryWorkspaceActive] = useState(false);
+
+  const navigateTab = useCallback((tab: string) => {
+    setActiveTab(tab);
+    const targetPath = PATHLESS_TABS.has(tab) ? location.pathname : '/' + tab;
+    window.history.pushState({ appTab: true, tab }, '', targetPath);
+  }, [location.pathname, PATHLESS_TABS]);
+
+  useEffect(() => {
+    const targetPath = PATHLESS_TABS.has(activeTab) ? location.pathname : '/' + activeTab;
+    window.history.replaceState({ appTab: true, tab: activeTab }, '', targetPath);
+  }, []);
+
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      if (ministryWorkspaceActive) return; // MinistrySpace owns popstate while active
+      if (e.state?.appTab && e.state.tab) {
+        setActiveTab(e.state.tab);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [ministryWorkspaceActive]);
 
   // Update activeTab when initialTab changes (for deep linking)
   useEffect(() => {
@@ -385,13 +416,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   // activeTab → URL path. Skip PATHLESS_TABS, and never overwrite a content deep-link
   // path (2+ segments) — only bare tab paths or the root get rewritten.
+  const tabUrlSyncedRef = useRef(false);
   useEffect(() => {
     if (PATHLESS_TABS.has(activeTab)) return;
     const segs = location.pathname.split('/').filter(Boolean);
     const onDeepLink = segs.length >= 2; // e.g. /books/:id — leave it alone
     if (!onDeepLink && segs[0] !== activeTab) {
-      navigate('/' + activeTab, { replace: true });
+      // First run just normalizes the URL (replace — no history entry). Every later
+      // tab change PUSHES, so browser Back steps through tabs instead of exiting the
+      // app. The `segs[0] !== activeTab` guard above stops a re-push when a Back has
+      // already moved the URL here (the URL→activeTab effect then updates the tab).
+      navigate('/' + activeTab, { replace: !tabUrlSyncedRef.current });
     }
+    tabUrlSyncedRef.current = true;
   }, [activeTab]);
   
   console.log('[AppLayout] initialTab received:', initialTab);
@@ -404,12 +441,15 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const [showNotifications, setShowNotifications] = useState(false);
   const notif = useNotifications();
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    setSearchOpen(false);
+  }, [activeTab]);
   const [showStatsPanel, setShowStatsPanel] = useState(false);
   // True while a full-screen content viewer is playing (devotional / prayer
   // session / prayer series). Used to hide the floating Stats button.
   const [isViewerActive, setIsViewerActive] = useState(false);
   const [performanceDockCollapsed, setPerformanceDockCollapsed] = useState(false);
-  const [ministryWorkspaceActive, setMinistryWorkspaceActive] = useState(false);
   const [devotionalSource, setDevotionalSource] = useState<'platform' | 'ministry' | 'both'>('platform');
   const [devotionalMinistryId, setDevotionalMinistryId] = useState<string | null>(null);
   const [devotionalStreamId, setDevotionalStreamId] = useState<string | null>(null);
@@ -437,7 +477,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   // Listen for openDonate events from UpgradePromptModal
   useEffect(() => {
     const donateHandler = () => {
-      setActiveTab('profile');
+      navigateTab('profile');
       // Small delay to ensure profile tab renders, then scroll to partner section
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('openPartnerSection'));
@@ -445,17 +485,17 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     };
     window.addEventListener('openDonate', donateHandler);
     return () => window.removeEventListener('openDonate', donateHandler);
-  }, []);
+  }, [navigateTab]);
 
   useEffect(() => {
     const handler = (e: Event) => {
       const category = (e as CustomEvent).detail?.category ?? 'individual';
-      setActiveTab('sponsor');
+      navigateTab('sponsor');
       sessionStorage.setItem('subscriptionCategory', category);
     };
     window.addEventListener('openSubscription', handler);
     return () => window.removeEventListener('openSubscription', handler);
-  }, []);
+  }, [navigateTab]);
   const [devotionalProgress, setDevotionalProgress] = useState<Record<string, any>>({});
   const [signingOut, setSigningOut] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -527,7 +567,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   // The sidebar group that owns the current tab (for highlight + secondary tab row).
   const activeGroup = parentForTab(activeTab);
   const secondaryItems = activeGroup ? SECONDARY_NAV[activeGroup.id] ?? [] : [];
-  const [ministryView, setMinistryView] = useState<MinistryHubView>('discover');
+  const [ministryView, setMinistryView] = useState<MinistryHubView>('my-ministries');
   const [liveChannelsTab, setLiveChannelsTab] = useState<LiveChannelsTab>('discover');
 
   // --- Draggable Pastoral Assistant button ---
@@ -815,14 +855,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   useEffect(() => {
     if (pendingRoomJoin && !isLoading) {
       // Legacy room joins are redirected to Live Channels
-      setActiveTab('live-channels');
+      navigateTab('live-channels');
       toast({
         title: t('common', 'info', 'Info'),
         description: t('livechannels', 'title', 'Voice/Video rooms have been replaced with Live Channels')
       });
       onRoomJoinHandled?.();
     }
-  }, [pendingRoomJoin, onRoomJoinHandled, isLoading, t]);
+  }, [pendingRoomJoin, onRoomJoinHandled, isLoading, t, navigateTab]);
 
   const handleBookCounsellor = useCallback((counsellor: Counsellor) => {
     setSelectedCounsellor(counsellor);
@@ -831,8 +871,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   const handleStartDevotional = useCallback((devotional: Devotional) => {
     setSelectedDevotional(devotional);
-    setActiveTab('devotional-library');
-  }, []);
+    navigateTab('devotional-library');
+  }, [navigateTab]);
 
   const handleCloseDevotional = useCallback(() => {
     setSelectedDevotional(null);
@@ -954,7 +994,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         return (
           <button
             key={group.id}
-            onClick={() => setActiveTab(group.children ? group.children[0] : group.id)}
+            onClick={() => navigateTab(group.children ? group.children[0] : group.id)}
             aria-current={active ? 'page' : undefined}
             className={`group flex shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[11px] font-semibold leading-tight transition-colors ${
               active ? 'text-purple-700' : 'text-gray-500 hover:text-purple-700'
@@ -980,16 +1020,16 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   const handleSecondaryClick = (item: SecondaryNavItem) => {
     if (item.tab) {
-      setActiveTab(item.tab);
+      navigateTab(item.tab);
       return;
     }
     if (item.ministryView) {
-      setActiveTab('ministries');
+      navigateTab('ministries');
       setMinistryView(item.ministryView);
       return;
     }
     if (item.liveTab) {
-      setActiveTab('live-channels');
+      navigateTab('live-channels');
       setLiveChannelsTab(item.liveTab);
     }
   };
@@ -1105,7 +1145,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   return (
     <div className={appShellClassName}>
-      {!ministryWorkspaceActive && <OnboardingTips onNavigate={setActiveTab} />}
+      {!ministryWorkspaceActive && <OnboardingTips onNavigate={navigateTab} />}
 
       {!ministryWorkspaceActive && !isViewerActive && (
         <>
@@ -1115,7 +1155,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           >
             <div className="flex h-20 items-center justify-center border-b border-gray-100">
               <button
-                onClick={() => setActiveTab('home')}
+                onClick={() => navigateTab('home')}
                 aria-label="Go to Home"
                 className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-600 font-serif text-xl font-bold text-white shadow-sm"
               >
@@ -1129,15 +1169,17 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         </>
       )}
 
-      {!ministryWorkspaceActive && !isViewerActive && <header className="bg-white shadow-sm sticky top-0 z-50">
+      {!ministryWorkspaceActive && !isViewerActive && <header className={`bg-white shadow-sm z-50 ${
+        Capacitor.isNativePlatform() ? 'fixed top-0 left-0 right-0' : 'sticky top-0'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl md:text-2xl font-serif font-bold text-purple-700 flex-shrink-0 md:hidden">Rekindle</h1>
           <div className="hidden md:block" />
-          <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto min-w-0">
+          <div className="flex items-center gap-1 sm:gap-2 overflow-x-hidden min-w-0">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setSearchOpen(true)}
+              onClick={() => { setSearchOpen(true); setShowNotifications(false); }}
               title={t('common', 'search', 'Search')}
               aria-label={t('common', 'search', 'Search')}
               className="rounded-xl bg-gradient-to-br from-slate-500 to-gray-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
@@ -1170,15 +1212,15 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             </span>
 
             {isTranslating && (
-              <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+              <Loader2 className="hidden md:block h-4 w-4 animate-spin text-purple-500" />
             )}
 
             {isAdmin && (
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setActiveTab('admin')}
-                className="rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                onClick={() => navigateTab('admin')}
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
                 aria-label={t('navigation', 'admin', 'Admin Dashboard')}
               >
                 <Shield className="h-4 w-4 md:h-5 md:w-5" />
@@ -1189,8 +1231,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setActiveTab('admin-health')}
-                className="rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                onClick={() => navigateTab('admin-health')}
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
                 aria-label={t('settings', 'general', 'System Health')}
               >
                 <List className="h-4 w-4 md:h-5 md:w-5" />
@@ -1202,7 +1244,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setShowNotifications((v) => !v)}
+                  onClick={() => { setShowNotifications((v) => !v); setSearchOpen(false); }}
                   aria-label={t('profile', 'notifications', 'Notifications')}
                   className="rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
                 >
@@ -1231,9 +1273,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setActiveTab('music')}
+                onClick={() => navigateTab('music')}
                 aria-label={t('navigation', 'library', 'Music Library')}
-                className="rounded-xl bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
               >
                 <Music className="h-4 w-4 md:h-5 md:w-5" />
               </Button>
@@ -1241,14 +1283,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setActiveTab('live-channels')}
+                onClick={() => navigateTab('live-channels')}
                 aria-label={t('navigation', 'liveChannels', 'Live Channels')}
-                className="rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
               >
                 <Radio className="h-4 w-4 md:h-5 md:w-5" />
               </Button>
 
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={(isOpen) => { if (isOpen) { setShowNotifications(false); setSearchOpen(false); } }}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
@@ -1264,23 +1306,36 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   {ACCOUNT_ITEMS.map((item) => {
                     const ItemIcon = TAB_ICONS[item] ?? List;
                     return (
-                      <DropdownMenuItem key={item} onClick={() => setActiveTab(item)} className="gap-2">
+                      <DropdownMenuItem key={item} onClick={() => navigateTab(item)} className="gap-2">
                         <ItemIcon className="h-4 w-4" />
                         {getTabLabel(item)}
                       </DropdownMenuItem>
                     );
                   })}
+                  <DropdownMenuItem onClick={() => navigateTab('music')} className="gap-2 md:hidden">
+                    <Music className="h-4 w-4" />
+                    {t('navigation', 'library', 'Music Library')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigateTab('live-channels')} className="gap-2 md:hidden">
+                    <Radio className="h-4 w-4" />
+                    {t('navigation', 'liveChannels', 'Live Channels')}
+                  </DropdownMenuItem>
                   {isAdmin && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => setActiveTab('admin')} className="gap-2">
+                      <DropdownMenuItem onClick={() => navigateTab('admin')} className="gap-2">
                         <Shield className="h-4 w-4" /> Admin
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setActiveTab('admin-health')} className="gap-2">
+                      <DropdownMenuItem onClick={() => navigateTab('admin-health')} className="gap-2">
                         <Activity className="h-4 w-4" /> System Health
                       </DropdownMenuItem>
                     </>
                   )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="gap-2">
+                    <LogOut className="h-4 w-4" />
+                    {t('auth', 'logout', 'Sign Out')}
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -1289,7 +1344,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                 size="icon"
                 onClick={handleSignOut}
                 disabled={signingOut}
-                className="rounded-xl bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
                 aria-label={t('auth', 'logout', 'Sign Out')}
               >
                 {signingOut ? (
@@ -1305,7 +1360,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             page content) rather than fixed in this header — see renderMobileNav. */}
       </header>}
 
-      <main className={ministryWorkspaceActive ? 'w-full' : 'mx-auto w-full max-w-7xl px-4 pb-12 pt-4 md:pb-24 md:pt-6'}>
+      <main className={ministryWorkspaceActive ? 'w-full' : 
+        `mx-auto w-full max-w-7xl px-4 pb-12 md:pb-24 md:pt-6 ${
+          Capacitor.isNativePlatform() ? 'pt-16' : 'pt-4'
+        }`
+      }>
         {!ministryWorkspaceActive && <section
           className="relative mb-[14px] overflow-hidden rounded-2xl bg-cover bg-center shadow-sm"
           style={{
@@ -1505,9 +1564,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
           {activeTab === 'billing' && (
             <>
-              <PaymentHistory onNavigateToSubscription={() => setActiveTab('sponsor')} />
+              <PaymentHistory onNavigateToSubscription={() => navigateTab('subscription')} />
             </>
           )}
+
+          {activeTab === 'subscription' && <SubscriptionManager />}
 
           {activeTab === 'sponsor' && <SponsorshipSystem />}
 
@@ -1537,14 +1598,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
       <ScrollToTopButton />
 
-      {!ministryWorkspaceActive && <AppFooter onNavigate={setActiveTab} />}
+      {!ministryWorkspaceActive && <AppFooter onNavigate={navigateTab} />}
 
       {/* Pastoral Assistant (floating, draggable) */}
       {!ministryWorkspaceActive && !isViewerActive && <button
         onPointerDown={onAssistantPointerDown}
         onPointerMove={onAssistantPointerMove}
         onPointerUp={onAssistantPointerUp}
-        onClick={() => { if (!assistantDrag.current.moved) setActiveTab('ai'); }}
+        onClick={() => { if (!assistantDrag.current.moved) navigateTab('ai'); }}
         aria-label="Pastoral Assistant"
         title="Pastoral Assistant"
         style={assistantPos ? { left: assistantPos.x, top: assistantPos.y, touchAction: 'none' } : { touchAction: 'none' }}
@@ -1566,33 +1627,41 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           tiles render inline, so this is only offered on the other tabs to
           keep the page content area clear. */}
       {!ministryWorkspaceActive && activeTab !== 'home' && !isViewerActive && (
-        <div
-          ref={statsContainerRef}
-          className={`fixed z-50 flex flex-col items-center gap-2 md:hidden ${
-            statsPos ? '' : 'bottom-4 left-1/2 -translate-x-1/2'
-          }`}
-          style={statsPos ? { left: statsPos.x, top: statsPos.y } : undefined}
-        >
+        <>
           {showStatsPanel && (
-            <div className="w-[78vw] max-w-xs rounded-2xl border border-gray-100 bg-white p-3 shadow-xl">
-              {renderStatCapsules('grid grid-cols-1 gap-2')}
-            </div>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowStatsPanel(false)}
+            />
           )}
-          <button
-            type="button"
-            onPointerDown={onStatsPointerDown}
-            onPointerMove={onStatsPointerMove}
-            onPointerUp={onStatsPointerUp}
-            onClick={() => { if (!statsDrag.current.moved) setShowStatsPanel((v) => !v); }}
-            aria-label="Your stats"
-            aria-expanded={showStatsPanel}
-            style={{ touchAction: 'none' }}
-            className="flex cursor-grab items-center gap-2 rounded-full bg-purple-600 px-4 py-2.5 text-white shadow-lg transition-colors hover:bg-purple-700 active:cursor-grabbing select-none"
+          <div
+            ref={statsContainerRef}
+            className={`fixed z-50 flex flex-col items-center gap-2 md:hidden ${
+              statsPos ? '' : 'bottom-4 left-1/2 -translate-x-1/2'
+            }`}
+            style={statsPos ? { left: statsPos.x, top: statsPos.y } : undefined}
           >
-            <BarChart3 className="h-5 w-5" />
-            <span className="text-sm font-semibold">Stats</span>
-          </button>
-        </div>
+            {showStatsPanel && (
+              <div className="w-[78vw] max-w-xs rounded-2xl border border-gray-100 bg-white p-3 shadow-xl">
+                {renderStatCapsules('grid grid-cols-1 gap-2')}
+              </div>
+            )}
+            <button
+              type="button"
+              onPointerDown={onStatsPointerDown}
+              onPointerMove={onStatsPointerMove}
+              onPointerUp={onStatsPointerUp}
+              onClick={() => { if (!statsDrag.current.moved) setShowStatsPanel((v) => !v); }}
+              aria-label="Your stats"
+              aria-expanded={showStatsPanel}
+              style={{ touchAction: 'none' }}
+              className="flex cursor-grab items-center gap-2 rounded-full bg-purple-600 px-4 py-2.5 text-white shadow-lg transition-colors hover:bg-purple-700 active:cursor-grabbing select-none"
+            >
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-sm font-semibold">Stats</span>
+            </button>
+          </div>
+        </>
       )}
 
       {/* Global Search Modal */}

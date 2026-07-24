@@ -167,8 +167,13 @@ export async function getUserActiveSubscription(userId: string): Promise<UserSub
     }
     
     if (!data || data.length === 0) {
-      console.log('[Subscription] No active subscription found for user');
-      return null;
+      // No paid user_subscriptions row. Admin grants (the admin "user" tab) set the
+      // tier on user_profiles only — never a user_subscriptions row — so entitlement
+      // checks that read this table (e.g. canHostInteractiveMeeting) would wrongly
+      // report "no subscription" even though ministry creation, which reads the
+      // profile tier, works. Fall back to the profile tier so the two agree.
+      console.log('[Subscription] No user_subscriptions row; falling back to profile tier');
+      return await getSubscriptionFromProfile(userId);
     }
 
     const subscription = data[0];
@@ -193,6 +198,47 @@ export async function getUserActiveSubscription(userId: string): Promise<UserSub
     console.error('[Subscription] Error getting active subscription:', error);
     return null;
   }
+}
+
+/**
+ * Fall back to the admin-granted tier stored on user_profiles when the user has no
+ * paid user_subscriptions row. The admin "user" tab writes subscription_tier here,
+ * so this is the source of truth for admin overrides. Returns null for free/absent
+ * tiers so genuinely-free users keep the prior "no active subscription" behaviour.
+ */
+async function getSubscriptionFromProfile(userId: string): Promise<UserSubscription | null> {
+  const { data: profile, error } = await supabase
+    .from('user_profiles')
+    .select('subscription_tier, subscription_status, subscription_ends_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !profile) return null;
+
+  const slug = (profile as any).subscription_tier as string | null;
+  const status = (profile as any).subscription_status as string | null;
+  const endsAt = (profile as any).subscription_ends_at as string | null;
+
+  if (!slug || slug === 'free') return null;
+  if (status && status !== 'active') return null;
+  if (endsAt && new Date(endsAt).getTime() < Date.now()) return null;
+
+  const tier = await getSubscriptionTierBySlug(slug);
+  if (!tier) return null;
+
+  return {
+    id: `profile-${userId}`,
+    user_id: userId,
+    subscription_tier_id: tier.id,
+    status: 'active',
+    started_at: new Date().toISOString(),
+    expires_at: endsAt ?? null,
+    trial_ends_at: null,
+    is_admin_override: true,
+    live_channels_created: 0,
+    total_meeting_minutes: 0,
+    tier,
+  };
 }
 
 /**
