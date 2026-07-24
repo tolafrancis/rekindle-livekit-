@@ -1,12 +1,14 @@
 import { supabase } from '@rekindle/supabase';
 
-// Phase 6 — ministry (tenant) entitlements: resolves a ministry's subscription into
-// concrete limits + capability flags that gate modules, branding, white-label, custom
-// domains, and live/recording. The MINISTRY plan lives entirely on ministry_subscriptions
-// (its own taxonomy basic/standard/premium/enterprise + its own caps/limits columns +
-// a `features` jsonb override) — it does NOT map to subscription_tiers (that's the
-// individual-user tier table). Provider-agnostic: Stripe/Paystack write the row, this
-// just reads the resolved state.
+// Ministry (tenant) entitlements: resolves a ministry's subscription into concrete
+// limits + capability flags that gate modules, branding, white-label, custom domains,
+// and live/recording. The MINISTRY plan lives entirely on ministry_subscriptions (its
+// own taxonomy — Ministry Partner tier_1/tier_2/tier_3 from ministry_partner_plans —
+// plus its own caps/limits columns and a `features` jsonb BOOLEAN-FLAG override, e.g.
+// { branding: true }; NOT the display feature-string array on ministry_partner_plans,
+// which is a different, unrelated `features` field on a different table). Does not
+// map to subscription_tiers (that's the individual-user tier table). Provider-agnostic:
+// Stripe/Paystack write the row, this just reads the resolved state.
 
 export interface MinistryLimits {
   members: number; // -1 = unlimited
@@ -73,7 +75,8 @@ export const FREE_ENTITLEMENTS: MinistryEntitlements = {
 };
 
 // Ministry plan taxonomy (ministry_subscriptions.plan_type) ranked for tier-gating.
-const PLAN_RANK: Record<string, number> = { basic: 1, standard: 2, premium: 3, enterprise: 4 };
+// Slugs come from ministry_partner_plans (Ministry Partner tiers).
+const PLAN_RANK: Record<string, number> = { tier_1: 1, tier_2: 2, tier_3: 3 };
 // Only an 'active' subscription entitles (status ∈ pending|active|suspended|cancelled|expired).
 const ACTIVE_STATES = ['active'];
 
@@ -91,12 +94,12 @@ function capsFromSub(sub: any): MinistryCaps {
     customDomain: !!sub.custom_domain_enabled || feat('customDomain', false),
     liveChannels: feat('liveChannels', liveAllowed),
     interactiveMeetings: feat('interactiveMeetings', liveAllowed),
-    recordMeetings: feat('recordMeetings', rank >= 3),
+    recordMeetings: feat('recordMeetings', rank >= 2),
     broadcastMessaging: feat('broadcastMessaging', broadcastAllowed),
     manageTeam: feat('manageTeam', rank >= 2),
     rolePermissions: feat('rolePermissions', rank >= 3),
     advancedAnalytics: feat('advancedAnalytics', rank >= 3),
-    prioritySupport: !!sub.priority_support || feat('prioritySupport', rank >= 4),
+    prioritySupport: !!sub.priority_support || feat('prioritySupport', rank >= 3),
   };
 }
 

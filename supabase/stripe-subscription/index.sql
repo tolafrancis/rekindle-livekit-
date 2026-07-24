@@ -28,7 +28,12 @@ function getPriceId(planType: string): string {
   const fromEnv = Deno.env.get(`STRIPE_PRICE_${planType.toUpperCase()}`);
   if (fromEnv) return fromEnv;
   const fallbacks: Record<string, string> = {
-    'premium':       'price_1Sm5c7HaTSTkefaifeLX9qCB',
+    // premium/premium_plus (Individual Partner tiers) were repriced to
+    // $10/$18 — the old fallback IDs point to Stripe Price objects for the
+    // previous $9.99/$19.99 amounts (Stripe Prices are immutable), so both
+    // are intentionally blank until real $10/$18 Price IDs are created and
+    // set as STRIPE_PRICE_PREMIUM / STRIPE_PRICE_PREMIUM_PLUS secrets.
+    'premium':       '',
     'premium_plus':  '',
     'family':        'price_1Sm5c7HaTSTkefainOuS8sZy',
     'ministry_plus': 'price_1Sm5c7HaTSTkefaiQogiqvaB',

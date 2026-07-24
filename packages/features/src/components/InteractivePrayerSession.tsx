@@ -18,9 +18,9 @@ const PointScripture: React.FC<{ reference?: string; text?: string }> = ({ refer
   const s = useLocalizedScripture({ reference, text });
   return (
     <div className="bg-white/20 rounded-xl p-4 mb-4">
-      <BookOpen className="h-6 w-6 mx-auto mb-2 opacity-80" />
-      <p className="font-medium text-amber-200 mb-2">{s.reference}</p>
-      {s.text && <p className="italic text-lg">"{s.text}"</p>}
+      <BookOpen className="h-5 w-5 mx-auto mb-2 opacity-80" />
+      <p className="font-medium text-sm text-amber-200 mb-2">{s.reference}</p>
+      {s.text && <p className="italic text-base leading-relaxed">"{s.text}"</p>}
     </div>
   );
 };
@@ -337,8 +337,13 @@ export const InteractivePrayerSession: React.FC<Props> = ({
       </div>
       
       {/* Main content */}
-      <div className="relative flex-1 flex items-center justify-center p-6 overflow-y-auto">
-        <div className="max-w-2xl text-center text-white">
+      {/* justify-center + overflow-y-auto with items-center would clip long
+          slides at the top with no way to scroll up to it (the classic
+          flexbox-centering-vs-overflow bug) — margin-auto on the inner block
+          centers short content but collapses to top-aligned + fully
+          scrollable once content is taller than the viewport. */}
+      <div className="relative flex-1 flex justify-center p-6 overflow-y-auto">
+        <div className="max-w-2xl w-full text-center text-white my-auto">
           {currentSlide === 0 && (
             <div className="animate-fade-in">
               <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
@@ -374,8 +379,10 @@ export const InteractivePrayerSession: React.FC<Props> = ({
           {currentPoint && (
             <div className="animate-fade-in">
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 md:p-8 mb-6">
-                <h2 className="text-3xl md:text-4xl font-serif font-bold mb-6 drop-shadow-lg">{currentPoint.title}</h2>
-                <p className="text-xl leading-relaxed mb-6 drop-shadow">{currentPoint.content}</p>
+                {currentPoint.title && (
+                  <h2 className="text-2xl md:text-3xl font-serif font-bold mb-4 drop-shadow-lg">{currentPoint.title}</h2>
+                )}
+                <p className="text-lg md:text-xl leading-relaxed mb-4 drop-shadow">{currentPoint.content}</p>
                 
                 {currentPoint.scripture && (
                   <PointScripture reference={currentPoint.scripture} text={currentPoint.scriptureText} />

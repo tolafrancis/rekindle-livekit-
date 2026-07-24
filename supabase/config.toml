@@ -14,3 +14,7 @@ verify_jwt = true
 [functions.evangelism-ai-suggestion]
 enabled = true
 verify_jwt = true
+
+[functions.generate-prayer-content]
+enabled = true
+verify_jwt = true

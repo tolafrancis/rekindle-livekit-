@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
+import { detectRegion } from '../regionDetection';
 import { toast } from '@rekindle/ui/use-toast';
 import { 
   Crown, Check, X, CreditCard, Receipt, Calendar, 
@@ -77,60 +78,47 @@ const subscriptionTiers: SubscriptionTier[] = [
   },
   {
     id: 'premium',
-    name: '⭐ Premium',
-    price: 9.99,
+    name: '⭐ Individual Partner — Tier 1',
+    price: 10,
     interval: 'month',
     highlighted: true,
     planType: 'premium',
     category: 'individual' as const,
-    description: 'For committed individual believers',
-    liveChannelLimit: '1 active live channel • No co-hosts • No meeting recording • No broadcast messaging',
+    description: 'Your own live channel — broadcast, meet, and grow',
+    liveChannelLimit: '1 live channel • Live broadcast • AI note taker • Video conferencing & interactive meetings • No recording',
     features: [
       'Everything in Free, plus:',
-      'Unlimited devotionals',
-      'Unlimited devotional library',
+      'Create your own live channel',
+      'Live broadcast to your audience',
+      'Video conferencing & interactive meetings',
+      'AI note taker for your meetings',
+      'Unlimited devotionals & devotional library',
       'Unlimited prayer library',
-      'Bible reading plans (Unlimited)',
-      'Book summaries (Unlimited)',
       'Book a counsellor (Unlimited)',
-      'Create 1 Live Channel',
       'Unlimited journal entries',
       'Share revelations',
-      'Scripture memory (Unlimited)',
       'Advanced analytics (personal growth insights)',
-      'Download content for offline use',
       'Priority support'
     ]
   },
   {
     id: 'premium_plus',
-    name: '⭐⭐ Premium Plus',
-    price: 19.99,
+    name: '⭐⭐ Individual Partner — Tier 2',
+    price: 18,
     interval: 'month',
     planType: 'premium_plus',
     category: 'individual' as const,
-    description: 'For power users, mentors, prayer leaders & small group hosts',
-    liveChannelLimit: 'Max 3 Live Channels • No white-labeling • No team roles • No custom dashboard • No broadcast messaging',
+    description: 'Everything in Tier 1, plus meeting recording & replays',
+    liveChannelLimit: '1 live channel • Live broadcast • AI note taker • Video conferencing & interactive meetings • Recording & replay access',
     features: [
-      'Everything in Premium, plus:',
-      '🔴 Live Channels & Meetings',
-      'Create up to 2 Live Channels',
-      'Schedule recurring live sessions',
-      'Host interactive meetings (up to 60 minutes)',
-      'Enable prayer topics & prayer watch per channel',
-      'Invite guest speakers (limited)',
+      'Everything in Tier 1, plus:',
+      '🎥 Meeting & channel recording',
+      'Replay access for your sessions',
+      'Enable prayer topics & prayer watch on your channel',
       'Channel moderation tools (mute, remove, pin prayers)',
-      '📊 Growth & Engagement Tools',
       'Channel-level analytics (attendance, engagement, replays)',
-      'Community insights (top prayers, active members)',
       'Expanded GraceCounsel AI usage (advanced spiritual guidance mode)',
-      '🔔 Communication',
-      'Channel notifications & reminders',
       'Meeting share links (public or private)',
-      'Community announcements (non-broadcast)',
-      '📂 Content & Records',
-      'Save prayer sessions & highlights',
-      'Limited meeting replays (e.g. last 5 sessions)',
       'Export personal journals & prayers (PDF)'
     ]
   },
@@ -447,6 +435,20 @@ export const SubscriptionManager: React.FC = () => {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
   const [paymentStep, setPaymentStep] = useState<'select' | 'payment'>('select');
+
+  // Default the payment method/currency by detected region — Nigeria pays via
+  // Paystack (NGN), everywhere else via Stripe (USD). Still fully overridable
+  // via the existing manual selectors below.
+  useEffect(() => {
+    detectRegion().then((region) => {
+      if (region.countryCode === 'NG') {
+        setPaymentMethod('paystack');
+        setPaystackCurrency('NGN');
+      } else {
+        setPaymentMethod('stripe');
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (profile?.subscription_tier) {

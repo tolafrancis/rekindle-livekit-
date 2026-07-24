@@ -18,6 +18,7 @@ import {
 import { MinistryTenantManager } from './MinistryTenantManager';
 import { SubscriptionPlansManager } from './SubscriptionPlansManager';
 import { BillingOverview } from './BillingOverview';
+import { MinistryPartnerPlansManager } from './MinistryPartnerPlansManager';
 import { PlatformAnalytics } from './PlatformAnalytics';
 import { SystemHealthMonitor } from './SystemHealthMonitor';
 import { SupportTicketsManager } from './SupportTicketsManager';
@@ -240,7 +241,7 @@ const PlatformAdminDashboard: React.FC = () => {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-10 gap-1 h-auto p-1 bg-gray-100">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-11 gap-1 h-auto p-1 bg-gray-100">
           <TabsTrigger value="overview" className="text-xs px-2 py-2">
             <BarChart3 className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabOverview', 'Overview')}
@@ -256,6 +257,10 @@ const PlatformAdminDashboard: React.FC = () => {
           <TabsTrigger value="billing" className="text-xs px-2 py-2">
             <DollarSign className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabBilling', 'Billing')}
+          </TabsTrigger>
+          <TabsTrigger value="partner-plans" className="text-xs px-2 py-2">
+            <Crown className="h-4 w-4 mr-1" />
+            {t('platformAdminDashboard', 'tabPartnerPlans', 'Partner Plans')}
           </TabsTrigger>
           <TabsTrigger value="analytics" className="text-xs px-2 py-2">
             <TrendingUp className="h-4 w-4 mr-1" />
@@ -450,6 +455,11 @@ const PlatformAdminDashboard: React.FC = () => {
         {/* Billing Tab */}
         <TabsContent value="billing" className="mt-6">
           <BillingOverview onUpdate={loadStats} />
+        </TabsContent>
+
+        {/* Partner Plans Tab — Ministry Partner tier pricing & payment provider config */}
+        <TabsContent value="partner-plans" className="mt-6">
+          <MinistryPartnerPlansManager />
         </TabsContent>
 
         {/* Analytics Tab */}

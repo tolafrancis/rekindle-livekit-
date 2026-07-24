@@ -136,10 +136,10 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
         },
         {
           slug: 'premium',
-          name: 'Premium',
-          description: 'Enhanced features for deeper spiritual growth',
-          price_monthly: 9.99,
-          price_yearly: 99.99,
+          name: 'Individual Partner — Tier 1',
+          description: 'Your own live channel — broadcast, meet, and grow',
+          price_monthly: 10,
+          price_yearly: 100,
           display_order: 2,
           is_active: true,
           features: {
@@ -153,17 +153,19 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
             can_share_revelations: true,
             can_create_live_channel: true,
             max_live_channels: 1,
+            can_host_interactive_meetings: true,
             can_access_replays: false,
             max_replay_access: 0,
+            can_record_meetings: false,
             can_access_counsellor_dashboard: true
           }
         },
         {
           slug: 'premium-plus',
-          name: 'Premium Plus',
-          description: 'All Premium features plus replay access',
-          price_monthly: 19.99,
-          price_yearly: 199.99,
+          name: 'Individual Partner — Tier 2',
+          description: 'Everything in Tier 1, plus meeting recording & replays',
+          price_monthly: 18,
+          price_yearly: 180,
           display_order: 3,
           is_active: true,
           features: {
@@ -176,9 +178,11 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
             can_book_counsellor: true,
             can_share_revelations: true,
             can_create_live_channel: true,
-            max_live_channels: 3,
+            max_live_channels: 1,
+            can_host_interactive_meetings: true,
             can_access_replays: true,
             max_replay_access: 5,
+            can_record_meetings: true,
             can_schedule_recurring_sessions: true,
             can_access_counsellor_dashboard: true
           }

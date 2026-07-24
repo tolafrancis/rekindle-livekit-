@@ -8,16 +8,15 @@ const corsHeaders = {
 // Plan prices in different currencies (in smallest unit - kobo, pesewas, cents)
 const PLAN_PRICES: Record<string, Record<string, number>> = {
   'premium': {
-    'NGN': 1500000, // 15,000 NGN
-    'GHS': 15000,   // 150 GHS
-    'ZAR': 18000,   // 180 ZAR
-    'USD': 999      // $9.99
+    // Individual Partner Tier 1 — live broadcast, AI note taker, video
+    // conferencing, no recording.
+    'NGN': 500000,  // 5,000 NGN
+    'USD': 1000     // $10.00
   },
   'premium_plus': {
-    'NGN': 3000000, // 30,000 NGN
-    'GHS': 30000,   // 300 GHS
-    'ZAR': 36000,   // 360 ZAR
-    'USD': 1999     // $19.99
+    // Individual Partner Tier 2 — Tier 1 + recording access.
+    'NGN': 900000,  // 9,000 NGN
+    'USD': 1800     // $18.00
   },
   'family': {
     'NGN': 4500000, // 45,000 NGN

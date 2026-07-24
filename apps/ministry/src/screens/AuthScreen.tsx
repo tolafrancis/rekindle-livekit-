@@ -9,8 +9,8 @@ type View = 'login' | 'signup' | 'reset';
 // Unauthenticated entry for the Ministry app. Reuses the shared auth forms from
 // @rekindle/features; on success the AuthProvider updates and the app routes the
 // member into their ministry space.
-export default function AuthScreen({ onSuccess }: { onSuccess?: () => void }) {
-  const [view, setView] = useState<View>('login');
+export default function AuthScreen({ onSuccess, initialView }: { onSuccess?: () => void; initialView?: View }) {
+  const [view, setView] = useState<View>(initialView ?? 'login');
 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">

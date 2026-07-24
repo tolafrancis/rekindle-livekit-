@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -103,10 +104,11 @@ interface MinistriesHubProps {
 const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledActiveView, onActiveViewChange, onWorkspaceChange }) => {
   const { user, profile, isAdmin: authIsAdmin, isPartner } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
   // Uncontrolled view (ministry app) rides browser history: entering a ministry
   // ('ministry-space') and switching hub tabs push entries, so Back steps through
   // them then out. When a parent controls activeView it owns history instead.
-  const [internalActiveView, setInternalActiveView] = useViewHistory<MinistryHubView>('ministries-hub', 'discover');
+  const [internalActiveView, setInternalActiveView] = useViewHistory<MinistryHubView>('ministries-hub', 'my-ministries');
   const activeView = controlledActiveView ?? internalActiveView;
   const setActiveView = useCallback((view: MinistryHubView) => {
     setInternalActiveView(view);
@@ -559,12 +561,12 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
   return (
     <div className="space-y-6">
-      {/* Welcome hero */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 sm:p-8 text-white shadow-lg shadow-indigo-500/20">
+      {/* Welcome hero — centered */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 sm:p-10 text-white shadow-lg shadow-indigo-500/20">
         {/* soft decorative glows */}
         <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 -left-20 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl" />
-        <div className="relative max-w-2xl">
+        <div className="relative mx-auto max-w-2xl flex flex-col items-center text-center">
           <p className="text-sm font-medium text-white/80">
             {greeting}{firstName ? `, ${firstName}` : ''} 👋
           </p>
@@ -582,7 +584,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           </div>
 
           {/* Primary actions */}
-          <div className="mt-5 flex flex-wrap items-center gap-2.5">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
             <Button className="bg-white text-indigo-700 shadow-sm hover:bg-white/90" onClick={() => setShowJoinModal(true)}>
               <Link className="h-4 w-4 mr-2" />
               {t('ministriesHub', 'joinByCode', 'Join by Code')}
@@ -599,15 +601,11 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             )}
           </div>
 
-          {/* At-a-glance stats */}
-          <div className="mt-5 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-white/85">
+          {/* At-a-glance stat */}
+          <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-1.5 text-sm text-white/85">
             <span className="flex items-center gap-1.5">
               <Heart className="h-4 w-4" />
               {t('ministriesHub', 'statYourMinistries', '{count} your ministries').replace('{count}', String(myMinistries.length))}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Globe className="h-4 w-4" />
-              {t('ministriesHub', 'statToExplore', '{count} to explore').replace('{count}', String(ministries.length))}
             </span>
           </div>
         </div>
@@ -757,61 +755,72 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               </Button>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {myMinistries.map(ministry => {
-                const membership = memberships[ministry.id];
-                return (
-                  <Card 
-                    key={ministry.id} 
-                    className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                    onClick={() => handleEnterMinistry(ministry)}
-                  >
-                    <div 
-                      className="h-20"
-                      style={{ backgroundColor: ministry.theme_color || '#7c3aed' }}
-                    />
-                    <CardContent className="p-4 -mt-6 relative">
-                      <div className="flex items-start justify-between">
-                        <div className="w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center border">
-                          {ministry.logo_url ? (
-                            <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded object-cover" />
-                          ) : (
-                            <Building2 className="h-6 w-6 text-purple-600" />
-                          )}
-                        </div>
-                        <Badge className={
-                          membership?.is_leader ? 'bg-amber-500' :
-                          membership?.role === 'admin' ? 'bg-purple-600' :
-                          membership?.subscription_level === 2 ? 'bg-blue-600' :
-                          'bg-gray-500'
-                        }>
-                          {membership?.is_leader ? (
-                            <><Crown className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleLeader', 'Leader')}</>
-                          ) : membership?.role === 'admin' ? (
-                            <><Shield className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleAdmin', 'Admin')}</>
-                          ) : membership?.subscription_level === 2 ? (
-                            t('ministriesHub', 'rolePremium', 'Premium')
-                          ) : (
-                            t('ministriesHub', 'roleMember', 'Member')
-                          )}
-                        </Badge>
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {myMinistries.map(ministry => {
+                  const membership = memberships[ministry.id];
+                  const color = ministry.theme_color || '#7c3aed';
+                  return (
+                    <Card
+                      key={ministry.id}
+                      className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl cursor-pointer"
+                      onClick={() => handleEnterMinistry(ministry)}
+                    >
+                      <div
+                        className="relative h-20 overflow-hidden"
+                        style={ministry.banner_url
+                          ? { backgroundImage: `url(${ministry.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                          : { background: `linear-gradient(135deg, ${color} 0%, ${color}99 100%)` }
+                        }
+                      >
+                        <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/15 blur-2xl" />
                       </div>
+                      <CardContent className="p-4 -mt-6 relative">
+                        <div className="flex items-start justify-between">
+                          <div className="w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center border">
+                            {ministry.logo_url ? (
+                              <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded object-cover" />
+                            ) : (
+                              <Building2 className="h-6 w-6 text-purple-600" />
+                            )}
+                          </div>
+                          <Badge className={
+                            membership?.is_leader ? 'bg-amber-500' :
+                            membership?.role === 'admin' ? 'bg-purple-600' :
+                            membership?.subscription_level === 2 ? 'bg-blue-600' :
+                            'bg-gray-500'
+                          }>
+                            {membership?.is_leader ? (
+                              <><Crown className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleLeader', 'Leader')}</>
+                            ) : membership?.role === 'admin' ? (
+                              <><Shield className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleAdmin', 'Admin')}</>
+                            ) : membership?.subscription_level === 2 ? (
+                              t('ministriesHub', 'rolePremium', 'Premium')
+                            ) : (
+                              t('ministriesHub', 'roleMember', 'Member')
+                            )}
+                          </Badge>
+                        </div>
 
-                      <h3 className="font-bold text-lg mt-3">{ministry.name}</h3>
-                      <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                        <Users className="h-4 w-4" />
-                        {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
-                      </p>
+                        <h3 className="font-bold text-lg mt-3">{ministry.name}</h3>
+                        {ministry.description && (
+                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ministry.description}</p>
+                        )}
+                        <p className="text-sm text-gray-500 flex items-center gap-1 mt-2">
+                          <Users className="h-4 w-4" />
+                          {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
+                        </p>
 
-                      <Button className="w-full mt-4" size="sm">
-                        {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
-                        <ChevronRight className="h-4 w-4 ml-2" />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                        <Button className="w-full mt-4" size="sm">
+                          {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </>
           )}
         </TabsContent>
 
@@ -822,7 +831,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               <Crown className="h-12 w-12 mx-auto text-amber-500 mb-4" />
               <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'premiumFeature', 'Premium Feature')}</h3>
               <p className="text-gray-500 mb-4">{t('ministriesHub', 'upgradeToManage', 'Upgrade to Ministry tier to create and manage ministries')}</p>
-              <Button>{t('ministriesHub', 'upgradeNow', 'Upgrade Now')}</Button>
+              <Button onClick={() => navigate('/settings/billing')}>{t('ministriesHub', 'upgradeNow', 'Upgrade Now')}</Button>
             </Card>
           ) : (
             <div className="space-y-4">

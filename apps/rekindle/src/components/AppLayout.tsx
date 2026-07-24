@@ -145,6 +145,7 @@ const TAB_TO_NAV_KEY: Record<string, string> = {
   'ai': 'aiCompanion',
   'music': 'musicLibrary',
   'billing': 'billing',
+  'subscription': 'subscription',
   'sponsor': 'donate',
   'referral': 'referral',
   'profile': 'profile',
@@ -287,7 +288,6 @@ const SECONDARY_NAV: Record<string, SecondaryNavItem[]> = {
     { id: 'wall', label: 'Prayer Wall', labelKey: 'prayerWall', icon: LayoutGrid, tab: 'wall' },
   ],
   ministries: [
-    { id: 'discover', label: 'Discover', labelKey: 'discover', icon: Globe, ministryView: 'discover' },
     { id: 'my-ministries', label: 'My Ministries', labelKey: 'myMinistries', icon: Heart, ministryView: 'my-ministries' },
     { id: 'manage', label: 'Manage', labelKey: 'manage', icon: Settings, ministryView: 'manage' },
   ],
@@ -367,6 +367,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     const fromPath = tabFromPath(window.location.pathname);
     if (fromPath) return fromPath;
     if (initialTab && TAB_TO_NAV_KEY[initialTab]) return initialTab;
+    // Landing page CTAs (e.g. "Become a Partner") set this before triggering
+    // signup, so a brand-new account lands directly on the intended tab.
+    const postAuthTab = sessionStorage.getItem('rk_post_auth_tab');
+    if (postAuthTab && TAB_TO_NAV_KEY[postAuthTab]) {
+      sessionStorage.removeItem('rk_post_auth_tab');
+      return postAuthTab;
+    }
     return 'home';
   });
 
@@ -560,7 +567,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   // The sidebar group that owns the current tab (for highlight + secondary tab row).
   const activeGroup = parentForTab(activeTab);
   const secondaryItems = activeGroup ? SECONDARY_NAV[activeGroup.id] ?? [] : [];
-  const [ministryView, setMinistryView] = useState<MinistryHubView>('discover');
+  const [ministryView, setMinistryView] = useState<MinistryHubView>('my-ministries');
   const [liveChannelsTab, setLiveChannelsTab] = useState<LiveChannelsTab>('discover');
 
   // --- Draggable Pastoral Assistant button ---
@@ -1557,9 +1564,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
           {activeTab === 'billing' && (
             <>
-              <PaymentHistory onNavigateToSubscription={() => navigateTab('sponsor')} />
+              <PaymentHistory onNavigateToSubscription={() => navigateTab('subscription')} />
             </>
           )}
+
+          {activeTab === 'subscription' && <SubscriptionManager />}
 
           {activeTab === 'sponsor' && <SponsorshipSystem />}
 

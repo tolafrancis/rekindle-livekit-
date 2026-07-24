@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./ActiveCallContext": "./src/ActiveCallContext.tsx",
+    "./AudioOutputContext": "./src/AudioOutputContext.tsx",
     "./components/*": "./src/components/*.tsx",
     "./*": "./src/*.ts"
   },
