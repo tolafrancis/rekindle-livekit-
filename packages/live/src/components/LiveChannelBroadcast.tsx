@@ -10,6 +10,7 @@ import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
+import { AudioOutputButton } from './AudioOutputButton';
 import { MeetingNotesBanner } from './MeetingNotesBanner';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -50,7 +51,8 @@ import {
   Hand,
   X,
   Sparkles,
-  FileText
+  FileText,
+  Volume2
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { LiveChannel, ChannelCoHost } from '@rekindle/types/liveChannelTypes';
@@ -1420,6 +1422,20 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 }
               />
             )}
+
+            <AudioOutputButton
+              align="center"
+              trigger={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-full px-3 sm:px-5 h-10 sm:h-12 flex items-center gap-2"
+                >
+                  <Volume2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                  <span className="hidden md:inline">{t('liveChannelBroadcast', 'speaker', 'Speaker')}</span>
+                </Button>
+              }
+            />
 
             <Button
               variant={dailyRoom.isScreenSharing ? 'default' : 'outline'}

@@ -8,6 +8,7 @@ import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
+import { AudioOutputButton } from './AudioOutputButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
@@ -1968,6 +1969,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   </div>
                   <span className="hidden sm:block text-xs font-medium text-gray-300">
                     {t('dailyVideoCall', 'background', 'Background')}
+                  </span>
+                </button>
+              }
+            />
+
+            {/* Audio Output */}
+            <AudioOutputButton
+              align="center"
+              trigger={
+                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 bg-gray-700 hover:bg-gray-600 text-white">
+                    <Volume2 className="h-5 w-5 sm:h-7 sm:w-7" />
+                  </div>
+                  <span className="hidden sm:block text-xs font-medium text-gray-300">
+                    {t('dailyVideoCall', 'speaker', 'Speaker')}
                   </span>
                 </button>
               }
