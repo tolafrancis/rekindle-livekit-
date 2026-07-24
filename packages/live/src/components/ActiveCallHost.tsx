@@ -64,7 +64,7 @@ export const ActiveCallHost: React.FC = () => {
 
   if (isSystemPiP) {
     return (
-      <div className="fixed inset-0 h-full w-full bg-black overflow-hidden">
+      <div className="fixed inset-0 z-[70] h-full w-full bg-black overflow-hidden">
         <div className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-gray-900">
           {call.node}
         </div>
