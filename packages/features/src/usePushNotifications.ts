@@ -56,17 +56,11 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
       }
 
       const platform = Capacitor.getPlatform(); // 'android' | 'ios'
-      const { error } = await supabase
-        .from("push_tokens")
-        .upsert(
-          {
-            user_id:      user.id,
-            device_token: token,
-            platform,
-            updated_at:   new Date().toISOString(),
-          },
-          { onConflict: "device_token" },
-        );
+      const { error } = await supabase.rpc("claim_push_token", {
+        p_device_token: token,
+        p_platform:     platform,
+        p_role:         role,
+      });
 
       if (error) {
         console.error("Failed to save native push token:", error);
@@ -121,20 +115,13 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
       return false;
     }
 
-    // The table's unique constraint is on device_token alone
-    // (push_tokens_device_token_key), so upsert on that column — this re-homes
-    // the token to the current user and refreshes updated_at without duplicates.
-    const { error } = await supabase
-      .from("push_tokens")
-      .upsert(
-        {
-          user_id:      user.id,
-          device_token: fcmToken,
-          platform:     "web",
-          updated_at:   new Date().toISOString(),
-        },
-        { onConflict: "device_token" },
-      );
+    // The table's unique constraint is on device_token alone.
+    // Call claim_push_token to safely claim it on shared devices without violating RLS policies.
+    const { error } = await supabase.rpc("claim_push_token", {
+      p_device_token: fcmToken,
+      p_platform:     "web",
+      p_role:         role,
+    });
 
     if (error) {
       console.error("Failed to save push token:", error);
