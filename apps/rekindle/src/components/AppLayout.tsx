@@ -1589,7 +1589,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
       <ScrollToTopButton />
 
-      {!ministryWorkspaceActive && <AppFooter onNavigate={navigateTab} />}
+      {!ministryWorkspaceActive && !Capacitor.isNativePlatform() && <AppFooter onNavigate={navigateTab} />}
 
       {/* Pastoral Assistant (floating, draggable) */}
       {!ministryWorkspaceActive && !isViewerActive && <button

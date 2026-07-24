@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
@@ -61,6 +62,22 @@ export const PushNotificationSettings: React.FC = () => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const { isSubscribed, subscribe, permission: pushPermission, checkStatus } = usePushNotifications();
+
+  if (Capacitor.isNativePlatform()) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5 text-purple-600" />
+            {t('pushNotificationSettings', 'pushNotificationsHeading', 'Push Notifications')}
+          </CardTitle>
+          <CardDescription>
+            Push notifications are managed directly by the mobile application. You can configure notification permissions in your device's system settings.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   // All users have access to all notification preferences
   const isPaid = true;

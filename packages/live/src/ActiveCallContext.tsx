@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 
 /**
  * Keeps a live video meeting mounted across in-app navigation (Option A).
@@ -37,10 +37,38 @@ export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [call, setCall] = useState<ActiveCallInfo | null>(null);
   const [minimized, setMinimized] = useState(false);
 
-  const startCall = useCallback((c: ActiveCallInfo) => { setCall(c); setMinimized(false); }, []);
-  const endCall = useCallback(() => { setCall(null); setMinimized(false); }, []);
+  const startCall = useCallback((c: ActiveCallInfo) => {
+    setCall(c);
+    setMinimized(false);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('call:active', { detail: true }));
+    }
+  }, []);
+  const endCall = useCallback(() => {
+    setCall(null);
+    setMinimized(false);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('call:active', { detail: false }));
+    }
+  }, []);
   const minimize = useCallback(() => setMinimized(true), []);
   const maximize = useCallback(() => setMinimized(false), []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePipChange = (e: Event) => {
+      const isInPiP = (e as CustomEvent).detail?.isInPiP;
+      if (isInPiP) {
+        minimize();
+      } else {
+        maximize();
+      }
+    };
+    window.addEventListener('pipModeChanged', handlePipChange);
+    return () => {
+      window.removeEventListener('pipModeChanged', handlePipChange);
+    };
+  }, [minimize, maximize]);
 
   const value = useMemo(
     () => ({ call, minimized, startCall, endCall, minimize, maximize }),
