@@ -60,6 +60,12 @@ export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('call:active', { detail: !!call }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only: correct native's isInCall to match reality on launch
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     const handlePipChange = (e: Event) => {
       const isInPiP = (e as CustomEvent).detail?.isInPiP;
       setIsSystemPiP(!!isInPiP);
