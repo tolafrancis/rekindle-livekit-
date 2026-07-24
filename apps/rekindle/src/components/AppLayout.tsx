@@ -1168,7 +1168,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl md:text-2xl font-serif font-bold text-purple-700 flex-shrink-0 md:hidden">Rekindle</h1>
           <div className="hidden md:block" />
-          <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto min-w-0">
+          <div className="flex items-center gap-1 sm:gap-2 overflow-x-hidden min-w-0">
             <Button
               variant="ghost"
               size="icon"
@@ -1205,7 +1205,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             </span>
 
             {isTranslating && (
-              <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+              <Loader2 className="hidden md:block h-4 w-4 animate-spin text-purple-500" />
             )}
 
             {isAdmin && (
@@ -1213,7 +1213,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                 variant="ghost"
                 size="icon"
                 onClick={() => navigateTab('admin')}
-                className="rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
                 aria-label={t('navigation', 'admin', 'Admin Dashboard')}
               >
                 <Shield className="h-4 w-4 md:h-5 md:w-5" />
@@ -1225,7 +1225,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                 variant="ghost"
                 size="icon"
                 onClick={() => navigateTab('admin-health')}
-                className="rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                className="hidden md:flex rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
                 aria-label={t('settings', 'general', 'System Health')}
               >
                 <List className="h-4 w-4 md:h-5 md:w-5" />

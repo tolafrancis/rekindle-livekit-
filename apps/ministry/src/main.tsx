@@ -2,19 +2,29 @@ import { createRoot } from 'react-dom/client';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
-import { closeTopModal, hasOpenModal } from '@rekindle/ui/modal-stack';
+import { closeTopModal } from '@rekindle/ui/modal-stack';
 import App from './App.tsx';
 import './index.css';
 
+let callIsActive = false;
+
 if (Capacitor.isNativePlatform()) {
+  window.addEventListener('call:active', (e: Event) => {
+    callIsActive = (e as CustomEvent).detail as boolean;
+  });
+
   CapacitorApp.addListener('backButton', ({ canGoBack }) => {
-    if (hasOpenModal()) {
-      closeTopModal();
-    } else if (canGoBack) {
+    if (callIsActive) return;
+    if (canGoBack) {
       window.history.back();
     } else {
       CapacitorApp.exitApp();
     }
+  });
+
+  window.addEventListener('pipModeChanged', (e: Event) => {
+    const detail = (e as CustomEvent).detail;
+    window.dispatchEvent(new CustomEvent('pip:changed', { detail }));
   });
 
   FirebaseMessaging.addListener('notificationReceived', (event) => {
