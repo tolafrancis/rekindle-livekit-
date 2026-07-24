@@ -8,11 +8,13 @@ import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
+import { AudioOutputButton } from './AudioOutputButton';
+import { AudioOutputProvider, useAudioOutput } from '../AudioOutputContext';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, Headphones
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -866,6 +868,7 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
 // otherwise silently cut that participant's audio.
 const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
   const ref = useRef<HTMLAudioElement>(null);
+  const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
   useEffect(() => {
     const track = participant.audioTrack;
     const el = ref.current;
@@ -878,6 +881,14 @@ const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ particip
     });
     return () => { if (el) el.srcObject = null; };
   }, [participant.audioTrack]);
+  // Registered separately from the track-attach effect so a device selected
+  // mid-call is applied to this element as soon as it exists, not just on join.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    registerAudioElement(el);
+    return () => unregisterAudioElement(el);
+  }, [registerAudioElement, unregisterAudioElement]);
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 };
 
@@ -888,7 +899,7 @@ const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ 
 );
 
 
-export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
+const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
   roomName,
   userName,
   userId,
@@ -943,6 +954,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const { t } = useLanguage();
   const { user: authUser } = useAuth();  // members can attach files; guests cannot
   const activeCallCtx = useActiveCallOptional(); // present when hosted by ActiveCallHost
+  const { selectedDeviceId: selectedAudioOutputId } = useAudioOutput();
 
 
   // Track participant join function
@@ -1931,6 +1943,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
+            {/* Audio output (speaker/headset/Bluetooth) picker — renders nothing
+                if the browser doesn't support HTMLMediaElement.setSinkId. */}
+            <AudioOutputButton
+              trigger={
+                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                  <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${selectedAudioOutputId ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                    <Headphones className="h-5 w-5 sm:h-7 sm:w-7" />
+                  </div>
+                  <span className="hidden sm:block text-xs font-medium text-gray-300">
+                    {t('dailyVideoCall', 'audioOutput', 'Audio')}
+                  </span>
+                </button>
+              }
+            />
+
             {/* Camera toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={toggleCamera}
@@ -2172,5 +2199,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     </div>
   );
 };
+
+// AudioOutputProvider wraps the whole component (rather than just the control
+// bar) because DailyVideoCallInner has multiple early returns (minimized
+// mini-player, loading/error states, main view) that each mount their own
+// RemoteAudioLayer — a single outer provider keeps device selection shared
+// and stable across all of them instead of resetting on every branch switch.
+export const DailyVideoCall: React.FC<DailyVideoCallProps> = (props) => (
+  <AudioOutputProvider>
+    <DailyVideoCallInner {...props} />
+  </AudioOutputProvider>
+);
 
 export default DailyVideoCall;
