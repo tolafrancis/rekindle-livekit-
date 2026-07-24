@@ -8,13 +8,11 @@ import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
-import { AudioOutputButton } from './AudioOutputButton';
-import { AudioOutputProvider, useAudioOutput } from '../AudioOutputContext';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, Headphones
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -868,7 +866,6 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
 // otherwise silently cut that participant's audio.
 const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
   const ref = useRef<HTMLAudioElement>(null);
-  const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
   useEffect(() => {
     const track = participant.audioTrack;
     const el = ref.current;
@@ -881,14 +878,6 @@ const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ particip
     });
     return () => { if (el) el.srcObject = null; };
   }, [participant.audioTrack]);
-  // Registered separately from the track-attach effect so a device selected
-  // mid-call is applied to this element as soon as it exists, not just on join.
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    registerAudioElement(el);
-    return () => unregisterAudioElement(el);
-  }, [registerAudioElement, unregisterAudioElement]);
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 };
 
@@ -899,7 +888,7 @@ const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ 
 );
 
 
-const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
+export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   roomName,
   userName,
   userId,
@@ -954,7 +943,6 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
   const { t } = useLanguage();
   const { user: authUser } = useAuth();  // members can attach files; guests cannot
   const activeCallCtx = useActiveCallOptional(); // present when hosted by ActiveCallHost
-  const { selectedDeviceId: selectedAudioOutputId } = useAudioOutput();
 
 
   // Track participant join function
@@ -1545,7 +1533,8 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
   // Minimized mini-player: a clean, centered, contained video ONLY — no top bar,
   // control bar, reactions or filmstrip (those belong to full-screen; the host's
   // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
-  if (activeCallCtx?.minimized) {
+  const isPiP = (activeCallCtx?.minimized || activeCallCtx?.isSystemPiP) ?? false;
+  if (isPiP) {
     // Prefer whoever is actually on-camera so the tiny frame isn't a black tile:
     // screen share → featured (if it has video) → any remote with video → local →
     // finally fall back to featured/first-remote/local even without video.
@@ -1581,25 +1570,27 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
         {/* Compact media controls for the mini-player — mute, camera and (if wired)
             react — so the host doesn't have to maximize just to toggle their mic or
             camera. Sits bottom-center; the host maximize/leave chrome is up top. */}
-        <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/55 px-1.5 py-1 backdrop-blur-sm">
-          <button
-            onClick={toggleMic}
-            title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
-            aria-label={isMicOn ? 'Mute' : 'Unmute'}
-            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
-          >
-            {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </button>
-          <button
-            onClick={toggleCamera}
-            title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
-            aria-label={isCameraOn ? 'Stop video' : 'Start video'}
-            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
-          >
-            {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-          </button>
-          {onReact && <ReactionButton onReact={onReact} />}
-        </div>
+        {!activeCallCtx?.isSystemPiP && (
+          <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/55 px-1.5 py-1 backdrop-blur-sm">
+            <button
+              onClick={toggleMic}
+              title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
+              aria-label={isMicOn ? 'Mute' : 'Unmute'}
+              className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+              {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={toggleCamera}
+              title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
+              aria-label={isCameraOn ? 'Stop video' : 'Start video'}
+              className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+              {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+            </button>
+            {onReact && <ReactionButton onReact={onReact} />}
+          </div>
+        )}
       </div>
     );
   }
@@ -1943,21 +1934,6 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
-            {/* Audio output (speaker/headset/Bluetooth) picker — renders nothing
-                if the browser doesn't support HTMLMediaElement.setSinkId. */}
-            <AudioOutputButton
-              trigger={
-                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                  <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${selectedAudioOutputId ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
-                    <Headphones className="h-5 w-5 sm:h-7 sm:w-7" />
-                  </div>
-                  <span className="hidden sm:block text-xs font-medium text-gray-300">
-                    {t('dailyVideoCall', 'audioOutput', 'Audio')}
-                  </span>
-                </button>
-              }
-            />
-
             {/* Camera toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={toggleCamera}
@@ -2199,16 +2175,5 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
     </div>
   );
 };
-
-// AudioOutputProvider wraps the whole component (rather than just the control
-// bar) because DailyVideoCallInner has multiple early returns (minimized
-// mini-player, loading/error states, main view) that each mount their own
-// RemoteAudioLayer — a single outer provider keeps device selection shared
-// and stable across all of them instead of resetting on every branch switch.
-export const DailyVideoCall: React.FC<DailyVideoCallProps> = (props) => (
-  <AudioOutputProvider>
-    <DailyVideoCallInner {...props} />
-  </AudioOutputProvider>
-);
 
 export default DailyVideoCall;
