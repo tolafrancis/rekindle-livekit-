@@ -15,12 +15,13 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import {
   Search, Plus, Users, Crown, Shield, Settings,
   Globe, Lock, Link, Copy, Check, QrCode, Loader2,
   ChevronRight, Building2, MapPin, Heart, X, ArrowLeft,
   BookOpen, LayoutDashboard, Upload, Image as ImageIcon,
-  Sparkles, Compass, ArrowRight
+  Sparkles, Compass, ArrowRight, CreditCard
 } from 'lucide-react';
 import MinistrySpace from './MinistrySpace';
 import { MinistryDevotionalCreator } from './MinistryDevotionalCreator';
@@ -615,6 +616,34 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         </div>
       </div>
 
+      {/* Quick Links */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { icon: Settings, label: t('ministriesHub', 'quickAccount', 'Account'), grad: 'from-indigo-500 to-purple-600', onClick: () => navigate('/settings/account') },
+          ...(canShowPurchaseUI() && (is_ministry_Leader || isAdmin)
+            ? [{ icon: CreditCard, label: t('ministriesHub', 'quickBilling', 'Billing'), grad: 'from-sky-500 to-blue-600', onClick: () => navigate('/settings/billing') }]
+            : []),
+          { icon: Compass, label: t('ministriesHub', 'quickExplore', 'Explore'), grad: 'from-amber-500 to-orange-600', onClick: () => setActiveView('discover') },
+          ...(is_ministry_Leader || isAdmin
+            ? [{ icon: LayoutDashboard, label: t('ministriesHub', 'quickManage', 'Manage'), grad: 'from-emerald-500 to-teal-600', onClick: () => setActiveView('manage') }]
+            : []),
+        ].map((q, i) => {
+          const QIcon = q.icon;
+          return (
+            <button
+              key={i}
+              onClick={q.onClick}
+              className="flex items-center gap-3 rounded-2xl border border-gray-200/70 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${q.grad} text-white`}>
+                <QIcon className="h-5 w-5" />
+              </span>
+              <span className="text-sm font-semibold text-gray-800">{q.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Navigation Tabs — the Discover / My Ministries / Manage switcher is
           provided by the app's secondary navigation (sidebar on desktop, the
           nav card on mobile), so it is not duplicated here. */}
@@ -759,61 +788,81 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               </Button>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {myMinistries.map(ministry => {
-                const membership = memberships[ministry.id];
-                return (
-                  <Card
-                    key={ministry.id}
-                    className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl cursor-pointer"
-                    onClick={() => handleEnterMinistry(ministry)}
-                  >
-                    <div 
-                      className="h-20"
-                      style={{ backgroundColor: ministry.theme_color || '#7c3aed' }}
-                    />
-                    <CardContent className="p-4 -mt-6 relative">
-                      <div className="flex items-start justify-between">
-                        <div className="w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center border">
-                          {ministry.logo_url ? (
-                            <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded object-cover" />
-                          ) : (
-                            <Building2 className="h-6 w-6 text-purple-600" />
-                          )}
-                        </div>
-                        <Badge className={
-                          membership?.is_leader ? 'bg-amber-500' :
-                          membership?.role === 'admin' ? 'bg-purple-600' :
-                          membership?.subscription_level === 2 ? 'bg-blue-600' :
-                          'bg-gray-500'
-                        }>
-                          {membership?.is_leader ? (
-                            <><Crown className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleLeader', 'Leader')}</>
-                          ) : membership?.role === 'admin' ? (
-                            <><Shield className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleAdmin', 'Admin')}</>
-                          ) : membership?.subscription_level === 2 ? (
-                            t('ministriesHub', 'rolePremium', 'Premium')
-                          ) : (
-                            t('ministriesHub', 'roleMember', 'Member')
-                          )}
-                        </Badge>
+            <>
+              <div className="flex items-center justify-between px-0.5">
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                  <Heart className="h-5 w-5 text-indigo-600" />
+                  {t('ministriesHub', 'yourMinistriesHeading', 'Your ministries')}
+                </h2>
+                <span className="text-sm text-gray-500">
+                  {t('ministriesHub', 'countMinistries', '{count} ministries').replace('{count}', String(myMinistries.length))}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {myMinistries.map(ministry => {
+                  const membership = memberships[ministry.id];
+                  const color = ministry.theme_color || '#7c3aed';
+                  return (
+                    <Card
+                      key={ministry.id}
+                      className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl cursor-pointer"
+                      onClick={() => handleEnterMinistry(ministry)}
+                    >
+                      <div
+                        className="relative h-20 overflow-hidden"
+                        style={ministry.banner_url
+                          ? { backgroundImage: `url(${ministry.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                          : { background: `linear-gradient(135deg, ${color} 0%, ${color}99 100%)` }
+                        }
+                      >
+                        <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/15 blur-2xl" />
                       </div>
+                      <CardContent className="p-4 -mt-6 relative">
+                        <div className="flex items-start justify-between">
+                          <div className="w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center border">
+                            {ministry.logo_url ? (
+                              <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded object-cover" />
+                            ) : (
+                              <Building2 className="h-6 w-6 text-purple-600" />
+                            )}
+                          </div>
+                          <Badge className={
+                            membership?.is_leader ? 'bg-amber-500' :
+                            membership?.role === 'admin' ? 'bg-purple-600' :
+                            membership?.subscription_level === 2 ? 'bg-blue-600' :
+                            'bg-gray-500'
+                          }>
+                            {membership?.is_leader ? (
+                              <><Crown className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleLeader', 'Leader')}</>
+                            ) : membership?.role === 'admin' ? (
+                              <><Shield className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleAdmin', 'Admin')}</>
+                            ) : membership?.subscription_level === 2 ? (
+                              t('ministriesHub', 'rolePremium', 'Premium')
+                            ) : (
+                              t('ministriesHub', 'roleMember', 'Member')
+                            )}
+                          </Badge>
+                        </div>
 
-                      <h3 className="font-bold text-lg mt-3">{ministry.name}</h3>
-                      <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                        <Users className="h-4 w-4" />
-                        {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
-                      </p>
+                        <h3 className="font-bold text-lg mt-3">{ministry.name}</h3>
+                        {ministry.description && (
+                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ministry.description}</p>
+                        )}
+                        <p className="text-sm text-gray-500 flex items-center gap-1 mt-2">
+                          <Users className="h-4 w-4" />
+                          {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
+                        </p>
 
-                      <Button className="w-full mt-4" size="sm">
-                        {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
-                        <ChevronRight className="h-4 w-4 ml-2" />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                        <Button className="w-full mt-4" size="sm">
+                          {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </>
           )}
         </TabsContent>
 
