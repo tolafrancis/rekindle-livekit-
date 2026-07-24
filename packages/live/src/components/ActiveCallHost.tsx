@@ -9,7 +9,7 @@ import { useActiveCall } from '../ActiveCallContext';
  * leave chrome (the shrunk in-meeting controls are too small to use).
  */
 export const ActiveCallHost: React.FC = () => {
-  const { call, minimized, endCall, maximize } = useActiveCall();
+  const { call, minimized, isSystemPiP, endCall, maximize } = useActiveCall();
 
   // Mini-player position. null = anchored to the default bottom-right corner;
   // once the user drags it we switch to explicit top-left coordinates.
@@ -61,6 +61,16 @@ export const ActiveCallHost: React.FC = () => {
   };
 
   if (!call) return null;
+
+  if (isSystemPiP) {
+    return (
+      <div className="fixed inset-0 h-full w-full bg-black overflow-hidden">
+        <div className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-gray-900">
+          {call.node}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

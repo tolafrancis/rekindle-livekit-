@@ -175,7 +175,8 @@ const EnhancedVideoCallWrapper = ({
   // Minimized (mini-player) state comes straight from the ActiveCall host, so the
   // reaction bar and other overlays hide reliably — a width heuristic was flaky
   // (the mini-player is ~352px wide, above the 300px threshold, so it never fired).
-  const isPiP = useActiveCallOptional()?.minimized ?? false;
+  const activeCall = useActiveCallOptional();
+  const isPiP = (activeCall?.minimized || activeCall?.isSystemPiP) ?? false;
   const wrapperRef = useRef<HTMLDivElement>(null);
   // True while a DailyVideoCall side panel (chat / host controls) is open — used to
   // hide the Copy Link / End chrome so it doesn't collide with the panel.
