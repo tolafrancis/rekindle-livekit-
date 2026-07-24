@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
+import { Button } from '@rekindle/ui/button';
 import { toast } from '@rekindle/ui/use-toast';
 import { Sparkles, Ban, Check, ImagePlus } from 'lucide-react';
 
@@ -36,6 +37,7 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
   // same-origin blob URL avoids the canvas CORS taint a remote URL would cause.
   const fileRef = useRef<HTMLInputElement>(null);
   const [customUrl, setCustomUrl] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => () => { if (customUrl) URL.revokeObjectURL(customUrl); }, [customUrl]);
 
   const onUpload = (file?: File) => {
@@ -56,7 +58,7 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent align={align} className="w-56 p-3">
         <p className="text-xs font-semibold text-gray-700 mb-2">Background</p>
@@ -113,6 +115,9 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
           </button>
         </div>
         <p className="text-[10px] text-gray-400 mt-2">Applies to your camera. Turn the camera on to see it. Uploads stay on your device.</p>
+        <Button type="button" size="sm" className="w-full mt-2 bg-purple-600 hover:bg-purple-700" onClick={() => setOpen(false)}>
+          Done
+        </Button>
       </PopoverContent>
     </Popover>
   );
