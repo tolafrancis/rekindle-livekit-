@@ -15,13 +15,12 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
-import { canShowPurchaseUI } from '@rekindle/features/platform';
 import {
   Search, Plus, Users, Crown, Shield, Settings,
   Globe, Lock, Link, Copy, Check, QrCode, Loader2,
   ChevronRight, Building2, MapPin, Heart, X, ArrowLeft,
   BookOpen, LayoutDashboard, Upload, Image as ImageIcon,
-  Sparkles, Compass, ArrowRight, CreditCard
+  Sparkles, Compass, ArrowRight
 } from 'lucide-react';
 import MinistrySpace from './MinistrySpace';
 import { MinistryDevotionalCreator } from './MinistryDevotionalCreator';
@@ -562,12 +561,12 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
   return (
     <div className="space-y-6">
-      {/* Welcome hero */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 sm:p-8 text-white shadow-lg shadow-indigo-500/20">
+      {/* Welcome hero — centered */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 sm:p-10 text-white shadow-lg shadow-indigo-500/20">
         {/* soft decorative glows */}
         <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 -left-20 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl" />
-        <div className="relative max-w-2xl">
+        <div className="relative mx-auto max-w-2xl flex flex-col items-center text-center">
           <p className="text-sm font-medium text-white/80">
             {greeting}{firstName ? `, ${firstName}` : ''} 👋
           </p>
@@ -585,7 +584,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           </div>
 
           {/* Primary actions */}
-          <div className="mt-5 flex flex-wrap items-center gap-2.5">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
             <Button className="bg-white text-indigo-700 shadow-sm hover:bg-white/90" onClick={() => setShowJoinModal(true)}>
               <Link className="h-4 w-4 mr-2" />
               {t('ministriesHub', 'joinByCode', 'Join by Code')}
@@ -602,46 +601,14 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             )}
           </div>
 
-          {/* At-a-glance stats */}
-          <div className="mt-5 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-white/85">
+          {/* At-a-glance stat */}
+          <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-1.5 text-sm text-white/85">
             <span className="flex items-center gap-1.5">
               <Heart className="h-4 w-4" />
               {t('ministriesHub', 'statYourMinistries', '{count} your ministries').replace('{count}', String(myMinistries.length))}
             </span>
-            <span className="flex items-center gap-1.5">
-              <Globe className="h-4 w-4" />
-              {t('ministriesHub', 'statToExplore', '{count} to explore').replace('{count}', String(ministries.length))}
-            </span>
           </div>
         </div>
-      </div>
-
-      {/* Quick Links */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { icon: Settings, label: t('ministriesHub', 'quickAccount', 'Account'), grad: 'from-indigo-500 to-purple-600', onClick: () => navigate('/settings/account') },
-          ...(canShowPurchaseUI() && (is_ministry_Leader || isAdmin)
-            ? [{ icon: CreditCard, label: t('ministriesHub', 'quickBilling', 'Billing'), grad: 'from-sky-500 to-blue-600', onClick: () => navigate('/settings/billing') }]
-            : []),
-          { icon: Compass, label: t('ministriesHub', 'quickExplore', 'Explore'), grad: 'from-amber-500 to-orange-600', onClick: () => setActiveView('discover') },
-          ...(is_ministry_Leader || isAdmin
-            ? [{ icon: LayoutDashboard, label: t('ministriesHub', 'quickManage', 'Manage'), grad: 'from-emerald-500 to-teal-600', onClick: () => setActiveView('manage') }]
-            : []),
-        ].map((q, i) => {
-          const QIcon = q.icon;
-          return (
-            <button
-              key={i}
-              onClick={q.onClick}
-              className="flex items-center gap-3 rounded-2xl border border-gray-200/70 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${q.grad} text-white`}>
-                <QIcon className="h-5 w-5" />
-              </span>
-              <span className="text-sm font-semibold text-gray-800">{q.label}</span>
-            </button>
-          );
-        })}
       </div>
 
       {/* Navigation Tabs — the Discover / My Ministries / Manage switcher is
@@ -789,15 +756,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             </Card>
           ) : (
             <>
-              <div className="flex items-center justify-between px-0.5">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-                  <Heart className="h-5 w-5 text-indigo-600" />
-                  {t('ministriesHub', 'yourMinistriesHeading', 'Your ministries')}
-                </h2>
-                <span className="text-sm text-gray-500">
-                  {t('ministriesHub', 'countMinistries', '{count} ministries').replace('{count}', String(myMinistries.length))}
-                </span>
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {myMinistries.map(ministry => {
                   const membership = memberships[ministry.id];
