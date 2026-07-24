@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import { AudioOutputProvider } from './AudioOutputContext';
 
 /**
  * Keeps a live video meeting mounted across in-app navigation (Option A).
@@ -73,7 +74,11 @@ export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     () => ({ call, minimized, isSystemPiP, startCall, endCall, minimize, maximize }),
     [call, minimized, isSystemPiP, startCall, endCall, minimize, maximize],
   );
-  return <ActiveCallContext.Provider value={value}>{children}</ActiveCallContext.Provider>;
+  return (
+    <ActiveCallContext.Provider value={value}>
+      <AudioOutputProvider>{children}</AudioOutputProvider>
+    </ActiveCallContext.Provider>
+  );
 };
 
 /** Throws if used outside the provider (for the host + meetings screens). */
