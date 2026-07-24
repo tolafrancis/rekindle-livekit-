@@ -10,11 +10,7 @@ let callIsActive = false;
 
 if (Capacitor.isNativePlatform()) {
   window.addEventListener('call:active', (e: Event) => {
-    const active = (e as CustomEvent).detail as boolean;
-    callIsActive = active;
-    if ((window as any).AndroidBridge) {
-      (window as any).AndroidBridge.setCallActive(active);
-    }
+    callIsActive = (e as CustomEvent).detail as boolean;
   });
 
   CapacitorApp.addListener('backButton', ({ canGoBack }) => {

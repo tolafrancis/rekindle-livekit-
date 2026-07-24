@@ -23,7 +23,6 @@ export interface ActiveCallInfo {
 interface ActiveCallContextValue {
   call: ActiveCallInfo | null;
   minimized: boolean;
-  isSystemPiP: boolean;
   startCall: (call: ActiveCallInfo) => void;
   /** Clear the call from the host (does NOT run onLeave — callers that need DB
    *  cleanup should call the call's onLeave, which ends by calling this). */
@@ -37,7 +36,6 @@ const ActiveCallContext = createContext<ActiveCallContextValue | null>(null);
 export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [call, setCall] = useState<ActiveCallInfo | null>(null);
   const [minimized, setMinimized] = useState(false);
-  const [isSystemPiP, setIsSystemPiP] = useState(false);
 
   const startCall = useCallback((c: ActiveCallInfo) => {
     setCall(c);
@@ -49,7 +47,6 @@ export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const endCall = useCallback(() => {
     setCall(null);
     setMinimized(false);
-    setIsSystemPiP(false);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('call:active', { detail: false }));
     }
@@ -61,17 +58,21 @@ export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (typeof window === 'undefined') return;
     const handlePipChange = (e: Event) => {
       const isInPiP = (e as CustomEvent).detail?.isInPiP;
-      setIsSystemPiP(!!isInPiP);
+      if (isInPiP) {
+        minimize();
+      } else {
+        maximize();
+      }
     };
     window.addEventListener('pipModeChanged', handlePipChange);
     return () => {
       window.removeEventListener('pipModeChanged', handlePipChange);
     };
-  }, []);
+  }, [minimize, maximize]);
 
   const value = useMemo(
-    () => ({ call, minimized, isSystemPiP, startCall, endCall, minimize, maximize }),
-    [call, minimized, isSystemPiP, startCall, endCall, minimize, maximize],
+    () => ({ call, minimized, startCall, endCall, minimize, maximize }),
+    [call, minimized, startCall, endCall, minimize, maximize],
   );
   return <ActiveCallContext.Provider value={value}>{children}</ActiveCallContext.Provider>;
 };

@@ -1545,8 +1545,7 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
   // Minimized mini-player: a clean, centered, contained video ONLY — no top bar,
   // control bar, reactions or filmstrip (those belong to full-screen; the host's
   // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
-  const isPiP = (activeCallCtx?.minimized || activeCallCtx?.isSystemPiP) ?? false;
-  if (isPiP) {
+  if (activeCallCtx?.minimized) {
     // Prefer whoever is actually on-camera so the tiny frame isn't a black tile:
     // screen share → featured (if it has video) → any remote with video → local →
     // finally fall back to featured/first-remote/local even without video.
@@ -1582,27 +1581,25 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
         {/* Compact media controls for the mini-player — mute, camera and (if wired)
             react — so the host doesn't have to maximize just to toggle their mic or
             camera. Sits bottom-center; the host maximize/leave chrome is up top. */}
-        {!activeCallCtx?.isSystemPiP && (
-          <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/55 px-1.5 py-1 backdrop-blur-sm">
-            <button
-              onClick={toggleMic}
-              title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
-              aria-label={isMicOn ? 'Mute' : 'Unmute'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
-            >
-              {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-            </button>
-            <button
-              onClick={toggleCamera}
-              title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
-              aria-label={isCameraOn ? 'Stop video' : 'Start video'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
-            >
-              {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-            </button>
-            {onReact && <ReactionButton onReact={onReact} />}
-          </div>
-        )}
+        <div className="absolute bottom-1.5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/55 px-1.5 py-1 backdrop-blur-sm">
+          <button
+            onClick={toggleMic}
+            title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
+            aria-label={isMicOn ? 'Mute' : 'Unmute'}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+          </button>
+          <button
+            onClick={toggleCamera}
+            title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
+            aria-label={isCameraOn ? 'Stop video' : 'Start video'}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+          </button>
+          {onReact && <ReactionButton onReact={onReact} />}
+        </div>
       </div>
     );
   }

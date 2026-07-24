@@ -1451,23 +1451,6 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
           .eq('id', meeting.id);
 
         if (error) throw error;
-
-        // Trigger push notification to ministry members
-        if (ministryId) {
-          supabase.functions.invoke('send-push-notification', {
-            body: {
-              targetAudience: 'ministry_members',
-              ministryId,
-              title: `👥 Meeting Started`,
-              body: `"${meeting.title}" has started. Tap to join now!`,
-              link: `/ministry/${ministryId}/meeting/${meeting.id}`,
-              senderName: ministryName || 'Ministry',
-              notificationType: 'meeting_started',
-              push: true,
-              inApp: true,
-            },
-          }).catch((e) => console.warn('[Meeting] Start notification failed:', e?.message));
-        }
       }
 
       const { error: countError } = await supabase
