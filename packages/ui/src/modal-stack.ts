@@ -14,6 +14,18 @@
  *   entry already gone and does nothing.
  * - App close → unregister → history.back() flagged as ignored, so the handler
  *   skips closing (the modal is already closing).
+ *
+ * Why history mutations are serialized through `queue`: `history.back()` is
+ * asynchronous — the actual navigation and its `popstate` land on a later task —
+ * while `history.pushState()` is synchronous. A multi-step flow that closes one
+ * dialog and opens the next in the same React commit (e.g. music selector →
+ * scripture preview) used to call `back()` then immediately `pushState()` before
+ * the browser had processed the pending `back()`. That let the new entry land on
+ * top of the wrong index, so a later close popped past this component's own
+ * tab/route entry and dropped the user somewhere else entirely. Queuing every
+ * push/back behind the previous one's real `popstate` keeps the browser's actual
+ * history stack in lockstep with our logical `stack`, no matter how many dialogs
+ * open/close within a single tick.
  */
 
 interface ModalEntry {
@@ -25,6 +37,28 @@ const stack: ModalEntry[] = [];
 let listening = false;
 let ignoreNextPop = false;
 let counter = 0;
+
+// Chain of pending real history mutations (pushState/back), run strictly in order.
+let queue: Promise<void> = Promise.resolve();
+
+// Safety cap so a missed/suppressed popstate (shouldn't happen, but browsers are
+// browsers) can't wedge the queue forever and silently block all future modals.
+const POPSTATE_WAIT_MS = 1000;
+
+function waitForNextPopstate(): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('popstate', handler);
+      resolve();
+    };
+    const handler = () => finish();
+    window.addEventListener('popstate', handler);
+    setTimeout(finish, POPSTATE_WAIT_MS);
+  });
+}
 
 function onPop() {
   if (ignoreNextPop) {
@@ -49,9 +83,11 @@ export function registerModal(close: () => void): string {
   ensureListener();
   const id = `modal-${++counter}`;
   stack.push({ id, close });
-  const cur = window.history.state;
-  const base = cur && typeof cur === 'object' ? { ...(cur as Record<string, unknown>) } : {};
-  window.history.pushState({ ...base, [`modal:${id}`]: true }, '', window.location.href);
+  queue = queue.then(() => {
+    const cur = window.history.state;
+    const base = cur && typeof cur === 'object' ? { ...(cur as Record<string, unknown>) } : {};
+    window.history.pushState({ ...base, [`modal:${id}`]: true }, '', window.location.href);
+  });
   return id;
 }
 
@@ -65,7 +101,11 @@ export function unregisterModal(id: string): void {
   // Only the top entry is safely removable via back(); a modal closed out of order
   // leaves its (harmless) entry to be consumed on a later Back.
   if (wasTop) {
-    ignoreNextPop = true;
-    window.history.back();
+    queue = queue.then(() => {
+      ignoreNextPop = true;
+      const popped = waitForNextPopstate();
+      window.history.back();
+      return popped;
+    });
   }
 }

@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -44,9 +46,22 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
-  <ErrorBoundary>
-    <ThemeProvider defaultTheme="light">
+const App = () => {
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const notification = (e as CustomEvent).detail;
+      toast({
+        title: notification.title || 'Notification',
+        description: notification.body || '',
+      });
+    };
+    window.addEventListener('nativePushReceived', handler);
+    return () => window.removeEventListener('nativePushReceived', handler);
+  }, []);
+
+  return (
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="light">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>
@@ -121,6 +136,7 @@ const App = () => (
       </QueryClientProvider>
     </ThemeProvider>
   </ErrorBoundary>
-);
+  );
+};
 
 export default App;

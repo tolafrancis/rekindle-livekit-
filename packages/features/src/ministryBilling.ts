@@ -1,65 +1,99 @@
 import { supabase } from '@rekindle/supabase';
 
-// Phase 6 (6b) — MINISTRY (tenant) billing. Distinct from the individual-user
-// subscriptions the existing stripe-subscription/paystack functions handle: this
-// subscribes a whole ministry to a SaaS plan, writing ministry_subscriptions (which
-// the entitlements resolver reads). Provider-agnostic — the ministry-checkout edge
-// function creates a Stripe Checkout Session OR a Paystack transaction; the webhook
-// upserts ministry_subscriptions on payment success.
+// Phase 6 (6b) — MINISTRY (tenant) billing, now the "Ministry Partner" regional
+// subscription flow. Distinct from the individual-user subscriptions the existing
+// stripe-subscription/paystack functions handle: this subscribes a whole ministry
+// to a plan, writing ministry_subscriptions (which the entitlements resolver
+// reads). Provider-agnostic — the ministry-checkout edge function creates a
+// Stripe Checkout Session, a Paystack subscription transaction, or returns a
+// hosted PayPal billing link; the webhook upserts ministry_subscriptions on
+// Stripe/Paystack payment success (PayPal is manually confirmed for now — see
+// ministry-checkout's PayPal branch).
+//
+// Pricing/plan IDs are admin-configurable in the `ministry_partner_plans` table
+// (Settings -> Payment Configuration -> Ministry Partner Plans) rather than
+// hardcoded here, so changing a price or payment link needs no deploy.
 
-export type BillingProvider = 'stripe' | 'paystack';
-export type BillingCycle = 'monthly' | 'yearly';
-export type MinistryPlanSlug = 'basic' | 'standard' | 'premium' | 'enterprise';
+export type BillingProvider = 'stripe' | 'paystack' | 'paypal';
+export type BillingCycle = 'monthly' | 'annual';
 
-export interface MinistryPlan {
-  slug: MinistryPlanSlug;
+export interface MinistryPartnerPlan {
+  id: string;
+  slug: string;
   name: string;
-  priceMonthly: number; // display price (USD); the edge fn maps to the provider amount/price id
-  priceYearly: number;
-  currency: string;
-  limits: { members: number; broadcasts: number; videoMinutes: number }; // -1 = unlimited
-  highlights: string[];
+  minMembers: number;
+  maxMembers: number | null; // null = unbounded (e.g. "500+")
+  ngnPriceMonthly: number;
+  ngnPriceAnnual: number;
+  usdPriceMonthly: number;
+  usdPriceAnnual: number;
+  paystackPlanCode: string | null;
+  stripePriceIdMonthly: string | null;
+  stripePriceIdAnnual: string | null;
+  paypalBillingLinkMonthly: string | null;
+  paypalBillingLinkAnnual: string | null;
+  features: string[];
+  isActive: boolean;
+  displayOrder: number;
 }
 
-// The sellable ministry plans. Capabilities are derived server-side from the plan +
-// ministry_subscriptions columns (see @rekindle/auth/ministryEntitlements). Keep the
-// slugs aligned with ministry_subscriptions.plan_type (basic/standard/premium/enterprise).
-export const MINISTRY_PLANS: MinistryPlan[] = [
-  {
-    slug: 'basic', name: 'Basic', priceMonthly: 19, priceYearly: 190, currency: 'USD',
-    limits: { members: 100, broadcasts: 0, videoMinutes: 0 },
-    highlights: ['Up to 100 members', 'Devotionals, prayer & content', 'Member directory & check-in'],
-  },
-  {
-    slug: 'standard', name: 'Standard', priceMonthly: 49, priceYearly: 490, currency: 'USD',
-    limits: { members: 500, broadcasts: 100, videoMinutes: 600 },
-    highlights: ['Up to 500 members', 'Broadcasts & live meetings', 'Branding & team roles', 'Ministry analytics'],
-  },
-  {
-    slug: 'premium', name: 'Premium', priceMonthly: 99, priceYearly: 990, currency: 'USD',
-    limits: { members: 2000, broadcasts: 500, videoMinutes: 3000 },
-    highlights: ['Up to 2,000 members', 'Recording & replays', 'Role permissions', 'Advanced analytics'],
-  },
-  {
-    slug: 'enterprise', name: 'Enterprise', priceMonthly: 249, priceYearly: 2490, currency: 'USD',
-    limits: { members: -1, broadcasts: -1, videoMinutes: -1 },
-    highlights: ['Unlimited members', 'White-label & custom domain', 'Priority support', 'Everything in Premium'],
-  },
-];
+function mapPlanRow(row: Record<string, unknown>): MinistryPartnerPlan {
+  return {
+    id: row.id as string,
+    slug: row.slug as string,
+    name: row.name as string,
+    minMembers: row.min_members as number,
+    maxMembers: (row.max_members as number | null) ?? null,
+    ngnPriceMonthly: Number(row.ngn_price_monthly),
+    ngnPriceAnnual: Number(row.ngn_price_annual),
+    usdPriceMonthly: Number(row.usd_price_monthly),
+    usdPriceAnnual: Number(row.usd_price_annual),
+    paystackPlanCode: (row.paystack_plan_code as string | null) ?? null,
+    stripePriceIdMonthly: (row.stripe_price_id_monthly as string | null) ?? null,
+    stripePriceIdAnnual: (row.stripe_price_id_annual as string | null) ?? null,
+    paypalBillingLinkMonthly: (row.paypal_billing_link_monthly as string | null) ?? null,
+    paypalBillingLinkAnnual: (row.paypal_billing_link_annual as string | null) ?? null,
+    features: Array.isArray(row.features) ? (row.features as string[]) : [],
+    isActive: Boolean(row.is_active),
+    displayOrder: Number(row.display_order ?? 0),
+  };
+}
 
-export const getMinistryPlan = (slug: string): MinistryPlan | undefined =>
-  MINISTRY_PLANS.find((p) => p.slug === slug);
+/** Active Ministry Partner tiers, in display order. Public read (no auth required). */
+export async function fetchMinistryPartnerPlans(): Promise<{ plans: MinistryPartnerPlan[]; error?: string }> {
+  const { data, error } = await supabase
+    .from('ministry_partner_plans')
+    .select('*')
+    .eq('is_active', true)
+    .order('display_order', { ascending: true });
+  if (error) return { plans: [], error: error.message };
+  return { plans: (data ?? []).map(mapPlanRow) };
+}
+
+/** Resolve the display/charge amount + currency for a plan given a country + cycle. */
+export function resolvePlanPricing(plan: MinistryPartnerPlan, countryCode: string, cycle: BillingCycle) {
+  const isNigeria = countryCode === 'NG';
+  const currency = isNigeria ? 'NGN' : 'USD';
+  const amount = isNigeria
+    ? (cycle === 'annual' ? plan.ngnPriceAnnual : plan.ngnPriceMonthly)
+    : (cycle === 'annual' ? plan.usdPriceAnnual : plan.usdPriceMonthly);
+  const suggestedProvider: BillingProvider = isNigeria ? 'paystack' : 'stripe';
+  return { currency, amount, suggestedProvider };
+}
 
 /**
- * Start checkout for a ministry plan. Returns a redirect URL to the provider's
- * hosted checkout (Stripe Checkout / Paystack). The caller must be a ministry admin
- * (enforced server-side). On success the webhook activates ministry_subscriptions.
+ * Start checkout for a Ministry Partner plan. Returns a redirect URL to the
+ * provider's hosted checkout (Stripe Checkout / Paystack subscription / PayPal
+ * billing link). The caller must be a ministry admin (enforced server-side).
+ * On success the webhook activates ministry_subscriptions (Stripe/Paystack);
+ * PayPal inserts a pending row for manual admin confirmation.
  */
 export async function startMinistryCheckout(opts: {
   ministryId: string;
-  plan: MinistryPlanSlug;
+  plan: string;
   provider: BillingProvider;
   cycle?: BillingCycle;
+  country: string;
 }): Promise<{ url?: string; error?: string }> {
   const { data, error } = await supabase.functions.invoke('ministry-checkout', {
     body: {
@@ -68,6 +102,7 @@ export async function startMinistryCheckout(opts: {
       plan: opts.plan,
       provider: opts.provider,
       cycle: opts.cycle ?? 'monthly',
+      country: opts.country,
       returnUrl: typeof window !== 'undefined' ? window.location.origin + '/settings/billing' : undefined,
     },
   });

@@ -174,7 +174,7 @@ const generatePrayerPointsFromDay = (day: PrayerDay): PrayerPoint[] => {
     if (validPoints.length > 0) {
       console.log('✅ Using existing prayer points:', validPoints.length);
       return validPoints.map(point => ({
-        title: point.title || 'Prayer Point',
+        title: point.title || '',
         content: point.content || point.title || 'Pray about this topic.',
         scripture: point.scripture,
         scriptureText: point.scriptureText,

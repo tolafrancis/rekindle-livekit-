@@ -4,6 +4,32 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { supabase, verifySession, verifyAdminAccess, clearSupabaseAuth } from '@rekindle/supabase';
 import { registerPush } from "./usePushNotifications";
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
+import { App as CapacitorApp } from '@capacitor/app';
+
+function getAuthRedirectScheme(): string {
+  const appType = import.meta.env.VITE_APP_TYPE;
+  if (appType === 'ministry') return 'rekindleministry';
+  return 'rekindle'; // default to ReKindle's scheme
+}
+
+async function nativeOAuthSignIn(provider: 'google' | 'facebook') {
+  const scheme = getAuthRedirectScheme();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: `${scheme}://auth-callback`,
+      skipBrowserRedirect: true,
+    },
+  });
+  if (error) return { error: error.message };
+  if (data?.url) {
+    await Browser.open({ url: data.url });
+    return {};
+  }
+  return { error: 'Failed to get OAuth URL' };
+}
 
 // ============================================
 // TYPES
@@ -592,6 +618,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, profile, isRecoveryMode]);
 
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const sub = CapacitorApp.addListener('appUrlOpen', async ({ url }) => {
+      if (!url.includes('auth-callback')) return;
+
+      try {
+        await Browser.close(); // dismiss the in-app browser tab if still open
+      } catch {}
+
+      try {
+        // Safe parsing of custom scheme URL (e.g. rekindle://auth-callback?code=...)
+        const parsedUrl = url.startsWith('http') ? url : url.replace(/^[a-z\-]+:\/\//i, 'https://');
+        const urlObj = new URL(parsedUrl);
+        const code = urlObj.searchParams.get('code');
+        if (code) {
+          console.log('[AUTH] Exchanging auth code for session natively');
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.error('[AUTH] Exchange code for session failed:', error.message);
+          }
+        }
+      } catch (err) {
+        console.error('[AUTH] Failed to process appUrlOpen redirect:', err);
+      }
+    });
+    return () => { sub.then(s => s.remove()); };
+  }, []);
+
   const syncAccountsByEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -727,6 +781,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const signInWithGoogle = async () => {
     try {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeOAuthSignIn('google');
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: window.location.origin }
@@ -740,6 +797,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const signInWithFacebook = async () => {
     try {
+      if (Capacitor.isNativePlatform()) {
+        return await nativeOAuthSignIn('facebook');
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: { redirectTo: window.location.origin }
