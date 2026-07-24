@@ -1865,12 +1865,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // local <video> element keeps pointing at the now-replaced track and
       // goes dark/flickers, even though remote viewers get the new track fine
       // via the SFU. Mirrors the same re-attach toggleCamera() already does.
-      setTimeout(() => attachLocalVideoTrack(), 200);
+      setTimeout(() => {
+        attachLocalVideoTrack();
+        updateParticipants();
+      }, 200);
     } catch (e: any) {
       console.error('[Daily] Failed to set video background:', e);
       toast({ title: 'Background Error', description: 'Could not apply the background.', variant: 'destructive' });
     }
-  }, [attachLocalVideoTrack]);
+  }, [attachLocalVideoTrack, updateParticipants]);
 
   // Start screen share
   const startScreenShare = useCallback(async () => {
