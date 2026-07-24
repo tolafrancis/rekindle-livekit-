@@ -1257,23 +1257,52 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           <div className="space-y-6">
 
             {/* Welcome Banner */}
-            <Card className="overflow-hidden">
-              <div
-                className="flex items-end p-6 min-h-[96px]"
-                style={{
-                  background: `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}cc 100%)`
-                }}
-              >
-                <div className="text-white w-full">
-                  <h2 className="text-lg md:text-2xl font-bold truncate">{t('ministrySpace', 'welcomeTo', 'Welcome to {name}').replace('{name}', ministry.name)}</h2>
-                  {(ministry.welcome_message || ministry.description) && (
-                    <p className="opacity-90 text-sm mt-1 line-clamp-2">
-                      {ministry.welcome_message || ministry.description}
-                    </p>
-                  )}
+            {(() => {
+              const hour = new Date().getHours();
+              const greeting = hour < 12
+                ? t('ministrySpace', 'goodMorning', 'Good morning')
+                : hour < 18
+                  ? t('ministrySpace', 'goodAfternoon', 'Good afternoon')
+                  : t('ministrySpace', 'goodEvening', 'Good evening');
+              const firstName = (profile?.full_name || '').trim().split(' ')[0];
+              return (
+                <div
+                  className="relative overflow-hidden rounded-3xl p-6 sm:p-8 text-white shadow-lg"
+                  style={{ background: `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}cc 100%)`, boxShadow: `0 12px 40px ${themeColor}40` }}
+                >
+                  <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+                  <div className="pointer-events-none absolute -bottom-28 -left-20 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
+                  <div className="relative">
+                    <p className="text-sm font-medium text-white/80">{greeting}{firstName ? `, ${firstName}` : ''} 👋</p>
+                    <h2 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight truncate">
+                      {t('ministrySpace', 'welcomeTo', 'Welcome to {name}').replace('{name}', ministry.name)}
+                    </h2>
+                    {(ministry.welcome_message || ministry.description) && (
+                      <p className="mt-2 text-white/85 max-w-2xl line-clamp-2">
+                        {ministry.welcome_message || ministry.description}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </Card>
+              );
+            })()}
+
+            {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+              {GROUPS.filter(g => g.id !== 'home').map(g => {
+                const GIcon = g.icon;
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => goToGroup(g)}
+                    className={`flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br ${g.gradient} p-4 text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md`}
+                  >
+                    <GIcon className="h-6 w-6" />
+                    <span className="text-xs font-semibold text-center leading-tight">{navLabel(g)}</span>
+                  </button>
+                );
+              })}
+            </div>
 
             {/* ReKindle Tip — nudge to set up daily reminders (self-hides once set) */}
             <ReminderSetupTip onSetup={() => navigate('/settings/account')} />

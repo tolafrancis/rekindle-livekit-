@@ -763,9 +763,9 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               {myMinistries.map(ministry => {
                 const membership = memberships[ministry.id];
                 return (
-                  <Card 
-                    key={ministry.id} 
-                    className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  <Card
+                    key={ministry.id}
+                    className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl cursor-pointer"
                     onClick={() => handleEnterMinistry(ministry)}
                   >
                     <div 
