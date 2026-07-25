@@ -175,14 +175,27 @@ serve(async (req) => {
           (grp as any)?.owner_id === caller.id || (grp as any)?.leader_id === caller.id;
       }
 
+      let isChannelOwner = false;
+      if (channelId) {
+        const { data: chan } = await supabaseClient
+          .from('live_channels').select('owner_id').eq('id', channelId).maybeSingle();
+        isChannelOwner = (chan as any)?.owner_id === caller.id;
+      }
+
       const ministryScoped = !!ministryId &&
         (targetAudience === 'ministry_members' || notificationType === 'group_broadcast');
+      const channelScoped = !!channelId && targetAudience === 'channel_followers';
       const selfSend = !!userId && userId === caller.id &&
         (notificationType === 'prayer_challenge_reminder' || targetAudience === 'specific_user');
 
       if (ministryScoped) {
         if (!isMinistryAdmin && !isPlatformAdmin) {
           return new Response(JSON.stringify({ error: 'Not authorized to message this ministry' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      } else if (channelScoped) {
+        if (!isChannelOwner && !isPlatformAdmin) {
+          return new Response(JSON.stringify({ error: 'Not authorized to message this channel' }),
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
       } else if (!selfSend && !isPlatformAdmin) {
