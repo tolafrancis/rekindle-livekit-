@@ -14,6 +14,7 @@ import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { useViewHistory } from '../hooks/useViewHistory';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from './viewerGestures';
+import { useGlobalAudio } from '../GlobalAudioContext';
 import { recordDailyActivity } from '../streak';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useUpgradePrompt } from '@rekindle/auth/useUpgradePrompt';
@@ -247,6 +248,8 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
 }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
+  const { reportPlayback, registerControls } = useGlobalAudio();
+  const hasStartedRef = useRef(false);
   const entitlements = useUserEntitlements();
   
   const [allSeries, setAllSeries] = useState<PrayerSeries[]>([]);
@@ -1164,6 +1167,45 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
     if (!progress || !selectedSeries) return 0;
     return (progress.completed_days.length / selectedSeries.total_days) * 100;
   };
+
+  useEffect(() => {
+    const isPlayingAudio = view === 'praying' && isPraying && !isPaused;
+    if (isPlayingAudio) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current) {
+      if (isPlayingAudio) {
+        const musicUrl = getMusicUrl();
+        const track = instrumentalTracks.find(t => t.file_url === musicUrl) || instrumentalTracks[0];
+        reportPlayback({
+          title: `${selectedSeries?.title || 'Prayer Series'} - Day ${currentDay?.day_number || 1}`,
+          subtitle: track?.title || 'Instrumental',
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            togglePauseViewer();
+          }
+        });
+      } else {
+        const musicUrl = getMusicUrl();
+        const track = instrumentalTracks.find(t => t.file_url === musicUrl) || instrumentalTracks[0];
+        reportPlayback({
+          title: `${selectedSeries?.title || 'Prayer Series'} - Day ${currentDay?.day_number || 1}`,
+          subtitle: track?.title || 'Instrumental',
+          isPlaying: false,
+        });
+      }
+    }
+  }, [view, isPraying, isPaused, selectedSeries, currentDay]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   if (loading) {
     return (

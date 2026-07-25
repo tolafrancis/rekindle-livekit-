@@ -11,6 +11,7 @@ import { instrumentalTracks } from '../data/instrumentals';
 import { useLocalizedScripture } from '../useLocalizedScripture';
 import { useLanguage } from '../LanguageContext';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from './viewerGestures';
+import { useGlobalAudio } from '../GlobalAudioContext';
 
 // Scripture within a prayer point — resolves to a published Bible version in the
 // reader's language by reference (falls back to the stored English text).
@@ -66,7 +67,9 @@ export const InteractivePrayerSession: React.FC<Props> = ({
   audioControls
 }) => {
   const { t } = useLanguage();
+  const { reportPlayback, registerControls } = useGlobalAudio();
   const [currentSlide, setCurrentSlide] = useState(0);
+  const hasStartedRef = useRef(false);
 
   // Swipe to navigate prayer slides
   const swipeHandlers = useSwipe({
@@ -229,6 +232,41 @@ export const InteractivePrayerSession: React.FC<Props> = ({
       </div>
     );
   }
+
+  useEffect(() => {
+    const isPlayingAudio = audioStarted && !isPaused && !completed;
+    if (isPlayingAudio) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current) {
+      if (isPlayingAudio) {
+        reportPlayback({
+          title: title || 'Prayer Session',
+          subtitle: track?.title || 'Instrumental',
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            togglePause();
+          }
+        });
+      } else {
+        reportPlayback({
+          title: title || 'Prayer Session',
+          subtitle: track?.title || 'Instrumental',
+          isPlaying: false,
+        });
+      }
+    }
+  }, [audioStarted, isPaused, completed, title, track]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   return (
     <div

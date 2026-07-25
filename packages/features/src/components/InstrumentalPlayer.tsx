@@ -6,6 +6,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '../LanguageContext';
 import { useAuth } from '../AuthContext';
+import { useGlobalAudio } from '../GlobalAudioContext';
 import {
   uploadAndSaveTrack,
   fetchMusicTracks,
@@ -47,9 +48,11 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
 }) => {
   const { t } = useLanguage();
   const { user } = useAuth();
+  const { reportPlayback, registerControls } = useGlobalAudio();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const hasStartedRef = useRef(false);
   const [volume, setVolume] = useState(50);
   const [isMuted, setIsMuted] = useState(false);
   const [isLooping, setIsLooping] = useState(true);
@@ -229,6 +232,42 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
   const filteredTracks = selectedGenre === 'all'
     ? tracks
     : tracks.filter(item => item.category === selectedGenre);
+
+  useEffect(() => {
+    if (isPlaying) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current && currentTrack) {
+      if (isPlaying) {
+        reportPlayback({
+          title: currentTrack.title || 'Instrumental',
+          subtitle: currentTrack.artist || 'Instrumental',
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            togglePlay();
+          },
+          onNext: nextTrack,
+          onPrevious: prevTrack,
+        });
+      } else {
+        reportPlayback({
+          title: currentTrack.title || 'Instrumental',
+          subtitle: currentTrack.artist || 'Instrumental',
+          isPlaying: false,
+        });
+      }
+    }
+  }, [isPlaying, currentTrack]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   if (loading) {
     return (

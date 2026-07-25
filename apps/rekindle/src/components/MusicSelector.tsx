@@ -4,6 +4,7 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { fetchMusicTracks, getTrackById, MusicTrack } from '@/lib/musicStorage';
+import { useGlobalAudio } from '@rekindle/features/GlobalAudioContext';
 import { 
   Search, 
   Music, 
@@ -29,6 +30,8 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({
   showPreview = true,
   compact = false
 }) => {
+  const { reportPlayback, registerControls } = useGlobalAudio();
+  const hasStartedRef = useRef(false);
   const [musicList, setMusicList] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,6 +117,46 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({
   );
 
   const previewTrack = previewTrackId ? musicList.find(m => m.id === previewTrackId) : null;
+
+  useEffect(() => {
+    if (isPlaying) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current && previewTrack) {
+      if (isPlaying) {
+        reportPlayback({
+          title: previewTrack.title || 'Preview',
+          subtitle: previewTrack.artist || 'Music Selector Preview',
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            if (audioRef.current) {
+              if (isPlaying) {
+                audioRef.current.pause();
+              } else {
+                audioRef.current.play();
+              }
+            }
+          }
+        });
+      } else {
+        reportPlayback({
+          title: previewTrack.title || 'Preview',
+          subtitle: previewTrack.artist || 'Music Selector Preview',
+          isPlaying: false,
+        });
+      }
+    }
+  }, [isPlaying, previewTrackId]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   if (compact) {
     return (

@@ -21,6 +21,7 @@ import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useLocalizedScripture } from '../useLocalizedScripture';
 import { getCachedLocalizedScripture } from '../bibleLocalization';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from './viewerGestures';
+import { useGlobalAudio } from '../GlobalAudioContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { instrumentalTracks } from '../data/instrumentals';
 import { SocialShareModal } from './SocialShareModal';
@@ -287,6 +288,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
 }) => {
   const { user, profile } = useAuth();
   const { language, t } = useLanguage();
+  const { reportPlayback, registerControls } = useGlobalAudio();
+  const hasStartedRef = useRef(false);
   const entitlements = useUserEntitlements();
   
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1492,6 +1495,57 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       localized.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
   });
+
+  // Sync background music state (if narration is not active)
+  useEffect(() => {
+    const backgroundMusicPlaying = view === 'reading' && audioStarted && !isPaused;
+    const isNarrationActive = isSpeaking || isAudioActive;
+
+    if (backgroundMusicPlaying && !isNarrationActive) {
+      hasStartedRef.current = true;
+    }
+
+    if (hasStartedRef.current && !isNarrationActive) {
+      const getMusicTrack = () => {
+        const musicId = currentDay?.musicId;
+        if (musicId) {
+          const track = instrumentalTracks.find(t => t.id === String(musicId));
+          if (track) return track;
+        }
+        return instrumentalTracks[0];
+      };
+      const track = getMusicTrack();
+
+      const dayTitle = currentDay ? (getLocalizedDay(currentDay).title || `Day ${currentDay.day_number}`) : 'Devotional Day';
+
+      if (backgroundMusicPlaying) {
+        reportPlayback({
+          title: track?.title || 'Background Instrumental',
+          subtitle: `Devotional: ${dayTitle}`,
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            togglePause();
+          }
+        });
+      } else {
+        reportPlayback({
+          title: track?.title || 'Background Instrumental',
+          subtitle: `Devotional: ${dayTitle}`,
+          isPlaying: false,
+        });
+      }
+    }
+  }, [audioStarted, isPaused, isSpeaking, isAudioActive, currentDay, view]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   if (loading) {
     return (

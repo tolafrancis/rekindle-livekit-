@@ -12,6 +12,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ActiveCallProvider } from "@rekindle/live/ActiveCallContext";
+import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
 import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
@@ -66,11 +67,12 @@ const App = () => {
         <TooltipProvider>
           <AuthProvider>
             <LanguageProvider>
-              <ActiveCallProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <Routes>
+              <GlobalAudioProvider>
+                <ActiveCallProvider>
+                <Toaster />
+                <Sonner />
+                <BrowserRouter>
+                  <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />
                   <Route path="/admin" element={<AdminPage />} />
@@ -130,6 +132,7 @@ const App = () => {
                 <ActiveCallHost />
               </BrowserRouter>
               </ActiveCallProvider>
+              </GlobalAudioProvider>
             </LanguageProvider>
           </AuthProvider>
         </TooltipProvider>
