@@ -1865,7 +1865,19 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // local <video> element keeps pointing at the now-replaced track and
       // goes dark/flickers, even though remote viewers get the new track fine
       // via the SFU. Mirrors the same re-attach toggleCamera() already does.
-      setTimeout(() => attachLocalVideoTrack(), 200);
+      //
+      // A single fixed-delay attempt isn't always enough: the segmentation
+      // model behind blur/virtual-background is a WASM/ML model that has to
+      // load and warm up on first use, and that can take several seconds on a
+      // slower device — a single 200ms reattach can fire before the processor
+      // has actually produced its first composited frame, leaving the local
+      // preview looking stuck until some unrelated re-render (e.g. the
+      // existing periodic 2s track-attach check) happens to catch up.
+      // attachLocalVideoTrack() is already a no-op once the right track is
+      // attached, so retrying it a few times over a few seconds is safe and
+      // makes the local preview catch up as soon as the model is ready,
+      // rather than waiting on a coincidental later re-render.
+      [200, 500, 1000, 1800, 3000].forEach((delay) => setTimeout(() => attachLocalVideoTrack(), delay));
     } catch (e: any) {
       console.error('[Daily] Failed to set video background:', e);
       toast({ title: 'Background Error', description: 'Could not apply the background.', variant: 'destructive' });

@@ -51,6 +51,11 @@ interface DailyVideoCallProps {
   /** Broadcast a reaction emoji — wired to the mini-player's reaction button so the
    *  host can react while the call is minimized (the overlay bar is hidden then). */
   onReact?: (emoji: string) => void;
+  /** Raise-hand lives inside useDailyRoom (internal to this component); this lets
+   *  the parent render its own Raise Hand button — e.g. beside its floating
+   *  ReactionButton — instead of it living in the control bar. Fired on mount and
+   *  whenever handRaised changes. */
+  onRaiseHandStateChange?: (state: { handRaised: boolean; raiseHand: () => void }) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -918,6 +923,7 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
   liveStreamRtmpUrl,
   onSidePanelToggle,
   onReact,
+  onRaiseHandStateChange,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // iOS Safari has no Fullscreen API for arbitrary elements (only <video>), so
@@ -1115,6 +1121,13 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
       });
     }
   }, [isConnected, toast, t]);
+
+  // Raise-hand state/action live in useDailyRoom (internal to this component);
+  // surface them to the parent so it can render its own Raise Hand button (e.g.
+  // beside its floating ReactionButton) instead of the control bar.
+  useEffect(() => {
+    onRaiseHandStateChange?.({ handRaised, raiseHand });
+  }, [handRaised, raiseHand, onRaiseHandStateChange]);
 
   // The host pushes the call's composite to Mux via one RTMP stream. This serves
   // two purposes depending on mode: in a webinar it's the feed the HLS audience
@@ -2017,26 +2030,6 @@ const DailyVideoCallInner: React.FC<DailyVideoCallProps> = ({
               </div>
               <span className="hidden sm:block text-xs font-medium text-gray-300">
                 {isScreenSharing ? t('dailyVideoCall', 'stopShare', 'Stop Share') : t('dailyVideoCall', 'shareScreen', 'Share Screen')}
-              </span>
-            </button>
-
-            {/* Raise Hand button */}
-            <button
-              onClick={raiseHand}
-              disabled={handRaised}
-              className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
-            >
-              <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                transition-all duration-200 transform group-hover:scale-105
-                ${handRaised 
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white' 
-                  : 'bg-gray-700 hover:bg-gray-600 text-white'}
-              `}>
-                <Hand className="h-5 w-5 sm:h-7 sm:w-7" />
-              </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
-                {handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
               </span>
             </button>
 
