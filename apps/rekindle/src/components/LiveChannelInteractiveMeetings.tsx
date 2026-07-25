@@ -1309,22 +1309,21 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
         if (error) throw error;
 
-        // Trigger push notification to ministry members
-        if (ministryId) {
-          supabase.functions.invoke('send-push-notification', {
-            body: {
-              targetAudience: 'ministry_members',
-              ministryId,
-              title: `👥 Meeting Started`,
-              body: `"${meeting.title}" has started. Tap to join now!`,
-              link: `/channel/${channelId}/meeting/${meeting.id}`,
-              senderName: channelName || 'Ministry',
-              notificationType: 'meeting_started',
-              push: true,
-              inApp: true,
-            }
-          }).catch(e => console.warn('[Meeting] Start notification failed:', e?.message));
-        }
+        // Trigger push notification to ministry members or channel followers
+        supabase.functions.invoke('send-push-notification', {
+          body: {
+            targetAudience: ministryId ? 'ministry_members' : 'channel_followers',
+            ministryId: ministryId ?? undefined,
+            channelId,
+            title: `👥 Meeting Started`,
+            body: `"${meeting.title}" has started. Tap to join now!`,
+            link: `/channel/${channelId}/meeting/${meeting.id}`,
+            senderName: channelName || 'Ministry',
+            notificationType: 'meeting_started',
+            push: true,
+            inApp: true,
+          }
+        }).catch(e => console.warn('[Meeting] Start notification failed:', e?.message));
       }
 
       const { error: countError } = await supabase

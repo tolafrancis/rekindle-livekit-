@@ -245,11 +245,22 @@ serve(async (req) => {
         case 'channel_followers': {
           // Followers of a live channel who haven't muted it (used when a channel goes live).
           if (channelId) {
-            const { data } = await supabaseClient
-              .from('channel_followers').select('user_id')
-              .eq('channel_id', channelId)
-              .neq('notifications_enabled', false);
-            baseUserIds = (data ?? []).map((f: any) => f.user_id).filter(Boolean);
+            const [followersRes, channelRes] = await Promise.all([
+              supabaseClient
+                .from('channel_followers')
+                .select('user_id')
+                .eq('channel_id', channelId)
+                .neq('notifications_enabled', false),
+              supabaseClient
+                .from('live_channels')
+                .select('owner_id')
+                .eq('id', channelId)
+                .maybeSingle()
+            ]);
+
+            const ownerId = channelRes.data?.owner_id;
+            const followers = (followersRes.data ?? []).map((f: any) => f.user_id).filter(Boolean);
+            baseUserIds = ownerId ? followers.filter((uid: string) => uid !== ownerId) : followers;
           }
           break;
         }
