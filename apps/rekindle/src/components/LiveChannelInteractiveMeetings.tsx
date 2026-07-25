@@ -181,6 +181,9 @@ const EnhancedVideoCallWrapper = ({
   // True while a DailyVideoCall side panel (chat / host controls) is open — used to
   // hide the Copy Link / End chrome so it doesn't collide with the panel.
   const [panelOpen, setPanelOpen] = useState(false);
+  // In-call raise-hand, reported by DailyVideoCall so the button can sit beside
+  // ReactionButton instead of taking a slot in the control bar.
+  const [callHandRaise, setCallHandRaise] = useState<{ handRaised: boolean; raiseHand: () => void } | null>(null);
 
   // Draggable host "stage" panel position.
   const [stagePanelPos, setStagePanelPos] = useState({ x: 0, y: 0 });
@@ -439,16 +442,32 @@ const EnhancedVideoCallWrapper = ({
         liveStreamRtmpUrl={isHost ? rtmpUrl : undefined}
         onSidePanelToggle={setPanelOpen}
         onReact={sendReaction}
+        onRaiseHandStateChange={setCallHandRaise}
       />
 
       {/* Floating reactions + a single reaction button that opens a popover just
           above the control bar — available in every meeting, not just webinars
-          (transport is Supabase realtime broadcast). HIDDEN in PiP mode. */}
+          (transport is Supabase realtime broadcast). HIDDEN in PiP mode. Raise
+          Hand sits right beside it (moved out of the control bar, which was too
+          cramped on mobile). */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
-        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50">
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
           <ReactionButton onReact={sendReaction} />
+          {callHandRaise && (
+            <button
+              type="button"
+              onClick={callHandRaise.raiseHand}
+              disabled={callHandRaise.handRaised}
+              title={callHandRaise.handRaised ? 'Hand Raised' : 'Raise Hand'}
+              className={`flex h-10 w-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
+                callHandRaise.handRaised ? 'bg-amber-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
+              }`}
+            >
+              <Hand className="h-5 w-5" />
+            </button>
+          )}
         </div>
       )}
 
@@ -1622,7 +1641,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             variant="outline"
                             size="icon"
@@ -1786,7 +1805,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             variant="outline"
                             size="icon"

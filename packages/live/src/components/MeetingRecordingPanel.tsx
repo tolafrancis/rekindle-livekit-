@@ -393,6 +393,36 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
                   View Insights
                 </Button>
               )}
+
+              {/* The "Show Transcript" button above only toggled this state — it
+                  never actually rendered anything in this compact overlay (the
+                  live transcript list only existed in the full, outside-the-call
+                  panel below). Same merged, speaker-attributed stream as there. */}
+              {showTranscriptPanel && (
+                <div className="max-h-40 overflow-y-auto rounded-lg bg-black/40 p-2 text-[11px] text-gray-200 space-y-1">
+                  {!notes.isSupported && (
+                    <p className="text-amber-400">
+                      This browser can’t transcribe speech. Try Chrome.
+                    </p>
+                  )}
+                  {notes.error && <p className="text-red-400">{notes.error}</p>}
+                  {notes.isSupported && !notes.error && notes.lines.length === 0 && !notes.interimText && (
+                    <p className="text-gray-500">No speech captured yet…</p>
+                  )}
+                  {notes.lines.map((l, i) => (
+                    <p key={`${l.timestamp}-${i}`}>
+                      <span className="text-purple-300 font-medium">{l.speaker}:</span>{' '}
+                      <span>{l.text}</span>
+                    </p>
+                  ))}
+                  {notes.interimText && (
+                    <p className="text-gray-400 italic">
+                      <span className="text-purple-300/70 font-medium">{speakerName}:</span>{' '}
+                      {notes.interimText}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

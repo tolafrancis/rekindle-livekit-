@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Button } from '@rekindle/ui/button';
 import { toast } from '@rekindle/ui/use-toast';
-import { Sparkles, Ban, Check, ImagePlus } from 'lucide-react';
+import { Sparkles, Ban, Check, ImagePlus, Loader2 } from 'lucide-react';
 
 const MAX_BG_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -38,7 +38,18 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
   const fileRef = useRef<HTMLInputElement>(null);
   const [customUrl, setCustomUrl] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  // The segmentation model behind blur/virtual-background has to load and warm
+  // up on first use — that can take a few seconds on a slower device, so this
+  // gives visible feedback instead of the picker looking like the click did
+  // nothing (matches the reattach retry window in useDailyRoom's setVideoBackground).
+  const [applying, setApplying] = useState(false);
   useEffect(() => () => { if (customUrl) URL.revokeObjectURL(customUrl); }, [customUrl]);
+
+  const select = (mode: string) => {
+    setApplying(mode !== 'none');
+    onChange(mode);
+    setTimeout(() => setApplying(false), 3200);
+  };
 
   const onUpload = (file?: File) => {
     if (!file) return;
@@ -53,7 +64,7 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
     if (customUrl) URL.revokeObjectURL(customUrl);
     const url = URL.createObjectURL(file);
     setCustomUrl(url);
-    onChange(url);
+    select(url);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -63,24 +74,24 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
       <PopoverContent align={align} className="w-56 p-3">
         <p className="text-xs font-semibold text-gray-700 mb-2">Background</p>
         <div className="grid grid-cols-3 gap-2">
-          <button type="button" onClick={() => onChange('none')} className={`${cell} ${sel(value === 'none')} bg-gray-50 text-gray-600`}>
+          <button type="button" onClick={() => select('none')} className={`${cell} ${sel(value === 'none')} bg-gray-50 text-gray-600`}>
             <Ban className="h-4 w-4 mr-1" /> None
             {value === 'none' && <Check className="absolute top-1 right-1 h-3 w-3 text-purple-600" />}
           </button>
-          <button type="button" onClick={() => onChange('blur')} className={`${cell} ${sel(value === 'blur')} bg-gradient-to-br from-gray-200 to-gray-400 text-gray-700 backdrop-blur`}>
+          <button type="button" onClick={() => select('blur')} className={`${cell} ${sel(value === 'blur')} bg-gradient-to-br from-gray-200 to-gray-400 text-gray-700 backdrop-blur`}>
             <Sparkles className="h-4 w-4 mr-1" /> Blur
-            {value === 'blur' && <Check className="absolute top-1 right-1 h-3 w-3 text-purple-600" />}
+            {value === 'blur' && (applying ? <Loader2 className="absolute top-1 right-1 h-3 w-3 text-purple-600 animate-spin" /> : <Check className="absolute top-1 right-1 h-3 w-3 text-purple-600" />)}
           </button>
           {PRESETS.map((p) => (
             <button
               key={p.url}
               type="button"
-              onClick={() => onChange(p.url)}
+              onClick={() => select(p.url)}
               title={p.label}
               className={`${cell} ${sel(value === p.url)} bg-cover bg-center`}
               style={{ backgroundImage: `url(${p.url})` }}
             >
-              {value === p.url && <Check className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />}
+              {value === p.url && (applying ? <Loader2 className="absolute top-1 right-1 h-3 w-3 text-white animate-spin drop-shadow" /> : <Check className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />)}
             </button>
           ))}
 
@@ -88,12 +99,12 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
           {customUrl && (
             <button
               type="button"
-              onClick={() => onChange(customUrl)}
+              onClick={() => select(customUrl)}
               title="Your image"
               className={`${cell} ${sel(value === customUrl)} bg-cover bg-center`}
               style={{ backgroundImage: `url(${customUrl})` }}
             >
-              {value === customUrl && <Check className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />}
+              {value === customUrl && (applying ? <Loader2 className="absolute top-1 right-1 h-3 w-3 text-white animate-spin drop-shadow" /> : <Check className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />)}
             </button>
           )}
 
@@ -114,7 +125,11 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
             <ImagePlus className="h-4 w-4 mr-1" /> Upload
           </button>
         </div>
-        <p className="text-[10px] text-gray-400 mt-2">Applies to your camera. Turn the camera on to see it. Uploads stay on your device.</p>
+        <p className="text-[10px] text-gray-400 mt-2">
+          {applying
+            ? 'Applying — this can take a few seconds the first time on this device…'
+            : 'Applies to your camera. Turn the camera on to see it. Uploads stay on your device.'}
+        </p>
         <Button type="button" size="sm" className="w-full mt-2 bg-purple-600 hover:bg-purple-700" onClick={() => setOpen(false)}>
           Done
         </Button>
