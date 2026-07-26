@@ -1,0 +1,458 @@
+// Supabase Edge Function: process-birthday-wishes
+//
+// PURPOSE
+//   For each ministry that has birthday wishes ENABLED, find members whose
+//   birthday is "today" in that ministry's configured timezone and wish them
+//   via whichever channel(s) the ministry has connected:
+//     - WhatsApp: the ministry's OWN approved template via the ministry's OWN
+//       WABA (ministry_whatsapp_configs).
+//     - SMS: the ministry's OWN Twilio number (ministry_sms_configs) — fully
+//       independent of WhatsApp; a ministry can run one, the other, or both.
+//
+//   Members do NOT opt in — every member with a date_of_birth is wished,
+//   unless they have set birthday_wishes_opt_out = true.
+//
+// TRIGGER
+//   Called hourly by pg_cron (see birthday-wishes.sql). It is timezone-aware:
+//   for each ministry it only sends when the ministry's LOCAL hour == send_hour.
+//   A per-(ministry,user,year,channel) unique log row guarantees one wish per
+//   channel per year — so a member can get both a WhatsApp message and an SMS
+//   the same day without either blocking the other.
+//
+//   Body params (all optional, for manual/testing runs from the admin panel):
+//     { ministryId?: string, force?: boolean }
+//   - ministryId : process only this ministry
+//   - force      : ignore the send_hour gate (send to today's birthdays now)
+//
+// DEPLOY
+//   supabase functions deploy process-birthday-wishes  (JWT verification OFF —
+//   it is called by pg_cron with the service-role bearer token)
+//
+// ENV SECRETS (Supabase Dashboard → Edge Functions)
+//   SUPABASE_URL                auto-injected
+//   SUPABASE_SERVICE_ROLE_KEY   auto-injected
+//   ENCRYPTION_KEY              32-byte hex (same key used by
+//                               ministry-whatsapp-broadcast / sms-save-credentials)
+
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const WHATSAPP_API_VERSION = 'v20.0';
+const WHATSAPP_BASE_URL = `https://graph.facebook.com/${WHATSAPP_API_VERSION}`;
+
+interface RunBody {
+  ministryId?: string;
+  force?: boolean;
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  let body: RunBody = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+  const { ministryId, force } = body;
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const encKey = Deno.env.get('ENCRYPTION_KEY') ?? '';
+
+  try {
+    // ── 1. Load enabled ministries ─────────────────────────────────────────
+    let settingsQuery = supabase
+      .from('ministry_birthday_settings')
+      .select('*')
+      .eq('enabled', true);
+    if (ministryId) settingsQuery = settingsQuery.eq('ministry_id', ministryId);
+
+    const { data: settingsList, error: settingsErr } = await settingsQuery;
+    if (settingsErr) return jsonError(settingsErr.message, 500);
+
+    const summary: any[] = [];
+
+    for (const settings of settingsList ?? []) {
+      const mId = settings.ministry_id as string;
+      const tz = settings.timezone || 'UTC';
+      const sendHour = typeof settings.send_hour === 'number' ? settings.send_hour : 9;
+
+      // Local date parts in the ministry's timezone
+      const local = localParts(tz);
+      if (!force && local.hour !== sendHour) {
+        summary.push({ ministry_id: mId, skipped: 'not send hour', local_hour: local.hour, send_hour: sendHour });
+        continue;
+      }
+
+      const wantsWhatsApp = !!settings.template_name;
+      const wantsSms = !!settings.sms_enabled && !!settings.sms_message;
+
+      if (!wantsWhatsApp && !wantsSms) {
+        summary.push({ ministry_id: mId, skipped: 'no channel configured' });
+        continue;
+      }
+
+      // ── 2. Ministry name (for the {ministry_name} variable) ─────────────
+      const { data: ministryRow } = await supabase
+        .from('ministry_groups')
+        .select('name')
+        .eq('id', mId)
+        .maybeSingle();
+      const ministryName = ministryRow?.name ?? '';
+
+      // ── 3. Members of this ministry with a DOB, joined to their profile ──
+      const { data: memberRows } = await supabase
+        .from('ministry_group_members')
+        .select('user_id, user_profiles!inner(id, full_name, phone, date_of_birth, birthday_wishes_opt_out)')
+        .eq('group_id', mId);
+
+      const todaysBirthdays = (memberRows ?? [])
+        .map((r: any) => r.user_profiles)
+        .filter((p: any) =>
+          p &&
+          p.date_of_birth &&
+          p.birthday_wishes_opt_out !== true &&
+          p.phone &&
+          isSameMonthDay(p.date_of_birth, local.month, local.day),
+        );
+
+      if (todaysBirthdays.length === 0) {
+        summary.push({ ministry_id: mId, birthdays: 0 });
+        continue;
+      }
+
+      const userIds = todaysBirthdays.map((p: any) => p.id ?? p.user_id).filter(Boolean);
+      const result: any = { ministry_id: mId, birthdays: todaysBirthdays.length };
+
+      // ── 4. WhatsApp channel ──────────────────────────────────────────────
+      if (wantsWhatsApp) {
+        result.whatsapp = await sendWhatsAppBirthdays({
+          supabase, encKey, mId, sendHour, local, settings, ministryName, todaysBirthdays, userIds,
+        });
+      }
+
+      // ── 5. SMS channel — fully independent of WhatsApp ──────────────────
+      if (wantsSms) {
+        result.sms = await sendSmsBirthdays({
+          supabase, encKey, mId, local, settings, ministryName, todaysBirthdays, userIds,
+        });
+      }
+
+      // Aggregate top-level sent/failed so existing callers (the admin panel's
+      // "Send today's now" toast) reading result.sent/result.birthdays keep working.
+      result.sent = (result.whatsapp?.sent ?? 0) + (result.sms?.sent ?? 0);
+      result.failed = (result.whatsapp?.failed ?? 0) + (result.sms?.failed ?? 0);
+
+      summary.push(result);
+    }
+
+    return jsonOk({ ran_at: new Date().toISOString(), forced: !!force, ministries: summary });
+  } catch (err: any) {
+    console.error('process-birthday-wishes error:', err);
+    return jsonError(err?.message ?? 'Unexpected error', 500);
+  }
+});
+
+// ── Channel senders ───────────────────────────────────────────────────────────
+
+async function sendWhatsAppBirthdays(args: {
+  supabase: any; encKey: string; mId: string; sendHour: number; local: { year: number };
+  settings: any; ministryName: string; todaysBirthdays: any[]; userIds: string[];
+}) {
+  const { supabase, encKey, mId, local, settings, ministryName, todaysBirthdays, userIds } = args;
+
+  const { data: wabaConfig } = await supabase
+    .from('ministry_whatsapp_configs')
+    .select('*')
+    .eq('ministry_id', mId)
+    .single();
+
+  if (!wabaConfig || wabaConfig.connection_status !== 'connected') {
+    return { skipped: 'whatsapp not connected' };
+  }
+
+  const provider = wabaConfig.provider ?? 'meta';
+  const accessToken = provider === 'twilio'
+    ? await decryptToken(wabaConfig.twilio_auth_token_encrypted, encKey)
+    : await decryptToken(wabaConfig.access_token_encrypted, encKey);
+  if (!accessToken) return { skipped: 'could not decrypt credentials' };
+
+  // Skip members already wished via WhatsApp this year (dedup, per channel).
+  const { data: alreadySent } = await supabase
+    .from('ministry_birthday_send_log')
+    .select('user_id')
+    .eq('ministry_id', mId)
+    .eq('send_year', local.year)
+    .eq('channel', 'whatsapp')
+    .in('user_id', userIds);
+  const sentSet = new Set((alreadySent ?? []).map((r: any) => r.user_id));
+
+  const variableMapping: string[] = Array.isArray(settings.variable_mapping)
+    ? settings.variable_mapping
+    : ['member_name', 'ministry_name'];
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const member of todaysBirthdays) {
+    const memberUserId = member.id ?? member.user_id;
+    if (sentSet.has(memberUserId)) continue;
+
+    const params = variableMapping.map((token) =>
+      resolveToken(token, { memberName: member.full_name ?? '', ministryName }),
+    );
+
+    const formattedPhone = String(member.phone).replace(/[^\d+]/g, '').replace(/^\+/, '');
+
+    let ok = false;
+    let errMsg: string | null = null;
+    try {
+      if (provider === 'twilio') {
+        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${wabaConfig.twilio_account_sid}/Messages.json`;
+        const credentials = btoa(`${wabaConfig.twilio_account_sid}:${accessToken}`);
+        const isSid = /^HX[a-f0-9]{32}$/.test(settings.template_name);
+        const reqParams = new URLSearchParams(
+          isSid
+            ? {
+                From: wabaConfig.twilio_from_number,
+                To: `whatsapp:+${formattedPhone}`,
+                ContentSid: settings.template_name,
+                ...(params.length
+                  ? { ContentVariables: JSON.stringify(Object.fromEntries(params.map((v, i) => [String(i + 1), v]))) }
+                  : {}),
+              }
+            : {
+                From: wabaConfig.twilio_from_number,
+                To: `whatsapp:+${formattedPhone}`,
+                Body: params[0] ?? 'Happy Birthday!',
+              },
+        );
+        const res = await fetch(twilioUrl, {
+          method: 'POST',
+          headers: { Authorization: `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: reqParams.toString(),
+        });
+        const data = await res.json();
+        ok = res.ok && !!data.sid;
+        if (!ok) errMsg = data.message ?? data.error_message ?? `HTTP ${res.status}`;
+      } else {
+        const payload = buildTemplatePayload(formattedPhone, settings.template_name, params, settings.template_language);
+        const res = await fetch(`${WHATSAPP_BASE_URL}/${wabaConfig.phone_number_id}/messages`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        ok = res.ok && !!data.messages?.[0]?.id;
+        if (!ok) errMsg = data.error?.message ?? `HTTP ${res.status}`;
+      }
+    } catch (err: any) {
+      ok = false;
+      errMsg = err?.message ?? 'send error';
+    }
+
+    if (ok) sent++; else failed++;
+
+    // Log (also enforces one-per-year-per-channel via the unique constraint).
+    await supabase.from('ministry_birthday_send_log').insert({
+      ministry_id: mId,
+      user_id: memberUserId,
+      phone: member.phone,
+      member_name: member.full_name ?? '',
+      template_name: settings.template_name,
+      channel: 'whatsapp',
+      send_year: local.year,
+      status: ok ? 'sent' : 'failed',
+      error: errMsg,
+      sent_at: new Date().toISOString(),
+    });
+  }
+
+  return { sent, failed };
+}
+
+async function sendSmsBirthdays(args: {
+  supabase: any; encKey: string; mId: string; local: { year: number };
+  settings: any; ministryName: string; todaysBirthdays: any[]; userIds: string[];
+}) {
+  const { supabase, encKey, mId, local, settings, ministryName, todaysBirthdays, userIds } = args;
+
+  const { data: smsConfig } = await supabase
+    .from('ministry_sms_configs')
+    .select('*')
+    .eq('ministry_id', mId)
+    .single();
+
+  if (!smsConfig || smsConfig.connection_status !== 'connected') {
+    return { skipped: 'sms not connected' };
+  }
+
+  const authToken = await decryptToken(smsConfig.twilio_auth_token_encrypted, encKey);
+  if (!authToken) return { skipped: 'could not decrypt sms credentials' };
+
+  // Skip members already wished via SMS this year (dedup, per channel — fully
+  // independent of the WhatsApp dedup above, so both can fire the same day).
+  const { data: alreadySent } = await supabase
+    .from('ministry_birthday_send_log')
+    .select('user_id')
+    .eq('ministry_id', mId)
+    .eq('send_year', local.year)
+    .eq('channel', 'sms')
+    .in('user_id', userIds);
+  const sentSet = new Set((alreadySent ?? []).map((r: any) => r.user_id));
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const member of todaysBirthdays) {
+    const memberUserId = member.id ?? member.user_id;
+    if (sentSet.has(memberUserId)) continue;
+
+    const text = String(settings.sms_message)
+      .replaceAll('{member_name}', member.full_name ?? 'friend')
+      .replaceAll('{ministry_name}', ministryName);
+
+    const formattedPhone = String(member.phone).replace(/[^\d+]/g, '').replace(/^\+/, '');
+
+    let ok = false;
+    let errMsg: string | null = null;
+    try {
+      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${smsConfig.twilio_account_sid}/Messages.json`;
+      const credentials = btoa(`${smsConfig.twilio_account_sid}:${authToken}`);
+      const reqParams = new URLSearchParams({
+        From: smsConfig.from_number,
+        To: `+${formattedPhone}`,
+        Body: text,
+      });
+      const res = await fetch(twilioUrl, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${credentials}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: reqParams.toString(),
+      });
+      const data = await res.json();
+      ok = res.ok && !!data.sid;
+      if (!ok) errMsg = data.message ?? data.error_message ?? `HTTP ${res.status}`;
+    } catch (err: any) {
+      ok = false;
+      errMsg = err?.message ?? 'send error';
+    }
+
+    if (ok) sent++; else failed++;
+
+    await supabase.from('ministry_birthday_send_log').insert({
+      ministry_id: mId,
+      user_id: memberUserId,
+      phone: member.phone,
+      member_name: member.full_name ?? '',
+      template_name: null,
+      channel: 'sms',
+      send_year: local.year,
+      status: ok ? 'sent' : 'failed',
+      error: errMsg,
+      sent_at: new Date().toISOString(),
+    });
+  }
+
+  return { sent, failed };
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Current year/month/day/hour in an IANA timezone. */
+function localParts(timeZone: string): { year: number; month: number; day: number; hour: number } {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(new Date());
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    let hour = get('hour');
+    if (hour === 24) hour = 0; // some runtimes emit 24 for midnight
+    return { year: get('year'), month: get('month'), day: get('day'), hour };
+  } catch {
+    const d = new Date();
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(), hour: d.getUTCHours() };
+  }
+}
+
+/** Does a YYYY-MM-DD date string share month+day with the given values? */
+function isSameMonthDay(dob: string, month: number, day: number): boolean {
+  // dob is a DATE → 'YYYY-MM-DD'
+  const m = Number(dob.slice(5, 7));
+  const d = Number(dob.slice(8, 10));
+  return m === month && d === day;
+}
+
+function resolveToken(token: string, ctx: { memberName: string; ministryName: string }): string {
+  switch (token) {
+    case 'member_name':
+      return ctx.memberName || 'friend';
+    case 'member_first_name':
+      return (ctx.memberName || 'friend').trim().split(/\s+/)[0];
+    case 'ministry_name':
+      return ctx.ministryName || '';
+    default:
+      return token; // literal/static text
+  }
+}
+
+function buildTemplatePayload(phone: string, templateName: string, params: string[], language?: string): object {
+  return {
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: language ?? 'en_US' },
+      components: params.length
+        ? [{ type: 'body', parameters: params.map((v) => ({ type: 'text', text: v })) }]
+        : [],
+    },
+  };
+}
+
+// AES-GCM decrypt — mirrors ministry-whatsapp-broadcast / sms-save-credentials
+async function decryptToken(encrypted: string, keyHex: string): Promise<string | null> {
+  try {
+    if (!keyHex || !encrypted) return encrypted;
+    const keyData = hexToBytes(keyHex.slice(0, 64));
+    const key = await crypto.subtle.importKey('raw', keyData, { name: 'AES-GCM' }, false, ['decrypt']);
+    const combined = hexToBytes(encrypted);
+    const iv = combined.slice(0, 12);
+    const data = combined.slice(12);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    return new TextDecoder().decode(decrypted);
+  } catch (err) {
+    console.error('Decrypt error — returning token as-is (may be unencrypted in dev):', err);
+    return encrypted;
+  }
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+function jsonOk(b: object) {
+  return new Response(JSON.stringify(b), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+function jsonError(message: string, status: number) {
+  return new Response(JSON.stringify({ error: message }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}

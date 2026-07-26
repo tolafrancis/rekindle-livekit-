@@ -26,12 +26,13 @@ export type MinistryCapability =
   | 'manage_donations'
   | 'manage_events'
   | 'manage_gift_aid'
+  | 'manage_video_messages'
   | 'delete_ministry'
   | 'transfer_ownership';
 
 const ALL: MinistryCapability[] = [
   'manage_content', 'manage_members', 'manage_roles', 'manage_donations',
-  'manage_events', 'manage_gift_aid', 'delete_ministry', 'transfer_ownership',
+  'manage_events', 'manage_gift_aid', 'manage_video_messages', 'delete_ministry', 'transfer_ownership',
 ];
 
 // Everything except the two owner-only powers.

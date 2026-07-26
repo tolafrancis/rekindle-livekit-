@@ -1,0 +1,17 @@
+{
+  "name": "video-transcode-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Polls ministry_video_messages for status='processing', transcodes the raw upload in R2 to an HLS ladder + thumbnail + WebVTT captions, uploads results back to R2, and flips status to 'ready'. Runs OUTSIDE Supabase — ffmpeg cannot run in Deno Deploy edge functions.",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

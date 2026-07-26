@@ -22,6 +22,7 @@ export const DEEP_LINK_TAB: Record<string, string> = {
   'prayer-topics': 'prayer-library',
   'prayer-watch': 'prayer-library',
   'ministry-prayer': 'ministries',
+  'ministry-videos': 'ministries',
   'books': 'books',
 };
 

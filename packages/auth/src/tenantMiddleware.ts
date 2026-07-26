@@ -114,7 +114,7 @@ export interface MinistrySummary {
  */
 export async function getUserMinistries(userId: string): Promise<MinistrySummary[]> {
   try {
-    const [{ data: memberships }, { data: owned }] = await Promise.all([
+    const [membershipsRes, ownedRes] = await Promise.all([
       supabase
         .from('ministry_group_members')
         .select('group_id, ministry_id, role, is_leader')
@@ -124,6 +124,17 @@ export async function getUserMinistries(userId: string): Promise<MinistrySummary
         .select('id, name, logo_url, theme_color, owner_id, leader_id, settings')
         .or(`owner_id.eq.${userId},leader_id.eq.${userId}`),
     ]);
+    // supabase-js doesn't throw on RLS-denied/failed queries by default — it
+    // returns { data: null, error }. Left unchecked, a query that fails right
+    // after login (session not fully attached to the client yet) silently
+    // looks identical to "this user really has zero ministries", and nothing
+    // ever retries since the caller only re-fetches when the user id changes.
+    // Throwing here routes it through the catch below instead of pretending
+    // the user has no ministries.
+    if (membershipsRes.error) throw membershipsRes.error;
+    if (ownedRes.error) throw ownedRes.error;
+    const memberships = membershipsRes.data;
+    const owned = ownedRes.data;
 
     const memberIds = Array.from(
       new Set((memberships || []).map((m) => m.group_id || m.ministry_id).filter(Boolean)),
@@ -131,10 +142,11 @@ export async function getUserMinistries(userId: string): Promise<MinistrySummary
 
     let memberGroups: any[] = [];
     if (memberIds.length) {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ministry_groups')
         .select('id, name, logo_url, theme_color, owner_id, leader_id, settings')
         .in('id', memberIds as string[]);
+      if (error) throw error;
       memberGroups = data || [];
     }
 

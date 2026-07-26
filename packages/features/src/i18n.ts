@@ -5621,7 +5621,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "messagesSent": "{sent} of {birthdays} birthday message(s) sent.",
     "failedRun": "Failed to run birthday wishes",
     "birthdayWishes": "Birthday Wishes",
-    "headerDesc": "Automatically wish {name} a happy birthday on their day, via your own WhatsApp Business template.",
+    "headerDesc": "Automatically wish {name} a happy birthday on their day, via WhatsApp, SMS, or both.",
     "yourMembers": "your members",
     "sendTodaysNow": "Send today's now",
     "enableBirthdayWishes": "Enable birthday wishes",

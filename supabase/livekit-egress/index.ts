@@ -147,7 +147,7 @@ serve(async (req) => {
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
         segmentDuration: 4,
-        s3,
+        output: { case: 's3', value: s3 },
       });
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
@@ -197,7 +197,7 @@ serve(async (req) => {
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
         segmentDuration: 4,
-        s3,
+        output: { case: 's3', value: s3 },
       });
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
