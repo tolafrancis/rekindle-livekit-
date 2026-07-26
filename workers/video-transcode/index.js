@@ -32,6 +32,7 @@
 // 0257 — FOR UPDATE SKIP LOCKED), so two instances polling at once can't
 // grab the same row.
 
+import 'dotenv/config'; // loads .env into process.env — must run before any env() calls below
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { execFile } from 'node:child_process';
