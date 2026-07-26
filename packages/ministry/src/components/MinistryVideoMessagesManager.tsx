@@ -630,9 +630,14 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
                   <div className="space-y-2">
                     <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
                       {previewUrl ? (
-                        <video src={previewUrl} controls className="w-full h-full" />
+                        // key forces a fresh <video> element instead of React reusing the
+                        // live-preview node below — a <video> that ever had .srcObject set
+                        // permanently ignores a later src attribute per the HTML spec, so
+                        // reusing the same element left this stuck showing the (now-stopped)
+                        // camera stream instead of the recorded blob.
+                        <video key="playback" src={previewUrl} controls className="w-full h-full" />
                       ) : (
-                        <video ref={previewVideoRef} muted playsInline className="w-full h-full object-contain" />
+                        <video key="live" ref={previewVideoRef} muted playsInline className="w-full h-full object-contain" />
                       )}
                     </div>
                     <div className="flex gap-2">
