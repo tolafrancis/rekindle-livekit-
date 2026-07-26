@@ -34,6 +34,11 @@
 
 import 'dotenv/config'; // loads .env into process.env — must run before any env() calls below
 import { createClient } from '@supabase/supabase-js';
+// supabase-js always spins up a realtime/WebSocket client internally (even
+// though this worker never subscribes to anything) and Node 20 doesn't expose
+// a native WebSocket the way it expects — only Node 22+ does. Pass the `ws`
+// package explicitly so client construction doesn't throw on Node 18/20.
+import ws from 'ws';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -58,7 +63,7 @@ const env = (name, fallback) => process.env[name] ?? fallback;
 const supabase = createClient(
   env('SUPABASE_URL'),
   env('SUPABASE_SERVICE_ROLE_KEY'),
-  { auth: { autoRefreshToken: false, persistSession: false } },
+  { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } },
 );
 
 const s3 = new S3Client({
