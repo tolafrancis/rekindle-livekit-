@@ -481,6 +481,26 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     }
   }, [activeTab, ministry?.id]);
 
+  // Refetch video messages whenever Home becomes active — publishing happens in
+  // a separate admin view (MinistryManagement) with no shared live state, so
+  // without this the homepage widget would keep showing whatever was loaded on
+  // mount until a full page refresh.
+  useEffect(() => {
+    if (activeTab !== 'home' || !ministry?.id) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from('ministry_video_messages')
+        .select('*')
+        .eq('ministry_id', ministry.id)
+        .in('status', ['published', 'archived'])
+        .order('is_pinned', { ascending: false })
+        .order('display_order', { ascending: true, nullsFirst: false })
+        .order('published_at', { ascending: false });
+      if (error) { console.error('Error refreshing video messages:', error); return; }
+      setVideoMessages(data || []);
+    })();
+  }, [activeTab, ministry?.id]);
+
   const handleCreateAnnouncement = async () => {
     if (!announcementForm.title.trim()) {
       toast({ title: t('ministrySpace', 'error', 'Error'), description: t('ministrySpace', 'titleRequired', 'Title is required'), variant: 'destructive' });
