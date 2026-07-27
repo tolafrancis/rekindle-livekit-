@@ -40,6 +40,8 @@ export interface MusicTrack {
   is_published?: boolean;
   is_public?: boolean;
   uploaded_by?: string;
+  ministry_id?: string;
+  file_size_bytes?: number;
   created_at?: string;
 }
 
@@ -154,6 +156,8 @@ export const saveMusicTrack = async (
         is_published: track.is_published ?? true,
         is_public: track.is_public ?? true,
         uploaded_by: track.uploaded_by || null,
+        ministry_id: track.ministry_id || null,
+        file_size_bytes: track.file_size_bytes ?? null,
         created_at: new Date().toISOString()
       })
       .select()
@@ -183,6 +187,10 @@ export const uploadAndSaveTrack = async (
     is_published?: boolean;
     is_public?: boolean;
     uploaded_by?: string;
+    /** The ministry this upload counts against for storage billing. Leave
+     * unset for ReKindle-shared/consumer-app uploads — those aren't
+     * ministry-billed. */
+    ministry_id?: string;
   } = {}
 ): Promise<{ success: boolean; track?: MusicTrack; error?: string }> => {
   // Upload file
@@ -190,10 +198,10 @@ export const uploadAndSaveTrack = async (
   if (!uploadResult.success || !uploadResult.publicUrl) {
     return { success: false, error: uploadResult.error };
   }
-  
+
   // Extract title from filename if not provided
   const title = metadata.title || file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
-  
+
   // Save metadata
   const saveResult = await saveMusicTrack({
     title,
@@ -202,7 +210,9 @@ export const uploadAndSaveTrack = async (
     category: metadata.category || 'personal',
     is_published: metadata.is_published ?? true,
     is_public: metadata.is_public ?? true,
-    uploaded_by: metadata.uploaded_by
+    uploaded_by: metadata.uploaded_by,
+    ministry_id: metadata.ministry_id,
+    file_size_bytes: file.size,
   });
   
   if (!saveResult.success) {

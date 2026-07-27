@@ -154,13 +154,13 @@ async function processOne(job) {
     });
 
     const prefix = `processed/${ministryId}/${videoId}`;
-    await uploadDirToR2(hlsDir, `${prefix}/hls`);
-    await uploadFileToR2(thumbnailPath, `${prefix}/thumbnail.jpg`, 'image/jpeg');
+    let bytesUploaded = await uploadDirToR2(hlsDir, `${prefix}/hls`);
+    bytesUploaded += await uploadFileToR2(thumbnailPath, `${prefix}/thumbnail.jpg`, 'image/jpeg');
     let captionsUrl = null;
     if (captionsVtt) {
       const vttPath = path.join(workDir, 'captions.vtt');
       await writeFile(vttPath, captionsVtt, 'utf8');
-      await uploadFileToR2(vttPath, `${prefix}/captions.vtt`, 'text/vtt');
+      bytesUploaded += await uploadFileToR2(vttPath, `${prefix}/captions.vtt`, 'text/vtt');
       captionsUrl = `${PUBLIC_BASE}/${prefix}/captions.vtt`;
     }
 
@@ -174,7 +174,14 @@ async function processOne(job) {
       updated_at: new Date().toISOString(),
     }).eq('id', videoId);
 
-    console.log(`[video-transcode] ${videoId} -> ready`);
+    // Best-effort — a metering failure shouldn't fail a job that otherwise
+    // transcoded and published fine.
+    await supabase.rpc('increment_ministry_usage', {
+      p_ministry_id: ministryId,
+      p_bytes_delta: bytesUploaded,
+    }).catch((err) => console.warn(`[video-transcode] usage metering failed for ${videoId}:`, err.message));
+
+    console.log(`[video-transcode] ${videoId} -> ready (${bytesUploaded} bytes)`);
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
@@ -258,23 +265,26 @@ async function downloadFromR2(key, destPath) {
 async function uploadFileToR2(filePath, key, contentType) {
   const body = await readFile(filePath);
   await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }));
+  return body.length;
 }
 
 async function uploadDirToR2(dirPath, prefix) {
+  let bytes = 0;
   const entries = await readdir(dirPath, { withFileTypes: true });
   for (const entry of entries) {
     const full = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
-      await uploadDirToR2(full, `${prefix}/${entry.name}`);
+      bytes += await uploadDirToR2(full, `${prefix}/${entry.name}`);
     } else {
       const contentType = entry.name.endsWith('.m3u8')
         ? 'application/vnd.apple.mpegurl'
         : entry.name.endsWith('.ts')
         ? 'video/mp2t'
         : 'application/octet-stream';
-      await uploadFileToR2(full, `${prefix}/${entry.name}`, contentType);
+      bytes += await uploadFileToR2(full, `${prefix}/${entry.name}`, contentType);
     }
   }
+  return bytes;
 }
 
 function sleep(ms) {

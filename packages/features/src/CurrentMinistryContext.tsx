@@ -34,6 +34,13 @@ export function useCurrentMinistry(): CurrentMinistryContextValue {
   return ctx;
 }
 
+/** Same as useCurrentMinistry, but returns null instead of throwing when
+ * there's no CurrentMinistryProvider in the tree — for components shared
+ * with apps (the consumer app) that don't mount one. */
+export function useCurrentMinistryOptional(): CurrentMinistryContextValue | null {
+  return useContext(CurrentMinistryContext) ?? null;
+}
+
 function readStored(): string | null {
   try {
     return localStorage.getItem(STORAGE_KEY);
