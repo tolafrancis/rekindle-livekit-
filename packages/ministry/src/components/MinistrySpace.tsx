@@ -42,6 +42,7 @@ const MINISTRY_NAV = [
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
+import MinistryBroadcast from './MinistryBroadcast';
 import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
 import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
 import { MLiveChannel } from './MLiveChannel';
@@ -727,6 +728,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     { id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
+      ...(canManageMinistry ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
@@ -1998,6 +2000,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
           </div>
         )}
+
+        {/* Broadcast Tab — admin/leader only, no member-facing view. */}
+        {activeTab === 'broadcast' && isAdmin && <MinistryBroadcast />}
 
         {/* Announcements Tab
              Admins see the full MinistryAnnouncementsManager (search, filter, analytics,

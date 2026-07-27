@@ -2,10 +2,10 @@
 // Deploy with: supabase functions deploy send-ministry-email
 //
 // Required env secrets (set in Supabase Dashboard ? Settings ? Edge Functions):
-//   RESEND_API_KEY   – from resend.com
-//   FROM_EMAIL       – e.g. announcements@yourdomain.com
-//   SUPABASE_URL     – auto-injected
-//   SUPABASE_SERVICE_ROLE_KEY – auto-injected
+//   RESEND_API_KEY   ï¿½ from resend.com
+//   FROM_EMAIL       ï¿½ e.g. announcements@yourdomain.com
+//   SUPABASE_URL     ï¿½ auto-injected
+//   SUPABASE_SERVICE_ROLE_KEY ï¿½ auto-injected
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -17,7 +17,9 @@ const corsHeaders = {
 };
 
 interface SendMinistryEmailPayload {
-  announcementId: string;
+  // Optional â€” only set when the send is tied to a published announcement
+  // (MinistryAnnouncementsManager). A standalone broadcast has no announcement.
+  announcementId?: string;
   ministryId: string;
   targetAudience: "all" | "leaders" | "premium" | "volunteers";
   title: string;
@@ -50,10 +52,10 @@ serve(async (req) => {
     } = payload;
 
     // -- Validation --------------------------------------------------------
-    if (!announcementId || !ministryId || !title || !content) {
+    if (!ministryId || !title || !content) {
       return new Response(
         JSON.stringify({
-          error: "announcementId, ministryId, title, and content are required",
+          error: "ministryId, title, and content are required",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -71,35 +73,32 @@ serve(async (req) => {
     );
 
     // -- Fetch ministry name -----------------------------------------------
+    // NOTE: this previously read from `ministries`/`ministry_members`/`profiles`
+    // â€” tables that don't exist in the current schema (ministry_groups /
+    // ministry_group_members / user_profiles). That meant this function threw
+    // on every real call; fixed here to match the schema every other ministry
+    // function in this repo uses.
     const { data: ministry } = await supabase
-      .from("ministries")
+      .from("ministry_groups")
       .select("name")
       .eq("id", ministryId)
       .single();
     const ministryName = ministry?.name ?? "Your Ministry";
 
     // -- Resolve recipient emails ------------------------------------------
-    let profilesQuery = supabase
-      .from("ministry_members")
-      .select("profiles!inner(email, full_name, subscription_type, role)")
-      .eq("ministry_id", ministryId)
-      .eq("status", "active");
+    // "premium"/"volunteers" don't map to anything on ministry_group_members
+    // (no subscription tier or volunteer role lives there) â€” fall back to
+    // "all" for those rather than silently returning zero recipients.
+    let membersQuery = supabase
+      .from("ministry_group_members")
+      .select("user_id, role, is_leader, user_profiles!inner(email, full_name)")
+      .eq("group_id", ministryId);
 
-    // Audience filter applied at the ministry-membership level
-    switch (targetAudience) {
-      case "leaders":
-        profilesQuery = profilesQuery.eq("role", "leader");
-        break;
-      case "premium":
-        profilesQuery = profilesQuery.eq("profiles.subscription_type", "premium");
-        break;
-      case "volunteers":
-        profilesQuery = profilesQuery.eq("role", "volunteer");
-        break;
-      // "all" ? no additional filter
+    if (targetAudience === "leaders") {
+      membersQuery = membersQuery.or("is_leader.eq.true,role.in.(admin,moderator)");
     }
 
-    const { data: members, error: membersError } = await profilesQuery;
+    const { data: members, error: membersError } = await membersQuery;
 
     if (membersError) {
       console.error("Error fetching members:", membersError);
@@ -108,8 +107,8 @@ serve(async (req) => {
 
     const recipients: Array<{ email: string; name: string }> = (members ?? [])
       .map((m: any) => ({
-        email: m.profiles?.email ?? "",
-        name: m.profiles?.full_name ?? "Member",
+        email: m.user_profiles?.email ?? "",
+        name: m.user_profiles?.full_name ?? "Member",
       }))
       .filter((r) => Boolean(r.email));
 
@@ -213,8 +212,8 @@ serve(async (req) => {
     let failed = 0;
 
     if (!resendKey) {
-      // Development mode — log and return simulated success
-      console.warn("RESEND_API_KEY not set — simulating email delivery");
+      // Development mode ï¿½ log and return simulated success
+      console.warn("RESEND_API_KEY not set ï¿½ simulating email delivery");
       console.log("Would send to:", recipients.map((r) => r.email));
       successful = recipients.length;
     } else {
@@ -280,7 +279,7 @@ serve(async (req) => {
         success: true,
         message: resendKey
           ? "Ministry announcement emails sent"
-          : "Ministry announcement emails sent (simulated — set RESEND_API_KEY for production)",
+          : "Ministry announcement emails sent (simulated ï¿½ set RESEND_API_KEY for production)",
         sent: successful,
         failed,
         total: recipients.length,
