@@ -103,7 +103,7 @@ interface MinistriesHubProps {
 }
 
 const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledActiveView, onActiveViewChange, onWorkspaceChange }) => {
-  const { user, profile, isAdmin: authIsAdmin, isPartner } = useAuth();
+  const { user, profile, isAdmin: authIsAdmin, isPartner, initialized: authInitialized } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   // Uncontrolled view (ministry app) rides browser history: entering a ministry
@@ -255,14 +255,21 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   }, [user?.id]);
 
 
+  // Wait for auth to fully settle (not just user?.id appearing) before fetching.
+  // On slower session restores — mobile especially — user?.id can populate
+  // slightly before the Supabase client's session is actually attached, so a
+  // fetch gated only on user?.id can silently return an empty result with
+  // nothing left to trigger a retry. `initialized` flips true only once the
+  // auth check has genuinely finished, one way or another.
   useEffect(() => {
+    if (!authInitialized) return;
     const loadData = async () => {
       setLoading(true);
       await Promise.all([loadMinistries(), loadMyMinistries()]);
       setLoading(false);
     };
     loadData();
-  }, [loadMinistries, loadMyMinistries]);
+  }, [loadMinistries, loadMyMinistries, authInitialized]);
 
   // A shared video-message link (/ministry-videos/:id) only carries the video's
   // id, not which ministry it belongs to — resolve that here and enter the
