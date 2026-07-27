@@ -103,7 +103,6 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
 
     const swReg = await getFcmServiceWorker();
     if (!swReg) return false;
-    await navigator.serviceWorker.ready;
 
     // Mint the FCM registration token (this also creates the push subscription).
     const fcmToken = await getToken(messaging, {
