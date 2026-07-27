@@ -48,15 +48,44 @@ is idempotent via `meeting_reminder_sends` (keyed on `recipient_key`).
 
 ---
 
+## ⏳ PENDING — Daily reminders (`process-daily-reminders`)
+
+The reminder worker was written to run "on a cron every 15 minutes", but that
+schedule was never actually created — so it has never run, and no daily
+reminder (Bible/prayer/book/devotional/memory) has ever been delivered,
+regardless of what a user set in Account → Reminders. Confirmed 2026-07-28
+after a user reported setting a reminder and never receiving one; the save
+path and the worker's own logic are both correct, only the schedule was
+missing.
+
+1. **Confirm the function is deployed.** Dashboard → Edge Functions →
+   `process-daily-reminders` should exist. If not, paste
+   [`supabase/functions/process-daily-reminders/index.ts`](../supabase/functions/process-daily-reminders/index.ts)
+   and deploy it.
+2. **Enable extensions.** Dashboard → Database → Extensions → confirm `pg_cron`
+   and `pg_net` are enabled.
+3. **Schedule it.** Run
+   [`supabase/cron-setup-daily-reminders.sql`](../supabase/cron-setup-daily-reminders.sql)
+   once in the SQL editor. Idempotent — safe to re-run. Runs every 15 minutes.
+
+**Verify:** set a reminder a few minutes out in Account → Reminders, wait for a
+cron tick (up to 15 min, plus the worker's own 30-min grace window), and
+confirm a row lands in `public.notifications` and a push notification
+arrives. Inspect with
+`select * from cron.job_run_details where jobname = 'process-daily-reminders' order by start_time desc limit 5;`
+and `select * from public.daily_reminder_sends where sent_on = current_date;`.
+
+---
+
 ## Reference — other cron-scheduled functions
 
 These follow the same pattern (function + a `schedule.sql`). Listed so the cron
-surface is discoverable in one place; assume already deployed unless a change says
-otherwise.
+surface is discoverable in one place; assume already deployed unless a change
+says otherwise, or the function has its own PENDING section above.
 
 | Function | Cadence | Purpose |
 |---|---|---|
-| `process-daily-reminders` | every 15 min | User daily reminders (Bible/prayer/etc.) → in-app + push |
+| `process-daily-reminders` | every 15 min | **(pending — see above)** User daily reminders (Bible/prayer/etc.) → in-app + push |
 | `process-meeting-reminders` | every 5 min | **(this doc)** scheduled-meeting reminders → in-app + email |
 | `process-translation-queue` | see `cron-setup-translation-queue.sql` | UI translation queue |
 | `process-scheduled-broadcasts` | see its schedule | Scheduled ministry broadcasts |
