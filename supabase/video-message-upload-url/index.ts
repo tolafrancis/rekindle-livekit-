@@ -70,6 +70,14 @@ serve(async (req) => {
     });
     if (!isAdmin) return jsonError('You do not have permission to upload video messages for this ministry', 403);
 
+    // Storage-full gate: only ever blocks a ministry that bought a storage
+    // pack and has used all of it — bundled/free ministries are never
+    // capacity-blocked here, they rely on the retention sweep instead.
+    const { data: storageStatus } = await supabase.rpc('get_ministry_storage_status', { p_ministry_id: ministryId });
+    if ((storageStatus as { is_full?: boolean }[] | null)?.[0]?.is_full) {
+      return jsonError('Storage full — this ministry has used its full storage allotment. Buy more storage or delete old content to upload new video messages.', 403);
+    }
+
     const ext = extensionFor(contentType);
     const key = `raw/${ministryId}/${videoId}/original.${ext}`;
 
