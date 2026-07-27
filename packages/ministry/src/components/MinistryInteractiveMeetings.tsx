@@ -1460,7 +1460,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
   const doJoinMeeting = async (meeting: MinistryVideoMeeting, guestNameOverride?: string) => {
     try {
-      if (!meeting.is_active) {
+      const { data: freshMeeting } = await supabase
+        .from('ministry_video_meetings')
+        .select('is_active')
+        .eq('id', meeting.id)
+        .single();
+      
+      const wasInactive = freshMeeting ? !freshMeeting.is_active : !meeting.is_active;
+
+      if (wasInactive) {
         const { error } = await supabase
           .from('ministry_video_meetings')
           .update({ 

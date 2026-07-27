@@ -9,6 +9,7 @@ import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import { AudioOutputButton } from './AudioOutputButton';
+import { EffectsButton } from './EffectsButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
@@ -22,6 +23,7 @@ import { useActiveCallOptional } from '../ActiveCallContext';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
+import { Capacitor } from '@capacitor/core';
 
 interface DailyVideoCallProps {
   roomName: string;
@@ -915,6 +917,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onReact,
   onRaiseHandStateChange,
 }) => {
+  const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
   // iOS Safari has no Fullscreen API for arbitrary elements (only <video>), so
   // requestFullscreen() throws there. Detect support once and hide the button
@@ -1924,7 +1927,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           browser chrome and stay tappable on mobile (they were being cut off). */}
       {showControls && (
         <div className="bg-gray-900 border-t border-gray-800 px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6">
-          <div className="flex items-center justify-center gap-2 sm:gap-6 overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className={`flex items-center justify-center ${'gap-2 px-1'} sm:gap-6 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]`}>
             {/* Mic toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={toggleMic}
@@ -1971,36 +1974,55 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
-            {/* Virtual background */}
-            <VirtualBackgroundButton
-              value={videoBackground}
-              onChange={setVideoBackground}
-              trigger={
-                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                  <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
-                    <Sparkles className="h-5 w-5 sm:h-7 sm:w-7" />
-                  </div>
-                  <span className="hidden sm:block text-xs font-medium text-gray-300">
-                    {t('dailyVideoCall', 'background', 'Background')}
-                  </span>
-                </button>
-              }
-            />
+            {isNative ? (
+              <EffectsButton
+                value={videoBackground}
+                onChange={setVideoBackground}
+                trigger={
+                  <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                    <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                      <Sparkles className="h-5 w-5 sm:h-7 sm:w-7" />
+                    </div>
+                    <span className="hidden sm:block text-xs font-medium text-gray-300">
+                      {t('dailyVideoCall', 'effects', 'Effects')}
+                    </span>
+                  </button>
+                }
+              />
+            ) : (
+              <>
+                {/* Virtual background */}
+                <VirtualBackgroundButton
+                  value={videoBackground}
+                  onChange={setVideoBackground}
+                  trigger={
+                    <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                      <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                        <Sparkles className="h-5 w-5 sm:h-7 sm:w-7" />
+                      </div>
+                      <span className="hidden sm:block text-xs font-medium text-gray-300">
+                        {t('dailyVideoCall', 'background', 'Background')}
+                      </span>
+                    </button>
+                  }
+                />
 
-            {/* Audio Output */}
-            <AudioOutputButton
-              align="center"
-              trigger={
-                <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 bg-gray-700 hover:bg-gray-600 text-white">
-                    <Volume2 className="h-5 w-5 sm:h-7 sm:w-7" />
-                  </div>
-                  <span className="hidden sm:block text-xs font-medium text-gray-300">
-                    {t('dailyVideoCall', 'speaker', 'Speaker')}
-                  </span>
-                </button>
-              }
-            />
+                {/* Audio Output */}
+                <AudioOutputButton
+                  align="center"
+                  trigger={
+                    <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 bg-gray-700 hover:bg-gray-600 text-white">
+                        <Volume2 className="h-5 w-5 sm:h-7 sm:w-7" />
+                      </div>
+                      <span className="hidden sm:block text-xs font-medium text-gray-300">
+                        {t('dailyVideoCall', 'speaker', 'Speaker')}
+                      </span>
+                    </button>
+                  }
+                />
+              </>
+            )}
 
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button

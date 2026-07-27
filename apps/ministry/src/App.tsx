@@ -192,6 +192,28 @@ function AppRoutes() {
   );
 }
 
+const PushNotificationNavHandler = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handlePushNav = (e: Event) => {
+      const link = (e as CustomEvent).detail?.link as string;
+      if (!link) return;
+      // Strip the origin if present, keep just the path
+      try {
+        const url = new URL(link, window.location.origin);
+        navigate(url.pathname + url.search + url.hash);
+      } catch {
+        navigate(link);
+      }
+    };
+    window.addEventListener('pushNotificationNav', handlePushNav);
+    return () => window.removeEventListener('pushNotificationNav', handlePushNav);
+  }, [navigate]);
+
+  return null;
+};
+
 export default function App() {
   useEffect(() => {
     const handler = (e: Event) => {
@@ -219,6 +241,7 @@ export default function App() {
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <PushNotificationNavHandler />
               <AppRoutes />
               {/* Persistent meeting layer — keeps a live call mounted across
                   navigation and shows the minimized mini-player. */}

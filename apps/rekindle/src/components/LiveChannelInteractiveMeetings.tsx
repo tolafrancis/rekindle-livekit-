@@ -1317,8 +1317,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
   const doJoinMeeting = async (meeting: LiveChannelVideoMeeting, guestNameOverride?: string) => {
     try {
-      console.log('[Meeting] doJoinMeeting called, meeting.is_active:', meeting.is_active, 'ministryId:', ministryId, 'channelId:', channelId);
-      if (!meeting.is_active) {
+      const { data: freshMeeting } = await supabase
+        .from('live_channel_video_meetings')
+        .select('is_active')
+        .eq('id', meeting.id)
+        .single();
+      
+      const wasInactive = freshMeeting ? !freshMeeting.is_active : !meeting.is_active;
+
+      if (wasInactive) {
         const { error } = await supabase
           .from('live_channel_video_meetings')
           .update({ 
@@ -1328,25 +1335,6 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           .eq('id', meeting.id);
 
         if (error) throw error;
-
-        // Trigger push notification to ministry members or channel followers
-        console.log('[Meeting] About to invoke send-push-notification, targetAudience:', ministryId ? 'ministry_members' : 'channel_followers');
-        supabase.functions.invoke('send-push-notification', {
-          body: {
-            targetAudience: ministryId ? 'ministry_members' : 'channel_followers',
-            ministryId: ministryId ?? undefined,
-            channelId,
-            title: `👥 Meeting Started`,
-            body: `"${meeting.title}" has started. Tap to join now!`,
-            link: `/channel/${channelId}/meeting/${meeting.id}`,
-            senderName: channelName || 'Ministry',
-            notificationType: 'meeting_started',
-            push: true,
-            inApp: true,
-          }
-        })
-        .then(() => console.log('[Meeting] send-push-notification invoke resolved (check network tab / Supabase logs for actual result)'))
-        .catch(e => console.warn('[Meeting] Start notification failed:', e?.message));
       }
 
       const { error: countError } = await supabase

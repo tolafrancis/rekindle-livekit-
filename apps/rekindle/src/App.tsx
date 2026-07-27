@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import MinistryJoinLanding from "@/components/registration/MinistryJoinLanding";
 import MinistryKiosk from "@/components/registration/MinistryKiosk";
 import MemberMinistryProfile from "@/components/registration/MemberMinistryProfile";
@@ -47,6 +47,28 @@ const queryClient = new QueryClient({
   },
 });
 
+const PushNotificationNavHandler = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handlePushNav = (e: Event) => {
+      const link = (e as CustomEvent).detail?.link as string;
+      if (!link) return;
+      // Strip the origin if present, keep just the path
+      try {
+        const url = new URL(link, window.location.origin);
+        navigate(url.pathname + url.search + url.hash);
+      } catch {
+        navigate(link);
+      }
+    };
+    window.addEventListener('pushNotificationNav', handlePushNav);
+    return () => window.removeEventListener('pushNotificationNav', handlePushNav);
+  }, [navigate]);
+
+  return null;
+};
+
 const App = () => {
   useEffect(() => {
     const handler = (e: Event) => {
@@ -72,6 +94,7 @@ const App = () => {
                 <Toaster />
                 <Sonner />
                 <BrowserRouter>
+                  <PushNotificationNavHandler />
                   <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />

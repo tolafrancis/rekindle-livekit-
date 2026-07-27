@@ -7,6 +7,7 @@ import App from './App.tsx'
 import './index.css'
 
 let callIsActive = false;
+let pendingPushNav: string | null = null;
 
 if (Capacitor.isNativePlatform()) {
   window.addEventListener('call:active', (e: Event) => {
@@ -39,8 +40,13 @@ if (Capacitor.isNativePlatform()) {
 
   FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
     console.log('[Push] Notification tapped:', event.notification);
-    if (event.notification.link) {
-      window.location.href = event.notification.link;
+    const link = event.notification.link || (event.notification.data as any)?.link;
+    if (link) {
+      if (document.readyState === 'complete') {
+        window.dispatchEvent(new CustomEvent('pushNotificationNav', { detail: { link } }));
+      } else {
+        pendingPushNav = link;
+      }
     }
   });
 }
@@ -66,3 +72,8 @@ if (import.meta.env.DEV) {
 
 // Remove dark mode class addition
 createRoot(document.getElementById("root")!).render(<App />);
+
+if (pendingPushNav) {
+  window.dispatchEvent(new CustomEvent('pushNotificationNav', { detail: { link: pendingPushNav } }));
+  pendingPushNav = null;
+}
