@@ -36,6 +36,14 @@ const json = (b: unknown, s = 200) =>
 const form = (obj: Record<string, string>) =>
   Object.entries(obj).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 
+// Human-readable line-item name for Stripe's inline price_data fallback,
+// when the catalog SKU has no pre-created stripe_price_id.
+function catalogRowLabel(addonType: string, unitGb: number | null, unitMembers: number | null): string {
+  if (addonType === 'storage_pack') return `+${(unitGb ?? 0) >= 1024 ? `${(unitGb ?? 0) / 1024} TB` : `${unitGb} GB`} storage`;
+  if (addonType === 'member_block') return `+${unitMembers ?? 0} members`;
+  return 'Gift Aid claims & HMRC submission';
+}
+
 interface PlanRow {
   slug: string;
   name: string;
@@ -44,6 +52,9 @@ interface PlanRow {
   ngn_price_annual: number;
   usd_price_monthly: number;
   usd_price_annual: number;
+  storage_gb: number | null;
+  meeting_hours_included: number | null;
+  broadcast_hours_included: number | null;
   paystack_plan_code: string | null;
   stripe_price_id_monthly: string | null;
   stripe_price_id_annual: string | null;
@@ -54,7 +65,7 @@ interface PlanRow {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    const { action, ministryId, plan, provider, cycle, country, returnUrl } = await req.json();
+    const { action, ministryId, plan, provider, cycle, country, returnUrl, catalogId } = await req.json();
     if (!action || !ministryId) return json({ error: 'action and ministryId are required' }, 400);
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -93,6 +104,94 @@ serve(async (req) => {
       const j = await r.json();
       if (!r.ok) return json({ error: j?.error?.message || 'Stripe portal error' }, 502);
       return json({ url: j.url });
+    }
+
+    // ── Purchase an add-on (storage pack / member block / Gift Aid) ────────
+    // Stripe: attaches a new item to the ministry's EXISTING subscription —
+    // immediate, synchronous, no hosted checkout needed (the ministry
+    // already has a saved payment method from its base plan). Paystack has
+    // no "add a line item" concept, so an add-on is a genuinely separate
+    // Paystack subscription with its own plan code, requiring the same
+    // hosted-authorization redirect as the base plan. PayPal isn't wired
+    // for add-ons yet — the base plan's PayPal path is already a manual
+    // admin-confirmation fallback; stacking that onto add-ons too is a
+    // clear scope cut rather than a half-built third flow.
+    if (action === 'purchase-addon') {
+      if (!catalogId) return json({ error: 'catalogId is required' }, 400);
+
+      const { data: catalogRow, error: catalogErr } = await admin
+        .from('ministry_addon_catalog').select('*').eq('id', catalogId).eq('is_active', true).maybeSingle();
+      if (catalogErr || !catalogRow) return json({ error: 'Unknown or inactive add-on' }, 400);
+      const c = catalogRow as {
+        id: string; addon_type: string; unit_gb: number | null; unit_members: number | null;
+        price_usd: number; stripe_price_id: string | null; paystack_plan_code: string | null;
+      };
+
+      const countryCode = typeof country === 'string' ? country.toUpperCase() : 'US';
+      const isNigeria = countryCode === 'NG';
+      if (isNigeria && provider !== 'paystack') return json({ error: 'Nigeria must use Paystack' }, 400);
+      if (!isNigeria && provider === 'paystack') return json({ error: 'Paystack is only available for Nigeria' }, 400);
+
+      if (provider === 'paystack') {
+        if (!PAYSTACK_KEY) return json({ error: 'Paystack not configured' }, 500);
+        if (!c.paystack_plan_code) return json({ error: 'This add-on has no Paystack plan code configured yet' }, 400);
+        const r = await fetch('https://api.paystack.co/transaction/initialize', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${PAYSTACK_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: user.email,
+            plan: c.paystack_plan_code,
+            callback_url: `${back}?billing=success`,
+            metadata: {
+              ministry_id: ministryId, addon: true, catalog_id: c.id, addon_type: c.addon_type,
+              unit_gb: c.unit_gb, unit_members: c.unit_members, price_usd: c.price_usd, country: countryCode,
+            },
+          }),
+        });
+        const j = await r.json();
+        if (!j?.status) return json({ error: j?.message || 'Paystack init error' }, 502);
+        return json({ url: j.data.authorization_url });
+      }
+
+      if (provider === 'stripe') {
+        if (!STRIPE_KEY) return json({ error: 'Stripe not configured' }, 500);
+        const { data: sub } = await admin
+          .from('ministry_subscriptions').select('stripe_subscription_id')
+          .eq('ministry_id', ministryId).eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const subscriptionId = (sub as { stripe_subscription_id?: string } | null)?.stripe_subscription_id;
+        if (!subscriptionId) return json({ error: 'Subscribe to a Ministry Partner plan with a card before buying add-ons' }, 400);
+
+        const body: Record<string, string> = { subscription: subscriptionId, quantity: '1' };
+        if (c.stripe_price_id) {
+          body['price'] = c.stripe_price_id;
+        } else {
+          body['price_data[currency]'] = 'usd';
+          body['price_data[unit_amount]'] = String(Math.round(c.price_usd * 100));
+          body['price_data[recurring][interval]'] = 'month';
+          body['price_data[product_data][name]'] = catalogRowLabel(c.addon_type, c.unit_gb, c.unit_members);
+        }
+        const r = await fetch('https://api.stripe.com/v1/subscription_items', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${STRIPE_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: form(body),
+        });
+        const j = await r.json();
+        if (!r.ok) return json({ error: j?.error?.message || 'Stripe add-on purchase error' }, 502);
+
+        await admin.from('ministry_addons').insert({
+          ministry_id: ministryId,
+          addon_type: c.addon_type,
+          quantity: 1,
+          unit_gb: c.unit_gb,
+          unit_members: c.unit_members,
+          price_usd: c.price_usd,
+          status: 'active',
+          stripe_subscription_item_id: j.id,
+        });
+        return json({ success: true });
+      }
+
+      return json({ error: 'PayPal is not available for add-on purchases yet — use a card (Stripe)' }, 400);
     }
 
     // ── Checkout ─────────────────────────────────────────────────────────
@@ -190,7 +289,10 @@ serve(async (req) => {
         member_limit: p.max_members ?? -1,
         broadcast_limit: -1,
         video_minutes_limit: -1,
-        ...(p.slug === 'tier_3' ? { white_label_enabled: true, priority_support: true } : {}),
+        storage_limit_mb: p.storage_gb != null ? p.storage_gb * 1024 : null,
+        meeting_hours_limit: p.meeting_hours_included ?? null,
+        broadcast_hours_limit: p.broadcast_hours_included ?? null,
+        ...(p.slug === 'ministry_plus' ? { white_label_enabled: true, priority_support: true } : {}),
         amount_cents: Math.round(amount * 100),
         currency: 'USD',
         payment_provider: 'paypal',

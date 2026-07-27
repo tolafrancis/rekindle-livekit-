@@ -8,7 +8,12 @@ import {
   resolvePlanPricing,
   startMinistryCheckout,
   openMinistryBillingPortal,
+  fetchAddonCatalog,
+  fetchMinistryAddons,
+  purchaseAddon,
   type MinistryPartnerPlan,
+  type MinistryAddonCatalogItem,
+  type MinistryAddon,
   type BillingProvider,
   type BillingCycle,
 } from '@rekindle/features/ministryBilling';
@@ -42,6 +47,10 @@ export default function BillingSettings() {
   const [provider, setProvider] = useState<BillingProvider>('stripe');
   const [busy, setBusy] = useState(false);
 
+  const [addonCatalog, setAddonCatalog] = useState<MinistryAddonCatalogItem[]>([]);
+  const [myAddons, setMyAddons] = useState<MinistryAddon[]>([]);
+  const [buyingAddonId, setBuyingAddonId] = useState<string | null>(null);
+
   useEffect(() => {
     (async () => {
       const [{ plans: fetchedPlans }, region] = await Promise.all([fetchMinistryPartnerPlans(), detectRegion()]);
@@ -50,6 +59,43 @@ export default function BillingSettings() {
       setPlansLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { items } = await fetchAddonCatalog();
+      setAddonCatalog(items);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!currentMinistryId) return;
+    (async () => {
+      const { addons } = await fetchMinistryAddons(currentMinistryId);
+      setMyAddons(addons);
+    })();
+  }, [currentMinistryId]);
+
+  const buyAddon = async (item: MinistryAddonCatalogItem) => {
+    if (!currentMinistryId) return;
+    setBuyingAddonId(item.id);
+    const res = await purchaseAddon({
+      ministryId: currentMinistryId,
+      catalogId: item.id,
+      provider: country === 'NG' ? 'paystack' : 'stripe',
+      country,
+    });
+    setBuyingAddonId(null);
+    if (res.error) {
+      return toast({ title: 'Could not purchase add-on', description: res.error, variant: 'destructive' });
+    }
+    if (res.url) {
+      window.location.href = res.url;
+      return;
+    }
+    toast({ title: 'Add-on purchased', description: item.label });
+    const { addons } = await fetchMinistryAddons(currentMinistryId);
+    setMyAddons(addons);
+  };
 
   const currentSlug = entitlements.tierSlug;
   const isPaid = currentSlug !== 'free';
@@ -227,6 +273,52 @@ export default function BillingSettings() {
         Nigeria pays in Naira via Paystack; everywhere else pays in USD via Stripe or PayPal. Your plan activates
         automatically after payment (PayPal is confirmed manually — see note at checkout).
       </p>
+
+      {isPaid && addonCatalog.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Add-ons</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Extra storage or members on top of your plan. Billed monthly alongside your subscription.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {myAddons.length > 0 && (
+              <ul className="space-y-1 text-sm">
+                {myAddons.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span>{a.addonType === 'storage_pack' ? `+${a.unitGb} GB storage` : a.addonType === 'member_block' ? `+${a.unitMembers} members` : 'Gift Aid & HMRC submission'}</span>
+                    <Badge variant="secondary">Active — ${a.priceUsd}/mo</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {addonCatalog.map((item) => (
+                <div key={item.id} className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="text-xs text-muted-foreground">${item.priceUsd}/mo</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={buyingAddonId === item.id}
+                    onClick={() => buyAddon(item)}
+                  >
+                    {buyingAddonId === item.id ? 'Buying…' : 'Buy'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {country !== 'NG' && (
+              <p className="text-xs text-muted-foreground">
+                Add-ons are charged to the card on file for your plan (Stripe) — subscribe with a card first if you haven't.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
