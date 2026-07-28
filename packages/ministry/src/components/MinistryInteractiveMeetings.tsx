@@ -1460,7 +1460,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
   const doJoinMeeting = async (meeting: MinistryVideoMeeting, guestNameOverride?: string) => {
     try {
-      if (!meeting.is_active) {
+      const { data: freshMeeting } = await supabase
+        .from('ministry_video_meetings')
+        .select('is_active')
+        .eq('id', meeting.id)
+        .single();
+      
+      const wasInactive = freshMeeting ? !freshMeeting.is_active : !meeting.is_active;
+
+      if (wasInactive) {
         const { error } = await supabase
           .from('ministry_video_meetings')
           .update({ 
@@ -1470,6 +1478,23 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
           .eq('id', meeting.id);
 
         if (error) throw error;
+
+        // Trigger push notification to ministry members
+        if (ministryId) {
+          supabase.functions.invoke('send-push-notification', {
+            body: {
+              targetAudience: 'ministry_members',
+              ministryId,
+              title: `👥 Meeting Started`,
+              body: `"${meeting.title}" has started. Tap to join now!`,
+              link: `/ministry/${ministryId}/meeting/${meeting.id}`,
+              senderName: ministryName || 'Ministry',
+              notificationType: 'meeting_started',
+              push: true,
+              inApp: true,
+            }
+          }).catch(e => console.warn('[Meeting] Start notification failed:', e?.message));
+        }
       }
 
       const { error: countError } = await supabase

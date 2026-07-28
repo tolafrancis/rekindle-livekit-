@@ -58,9 +58,14 @@ async function waitForActive(reg: ServiceWorkerRegistration, timeoutMs = 10000):
   });
 }
 
-export async function registerPush(role: "user" | "counsellor"): Promise<boolean> {
+export async function registerPush(role: "user" | "counsellor", appId: string = "com.rekindle.app"): Promise<boolean> {
   try {
-    if (Capacitor.isNativePlatform()) {
+    const isNative = Capacitor.isNativePlatform();
+    const finalAppId = isNative
+      ? (appId.startsWith('web.') ? appId.replace(/^web\./, 'com.') : appId)
+      : (appId.startsWith('web.') ? appId : appId.replace(/^com\./, 'web.'));
+
+    if (isNative) {
       const permStatus = await FirebaseMessaging.checkPermissions();
       let granted = permStatus.receive === 'granted';
       if (!granted) {
@@ -85,24 +90,19 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
       }
 
       const platform = Capacitor.getPlatform(); // 'android' | 'ios'
-      const { error } = await supabase
-        .from("push_tokens")
-        .upsert(
-          {
-            user_id:      user.id,
-            device_token: token,
-            platform,
-            updated_at:   new Date().toISOString(),
-          },
-          { onConflict: "device_token" },
-        );
+      const { error } = await supabase.rpc("claim_push_token", {
+        p_device_token: token,
+        p_platform:     platform,
+        p_role:         role,
+        p_app_id:       finalAppId,
+      });
 
       if (error) {
         console.error("Failed to save native push token:", error);
         return false;
       }
 
-      console.log(`Native FCM push registered successfully (${platform})`);
+      console.log(`Native FCM push registered successfully (${platform}, app: ${finalAppId})`);
       return true;
     }
 
@@ -153,27 +153,20 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
       return false;
     }
 
-    // The table's unique constraint is on device_token alone
-    // (push_tokens_device_token_key), so upsert on that column — this re-homes
-    // the token to the current user and refreshes updated_at without duplicates.
-    const { error } = await supabase
-      .from("push_tokens")
-      .upsert(
-        {
-          user_id:      user.id,
-          device_token: fcmToken,
-          platform:     "web",
-          updated_at:   new Date().toISOString(),
-        },
-        { onConflict: "device_token" },
-      );
+    // Call claim_push_token with p_app_id to safely claim it per (user, device, app)
+    const { error } = await supabase.rpc("claim_push_token", {
+      p_device_token: fcmToken,
+      p_platform:     "web",
+      p_role:         role,
+      p_app_id:       finalAppId,
+    });
 
     if (error) {
       console.error("Failed to save push token:", error);
       return false;
     }
 
-    console.log("FCM push registered successfully");
+    console.log(`FCM push registered successfully (app: ${finalAppId})`);
     return true;
   } catch (error) {
     console.error("Error registering push notification:", error);
@@ -181,17 +174,26 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
   }
 }
 
-export async function unregisterPush(): Promise<boolean> {
+export async function unregisterPush(appId: string = "com.rekindle.app"): Promise<boolean> {
   try {
-    if (Capacitor.isNativePlatform()) {
+    const isNative = Capacitor.isNativePlatform();
+    const finalAppId = isNative
+      ? (appId.startsWith('web.') ? appId.replace(/^web\./, 'com.') : appId)
+      : (appId.startsWith('web.') ? appId : appId.replace(/^com\./, 'web.'));
+
+    if (isNative) {
       const { token } = await FirebaseMessaging.getToken().catch(() => ({ token: null }));
       const { data: { user } } = await supabase.auth.getUser();
       if (user && token) {
-        await supabase
+        let query = supabase
           .from("push_tokens")
           .delete()
           .eq("user_id", user.id)
           .eq("device_token", token);
+        if (finalAppId) {
+          query = query.eq("app_id", finalAppId);
+        }
+        await query;
       }
       await FirebaseMessaging.deleteToken().catch(() => {});
       return true;
@@ -214,11 +216,15 @@ export async function unregisterPush(): Promise<boolean> {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (user && currentToken) {
-      await supabase
+      let query = supabase
         .from("push_tokens")
         .delete()
         .eq("user_id", user.id)
         .eq("device_token", currentToken);
+      if (finalAppId) {
+        query = query.eq("app_id", finalAppId);
+      }
+      await query;
     }
 
     await deleteToken(messaging).catch(() => {});
@@ -259,7 +265,7 @@ export async function isPushSubscribed(): Promise<boolean> {
 }
 
 // React hook for push notification management
-export function usePushNotifications() {
+export function usePushNotifications(appId: string = "com.rekindle.app") {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>("default");
@@ -274,7 +280,7 @@ export function usePushNotifications() {
   const subscribe = useCallback(async (role: "user" | "counsellor" = "user") => {
     setIsLoading(true);
     try {
-      const success = await registerPush(role);
+      const success = await registerPush(role, appId);
       if (success) {
         setIsSubscribed(true);
         setPermission("granted");
@@ -283,18 +289,18 @@ export function usePushNotifications() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [appId]);
 
   const unsubscribe = useCallback(async () => {
     setIsLoading(true);
     try {
-      const success = await unregisterPush();
+      const success = await unregisterPush(appId);
       if (success) setIsSubscribed(false);
       return success;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [appId]);
 
   return { isSubscribed, isLoading, permission, checkStatus, subscribe, unsubscribe };
 }

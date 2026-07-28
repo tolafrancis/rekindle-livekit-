@@ -175,7 +175,8 @@ const EnhancedVideoCallWrapper = ({
   // Minimized (mini-player) state comes straight from the ActiveCall host, so the
   // reaction bar and other overlays hide reliably — a width heuristic was flaky
   // (the mini-player is ~352px wide, above the 300px threshold, so it never fired).
-  const isPiP = useActiveCallOptional()?.minimized ?? false;
+  const activeCall = useActiveCallOptional();
+  const isPiP = (activeCall?.minimized || activeCall?.isSystemPiP) ?? false;
   const wrapperRef = useRef<HTMLDivElement>(null);
   // True while a DailyVideoCall side panel (chat / host controls) is open — used to
   // hide the Copy Link / End chrome so it doesn't collide with the panel.
@@ -1181,6 +1182,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   const [editingMeeting, setEditingMeeting] = useState<LiveChannelVideoMeeting | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [channelName, setChannelName] = useState<string | null>(null);
+  const [ministryId, setMinistryId] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [canCreateMeeting, setCanCreateMeeting] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
@@ -1203,12 +1205,13 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
       const { data } = await supabase
         .from('live_channels')
-        .select('owner_id, name')
+        .select('owner_id, name, ministry_id')
         .eq('id', channelId)
         .single();
 
       setIsOwner(data?.owner_id === user.id);
       setChannelName(data?.name || null);
+      setMinistryId(data?.ministry_id || null);
     };
 
     checkOwnership();
@@ -1314,7 +1317,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
   const doJoinMeeting = async (meeting: LiveChannelVideoMeeting, guestNameOverride?: string) => {
     try {
-      if (!meeting.is_active) {
+      const { data: freshMeeting } = await supabase
+        .from('live_channel_video_meetings')
+        .select('is_active')
+        .eq('id', meeting.id)
+        .single();
+      
+      const wasInactive = freshMeeting ? !freshMeeting.is_active : !meeting.is_active;
+
+      if (wasInactive) {
         const { error } = await supabase
           .from('live_channel_video_meetings')
           .update({ 

@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 
 const STORAGE_KEY = 'rk_preferred_audio_output';
 
@@ -25,13 +26,35 @@ const isSetSinkIdSupported = () =>
   typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
 
 export const AudioOutputProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isSupported] = useState(isSetSinkIdSupported);
+  const [isSupported] = useState(() => isSetSinkIdSupported() || Capacitor.isNativePlatform());
   const [devices, setDevices] = useState<AudioOutputDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const elementsRef = useRef<Set<HTMLAudioElement>>(new Set());
 
   const refreshDevices = useCallback(async () => {
-    if (!isSupported || !navigator.mediaDevices?.enumerateDevices) return;
+    if (!isSupported) return;
+
+    if (Capacitor.isNativePlatform()) {
+      const raw = (window as any).AndroidBridge?.getAudioOutputs?.();
+      if (raw) {
+        try {
+          const outputs = JSON.parse(raw).map((d: any) => ({ deviceId: d.id, label: d.label }));
+          setDevices(outputs);
+          
+          setSelectedDeviceId((current) => {
+            if (current && outputs.some((d: any) => d.deviceId === current)) return current;
+            const persisted = localStorage.getItem(STORAGE_KEY);
+            if (persisted && outputs.some((d: any) => d.deviceId === persisted)) return persisted;
+            return '';
+          });
+        } catch (err) {
+          console.error('[AudioOutput] Failed to parse native audio outputs:', err);
+        }
+      }
+      return;
+    }
+
+    if (!navigator.mediaDevices?.enumerateDevices) return;
     try {
       const all = await navigator.mediaDevices.enumerateDevices();
       const outputs = all
@@ -54,8 +77,30 @@ export const AudioOutputProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     if (!isSupported) return;
     refreshDevices();
-    navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
-    return () => navigator.mediaDevices.removeEventListener('devicechange', refreshDevices);
+
+    const handleCallActive = (e: Event) => {
+      const active = (e as CustomEvent).detail as boolean;
+      if (active) {
+        refreshDevices();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('call:active', handleCallActive);
+    }
+
+    if (!Capacitor.isNativePlatform() && navigator.mediaDevices) {
+      navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('call:active', handleCallActive);
+      }
+      if (!Capacitor.isNativePlatform() && navigator.mediaDevices) {
+        navigator.mediaDevices.removeEventListener('devicechange', refreshDevices);
+      }
+    };
   }, [isSupported, refreshDevices]);
 
   const applySinkId = useCallback((el: HTMLAudioElement, deviceId: string) => {
@@ -68,12 +113,16 @@ export const AudioOutputProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const selectDevice = useCallback((deviceId: string) => {
     setSelectedDeviceId(deviceId);
     localStorage.setItem(STORAGE_KEY, deviceId);
+    if (Capacitor.isNativePlatform()) {
+      (window as any).AndroidBridge?.setAudioOutput?.(deviceId || 'earpiece');
+      return;
+    }
     elementsRef.current.forEach((el) => applySinkId(el, deviceId));
   }, [applySinkId]);
 
   const registerAudioElement = useCallback((el: HTMLAudioElement) => {
     elementsRef.current.add(el);
-    if (selectedDeviceId) applySinkId(el, selectedDeviceId);
+    if (selectedDeviceId && !Capacitor.isNativePlatform()) applySinkId(el, selectedDeviceId);
   }, [selectedDeviceId, applySinkId]);
 
   const unregisterAudioElement = useCallback((el: HTMLAudioElement) => {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -117,11 +118,17 @@ const SettingsSidebar: React.FC<{ section: string; onSelect: (key: string) => vo
     {/* Mobile: a single flat horizontal scroller (buttons are direct flex
         children via display:contents wrappers — same structure as the working
         primary nav). Desktop: grouped vertical list. */}
-    <nav className="flex flex-nowrap gap-1 overflow-x-auto pb-2 md:flex-col md:overflow-x-visible md:pb-0 [-webkit-overflow-scrolling:touch]">
+    <nav className={Capacitor.isNativePlatform() 
+      ? "flex flex-col gap-3 pb-2"
+      : "flex flex-nowrap gap-1 overflow-x-auto pb-2 md:flex-col md:overflow-x-visible md:pb-0 [-webkit-overflow-scrolling:touch]"
+    }>
       {SETTINGS_GROUPS.map((g) => (
-        <div key={g.group} className="contents md:block md:mb-3">
-          <p className="hidden md:block text-xs font-semibold uppercase tracking-wide text-gray-400 px-3 mb-1">{t('profileSettings', `navGroup_${g.group}`, g.group)}</p>
-          <div className="contents md:flex md:flex-col md:gap-1">
+        <div key={g.group} className={Capacitor.isNativePlatform() ? "flex flex-col gap-1 mb-2" : "contents md:block md:mb-3"}>
+          <p className={Capacitor.isNativePlatform() 
+            ? "block text-xs font-semibold uppercase tracking-wide text-gray-400 px-3 mb-1"
+            : "hidden md:block text-xs font-semibold uppercase tracking-wide text-gray-400 px-3 mb-1"
+          }>{t('profileSettings', `navGroup_${g.group}`, g.group)}</p>
+          <div className={Capacitor.isNativePlatform() ? "flex flex-col gap-1" : "contents md:flex md:flex-col md:gap-1"}>
             {g.items.map((it) => {
               const Icon = it.icon;
               const active = section === it.key;
@@ -265,7 +272,10 @@ export const ProfileSettings: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="flex flex-col md:flex-row gap-6 md:items-start">
+      <div className={Capacitor.isNativePlatform() 
+        ? "flex flex-col gap-6"
+        : "flex flex-col md:flex-row gap-6 md:items-start"
+      }>
         <SettingsSidebar section={section} onSelect={setSection} />
         <div className="flex-1 min-w-0 space-y-6">
                 {section === 'profile' && (<>

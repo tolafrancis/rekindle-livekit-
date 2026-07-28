@@ -25,9 +25,11 @@ import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
 import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
+import { GlobalAudioProvider } from '@rekindle/features/GlobalAudioContext';
 import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
 import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
 import LandingPage from '@rekindle/features/components/LandingPage';
+import { registerPush } from '@rekindle/features/usePushNotifications';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -129,6 +131,10 @@ function AuthedShell() {
   const { ministries, loading, currentMinistry } = useCurrentMinistry();
   const { name } = useMinistryBranding();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    registerPush('user', 'com.rekindle.ministry').catch(console.error);
+  }, []);
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
   // Members and leaders both get onboarding, but different sets: leaders get the
@@ -227,6 +233,28 @@ function AppRoutes() {
   );
 }
 
+const PushNotificationNavHandler = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handlePushNav = (e: Event) => {
+      const link = (e as CustomEvent).detail?.link as string;
+      if (!link) return;
+      // Strip the origin if present, keep just the path
+      try {
+        const url = new URL(link, window.location.origin);
+        navigate(url.pathname + url.search + url.hash);
+      } catch {
+        navigate(link);
+      }
+    };
+    window.addEventListener('pushNotificationNav', handlePushNav);
+    return () => window.removeEventListener('pushNotificationNav', handlePushNav);
+  }, [navigate]);
+
+  return null;
+};
+
 export default function App() {
   useEffect(() => {
     const handler = (e: Event) => {
@@ -246,19 +274,22 @@ export default function App() {
     <ThemeProvider defaultTheme="light">
       <AuthProvider>
         <LanguageProvider>
-          <ActiveCallProvider>
-          {/* Toast renderers — without these mounted, every toast() call in the
-              ministry app (channel/meeting copy confirmations, etc.) is silent.
-              Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppRoutes />
-            {/* Persistent meeting layer — keeps a live call mounted across
-                navigation and shows the minimized mini-player. */}
-            <ActiveCallHost />
-          </BrowserRouter>
-          </ActiveCallProvider>
+          <GlobalAudioProvider>
+            <ActiveCallProvider>
+            {/* Toast renderers — without these mounted, every toast() call in the
+                ministry app (channel/meeting copy confirmations, etc.) is silent.
+                Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <PushNotificationNavHandler />
+              <AppRoutes />
+              {/* Persistent meeting layer — keeps a live call mounted across
+                  navigation and shows the minimized mini-player. */}
+              <ActiveCallHost />
+            </BrowserRouter>
+            </ActiveCallProvider>
+          </GlobalAudioProvider>
         </LanguageProvider>
       </AuthProvider>
     </ThemeProvider>

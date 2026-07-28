@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
+import { useGlobalAudio } from '../GlobalAudioContext';
 
 interface HighQualityAudioPlayerProps {
   text: string;
@@ -129,6 +130,7 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
 }) => {
   const { user } = useAuth();
   const { language } = useLanguage();
+  const { reportPlayback, registerControls } = useGlobalAudio();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const keepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -138,6 +140,41 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
   const pendingPlayRef = useRef(false);
   
   const [isPlaying, setIsPlaying] = useState(false);
+  const hasStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (isPlaying) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current) {
+      if (isPlaying) {
+        reportPlayback({
+          title: title || 'Audio Content',
+          subtitle: contentType || 'Audio',
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            handlePlayPause();
+          }
+        });
+      } else {
+        reportPlayback({
+          title: title || 'Audio Content',
+          subtitle: contentType || 'Audio',
+          isPlaying: false,
+        });
+      }
+    }
+  }, [isPlaying, title, contentType]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);

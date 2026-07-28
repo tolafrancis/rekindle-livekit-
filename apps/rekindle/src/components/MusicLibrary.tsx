@@ -7,6 +7,7 @@ import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useGlobalAudio } from '@rekindle/features/GlobalAudioContext';
 import { 
   uploadAndSaveTrack, 
   fetchMusicTracks, 
@@ -48,6 +49,8 @@ export function MusicLibrary({
 }: Props) {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { reportPlayback, registerControls } = useGlobalAudio();
+  const hasStartedRef = useRef(false);
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
@@ -267,6 +270,46 @@ export function MusicLibrary({
   );
 
   const categories = ['all', 'worship', 'meditation', 'prayer', 'ambient', 'instrumental', 'personal'];
+
+  useEffect(() => {
+    if (playing) {
+      hasStartedRef.current = true;
+    }
+    if (hasStartedRef.current && activeTrack) {
+      if (playing) {
+        reportPlayback({
+          title: activeTrack.title || 'Music',
+          subtitle: activeTrack.artist || 'Music Library',
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            playTrack(activeTrack);
+          },
+          onNext: () => {
+            skipTrack('next');
+          },
+          onPrevious: () => {
+            skipTrack('prev');
+          }
+        });
+      } else {
+        reportPlayback({
+          title: activeTrack.title || 'Music',
+          subtitle: activeTrack.artist || 'Music Library',
+          isPlaying: false,
+        });
+      }
+    }
+  }, [playing, activeTrack]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   if (loading) {
     return (

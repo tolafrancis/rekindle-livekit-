@@ -1876,13 +1876,19 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // attachLocalVideoTrack() is already a no-op once the right track is
       // attached, so retrying it a few times over a few seconds is safe and
       // makes the local preview catch up as soon as the model is ready,
-      // rather than waiting on a coincidental later re-render.
-      [200, 500, 1000, 1800, 3000].forEach((delay) => setTimeout(() => attachLocalVideoTrack(), delay));
+      // rather than waiting on a coincidental later re-render. In addition to
+      // attachLocalVideoTrack(), we also call updateParticipants() to ensure
+      // that the featured/large video tile recovers (which is needed when the
+      // local user is pinned/spotlighted).
+      [200, 500, 1000, 1800, 3000].forEach((delay) => setTimeout(() => {
+        attachLocalVideoTrack();
+        updateParticipants();
+      }, delay));
     } catch (e: any) {
       console.error('[Daily] Failed to set video background:', e);
       toast({ title: 'Background Error', description: 'Could not apply the background.', variant: 'destructive' });
     }
-  }, [attachLocalVideoTrack]);
+  }, [attachLocalVideoTrack, updateParticipants]);
 
   // Start screen share
   const startScreenShare = useCallback(async () => {

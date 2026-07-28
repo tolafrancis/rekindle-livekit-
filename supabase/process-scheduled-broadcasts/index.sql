@@ -13,8 +13,8 @@
 //   supabase functions deploy process-scheduled-broadcasts
 //
 // ENV SECRETS  (Supabase Dashboard ? Settings ? Edge Functions)
-//   SUPABASE_URL               — auto-injected
-//   SUPABASE_SERVICE_ROLE_KEY  — auto-injected
+//   SUPABASE_URL               ï¿½ auto-injected
+//   SUPABASE_SERVICE_ROLE_KEY  ï¿½ auto-injected
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -25,7 +25,7 @@ const corsHeaders = {
 };
 
 // ---------------------------------------------------------------------------
-// Supabase client — service role so we can read and update any row
+// Supabase client ï¿½ service role so we can read and update any row
 // ---------------------------------------------------------------------------
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -49,7 +49,7 @@ async function invokeFunction(
 }
 
 // ---------------------------------------------------------------------------
-// Dispatch helpers — one per channel
+// Dispatch helpers ï¿½ one per channel
 // ---------------------------------------------------------------------------
 
 /** Push notification via FCM */
@@ -121,7 +121,7 @@ async function dispatchWhatsApp(
 }
 
 // ---------------------------------------------------------------------------
-// PART 1 — Process broadcast_notifications (main app BroadcastMessaging)
+// PART 1 ï¿½ Process broadcast_notifications (main app BroadcastMessaging)
 //
 // Schema:
 //   id, title, message, channel (comma-separated e.g. "push,whatsapp,inapp"),
@@ -133,7 +133,7 @@ async function processMainAppBroadcasts(
   const now = new Date().toISOString();
 
   // Atomically claim all due rows by flipping status to 'processing'.
-  // A single UPDATE … RETURNING is one SQL statement — no two concurrent
+  // A single UPDATE ï¿½ RETURNING is one SQL statement ï¿½ no two concurrent
   // workers can claim the same row.
   const { data: claimed, error: claimErr } = await supabase
     .from("broadcast_notifications")
@@ -264,7 +264,7 @@ async function processMainAppBroadcasts(
 }
 
 // ---------------------------------------------------------------------------
-// PART 2 — Process ministry_group_broadcasts (MinistryGroupsManager)
+// PART 2 ï¿½ Process ministry_group_broadcasts (MinistryGroupsManager)
 //
 // Schema:
 //   id, group_id, sender_id, title, message, channels (text[]),
@@ -329,7 +329,7 @@ async function processGroupBroadcasts(
       recipientCount = memberUserIds.length;
 
       if (memberUserIds.length === 0) {
-        console.warn(`[${row.id}] No eligible members — skipping dispatch`);
+        console.warn(`[${row.id}] No eligible members ï¿½ skipping dispatch`);
         await supabase
           .from("ministry_group_broadcasts")
           .update({ status: "sent", sent_at: now, recipient_count: 0 })
@@ -470,20 +470,12 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Accept calls from pg_cron (no body) or authenticated HTTP clients.
-  // pg_cron passes the service role key in the Authorization header (see cron-setup.sql).
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const isServiceRole = authHeader.includes(SERVICE_ROLE_KEY);
-  const isCronHeader = req.headers.get("x-cron-source") === "pg_cron";
-
-  if (!isServiceRole && !isCronHeader) {
-    // Fail open in development (no SERVICE_ROLE_KEY set means we're in test mode)
-    if (SERVICE_ROLE_KEY !== "") {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+  const cronSecret = req.headers.get("x-cron-secret");
+  if (!cronSecret || cronSecret !== Deno.env.get("CRON_SHARED_SECRET")) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   const startTime = Date.now();
@@ -491,7 +483,7 @@ serve(async (req) => {
 
   console.log("process-scheduled-broadcasts: starting run at", new Date().toISOString());
 
-  // Run both processors concurrently — they touch different tables
+  // Run both processors concurrently ï¿½ they touch different tables
   const [mainResult, groupResult] = await Promise.all([
     processMainAppBroadcasts(supabase),
     processGroupBroadcasts(supabase),

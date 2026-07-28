@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import { AudioOutputProvider } from './AudioOutputContext';
 
 /**
  * Keeps a live video meeting mounted across in-app navigation (Option A).
@@ -23,6 +24,7 @@ export interface ActiveCallInfo {
 interface ActiveCallContextValue {
   call: ActiveCallInfo | null;
   minimized: boolean;
+  isSystemPiP: boolean;
   startCall: (call: ActiveCallInfo) => void;
   /** Clear the call from the host (does NOT run onLeave — callers that need DB
    *  cleanup should call the call's onLeave, which ends by calling this). */
@@ -36,17 +38,53 @@ const ActiveCallContext = createContext<ActiveCallContextValue | null>(null);
 export const ActiveCallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [call, setCall] = useState<ActiveCallInfo | null>(null);
   const [minimized, setMinimized] = useState(false);
+  const [isSystemPiP, setIsSystemPiP] = useState(false);
 
-  const startCall = useCallback((c: ActiveCallInfo) => { setCall(c); setMinimized(false); }, []);
-  const endCall = useCallback(() => { setCall(null); setMinimized(false); }, []);
+  const startCall = useCallback((c: ActiveCallInfo) => {
+    setCall(c);
+    setMinimized(false);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('call:active', { detail: true }));
+    }
+  }, []);
+  const endCall = useCallback(() => {
+    setCall(null);
+    setMinimized(false);
+    setIsSystemPiP(false);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('call:active', { detail: false }));
+    }
+  }, []);
   const minimize = useCallback(() => setMinimized(true), []);
   const maximize = useCallback(() => setMinimized(false), []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('call:active', { detail: !!call }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount-only: correct native's isInCall to match reality on launch
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePipChange = (e: Event) => {
+      const isInPiP = (e as CustomEvent).detail?.isInPiP;
+      setIsSystemPiP(!!isInPiP);
+    };
+    window.addEventListener('pipModeChanged', handlePipChange);
+    return () => {
+      window.removeEventListener('pipModeChanged', handlePipChange);
+    };
+  }, []);
+
   const value = useMemo(
-    () => ({ call, minimized, startCall, endCall, minimize, maximize }),
-    [call, minimized, startCall, endCall, minimize, maximize],
+    () => ({ call, minimized, isSystemPiP, startCall, endCall, minimize, maximize }),
+    [call, minimized, isSystemPiP, startCall, endCall, minimize, maximize],
   );
-  return <ActiveCallContext.Provider value={value}>{children}</ActiveCallContext.Provider>;
+  return (
+    <ActiveCallContext.Provider value={value}>
+      <AudioOutputProvider>{children}</AudioOutputProvider>
+    </ActiveCallContext.Provider>
+  );
 };
 
 /** Throws if used outside the provider (for the host + meetings screens). */

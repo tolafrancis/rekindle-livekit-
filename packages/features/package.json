@@ -8,6 +8,7 @@
     "./AuthContext": "./src/AuthContext.tsx",
     "./LanguageContext": "./src/LanguageContext.tsx",
     "./CurrentMinistryContext": "./src/CurrentMinistryContext.tsx",
+    "./GlobalAudioContext": "./src/GlobalAudioContext.tsx",
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./data/*": "./src/data/*.ts",

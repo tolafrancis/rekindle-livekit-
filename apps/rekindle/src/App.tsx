@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import MinistryJoinLanding from "@/components/registration/MinistryJoinLanding";
 import MinistryKiosk from "@/components/registration/MinistryKiosk";
 import MemberMinistryProfile from "@/components/registration/MemberMinistryProfile";
@@ -12,6 +12,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ActiveCallProvider } from "@rekindle/live/ActiveCallContext";
+import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
 import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
@@ -46,6 +47,28 @@ const queryClient = new QueryClient({
   },
 });
 
+const PushNotificationNavHandler = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handlePushNav = (e: Event) => {
+      const link = (e as CustomEvent).detail?.link as string;
+      if (!link) return;
+      // Strip the origin if present, keep just the path
+      try {
+        const url = new URL(link, window.location.origin);
+        navigate(url.pathname + url.search + url.hash);
+      } catch {
+        navigate(link);
+      }
+    };
+    window.addEventListener('pushNotificationNav', handlePushNav);
+    return () => window.removeEventListener('pushNotificationNav', handlePushNav);
+  }, [navigate]);
+
+  return null;
+};
+
 const App = () => {
   useEffect(() => {
     const handler = (e: Event) => {
@@ -66,11 +89,13 @@ const App = () => {
         <TooltipProvider>
           <AuthProvider>
             <LanguageProvider>
-              <ActiveCallProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <Routes>
+              <GlobalAudioProvider>
+                <ActiveCallProvider>
+                <Toaster />
+                <Sonner />
+                <BrowserRouter>
+                  <PushNotificationNavHandler />
+                  <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />
                   <Route path="/admin" element={<AdminPage />} />
@@ -131,6 +156,7 @@ const App = () => {
                 <ActiveCallHost />
               </BrowserRouter>
               </ActiveCallProvider>
+              </GlobalAudioProvider>
             </LanguageProvider>
           </AuthProvider>
         </TooltipProvider>

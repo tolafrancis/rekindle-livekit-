@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@rekindle/ui/button';
 import { Progress } from '@rekindle/ui/progress';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
+import { useGlobalAudio } from '../GlobalAudioContext';
 import {
   X,
   ChevronRight,
@@ -147,6 +148,8 @@ export const DevotionalModule: React.FC<Props> = ({
   const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { reportPlayback, registerControls } = useGlobalAudio();
+  const hasStartedRef = useRef(false);
   const ctxTakeDeclaration = useTakeDeclarationHandler();
   const [currentSlide, setCurrentSlide] = useState(0);
   // True while a scrollable slide is pacing itself (start delay → scroll → end dwell).
@@ -864,6 +867,55 @@ export const DevotionalModule: React.FC<Props> = ({
     // Stop speaking when changing slides
     stopSpeaking();
   }, [currentSlide]);
+
+  // Sync background music state (if narration is not active)
+  useEffect(() => {
+    const backgroundMusicPlaying = audioStarted && !isPaused && !isMuted;
+    const isNarrationActive = isSpeaking || isAudioActive;
+
+    if (backgroundMusicPlaying && !isNarrationActive) {
+      hasStartedRef.current = true;
+    }
+
+    if (hasStartedRef.current && !isNarrationActive) {
+      const getMusicTrack = () => {
+        const musicId = normalizedDevotional.musicId;
+        if (musicId) {
+          const track = instrumentalTracks.find(t => t.id === String(musicId));
+          if (track) return track;
+        }
+        return instrumentalTracks[0];
+      };
+      const track = getMusicTrack();
+
+      if (backgroundMusicPlaying) {
+        reportPlayback({
+          title: track?.title || 'Background Instrumental',
+          subtitle: `Devotional: ${displayTitle}`,
+          isPlaying: true,
+        });
+        registerControls({
+          onPlayPause: () => {
+            togglePause();
+          }
+        });
+      } else {
+        reportPlayback({
+          title: track?.title || 'Background Instrumental',
+          subtitle: `Devotional: ${displayTitle}`,
+          isPlaying: false,
+        });
+      }
+    }
+  }, [audioStarted, isPaused, isMuted, isSpeaking, isAudioActive, displayTitle, normalizedDevotional.musicId]);
+
+  useEffect(() => {
+    return () => {
+      if (hasStartedRef.current) {
+        reportPlayback(null);
+      }
+    };
+  }, []);
 
   // Render JSX starts here
   return (
