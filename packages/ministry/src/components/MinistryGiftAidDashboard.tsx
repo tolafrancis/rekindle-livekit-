@@ -25,6 +25,7 @@ import {
   type EligibleDonationRow,
 } from '../giftAid';
 import { GiftAidClaimsManager } from './GiftAidClaimsManager';
+import { GiftAidAutoSubmitGuide } from './GiftAidAutoSubmitGuide';
 import { GiftAidReports } from './GiftAidReports';
 import { GiftAidDeclarationsManager } from './GiftAidDeclarationsManager';
 
@@ -309,12 +310,12 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
             <p className="text-xs text-gray-500">
               {t('ministryGiftAidDashboard', 'completeRecordsNote', "Only complete donor records (name, house number/address and postcode) are included — anything incomplete is skipped so HMRC doesn't reject the claim.")}
             </p>
-            <p className="text-xs text-gray-500">
-              {t('ministryGiftAidDashboard', 'preferAutoNote', "Prefer not to do this by hand? Open the")} <span className="font-medium">{t('ministryGiftAidDashboard', 'claims', 'Claims')}</span> {t('ministryGiftAidDashboard', 'preferAutoNotePost', 'tab above — it can build and submit the claim to HMRC directly from the app, using your Government Gateway login.')}
-            </p>
           </CardContent>
         )}
       </Card>
+
+      {/* How to submit automatically (alongside the manual guide above) */}
+      <GiftAidAutoSubmitGuide themeColor={themeColor} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
