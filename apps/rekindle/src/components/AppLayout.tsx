@@ -35,6 +35,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { getPlatformSetting } from '@rekindle/features/platformSettings';
 import { AppFooter } from './AppFooter';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
+import { registerPush } from '@rekindle/features/usePushNotifications';
 import { UpgradePromptModal } from './UpgradePromptModal';
 import { UserActivityDashboard } from './UserActivityDashboard';
 import { BookSummaries } from './BookSummaries';
@@ -321,6 +322,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    registerPush('user').catch(console.error);
+  }, []);
 
   // Safe auth hook with fallback values
   let user: any = null;

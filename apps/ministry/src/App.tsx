@@ -29,6 +29,7 @@ import { GlobalAudioProvider } from '@rekindle/features/GlobalAudioContext';
 import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
 import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
 import LandingPage from '@rekindle/features/components/LandingPage';
+import { registerPush } from '@rekindle/features/usePushNotifications';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -130,6 +131,10 @@ function AuthedShell() {
   const { ministries, loading, currentMinistry } = useCurrentMinistry();
   const { name } = useMinistryBranding();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    registerPush('user').catch(console.error);
+  }, []);
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
   // Members and leaders both get onboarding, but different sets: leaders get the
