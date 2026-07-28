@@ -309,6 +309,9 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
             <p className="text-xs text-gray-500">
               {t('ministryGiftAidDashboard', 'completeRecordsNote', "Only complete donor records (name, house number/address and postcode) are included — anything incomplete is skipped so HMRC doesn't reject the claim.")}
             </p>
+            <p className="text-xs text-gray-500">
+              {t('ministryGiftAidDashboard', 'preferAutoNote', "Prefer not to do this by hand? Open the")} <span className="font-medium">{t('ministryGiftAidDashboard', 'claims', 'Claims')}</span> {t('ministryGiftAidDashboard', 'preferAutoNotePost', 'tab above — it can build and submit the claim to HMRC directly from the app, using your Government Gateway login.')}
+            </p>
           </CardContent>
         )}
       </Card>

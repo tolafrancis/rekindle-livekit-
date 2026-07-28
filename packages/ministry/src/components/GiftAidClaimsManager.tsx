@@ -10,6 +10,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import {
   FileSpreadsheet, FileCode2, FileText, Loader2, Plus, ArrowLeft, Send,
   CheckCircle2, XCircle, Trash2, AlertTriangle, RefreshCw, Landmark, FileDown,
+  HelpCircle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import {
   buildClaim, listClaims, getClaim, getClaimLineItems, setClaimStatus, deleteClaim,
@@ -53,6 +54,7 @@ export const GiftAidClaimsManager: React.FC<Props> = ({ ministryId, themeColor =
   const [items, setItems] = useState<ClaimLineItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [charity, setCharity] = useState<CharityDetails | null>(null);
+  const [showAutoGuide, setShowAutoGuide] = useState(false);
 
   // HMRC submission dialog
   const [showSubmit, setShowSubmit] = useState(false);
@@ -428,6 +430,32 @@ export const GiftAidClaimsManager: React.FC<Props> = ({ ministryId, themeColor =
   }
   return (
     <div className="space-y-4">
+      <Card>
+        <button
+          onClick={() => setShowAutoGuide((s) => !s)}
+          className="w-full flex items-center justify-between p-4 text-left"
+        >
+          <span className="flex items-center gap-2 font-medium">
+            <HelpCircle className="h-4 w-4" style={{ color: themeColor }} />
+            {t('giftAidClaimsManager', 'howToSubmitAuto', 'How to submit a claim automatically from the app')}
+          </span>
+          {showAutoGuide ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        </button>
+        {showAutoGuide && (
+          <CardContent className="pt-0 text-sm text-gray-600 space-y-2">
+            <ol className="list-decimal pl-5 space-y-1.5">
+              <li>{t('giftAidClaimsManager', 'autoStep1', "Click")} <span className="font-medium">{t('giftAidClaimsManager', 'bundleEligibleDonations', 'Bundle eligible donations')}</span> {t('giftAidClaimsManager', 'autoStep1Post', "below to pack every eligible, unclaimed donation in the period into a new draft claim.")}</li>
+              <li>{t('giftAidClaimsManager', 'autoStep2', "Open the claim in the table and check the donation list — anything flagged")} <span className="font-medium">{t('giftAidClaimsManager', 'missingLabel', 'Missing')}</span> {t('giftAidClaimsManager', 'autoStep2Post', "should be fixed first (ask the donor to complete their Gift Aid declaration), or HMRC may reject it.")}</li>
+              <li>{t('giftAidClaimsManager', 'autoStep3Pre', "Click")} <span className="font-medium">{t('giftAidClaimsManager', 'submitToHmrc', 'Submit to HMRC')}</span> {t('giftAidClaimsManager', 'autoStep3Post', "and sign in with your ministry's Government Gateway user ID and password (the same login your charity uses on gov.uk) — the app files it directly with HMRC Charities Online, no spreadsheet needed.")}</li>
+              <li>{t('giftAidClaimsManager', 'autoStep4', "The claim moves to")} <span className="font-medium">{t('giftAidClaimsManager', 'submittedLabel', 'Submitted')}</span>{t('giftAidClaimsManager', 'autoStep4Post', ". Come back and click")} <span className="font-medium">{t('giftAidClaimsManager', 'checkHmrcStatus', 'Check HMRC status')}</span> {t('giftAidClaimsManager', 'autoStep4Post2', "any time to see if HMRC has accepted or rejected it — no need to check the HMRC website separately.")}</li>
+            </ol>
+            <p className="text-xs text-gray-500">
+              {t('giftAidClaimsManager', 'autoGuideNote', "Your Government Gateway password is sent securely for that one submission only — it's never stored. If you'd rather not connect HMRC credentials here, use the CSV/XML export buttons on a claim and file it yourself on gov.uk instead.")}
+            </p>
+          </CardContent>
+        )}
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('giftAidClaimsManager', 'buildNewClaim', 'Build a new claim')}</CardTitle>
