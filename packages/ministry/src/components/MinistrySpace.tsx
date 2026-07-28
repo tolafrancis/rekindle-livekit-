@@ -972,30 +972,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
     <div className="min-h-screen bg-gray-50">
-      {/* DevotionalModule Overlay */}
-      {showDevotionalModule && selectedDevotional && (
-        <DevotionalModule
-          entry={selectedDevotional}
-          seriesTitle={t('ministrySpace', 'ministryDevotionalSeries', 'Ministry Devotional')}
-          totalDays={1}
-          ministryName={ministry?.name}
-          shareUrl={`${window.location.origin}/ministry-devotional/${selectedDevotional.id}`}
-          onComplete={() => {
-            markDevotionalComplete(selectedDevotional.id);
-            setShowDevotionalModule(false);
-          }}
-          onClose={() => setShowDevotionalModule(false)}
-          onTakeDeclaration={() => {
-            // Ministry isn't route-based: go to the home tab and scroll to the card.
-            setShowDevotionalModule(false);
-            setActiveTab('home');
-            setTimeout(() => {
-              document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 350);
-          }}
-        />
-      )}
-
       {/* Pastor's Video Message player overlay */}
       {showVideoPlayer && activeVideoMessage && (
         <VideoMessagePlayer
