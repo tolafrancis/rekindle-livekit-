@@ -106,22 +106,40 @@ serve(async (req) => {
   }
 
   try {
+    const rawText = await req.clone().text();
+    console.log('[send-push-notification] Raw request body:', rawText);
     const { title, body, link, senderName, targetAudience, notificationType, challengeId, userId, ministryId, announcementId, channelId, inApp, push } = await req.json();
     // Channel flags: push defaults ON (back-compat with existing callers);
     // inApp defaults OFF. Broadcasts / notify() opt into in-app fan-out.
     const doPush = push !== false;
     const doInApp = inApp === true;
 
+    // ── AUTHORIZATION (§3c) — prevent cross-tenant blasts ───────────────────
+    // Internal callers use the service role and are trusted (crons, notify(),
+    // other edge fns). USER callers may ONLY target their own ministry (as a
+    // leader/admin/owner) or themselves — never another church's members, a
+    // platform-wide audience, or "all users". The null=all default below is a
+    // cross-tenant blast unless the caller is a platform admin.
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const cronSecret = req.headers.get('x-cron-secret');
+    const isServerCall =
+      (!!cronSecret && cronSecret === Deno.env.get('CRON_SHARED_SECRET')) ||
+      decodeJwtRole(authHeader) === 'service_role';
+
     // Validation
     if (!title || !body) {
-      return new Response(
-        JSON.stringify({ error: 'Title and body are required' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
+      if (!isServerCall) {
+        return new Response(
+          JSON.stringify({ error: 'Title and body are required' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        );
+      }
+      console.warn('[send-push-notification] server call missing title/body, continuing');
     }
+
     // Initialize Supabase client with service role
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -136,17 +154,9 @@ serve(async (req) => {
 
     console.log(`send-notification - Type: ${notificationType}, Audience: ${targetAudience}, push=${doPush}, inApp=${doInApp}`);
 
-    // ── AUTHORIZATION (§3c) — prevent cross-tenant blasts ───────────────────
-    // Internal callers use the service role and are trusted (crons, notify(),
-    // other edge fns). USER callers may ONLY target their own ministry (as a
-    // leader/admin/owner) or themselves — never another church's members, a
-    // platform-wide audience, or "all users". The null=all default below is a
-    // cross-tenant blast unless the caller is a platform admin.
-    const authHeader = req.headers.get('Authorization') ?? '';
-    const isServiceCall = decodeJwtRole(authHeader) === 'service_role';
     let isPlatformAdmin = false;
 
-    if (!isServiceCall) {
+    if (!isServerCall) {
       const callerClient = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
         Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -330,7 +340,7 @@ serve(async (req) => {
     // Hard guard (§3c): tokenUserIds === null means "all users". Only a trusted
     // service call or a platform admin may ever reach the entire user base — for
     // anyone else this is a cross-tenant blast, so refuse rather than fan out.
-    if (tokenUserIds === null && !isServiceCall && !isPlatformAdmin) {
+    if (tokenUserIds === null && !isServerCall && !isPlatformAdmin) {
       return new Response(JSON.stringify({ error: 'Refusing to broadcast to all users' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
