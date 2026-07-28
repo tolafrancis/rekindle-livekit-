@@ -12,10 +12,12 @@ import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { supabase } from '@rekindle/supabase';
 import { getLocalDateString, endOfLocalDayISO } from '@rekindle/ui/utils';
 import { getMinistryStreamId } from '@rekindle/features/devotionalStreams';
+import { consumeDeepLink } from '@rekindle/features/deepLink';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
+import { VideoMessagePlayer } from '@rekindle/live/components/VideoMessagePlayer';
 import {
   ArrowLeft, Home, BookOpen, Heart, Calendar, MessageSquare,
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
@@ -40,6 +42,7 @@ const MINISTRY_NAV = [
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
+import MinistryBroadcast from './MinistryBroadcast';
 import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
 import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
 import { MLiveChannel } from './MLiveChannel';
@@ -186,6 +189,22 @@ interface PrayerCampaign {
   is_active: boolean;
 }
 
+interface MinistryVideoMessage {
+  id: string;
+  title: string;
+  description?: string | null;
+  speaker_name?: string | null;
+  category?: string | null;
+  is_pinned: boolean;
+  display_order?: number | null;
+  published_at?: string | null;
+  playback_url?: string | null;
+  thumbnail_url?: string | null;
+  captions_url?: string | null;
+  duration_seconds?: number | null;
+  created_at: string;
+}
+
 interface MinistrySpaceProps {
   ministry: Ministry;
   membership?: MembershipInfo;
@@ -235,6 +254,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([]);
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
   const [devotionals, setDevotionals] = useState<MinistryDevotional[]>([]);
+  const [videoMessages, setVideoMessages] = useState<MinistryVideoMessage[]>([]);
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const [activeVideoMessage, setActiveVideoMessage] = useState<MinistryVideoMessage | null>(null);
   const [declarations, setDeclarations] = useState<any[]>([]);
   const [affirmations, setAffirmations] = useState<any[]>([]);
   const [prayers, setPrayers] = useState<MinistryPrayer[]>([]);
@@ -310,7 +332,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       expiryFloor.setHours(0, 0, 0, 0);
       expiryFloor.setDate(expiryFloor.getDate() - 5);
       const expiryFloorISO = expiryFloor.toISOString();
-      const [announcementsRes, eventsRes, prayersRes, testimoniesRes, devotionalsRes, prayerLibraryRes, campaignsRes] = await Promise.all([
+      const [announcementsRes, eventsRes, prayersRes, testimoniesRes, devotionalsRes, prayerLibraryRes, campaignsRes, videoMessagesRes] = await Promise.all([
         supabase.from('ministry_announcements').select('*').eq('ministry_id', ministry.id)
           .not('status', 'in', '("draft","scheduled","expired")')
           .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
@@ -329,13 +351,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           .order('created_at', { ascending: false })
           .limit(10),
         supabase.from('ministry_prayer_library').select('*').eq('ministry_id', ministry.id).eq('is_active', true).order('created_at', { ascending: false }),
-        supabase.from('prayer_campaigns').select('*').eq('ministry_id', ministry.id).eq('is_active', true).order('created_at', { ascending: false })
+        supabase.from('prayer_campaigns').select('*').eq('ministry_id', ministry.id).eq('is_active', true).order('created_at', { ascending: false }),
+        supabase.from('ministry_video_messages').select('*').eq('ministry_id', ministry.id)
+          .in('status', ['published', 'archived'])
+          .order('is_pinned', { ascending: false })
+          .order('display_order', { ascending: true, nullsFirst: false })
+          .order('published_at', { ascending: false })
       ]);
 
       setAnnouncements(announcementsRes.data || []);
       setEvents(eventsRes.data || []);
       setPrayerRequests(prayersRes.data || []);
       setTestimonies(testimoniesRes.data || []);
+      setVideoMessages(videoMessagesRes.data || []);
 
       // Daily-devotional source (0149): if this ministry pointed its homepage at an
       // admin stream, show that stream's devotionals INSTEAD of its own. The ministry's
@@ -421,11 +449,57 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     loadMinistryData();
   }, [loadMinistryData]);
 
+  // Open a Pastor's Video Message arriving from a shared/notification link
+  // (/ministry-videos/:id). MinistriesHub already resolved which ministry this
+  // is before mounting us, so here we just need the specific video — fetched
+  // directly rather than waiting on the homepage list, since it may be an
+  // older/archived one not among the "previous messages" shown there.
+  useEffect(() => {
+    const dl = consumeDeepLink('ministry-videos');
+    if (!dl?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('ministry_video_messages')
+          .select('*')
+          .eq('id', dl.id)
+          .eq('ministry_id', ministry.id)
+          .maybeSingle();
+        if (data?.playback_url) {
+          setActiveVideoMessage(data);
+          setShowVideoPlayer(true);
+        }
+      } catch (err) {
+        console.error('Error opening shared video message:', err);
+      }
+    })();
+  }, [ministry.id]);
+
   // Load community data when community tab is first activated
   useEffect(() => {
     if (activeTab === 'community' && ministry?.id) {
       loadMinistryCommunity();
     }
+  }, [activeTab, ministry?.id]);
+
+  // Refetch video messages whenever Home becomes active — publishing happens in
+  // a separate admin view (MinistryManagement) with no shared live state, so
+  // without this the homepage widget would keep showing whatever was loaded on
+  // mount until a full page refresh.
+  useEffect(() => {
+    if (activeTab !== 'home' || !ministry?.id) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from('ministry_video_messages')
+        .select('*')
+        .eq('ministry_id', ministry.id)
+        .in('status', ['published', 'archived'])
+        .order('is_pinned', { ascending: false })
+        .order('display_order', { ascending: true, nullsFirst: false })
+        .order('published_at', { ascending: false });
+      if (error) { console.error('Error refreshing video messages:', error); return; }
+      setVideoMessages(data || []);
+    })();
   }, [activeTab, ministry?.id]);
 
   const handleCreateAnnouncement = async () => {
@@ -654,6 +728,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     { id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
+      ...(canManageMinistry ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
@@ -918,6 +993,20 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 350);
           }}
+        />
+      )}
+
+      {/* Pastor's Video Message player overlay */}
+      {showVideoPlayer && activeVideoMessage && (
+        <VideoMessagePlayer
+          videoId={activeVideoMessage.id}
+          ministryId={ministry.id}
+          title={activeVideoMessage.title}
+          speakerName={activeVideoMessage.speaker_name}
+          playbackUrl={activeVideoMessage.playback_url!}
+          captionsUrl={activeVideoMessage.captions_url}
+          shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
+          onClose={() => setShowVideoPlayer(false)}
         />
       )}
 
@@ -1470,6 +1559,98 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </Card>
             </div>
 
+            {/* Pastor's Video Message — latest published (pinned first), plus a
+                browsable strip of previous messages. */}
+            {videoMessages.length > 0 && (() => {
+              const published = videoMessages.filter(v => v.playback_url);
+              const latest = published[0] || null;
+              const previous = published.slice(1, 7);
+              if (!latest) return null;
+              return (
+                <Card className="overflow-hidden">
+                  <div className="grid grid-cols-1 md:grid-cols-5">
+                    <button
+                      onClick={() => { setActiveVideoMessage(latest); setShowVideoPlayer(true); }}
+                      className="relative md:col-span-2 aspect-video bg-black group"
+                    >
+                      {latest.thumbnail_url ? (
+                        <img src={latest.thumbnail_url} alt={latest.title} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                          <Video className="h-10 w-10 text-gray-600" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="h-14 w-14 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <Play className="h-6 w-6 ml-0.5" style={{ color: themeColor }} />
+                        </div>
+                      </div>
+                      {latest.duration_seconds ? (
+                        <span className="absolute bottom-2 right-2 text-[11px] bg-black/70 text-white px-1.5 py-0.5 rounded">
+                          {Math.floor(latest.duration_seconds / 60)}:{String(Math.round(latest.duration_seconds % 60)).padStart(2, '0')}
+                        </span>
+                      ) : null}
+                    </button>
+                    <div className="md:col-span-3 p-4 sm:p-6 flex flex-col justify-center">
+                      <div className="flex items-center gap-2 mb-1">
+                        {ministry.logo_url && <img src={ministry.logo_url} alt={ministry.name} className="h-5 w-5 rounded-full object-cover" />}
+                        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: themeColor }}>
+                          {t('ministrySpace', 'pastorsMessage', "Pastor's Video Message")}
+                        </p>
+                      </div>
+                      <h3 className="text-xl font-bold leading-snug">{latest.title}</h3>
+                      <div className="flex items-center gap-2 text-sm text-gray-500 mt-1 flex-wrap">
+                        {latest.speaker_name && <span>{latest.speaker_name}</span>}
+                        {latest.published_at && <span>· {new Date(latest.published_at).toLocaleDateString()}</span>}
+                      </div>
+                      {latest.description && (
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">{latest.description}</p>
+                      )}
+                      <Button
+                        className="mt-4 w-fit"
+                        style={{ backgroundColor: themeColor }}
+                        onClick={() => { setActiveVideoMessage(latest); setShowVideoPlayer(true); }}
+                      >
+                        <Play className="h-4 w-4 mr-2" />
+                        {t('ministrySpace', 'watchMessage', 'Watch Message')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {previous.length > 0 && (
+                    <div className="border-t p-4">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                        {t('ministrySpace', 'previousMessages', 'Previous Messages')}
+                      </p>
+                      <div className="flex gap-3 overflow-x-auto pb-1">
+                        {previous.map(video => (
+                          <button
+                            key={video.id}
+                            onClick={() => { setActiveVideoMessage(video); setShowVideoPlayer(true); }}
+                            className="flex-shrink-0 w-40 text-left group"
+                          >
+                            <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
+                              {video.thumbnail_url ? (
+                                <img src={video.thumbnail_url} alt={video.title} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Video className="h-6 w-6 text-gray-300" />
+                                </div>
+                              )}
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+                                <Play className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </div>
+                            </div>
+                            <p className="text-xs font-medium mt-1 line-clamp-2">{video.title}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })()}
+
             {/* Today's Declaration & Affirmation — consumer card design (Save/Share/Audio),
                 ministry-scoped via the per-feature content source, module-gated. */}
             {(moduleOn('declarations') || moduleOn('affirmations')) && (
@@ -1819,6 +2000,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
           </div>
         )}
+
+        {/* Broadcast Tab — admin/leader only, no member-facing view. */}
+        {activeTab === 'broadcast' && isAdmin && <MinistryBroadcast />}
 
         {/* Announcements Tab
              Admins see the full MinistryAnnouncementsManager (search, filter, analytics,

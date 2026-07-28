@@ -214,7 +214,7 @@ export const MinistryPartnerPlansManager: React.FC = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>{t('partnerPlansManager', 'slug', 'Slug (unique, e.g. tier_1)')}</Label>
+                <Label>{t('partnerPlansManager', 'slug', 'Slug (unique, e.g. starter)')}</Label>
                 <Input value={form.slug ?? ''} onChange={(e) => setForm({ ...form, slug: e.target.value })} disabled={!isNew} />
               </div>
               <div>

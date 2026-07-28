@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -29,6 +29,7 @@ export default function MemberAccountSettings() {
   const { user, profile, updateProfile, updatePassword, signOut } = useAuth();
   const { language, setLanguage, availableLanguages } = useLanguage();
   const push = usePushNotifications();
+  useEffect(() => { push.checkStatus(); }, []);
 
   // ── Profile ──
   const [fullName, setFullName] = useState(profile?.full_name ?? '');

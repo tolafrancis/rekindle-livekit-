@@ -32,7 +32,8 @@ export type NotifyEventType =
   | 'answer_posted'
   | 'answer_accepted'
   | 'leader_broadcast'
-  | 'onboarding_tip';
+  | 'onboarding_tip'
+  | 'pastor_video_message';
 
 export interface NotifyPayload {
   type: NotifyEventType;
@@ -68,6 +69,10 @@ const CHANNELS: Record<NotifyEventType, { push: boolean; email: boolean; inApp: 
   answer_accepted:       { push: false, email: false, inApp: true  },
   leader_broadcast:      { push: true,  email: true,  inApp: true  },
   onboarding_tip:        { push: true,  email: false, inApp: true  },
+  // Email for this event is sent directly via send-email-broadcast (see
+  // MinistryVideoMessagesManager/process-scheduled-video-messages), not through
+  // this dispatcher's own (broken) email path — so email stays false here.
+  pastor_video_message:  { push: true,  email: false, inApp: true  },
 };
 
 export async function notify(payload: NotifyPayload): Promise<void> {

@@ -16,6 +16,8 @@ export interface MinistryLimits {
   broadcasts: number;
   videoMinutes: number;
   apiCalls: number;
+  meetingHours: number | null; // null = unlimited
+  broadcastHours: number | null; // null = unlimited
 }
 
 export interface MinistryCaps {
@@ -48,6 +50,8 @@ const FREE_LIMITS: MinistryLimits = {
   broadcasts: 0,
   videoMinutes: 60,
   apiCalls: 1000,
+  meetingHours: 5,
+  broadcastHours: 0,
 };
 
 const NO_CAPS: MinistryCaps = {
@@ -76,7 +80,7 @@ export const FREE_ENTITLEMENTS: MinistryEntitlements = {
 
 // Ministry plan taxonomy (ministry_subscriptions.plan_type) ranked for tier-gating.
 // Slugs come from ministry_partner_plans (Ministry Partner tiers).
-const PLAN_RANK: Record<string, number> = { tier_1: 1, tier_2: 2, tier_3: 3 };
+const PLAN_RANK: Record<string, number> = { starter: 1, growth_partner: 2, ministry_partner: 3, ministry_plus: 4 };
 // Only an 'active' subscription entitles (status ∈ pending|active|suspended|cancelled|expired).
 const ACTIVE_STATES = ['active'];
 
@@ -97,9 +101,11 @@ function capsFromSub(sub: any): MinistryCaps {
     recordMeetings: feat('recordMeetings', rank >= 2),
     broadcastMessaging: feat('broadcastMessaging', broadcastAllowed),
     manageTeam: feat('manageTeam', rank >= 2),
-    rolePermissions: feat('rolePermissions', rank >= 3),
-    advancedAnalytics: feat('advancedAnalytics', rank >= 3),
-    prioritySupport: !!sub.priority_support || feat('prioritySupport', rank >= 3),
+    // rank >= 4 = top tier only (ministry_plus) — was rank >= 3 back when there
+    // were only 3 tiers; the 0258 rebrand added a 4th tier above ministry_partner.
+    rolePermissions: feat('rolePermissions', rank >= 4),
+    advancedAnalytics: feat('advancedAnalytics', rank >= 4),
+    prioritySupport: !!sub.priority_support || feat('prioritySupport', rank >= 4),
   };
 }
 
@@ -134,6 +140,11 @@ export async function getMinistryEntitlements(
         broadcasts: sub.broadcast_limit ?? FREE_LIMITS.broadcasts,
         videoMinutes: sub.video_minutes_limit ?? FREE_LIMITS.videoMinutes,
         apiCalls: sub.api_calls_limit ?? FREE_LIMITS.apiCalls,
+        // meeting_hours_limit/broadcast_hours_limit: null in the DB means
+        // unlimited (Ministry Partner and up) and must stay null here, not
+        // fall back to FREE_LIMITS — only an *absent column* (undefined) falls back.
+        meetingHours: sub.meeting_hours_limit !== undefined ? sub.meeting_hours_limit : FREE_LIMITS.meetingHours,
+        broadcastHours: sub.broadcast_hours_limit !== undefined ? sub.broadcast_hours_limit : FREE_LIMITS.broadcastHours,
       },
       caps: capsFromSub(sub),
     };

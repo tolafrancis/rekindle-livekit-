@@ -54,41 +54,53 @@ interface SubscriptionPlansManagerProps {
 // see the admin "Partner Plans" tab for the source of truth on pricing/features;
 // this is just used to quick-fill sensible defaults when editing a subscription row).
 const PLAN_CONFIGS = {
-  tier_1: {
-    name: 'Tier 1',
-    member_limit: 99,
-    storage_limit_mb: 2048,
+  starter: {
+    name: 'Starter',
+    member_limit: -1, // gated by feature set (no CRM), not a headcount cap
+    storage_limit_mb: 5120, // 5 GB
     api_calls_limit: 10000,
     broadcast_limit: -1,
     video_minutes_limit: -1,
     white_label_enabled: false,
     custom_domain_enabled: false,
     priority_support: false,
-    price: 2000 // $20/mo in cents
+    price: 1000 // $10/mo in cents
   },
-  tier_2: {
-    name: 'Tier 2',
-    member_limit: 300,
-    storage_limit_mb: 5120,
+  growth_partner: {
+    name: 'Growth Partner',
+    member_limit: 50,
+    storage_limit_mb: 5120, // 5 GB
     api_calls_limit: 25000,
     broadcast_limit: -1,
     video_minutes_limit: -1,
     white_label_enabled: false,
     custom_domain_enabled: false,
     priority_support: false,
-    price: 5000 // $50/mo
+    price: 3000 // $30/mo
   },
-  tier_3: {
-    name: 'Tier 3',
-    member_limit: -1,
-    storage_limit_mb: 20480,
+  ministry_partner: {
+    name: 'Ministry Partner',
+    member_limit: 200,
+    storage_limit_mb: 25600, // 25 GB
     api_calls_limit: 100000,
+    broadcast_limit: -1,
+    video_minutes_limit: -1,
+    white_label_enabled: false,
+    custom_domain_enabled: false,
+    priority_support: false,
+    price: 6000 // $60/mo
+  },
+  ministry_plus: {
+    name: 'Ministry Plus',
+    member_limit: 500, // +$20/mo per additional 500 via ministry_addons
+    storage_limit_mb: 102400, // 100 GB
+    api_calls_limit: 250000,
     broadcast_limit: -1,
     video_minutes_limit: -1,
     white_label_enabled: true,
     custom_domain_enabled: false,
     priority_support: true,
-    price: 7500 // $75/mo
+    price: 12000 // $120/mo
   }
 };
 
@@ -290,10 +302,10 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
         {Object.entries(PLAN_CONFIGS).map(([key, config]) => {
           const count = subscriptions.filter(s => s.plan_type === key && s.status === 'active').length;
           return (
-            <Card key={key} className={`${key === 'tier_3' ? 'bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200' : ''}`}>
+            <Card key={key} className={`${key === 'ministry_plus' ? 'bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200' : ''}`}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <Badge variant={key === 'tier_3' ? 'default' : 'secondary'} className="capitalize">
+                  <Badge variant={key === 'ministry_plus' ? 'default' : 'secondary'} className="capitalize">
                     {config.name}
                   </Badge>
                   <span className="text-2xl font-bold">{count}</span>
@@ -326,9 +338,10 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('subscriptionPlansManager', 'allPlans', 'All Plans')}</SelectItem>
-                <SelectItem value="tier_1">{t('subscriptionPlansManager', 'tier1', 'Tier 1')}</SelectItem>
-                <SelectItem value="tier_2">{t('subscriptionPlansManager', 'tier2', 'Tier 2')}</SelectItem>
-                <SelectItem value="tier_3">{t('subscriptionPlansManager', 'tier3', 'Tier 3')}</SelectItem>
+                <SelectItem value="starter">{t('subscriptionPlansManager', 'starter', 'Starter')}</SelectItem>
+                <SelectItem value="growth_partner">{t('subscriptionPlansManager', 'growthPartner', 'Growth Partner')}</SelectItem>
+                <SelectItem value="ministry_partner">{t('subscriptionPlansManager', 'ministryPartner', 'Ministry Partner')}</SelectItem>
+                <SelectItem value="ministry_plus">{t('subscriptionPlansManager', 'ministryPlus', 'Ministry Plus')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -395,7 +408,7 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                         </div>
                       </td>
                       <td className="p-4">
-                        <Badge variant={sub.plan_type === 'tier_3' ? 'default' : 'secondary'} className="capitalize">
+                        <Badge variant={sub.plan_type === 'ministry_plus' ? 'default' : 'secondary'} className="capitalize">
                           {sub.plan_type?.replace('_', ' ')}
                         </Badge>
                       </td>
@@ -514,9 +527,10 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="tier_1">{t('subscriptionPlansManager', 'tier1', 'Tier 1')}</SelectItem>
-                    <SelectItem value="tier_2">{t('subscriptionPlansManager', 'tier2', 'Tier 2')}</SelectItem>
-                    <SelectItem value="tier_3">{t('subscriptionPlansManager', 'tier3', 'Tier 3')}</SelectItem>
+                    <SelectItem value="starter">{t('subscriptionPlansManager', 'starter', 'Starter')}</SelectItem>
+                    <SelectItem value="growth_partner">{t('subscriptionPlansManager', 'growthPartner', 'Growth Partner')}</SelectItem>
+                    <SelectItem value="ministry_partner">{t('subscriptionPlansManager', 'ministryPartner', 'Ministry Partner')}</SelectItem>
+                    <SelectItem value="ministry_plus">{t('subscriptionPlansManager', 'ministryPlus', 'Ministry Plus')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

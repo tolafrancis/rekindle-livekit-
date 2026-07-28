@@ -3,8 +3,10 @@ import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Switch } from '../ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { supabase } from '@/lib/supabase';
+import { getPlatformSetting, setPlatformSetting } from '@rekindle/features/platformSettings';
 import { toast } from '../ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -47,6 +49,23 @@ const PlatformAdminDashboard: React.FC = () => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useViewHistory<string>("platform-admin-dashboard", 'overview');
   const [loading, setLoading] = useState(true);
+  const [ministriesTabEnabled, setMinistriesTabEnabled] = useState(true);
+  const [savingMinistriesTab, setSavingMinistriesTab] = useState(false);
+
+  useEffect(() => {
+    getPlatformSetting('consumer_ministries_tab_enabled', true).then(setMinistriesTabEnabled);
+  }, []);
+
+  const toggleMinistriesTab = async (checked: boolean) => {
+    setSavingMinistriesTab(true);
+    setMinistriesTabEnabled(checked); // optimistic
+    const res = await setPlatformSetting('consumer_ministries_tab_enabled', checked);
+    setSavingMinistriesTab(false);
+    if (res.error) {
+      setMinistriesTabEnabled(!checked); // revert
+      toast({ title: 'Could not save setting', description: res.error, variant: 'destructive' });
+    }
+  };
   const [stats, setStats] = useState<PlatformStats>({
     totalMinistries: 0,
     activeMinistries: 0,
@@ -241,7 +260,7 @@ const PlatformAdminDashboard: React.FC = () => {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-11 gap-1 h-auto p-1 bg-gray-100">
+        <TabsList className="grid w-full grid-cols-6 lg:grid-cols-12 gap-1 h-auto p-1 bg-gray-100">
           <TabsTrigger value="overview" className="text-xs px-2 py-2">
             <BarChart3 className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabOverview', 'Overview')}
@@ -291,6 +310,10 @@ const PlatformAdminDashboard: React.FC = () => {
           <TabsTrigger value="announcements" className="text-xs px-2 py-2">
             <Globe className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabAnnounce', 'Announce')}
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="text-xs px-2 py-2">
+            <Settings className="h-4 w-4 mr-1" />
+            {t('platformAdminDashboard', 'tabSettings', 'Settings')}
           </TabsTrigger>
         </TabsList>
 
@@ -490,6 +513,31 @@ const PlatformAdminDashboard: React.FC = () => {
         {/* Announcements Tab */}
         <TabsContent value="announcements" className="mt-6">
           <PlatformAnnouncementsManager />
+        </TabsContent>
+
+        {/* Settings Tab — platform-wide feature toggles */}
+        <TabsContent value="settings" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Feature toggles</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div>
+                  <p className="text-sm font-medium">Ministries tab (consumer app)</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Hides the Ministries tab from the consumer app's navigation for everyone. Members who already
+                    belong to a ministry keep access via direct links — this only controls the sidebar entry point.
+                  </p>
+                </div>
+                <Switch
+                  checked={ministriesTabEnabled}
+                  disabled={savingMinistriesTab}
+                  onCheckedChange={toggleMinistriesTab}
+                />
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
       </Tabs>

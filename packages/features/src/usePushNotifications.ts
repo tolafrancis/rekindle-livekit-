@@ -29,6 +29,35 @@ async function getFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> 
   return navigator.serviceWorker.register(url, { scope: FCM_SW_SCOPE });
 }
 
+/**
+ * Waits for THIS registration's worker to reach 'activated' — not
+ * navigator.serviceWorker.ready, which waits for whatever worker controls
+ * the current page (a different, unrelated condition that never resolves
+ * here, since the FCM worker's scope never controls the page). A freshly
+ * registered worker can still be 'installing' when getFcmServiceWorker()
+ * returns, and PushManager.subscribe() throws AbortError against a
+ * not-yet-active registration — this closes that race. Bounded by a
+ * timeout so a worker that never activates still can't hang the caller
+ * forever (that was the original bug this replaced).
+ */
+async function waitForActive(reg: ServiceWorkerRegistration, timeoutMs = 10000): Promise<boolean> {
+  if (reg.active) return true;
+  const worker = reg.installing || reg.waiting;
+  if (!worker) return false;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "activated") {
+        clearTimeout(timer);
+        resolve(true);
+      } else if (worker.state === "redundant") {
+        clearTimeout(timer);
+        resolve(false);
+      }
+    });
+  });
+}
+
 export async function registerPush(role: "user" | "counsellor"): Promise<boolean> {
   try {
     if (Capacitor.isNativePlatform()) {
@@ -97,7 +126,10 @@ export async function registerPush(role: "user" | "counsellor"): Promise<boolean
 
     const swReg = await getFcmServiceWorker();
     if (!swReg) return false;
-    await navigator.serviceWorker.ready;
+    if (!(await waitForActive(swReg))) {
+      console.warn("FCM service worker did not activate in time");
+      return false;
+    }
 
     // Mint the FCM registration token (this also creates the push subscription).
     const fcmToken = await getToken(messaging, {

@@ -50,10 +50,24 @@ async function upsert(sub: {
   // All Ministry Partner tiers include live channels/broadcast per the landing page, so
   // grant those unconditionally here rather than gating them by plan rank.
   let memberLimit: number | null = null;
+  let storageLimitMb: number | null = null;
+  let meetingHoursLimit: number | null = null;
+  let broadcastHoursLimit: number | null = null;
   if (sub.plan) {
     const { data: planRow } = await db
-      .from('ministry_partner_plans').select('max_members').eq('slug', sub.plan).maybeSingle();
-    if (planRow) memberLimit = (planRow as { max_members: number | null }).max_members ?? -1;
+      .from('ministry_partner_plans')
+      .select('max_members, storage_gb, meeting_hours_included, broadcast_hours_included')
+      .eq('slug', sub.plan).maybeSingle();
+    if (planRow) {
+      const p = planRow as {
+        max_members: number | null; storage_gb: number | null;
+        meeting_hours_included: number | null; broadcast_hours_included: number | null;
+      };
+      memberLimit = p.max_members ?? -1;
+      storageLimitMb = p.storage_gb != null ? p.storage_gb * 1024 : null;
+      meetingHoursLimit = p.meeting_hours_included ?? null; // null = unlimited
+      broadcastHoursLimit = p.broadcast_hours_included ?? null;
+    }
   }
 
   const { data: existing } = await db
@@ -69,7 +83,8 @@ async function upsert(sub: {
     // Every Ministry Partner tier includes live channels/broadcast per the landing
     // page — grant unconditionally rather than gating by plan rank.
     ...(sub.plan ? { broadcast_limit: -1, video_minutes_limit: -1 } : {}),
-    ...(sub.plan === 'tier_3' ? { white_label_enabled: true, priority_support: true } : {}),
+    ...(sub.plan ? { storage_limit_mb: storageLimitMb, meeting_hours_limit: meetingHoursLimit, broadcast_hours_limit: broadcastHoursLimit } : {}),
+    ...(sub.plan === 'ministry_plus' ? { white_label_enabled: true, priority_support: true } : {}),
     ...(sub.country ? { country: sub.country } : {}),
     payment_provider: sub.provider,
     ...(sub.periodEnd !== undefined ? { current_period_end: sub.periodEnd } : {}),
@@ -87,6 +102,27 @@ async function upsert(sub: {
 
   // Reflect lifecycle on the tenant (subscriptionEnforcement/UI read this).
   await db.from('ministry_groups').update({ subscription_status: sub.status }).eq('id', sub.ministryId);
+}
+
+// Paystack add-on purchases (ministry-checkout's purchase-addon action) are
+// their own separate Paystack subscription per purchase — distinguished from
+// a base-plan event by metadata.addon, and upserted into ministry_addons
+// instead of ministry_subscriptions.
+async function upsertAddon(a: {
+  ministryId: string; addonType: string; unitGb: number | null; unitMembers: number | null;
+  priceUsd: number; paystackSubCode?: string;
+}) {
+  const db = admin();
+  await db.from('ministry_addons').insert({
+    ministry_id: a.ministryId,
+    addon_type: a.addonType,
+    quantity: 1,
+    unit_gb: a.unitGb,
+    unit_members: a.unitMembers,
+    price_usd: a.priceUsd,
+    status: 'active',
+    paystack_subscription_code: a.paystackSubCode ?? null,
+  });
 }
 
 serve(async (req) => {
@@ -149,6 +185,23 @@ serve(async (req) => {
       const meta = event.data?.metadata ?? {};
       const ministryId = meta.ministry_id;
       if (!ministryId) return new Response('ignored (not ministry)', { status: 200 });
+
+      const isAddon = meta.addon === true || meta.addon === 'true';
+      if (isAddon) {
+        if (event.event === 'subscription.create') {
+          await upsertAddon({
+            ministryId, addonType: meta.addon_type, unitGb: meta.unit_gb ?? null, unitMembers: meta.unit_members ?? null,
+            priceUsd: Number(meta.price_usd ?? 0), paystackSubCode: event.data?.subscription_code,
+          });
+        } else if (event.event === 'subscription.disable') {
+          // Match the specific add-on subscription being disabled, not just
+          // ministry+type — a ministry can hold more than one of the same SKU.
+          await admin().from('ministry_addons')
+            .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+            .eq('paystack_subscription_code', event.data?.subscription_code ?? '');
+        }
+        return new Response('ok', { status: 200 });
+      }
 
       if (event.event === 'subscription.create') {
         await upsert({

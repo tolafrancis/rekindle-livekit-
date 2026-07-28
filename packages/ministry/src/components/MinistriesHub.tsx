@@ -23,6 +23,7 @@ import {
   Sparkles, Compass, ArrowRight
 } from 'lucide-react';
 import MinistrySpace from './MinistrySpace';
+import { peekDeepLink } from '@rekindle/features/deepLink';
 import { MinistryDevotionalCreator } from './MinistryDevotionalCreator';
 import { MinistryManagement } from './MinistryManagement';
 import {
@@ -102,7 +103,7 @@ interface MinistriesHubProps {
 }
 
 const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledActiveView, onActiveViewChange, onWorkspaceChange }) => {
-  const { user, profile, isAdmin: authIsAdmin, isPartner } = useAuth();
+  const { user, profile, isAdmin: authIsAdmin, isPartner, initialized: authInitialized } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   // Uncontrolled view (ministry app) rides browser history: entering a ministry
@@ -254,14 +255,58 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   }, [user?.id]);
 
 
+  // Wait for auth to fully settle (not just user?.id appearing) before fetching.
+  // On slower session restores — mobile especially — user?.id can populate
+  // slightly before the Supabase client's session is actually attached, so a
+  // fetch gated only on user?.id can silently return an empty result with
+  // nothing left to trigger a retry. `initialized` flips true only once the
+  // auth check has genuinely finished, one way or another.
   useEffect(() => {
+    if (!authInitialized) return;
     const loadData = async () => {
       setLoading(true);
       await Promise.all([loadMinistries(), loadMyMinistries()]);
       setLoading(false);
     };
     loadData();
-  }, [loadMinistries, loadMyMinistries]);
+  }, [loadMinistries, loadMyMinistries, authInitialized]);
+
+  // A shared video-message link (/ministry-videos/:id) only carries the video's
+  // id, not which ministry it belongs to — resolve that here and enter the
+  // right ministry. MinistrySpace itself consumes (and clears) the deep link
+  // to open the specific video once it mounts.
+  useEffect(() => {
+    if (loading || selectedMinistry) return;
+    const dl = peekDeepLink();
+    if (dl?.type !== 'ministry-videos' || !dl.id) return;
+
+    (async () => {
+      try {
+        const { data: video } = await supabase
+          .from('ministry_video_messages')
+          .select('ministry_id')
+          .eq('id', dl.id)
+          .maybeSingle();
+        if (!video?.ministry_id) return;
+
+        const known = [...myMinistries, ...ministries].find(m => m.id === video.ministry_id);
+        if (known) {
+          handleEnterMinistry(known);
+          return;
+        }
+        const { data: ministry } = await supabase
+          .from('ministry_groups')
+          .select('*')
+          .eq('id', video.ministry_id)
+          .maybeSingle();
+        if (ministry) handleEnterMinistry(ministry);
+      } catch (err) {
+        console.error('Error resolving shared video message link:', err);
+      }
+    })();
+    // Only needs to run once the lists have settled after the initial load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   const uploadMinistryImage = async (
     file: File,

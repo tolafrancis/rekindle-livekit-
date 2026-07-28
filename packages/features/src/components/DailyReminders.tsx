@@ -89,9 +89,14 @@ export const DailyReminders: React.FC = () => {
     const payload = reminders.map(({ id, enabled, time }) => ({ id, enabled, time }));
     localStorage.setItem('dailyReminders', JSON.stringify(payload));
     if (user) {
+      // process-daily-reminders (the edge function that actually sends these)
+      // computes "has this reminder's time passed" from user_profiles.timezone,
+      // defaulting to UTC when it's unset — there's no separate timezone
+      // picker in this app, so capture the browser's real one here instead.
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       const { error } = await supabase
         .from('user_profiles')
-        .update({ daily_reminders: payload })
+        .update({ daily_reminders: payload, timezone })
         .eq('user_id', user.id);
       if (error) {
         // Was silently swallowed before, so a failed save still said "Saved!".

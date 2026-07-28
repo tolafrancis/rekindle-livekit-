@@ -27,6 +27,35 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { WebhookReceiver, EgressStatus } from 'https://esm.sh/livekit-server-sdk@2';
 
+// Resolves the ministry that owns a livekit_recordings row, for usage
+// metering. Mirrors the HOST_TABLE ownership logic in livekit-egress/
+// livekit-token: a channel broadcast is owned via live_channels.ministry_id;
+// a ministry_video_meetings row carries ministry_id directly; a
+// live_channel_video_meetings row (webinar tied to a channel) resolves via
+// its channel_id -> live_channels.ministry_id; a plain 'meetings' row is an
+// individual user's meeting, not ministry-billed — returns null.
+async function resolveMinistryId(
+  admin: ReturnType<typeof createClient>,
+  rec: { kind?: string; channel_id?: string; meeting_table?: string; meeting_id?: string },
+): Promise<string | null> {
+  if (rec.channel_id) {
+    const { data } = await admin.from('live_channels').select('ministry_id').eq('id', rec.channel_id).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (rec.meeting_table === 'ministry_video_meetings' && rec.meeting_id) {
+    const { data } = await admin.from('ministry_video_meetings').select('ministry_id').eq('id', rec.meeting_id).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (rec.meeting_table === 'live_channel_video_meetings' && rec.meeting_id) {
+    const { data: m } = await admin.from('live_channel_video_meetings').select('channel_id').eq('id', rec.meeting_id).maybeSingle();
+    const channelId = (m as { channel_id?: string } | null)?.channel_id;
+    if (!channelId) return null;
+    const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', channelId).maybeSingle();
+    return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
@@ -64,9 +93,9 @@ serve(async (req) => {
           .from('livekit_recordings')
           .update(patch)
           .eq('egress_id', info.egressId)
-          .select('meeting_table, meeting_id, playback_url');
+          .select('kind, channel_id, meeting_table, meeting_id, playback_url');
         const rec = (rows ?? [])[0] as
-          { meeting_table?: string; meeting_id?: string; playback_url?: string } | undefined;
+          { kind?: string; channel_id?: string; meeting_table?: string; meeting_id?: string; playback_url?: string } | undefined;
 
         // Meeting VOD: on successful completion, write the playback URL back onto the
         // meeting row so RecordingManager / meeting recording viewers show it
@@ -79,6 +108,32 @@ serve(async (req) => {
             recording_duration_seconds: duration,
             recording_ended_at: new Date().toISOString(),
           }).eq('id', rec.meeting_id);
+        }
+
+        // Usage metering: attribute bytes + minutes to whichever ministry owns
+        // this recording, if any (a plain 'meetings' row is an individual
+        // user's meeting — nothing ministry-billed to attribute it to).
+        if (ended && !failed && rec) {
+          const ministryId = await resolveMinistryId(admin, rec);
+          if (ministryId) {
+            // segmentResults[].size is LiveKit's reported total bytes for a
+            // SegmentedFileOutput (what start-recording/start-hls both use).
+            // Unverified against a live egress_ended payload — if bytes_used
+            // stays at 0 for real recordings, check the actual field name on
+            // EgressInfo for this livekit-server-sdk version first.
+            const bytes = (info.segmentResults ?? []).reduce(
+              (sum: number, s: { size?: unknown }) => sum + Number(s.size ?? 0), 0,
+            );
+            const minutes = duration ? Math.ceil(duration / 60) : 0;
+            await admin.rpc('increment_ministry_usage', {
+              p_ministry_id: ministryId,
+              p_bytes_delta: bytes,
+              p_meeting_minutes_delta: rec.kind === 'meeting' ? minutes : 0,
+              p_broadcast_minutes_delta: rec.kind === 'channel' ? minutes : 0,
+            }).then(({ error }: { error: unknown }) => {
+              if (error) console.error('[livekit-webhook] usage metering failed:', error);
+            });
+          }
         }
       }
     }

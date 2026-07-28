@@ -7,6 +7,7 @@ import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '../LanguageContext';
 import { useAuth } from '../AuthContext';
 import { useGlobalAudio } from '../GlobalAudioContext';
+import { useCurrentMinistryOptional } from '../CurrentMinistryContext';
 import {
   uploadAndSaveTrack,
   fetchMusicTracks,
@@ -49,6 +50,7 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
   const { t } = useLanguage();
   const { user } = useAuth();
   const { reportPlayback, registerControls } = useGlobalAudio();
+  const currentMinistry = useCurrentMinistryOptional();
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -205,7 +207,8 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
     const result = await uploadAndSaveTrack(file, {
       category: 'personal',
       is_published: true,
-      is_public: true
+      is_public: true,
+      ministry_id: currentMinistry?.currentMinistryId ?? undefined
     });
 
     if (result.success && result.track) {

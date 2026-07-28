@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from '@rekindle/ui/use-toast';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
@@ -6,6 +6,8 @@ import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
 import { canShowPurchaseUI } from '@rekindle/features/platform';
+import { useNotifications } from '@rekindle/features/useNotifications';
+import { NotificationFeed } from '@rekindle/features/components/NotificationFeed';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
@@ -16,7 +18,7 @@ import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
-import { User, CreditCard, Globe, LogOut, ArrowLeft } from 'lucide-react';
+import { User, CreditCard, Globe, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
@@ -46,6 +48,8 @@ function BrandedHeader() {
   const { currentMinistry } = useCurrentMinistry();
   const { profile, signOut } = useAuth();
   const location = useLocation();
+  const notif = useNotifications();
+  const [showNotifications, setShowNotifications] = useState(false);
   // Billing & Domain are leader/admin concerns; regular members see only Account.
   const canManage = !!(currentMinistry?.isLeader || currentMinistry?.isOwner || currentMinistry?.role === 'admin');
   // Native builds ship with no purchase surfaces (Phase 0 — Apple 3.1.1).
@@ -66,6 +70,38 @@ function BrandedHeader() {
       {!whiteLabel && <span className="text-xs text-muted-foreground hidden sm:inline">· ReKindle</span>}
       <div className="ml-auto flex items-center gap-2">
         {firstName && <span className="hidden md:inline text-sm text-muted-foreground mr-1">Welcome back, {firstName}</span>}
+        <Link to="/" aria-label="Ministry Home" title="Ministry Home" className={`${iconBtn} bg-gradient-to-br from-fuchsia-500 to-pink-600`}>
+          <Home className="h-4 w-4" />
+        </Link>
+        <div className="relative">
+          <button
+            onClick={() => setShowNotifications((v) => !v)}
+            aria-label="Notifications"
+            title="Notifications"
+            className={`${iconBtn} bg-gradient-to-br from-amber-400 to-orange-500`}
+          >
+            <Bell className="h-4 w-4" />
+          </button>
+          {notif.unreadCount > 0 && (
+            <span
+              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[11px] font-bold leading-none shadow ring-2 ring-white pointer-events-none"
+              aria-label={`${notif.unreadCount} unread`}
+            >
+              {notif.unreadCount > 99 ? '99+' : notif.unreadCount}
+            </span>
+          )}
+          <NotificationFeed
+            open={showNotifications}
+            onClose={() => setShowNotifications(false)}
+            notifications={notif.notifications}
+            unreadCount={notif.unreadCount}
+            loading={notif.loading}
+            markRead={notif.markRead}
+            markAllRead={notif.markAllRead}
+            dismiss={notif.dismiss}
+            topOffsetClassName="top-14"
+          />
+        </div>
         <Link to="/settings/account" aria-label="Account" title="Account" className={`${iconBtn} bg-gradient-to-br from-indigo-500 to-purple-600`}>
           <User className="h-4 w-4" />
         </Link>

@@ -34,6 +34,13 @@ export function useCurrentMinistry(): CurrentMinistryContextValue {
   return ctx;
 }
 
+/** Same as useCurrentMinistry, but returns null instead of throwing when
+ * there's no CurrentMinistryProvider in the tree — for components shared
+ * with apps (the consumer app) that don't mount one. */
+export function useCurrentMinistryOptional(): CurrentMinistryContextValue | null {
+  return useContext(CurrentMinistryContext) ?? null;
+}
+
 function readStored(): string | null {
   try {
     return localStorage.getItem(STORAGE_KEY);
@@ -57,7 +64,19 @@ export function CurrentMinistryProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true);
-    const list = await getUserMinistries(userId);
+    let list = await getUserMinistries(userId);
+    // Self-heal a known race: right after login/page-load there's a brief
+    // window where the Supabase client's session isn't fully attached yet,
+    // so this can come back empty even for a user who really has ministries
+    // (see getUserMinistries — that path now throws instead of swallowing,
+    // but a transient RLS-denied empty result is still indistinguishable
+    // from "really has none" at this layer). One short retry covers it
+    // automatically instead of requiring the user to navigate elsewhere and
+    // back to trigger a fresh fetch.
+    if (list.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      list = await getUserMinistries(userId);
+    }
     setMinistries(list);
     // Resolve current, in precedence order:
     //  1) the ministry this HOSTNAME maps to (church.yourproduct.com / custom domain),

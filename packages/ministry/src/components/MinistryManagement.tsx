@@ -9,7 +9,8 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import {
   BookOpen, Heart, Calendar, Gift, Users, Megaphone, Star,
-  Settings, BarChart3, MessageSquare, Loader2, ArrowLeft, Cake, ClipboardList, Inbox, HandCoins
+  Settings, BarChart3, MessageSquare, Loader2, ArrowLeft, Cake, ClipboardList, Inbox, HandCoins,
+  HeartHandshake, Video
 } from 'lucide-react';
 
 // Import all manager components
@@ -21,6 +22,8 @@ import { MinistryPrayerRequestsManager } from './MinistryPrayerRequestsManager';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
 import { MinistryDonationsManager } from './MinistryDonationsManager';
 import { MinistryMembersManager } from './MinistryMembersManager';
+import { MinistryVolunteerTeamsManager } from './MinistryVolunteerTeamsManager';
+import { MinistryVideoMessagesManager } from './MinistryVideoMessagesManager';
 import { MinistryTestimoniesManager } from './MinistryTestimoniesManager';
 import { MinistrySettingsManager } from './MinistrySettingsManager';
 import { MinistryGiftAidDashboard } from './MinistryGiftAidDashboard';
@@ -64,6 +67,8 @@ const TABS = [
   { id: 'testimonies',     label: 'Testimonies',     icon: Star,          color: 'text-yellow-600' },
   { id: 'donations',       label: 'Donations',       icon: Gift,          color: 'text-emerald-600'},
   { id: 'members',         label: 'Members',         icon: Users,         color: 'text-indigo-600' },
+  { id: 'volunteers',      label: 'Volunteers',      icon: HeartHandshake, color: 'text-teal-600'   },
+  { id: 'video-messages',  label: 'Video Messages',  icon: Video,         color: 'text-violet-600' },
   { id: 'registrations',   label: 'Registrations',   icon: ClipboardList, color: 'text-purple-600' },
   { id: 'whatsapp',        label: 'WhatsApp',        icon: MessageSquare, color: 'text-green-600'  },
   { id: 'inbox',           label: 'Inbox',           icon: Inbox,         color: 'text-cyan-600'   },
@@ -167,6 +172,12 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
 
       case 'members':
         return <MinistryMembersManager ministryId={ministryId} />;
+
+      case 'volunteers':
+        return <MinistryVolunteerTeamsManager ministryId={ministryId} />;
+
+      case 'video-messages':
+        return <MinistryVideoMessagesManager ministryId={ministryId} ministryName={ministry.name} />;
 
       case 'registrations':
         return <MinistryRegistrations ministryId={ministryId} ministryName={ministry.name} />;
@@ -295,6 +306,8 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
                 'testimonies': 'tabTestimonies',
                 'donations': 'tabDonations',
                 'members': 'tabMembers',
+                'volunteers': 'tabVolunteers',
+                'video-messages': 'tabVideoMessages',
                 'registrations': 'tabRegistrations',
                 'whatsapp': 'tabWhatsApp',
                 'inbox': 'tabInbox',

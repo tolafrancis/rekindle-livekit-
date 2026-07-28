@@ -75,12 +75,21 @@ serve(async (req) => {
       if (error) throw error;
       recipientEmails = (data ?? []).map((r: { email: string }) => r.email).filter(Boolean);
     } else if (ministryId) {
-      // All active members of a ministry
-      const { data, error } = await supabaseClient
+      // All active members of a ministry — respects the same opt-in/consent
+      // rules as the audience-based branch below. (Previously this branch
+      // queried every active member regardless of email_opt_in/consent_marketing,
+      // the only path in this function that ignored those preferences.)
+      const isMarketing = messageCategory !== 'transactional';
+      let membersQuery = supabaseClient
         .from('ministry_members')
-        .select('user_profiles!inner(email)')
+        .select('user_profiles!inner(email, email_opt_in, consent_marketing)')
         .eq('ministry_id', ministryId)
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .eq('user_profiles.email_opt_in', true);
+      if (isMarketing) {
+        membersQuery = membersQuery.neq('user_profiles.consent_marketing', false);
+      }
+      const { data, error } = await membersQuery;
       if (error) throw error;
       recipientEmails = (data ?? [])
         .map((r: any) => r.user_profiles?.email)

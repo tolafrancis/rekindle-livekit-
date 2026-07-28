@@ -32,6 +32,7 @@ import { CommunityPrayerWall } from './CommunityPrayerWall';
 import { ScriptureMemory } from './ScriptureMemory';
 import { NotificationFeed } from './NotificationFeed';
 import { useNotifications } from '@/hooks/useNotifications';
+import { getPlatformSetting } from '@rekindle/features/platformSettings';
 import { AppFooter } from './AppFooter';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { UpgradePromptModal } from './UpgradePromptModal';
@@ -441,6 +442,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const [showNotifications, setShowNotifications] = useState(false);
   const notif = useNotifications();
   const [searchOpen, setSearchOpen] = useState(false);
+  // Platform-admin kill switch for the Ministries tab (platform_settings,
+  // migration 0266) — defaults to shown while the setting loads, so this
+  // never causes a flash-of-missing-tab for the common case.
+  const [ministriesTabEnabled, setMinistriesTabEnabled] = useState(true);
+  useEffect(() => {
+    getPlatformSetting('consumer_ministries_tab_enabled', true).then(setMinistriesTabEnabled);
+  }, []);
 
   useEffect(() => {
     setSearchOpen(false);
@@ -988,7 +996,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   const renderPrimaryNavigation = (className: string) => (
     <nav className={className} aria-label="Primary navigation">
-      {NAV_GROUPS.map((group) => {
+      {NAV_GROUPS.filter((group) => group.id !== 'ministries' || ministriesTabEnabled).map((group) => {
         const Icon = group.icon ?? List;
         const active = activeGroup?.id === group.id;
         return (

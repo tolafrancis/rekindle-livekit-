@@ -217,7 +217,10 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
               </h3>
             </div>
 
-            <ScrollArea className="flex-1 min-h-0 -mx-4 px-4">
+            <ScrollArea
+              className="flex-1 min-h-0 -mx-4 px-4"
+              style={{ overflow: 'unset', minHeight: 'unset' }}
+            >
               {activeParticipants.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <p className="text-gray-400 text-sm text-center">

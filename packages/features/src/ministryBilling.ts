@@ -32,6 +32,12 @@ export interface MinistryPartnerPlan {
   stripePriceIdAnnual: string | null;
   paypalBillingLinkMonthly: string | null;
   paypalBillingLinkAnnual: string | null;
+  storageGb: number;
+  meetingHoursIncluded: number | null; // null = unlimited
+  broadcastHoursIncluded: number | null; // null = unlimited
+  memberOverageBlockSize: number | null;
+  memberOveragePriceUsd: number | null;
+  giftAidAddonPriceUsd: number | null;
   features: string[];
   isActive: boolean;
   displayOrder: number;
@@ -53,6 +59,12 @@ function mapPlanRow(row: Record<string, unknown>): MinistryPartnerPlan {
     stripePriceIdAnnual: (row.stripe_price_id_annual as string | null) ?? null,
     paypalBillingLinkMonthly: (row.paypal_billing_link_monthly as string | null) ?? null,
     paypalBillingLinkAnnual: (row.paypal_billing_link_annual as string | null) ?? null,
+    storageGb: Number(row.storage_gb ?? 0),
+    meetingHoursIncluded: (row.meeting_hours_included as number | null) ?? null,
+    broadcastHoursIncluded: (row.broadcast_hours_included as number | null) ?? null,
+    memberOverageBlockSize: (row.member_overage_block_size as number | null) ?? null,
+    memberOveragePriceUsd: row.member_overage_price_usd != null ? Number(row.member_overage_price_usd) : null,
+    giftAidAddonPriceUsd: row.gift_aid_addon_price_usd != null ? Number(row.gift_aid_addon_price_usd) : null,
     features: Array.isArray(row.features) ? (row.features as string[]) : [],
     isActive: Boolean(row.is_active),
     displayOrder: Number(row.display_order ?? 0),
@@ -121,4 +133,96 @@ export async function openMinistryBillingPortal(ministryId: string): Promise<{ u
   });
   if (error) return { error: error.message };
   return { url: (data as { url?: string })?.url };
+}
+
+// ── Add-ons (storage packs / member blocks / Gift Aid) ─────────────────────
+// Purchasable on top of any base plan — see ministry_addon_catalog (0259) /
+// ministry_addons (purchased instances) and the purchase-addon action on
+// ministry-checkout.
+
+export interface MinistryAddonCatalogItem {
+  id: string;
+  addonType: 'storage_pack' | 'member_block' | 'gift_aid';
+  label: string;
+  unitGb: number | null;
+  unitMembers: number | null;
+  priceUsd: number;
+}
+
+export interface MinistryAddon {
+  id: string;
+  addonType: 'storage_pack' | 'member_block' | 'gift_aid';
+  quantity: number;
+  unitGb: number | null;
+  unitMembers: number | null;
+  priceUsd: number;
+  status: 'active' | 'cancelled';
+  purchasedAt: string;
+}
+
+function mapCatalogRow(row: Record<string, unknown>): MinistryAddonCatalogItem {
+  return {
+    id: row.id as string,
+    addonType: row.addon_type as MinistryAddonCatalogItem['addonType'],
+    label: row.label as string,
+    unitGb: (row.unit_gb as number | null) ?? null,
+    unitMembers: (row.unit_members as number | null) ?? null,
+    priceUsd: Number(row.price_usd),
+  };
+}
+
+function mapAddonRow(row: Record<string, unknown>): MinistryAddon {
+  return {
+    id: row.id as string,
+    addonType: row.addon_type as MinistryAddon['addonType'],
+    quantity: Number(row.quantity ?? 1),
+    unitGb: (row.unit_gb as number | null) ?? null,
+    unitMembers: (row.unit_members as number | null) ?? null,
+    priceUsd: Number(row.price_usd),
+    status: row.status as MinistryAddon['status'],
+    purchasedAt: row.purchased_at as string,
+  };
+}
+
+/** Active, purchasable add-on catalog. Public read (no auth required). */
+export async function fetchAddonCatalog(): Promise<{ items: MinistryAddonCatalogItem[]; error?: string }> {
+  const { data, error } = await supabase
+    .from('ministry_addon_catalog').select('*').eq('is_active', true).order('display_order', { ascending: true });
+  if (error) return { items: [], error: error.message };
+  return { items: (data ?? []).map(mapCatalogRow) };
+}
+
+/** A ministry's currently active purchased add-ons. */
+export async function fetchMinistryAddons(ministryId: string): Promise<{ addons: MinistryAddon[]; error?: string }> {
+  const { data, error } = await supabase
+    .from('ministry_addons').select('*')
+    .eq('ministry_id', ministryId).eq('status', 'active').order('purchased_at', { ascending: false });
+  if (error) return { addons: [], error: error.message };
+  return { addons: (data ?? []).map(mapAddonRow) };
+}
+
+/**
+ * Buy an add-on. Stripe purchases complete immediately (no url returned —
+ * it's added to the ministry's existing subscription synchronously);
+ * Paystack returns a hosted authorization url to redirect to, same as the
+ * base plan checkout.
+ */
+export async function purchaseAddon(opts: {
+  ministryId: string;
+  catalogId: string;
+  provider: BillingProvider;
+  country: string;
+}): Promise<{ success?: boolean; url?: string; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('ministry-checkout', {
+    body: {
+      action: 'purchase-addon',
+      ministryId: opts.ministryId,
+      catalogId: opts.catalogId,
+      provider: opts.provider,
+      country: opts.country,
+      returnUrl: typeof window !== 'undefined' ? window.location.origin + '/settings/billing' : undefined,
+    },
+  });
+  if (error) return { error: error.message };
+  return data as { success?: boolean; url?: string };
 }

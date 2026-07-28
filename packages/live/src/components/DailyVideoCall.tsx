@@ -1899,8 +1899,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           </div>
         </div>
 
-        {/* Persistent raised-hands panel (moderators) */}
-        {isModerator && raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length > 0 && (
+        {/* Persistent raised-hands panel — visible to every participant, not just
+            moderators (the hand-raise broadcast already reaches everyone via
+            sendAppMessage(..., '*'); this panel just wasn't showing it to them).
+            Lowering someone ELSE's hand stays a moderator-only action. */}
+        {raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length > 0 && (
           <div className="absolute top-16 right-2 sm:right-4 z-40 w-56 max-w-[70vw] bg-gray-900/90 backdrop-blur-sm rounded-lg p-3 text-white space-y-2 max-h-[40vh] overflow-y-auto">
             <p className="text-xs font-medium text-gray-300 flex items-center gap-1">
               <Hand className="h-3 w-3" /> {t('dailyVideoCall', 'raisedHandsCount', 'Raised hands ({count})').replace('{count}', String(raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).length))}
@@ -1908,14 +1911,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             {raisedHands.filter(h => h.sessionId !== localParticipant?.sessionId).map(h => (
               <div key={h.sessionId} className="flex items-center justify-between gap-2">
                 <span className="text-sm truncate">{h.userName}</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-gray-300 hover:text-white"
-                  onClick={() => lowerHand(h.sessionId)}
-                >
-                  {t('dailyVideoCall', 'lower', 'Lower')}
-                </Button>
+                {isModerator && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-gray-300 hover:text-white"
+                    onClick={() => lowerHand(h.sessionId)}
+                  >
+                    {t('dailyVideoCall', 'lower', 'Lower')}
+                  </Button>
+                )}
               </div>
             ))}
           </div>

@@ -47,6 +47,62 @@ const json = (body: unknown, status = 200) =>
 
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 
+// Resolves the ministry that owns a would-be recording, from the same
+// context shape isDbHost checks. A plain 'meeting' kind is an individual
+// user's meeting — no ministry, no enforcement applies.
+async function resolveMinistryIdFromContext(
+  admin: ReturnType<typeof createClient>,
+  ctxKind: string,
+  meetingId: string | undefined,
+  channelId: string | null | undefined,
+): Promise<string | null> {
+  if (ctxKind === 'channel') {
+    if (!channelId) return null;
+    const { data } = await admin.from('live_channels').select('ministry_id').eq('id', channelId).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (ctxKind === 'ministry_meeting' && meetingId) {
+    const { data } = await admin.from('ministry_video_meetings').select('ministry_id').eq('id', meetingId).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (ctxKind === 'channel_meeting' && meetingId) {
+    const { data: m } = await admin.from('live_channel_video_meetings').select('channel_id').eq('id', meetingId).maybeSingle();
+    const cId = (m as { channel_id?: string } | null)?.channel_id;
+    if (!cId) return null;
+    const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', cId).maybeSingle();
+    return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  return null;
+}
+
+// Storage-full (add-on ministries only) and hours-quota (all ministries)
+// gates, checked right before starting a new egress — a recording is the
+// thing that consumes both. `kind` is 'meeting' or 'broadcast' (channel).
+async function checkMinistryCanRecord(
+  admin: ReturnType<typeof createClient>,
+  ministryId: string,
+  kind: 'meeting' | 'broadcast',
+): Promise<{ allowed: boolean; reason?: string }> {
+  const [{ data: storageRows }, { data: hoursRows }] = await Promise.all([
+    admin.rpc('get_ministry_storage_status', { p_ministry_id: ministryId }),
+    admin.rpc('get_ministry_hours_status', { p_ministry_id: ministryId }),
+  ]);
+  const storage = (storageRows as { is_full?: boolean }[] | null)?.[0];
+  if (storage?.is_full) {
+    return { allowed: false, reason: 'Storage full — this ministry has used its full storage allotment. Buy more storage or delete old content before recording.' };
+  }
+  const hours = (hoursRows as {
+    meeting_hours_exhausted?: boolean; broadcast_hours_exhausted?: boolean;
+  }[] | null)?.[0];
+  if (kind === 'meeting' && hours?.meeting_hours_exhausted) {
+    return { allowed: false, reason: 'This ministry has used all its meeting hours for this month. Upgrade or wait until next month to record more.' };
+  }
+  if (kind === 'broadcast' && hours?.broadcast_hours_exhausted) {
+    return { allowed: false, reason: 'This ministry has used all its live-broadcast hours for this month. Upgrade or wait until next month to record more.' };
+  }
+  return { allowed: true };
+}
+
 async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, ctx: any): Promise<boolean> {
   const c = ctx ?? {};
   const table = HOST_TABLE[c.kind ?? 'meeting'];
@@ -140,6 +196,14 @@ serve(async (req) => {
       const meetingTable = HOST_TABLE[ctxKind]; // undefined for 'channel'
       const isChannelBroadcast = ctxKind === 'channel';
 
+      const startMeetingId = body.context?.meetingId ?? body.meetingId ?? body.roomName;
+      const startChannelId = isChannelBroadcast ? (body.context?.channelId ?? body.channelId ?? null) : null;
+      const startMinistryId = await resolveMinistryIdFromContext(admin, ctxKind, startMeetingId, startChannelId);
+      if (startMinistryId) {
+        const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast ? 'broadcast' : 'meeting');
+        if (!gate.allowed) return json({ error: gate.reason }, 403);
+      }
+
       const ts = Date.now();
       const prefix = `recordings/${body.roomName}/${ts}`;
       const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
@@ -147,7 +211,7 @@ serve(async (req) => {
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
         segmentDuration: 4,
-        s3,
+        output: { case: 's3', value: s3 },
       });
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
@@ -190,6 +254,12 @@ serve(async (req) => {
       if (isChannel && !channelId) return json({ error: 'channelId required for channel broadcast' }, 400);
       if (!isChannel && !(meetingTable && meetingId)) return json({ error: 'meeting context required' }, 400);
 
+      const hlsMinistryId = await resolveMinistryIdFromContext(admin, ctxKind ?? '', meetingId, channelId);
+      if (hlsMinistryId) {
+        const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel ? 'broadcast' : 'meeting');
+        if (!gate.allowed) return json({ error: gate.reason }, 403);
+      }
+
       const ts = Date.now();
       const prefix = `broadcasts/${isChannel ? channelId : meetingId}/${ts}`;
       const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
@@ -197,7 +267,7 @@ serve(async (req) => {
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
         segmentDuration: 4,
-        s3,
+        output: { case: 's3', value: s3 },
       });
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;

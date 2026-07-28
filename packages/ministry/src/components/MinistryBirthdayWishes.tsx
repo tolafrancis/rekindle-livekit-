@@ -14,6 +14,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import {
   Cake, Save, Loader2, Plus, Trash2, Play, RefreshCw, Info, CheckCircle2, XCircle, Clock,
+  MessageSquare, Link2,
 } from 'lucide-react';
 
 interface Props {
@@ -28,6 +29,8 @@ interface Settings {
   variable_mapping: string[];
   timezone: string;
   send_hour: number;
+  sms_enabled: boolean;
+  sms_message: string;
 }
 
 interface LogRow {
@@ -38,6 +41,13 @@ interface LogRow {
   error: string | null;
   send_year: number;
   sent_at: string;
+  channel?: 'whatsapp' | 'sms';
+}
+
+interface SmsConfig {
+  connection_status: 'disconnected' | 'connected' | 'error';
+  twilio_account_sid: string | null;
+  from_number: string | null;
 }
 
 const TOKEN_OPTIONS = [
@@ -60,7 +70,11 @@ const DEFAULT_SETTINGS: Settings = {
   variable_mapping: ['member_name', 'ministry_name'],
   timezone: 'Asia/Ho_Chi_Minh',
   send_hour: 9,
+  sms_enabled: false,
+  sms_message: '',
 };
+
+const SMS_SEGMENT_LENGTH = 160;
 
 export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryName }) => {
   const { user } = useAuth();
@@ -70,6 +84,9 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
   const [running, setRunning] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [log, setLog] = useState<LogRow[]>([]);
+  const [smsConfig, setSmsConfig] = useState<SmsConfig | null>(null);
+  const [smsForm, setSmsForm] = useState({ twilioAccountSid: '', twilioAuthToken: '', fromNumber: '' });
+  const [connectingSms, setConnectingSms] = useState(false);
 
   useEffect(() => {
     load();
@@ -95,8 +112,18 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
             : ['member_name', 'ministry_name'],
           timezone: data.timezone || 'Asia/Ho_Chi_Minh',
           send_hour: typeof data.send_hour === 'number' ? data.send_hour : 9,
+          sms_enabled: !!data.sms_enabled,
+          sms_message: data.sms_message || '',
         });
       }
+
+      const { data: smsData } = await supabase
+        .from('ministry_sms_configs')
+        .select('connection_status, twilio_account_sid, from_number')
+        .eq('ministry_id', ministryId)
+        .maybeSingle();
+      setSmsConfig(smsData || null);
+
       await loadLog();
     } catch (err) {
       console.error('Error loading birthday settings:', err);
@@ -108,7 +135,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
   const loadLog = async () => {
     const { data } = await supabase
       .from('ministry_birthday_send_log')
-      .select('id, member_name, phone, status, error, send_year, sent_at')
+      .select('id, member_name, phone, status, error, send_year, sent_at, channel')
       .eq('ministry_id', ministryId)
       .order('sent_at', { ascending: false })
       .limit(50);
@@ -116,8 +143,14 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
   };
 
   const save = async () => {
-    if (settings.enabled && !settings.template_name.trim()) {
-      toast({ title: t('ministryBirthdayWishes', 'templateRequired', 'Template required'), description: t('ministryBirthdayWishes', 'templateRequiredDesc', 'Enter your approved WhatsApp template name before enabling.'), variant: 'destructive' });
+    const hasWhatsApp = !!settings.template_name.trim();
+    const hasSms = settings.sms_enabled && !!settings.sms_message.trim();
+    if (settings.enabled && !hasWhatsApp && !hasSms) {
+      toast({ title: t('ministryBirthdayWishes', 'channelRequired', 'A channel is required'), description: t('ministryBirthdayWishes', 'channelRequiredDesc', 'Enter your approved WhatsApp template name, or enable SMS with a message, before enabling birthday wishes.'), variant: 'destructive' });
+      return;
+    }
+    if (settings.sms_enabled && !settings.sms_message.trim()) {
+      toast({ title: t('ministryBirthdayWishes', 'smsMessageRequired', 'SMS message required'), description: t('ministryBirthdayWishes', 'smsMessageRequiredDesc', 'Enter the SMS message text before enabling SMS.'), variant: 'destructive' });
       return;
     }
     setSaving(true);
@@ -132,6 +165,8 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
           variable_mapping: settings.variable_mapping,
           timezone: settings.timezone,
           send_hour: settings.send_hour,
+          sms_enabled: settings.sms_enabled,
+          sms_message: settings.sms_message.trim(),
           updated_at: new Date().toISOString(),
         }, { onConflict: 'ministry_id' });
 
@@ -141,6 +176,33 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
       toast({ title: t('ministryBirthdayWishes', 'error', 'Error'), description: err.message || t('ministryBirthdayWishes', 'failedSave', 'Failed to save settings'), variant: 'destructive' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const connectSms = async () => {
+    if (!smsForm.twilioAccountSid.trim() || !smsForm.twilioAuthToken.trim() || !smsForm.fromNumber.trim()) {
+      toast({ title: t('ministryBirthdayWishes', 'error', 'Error'), description: t('ministryBirthdayWishes', 'smsCredentialsRequired', 'Account SID, Auth Token, and From number are all required.'), variant: 'destructive' });
+      return;
+    }
+    setConnectingSms(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sms-save-credentials', {
+        body: {
+          ministryId,
+          twilioAccountSid: smsForm.twilioAccountSid.trim(),
+          twilioAuthToken: smsForm.twilioAuthToken.trim(),
+          fromNumber: smsForm.fromNumber.trim(),
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast({ title: t('ministryBirthdayWishes', 'success', 'Success'), description: t('ministryBirthdayWishes', 'smsConnected', 'SMS connected.') });
+      setSmsForm({ twilioAccountSid: '', twilioAuthToken: '', fromNumber: '' });
+      await load();
+    } catch (err: any) {
+      toast({ title: t('ministryBirthdayWishes', 'error', 'Error'), description: err.message || t('ministryBirthdayWishes', 'smsConnectFailed', 'Failed to connect SMS'), variant: 'destructive' });
+    } finally {
+      setConnectingSms(false);
     }
   };
 
@@ -197,7 +259,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
             {t('ministryBirthdayWishes', 'birthdayWishes', 'Birthday Wishes')}
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            {t('ministryBirthdayWishes', 'headerDesc', 'Automatically wish {name} a happy birthday on their day, via your own WhatsApp Business template.').replace('{name}', String(ministryName || t('ministryBirthdayWishes', 'yourMembers', 'your members')))}
+            {t('ministryBirthdayWishes', 'headerDesc', 'Automatically wish {name} a happy birthday on their day, via WhatsApp, SMS, or both.').replace('{name}', String(ministryName || t('ministryBirthdayWishes', 'yourMembers', 'your members')))}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={runNow} disabled={running || !settings.enabled}>
@@ -290,6 +352,103 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
         </CardContent>
       </Card>
 
+      {/* SMS — independent of WhatsApp above; a ministry can run either, both, or neither. */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-sky-500" />
+              {t('ministryBirthdayWishes', 'sms', 'SMS')}
+            </CardTitle>
+            {smsConfig?.connection_status === 'connected' ? (
+              <Badge className="bg-green-100 text-green-700 border-0">
+                <CheckCircle2 className="h-3 w-3 mr-1" /> {t('ministryBirthdayWishes', 'connected', 'Connected')}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-gray-500">
+                {t('ministryBirthdayWishes', 'notConnected', 'Not connected')}
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-5 pt-2 space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label className="font-medium">{t('ministryBirthdayWishes', 'enableSms', 'Enable SMS')}</Label>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {t('ministryBirthdayWishes', 'enableSmsDesc', 'Send a plain-text SMS alongside (or instead of) WhatsApp. Needs no template approval.')}
+              </p>
+            </div>
+            <Switch checked={settings.sms_enabled} onCheckedChange={(v) => setSettings((s) => ({ ...s, sms_enabled: v }))} />
+          </div>
+
+          <div>
+            <Label htmlFor="smsMsg">{t('ministryBirthdayWishes', 'smsMessage', 'SMS message')}</Label>
+            <Input
+              id="smsMsg"
+              placeholder={t('ministryBirthdayWishes', 'smsMessagePlaceholder', 'Happy Birthday {member_name}! From all of us at {ministry_name}.')}
+              value={settings.sms_message}
+              onChange={(e) => setSettings((s) => ({ ...s, sms_message: e.target.value }))}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              {t('ministryBirthdayWishes', 'smsMessageHint', 'Use {member_name} and {ministry_name} anywhere in the text — both get replaced per member.')}
+            </p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {t('ministryBirthdayWishes', 'smsSegmentHint', '{count} characters · {segments} SMS segment(s)')
+                .replace('{count}', String(settings.sms_message.length))
+                .replace('{segments}', String(Math.max(1, Math.ceil(settings.sms_message.length / SMS_SEGMENT_LENGTH))))}
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-3">
+            <p className="text-xs font-medium text-gray-600 flex items-center gap-1.5">
+              <Link2 className="h-3.5 w-3.5" /> {t('ministryBirthdayWishes', 'twilioSmsCredentials', 'Twilio SMS credentials')}
+            </p>
+            {smsConfig?.connection_status === 'connected' && (
+              <p className="text-[11px] text-gray-500">
+                {t('ministryBirthdayWishes', 'currentlyConnectedAs', 'Currently connected: {number}').replace('{number}', smsConfig.from_number || '')}
+              </p>
+            )}
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div>
+                <Label htmlFor="smsSid" className="text-xs">{t('ministryBirthdayWishes', 'accountSid', 'Account SID')}</Label>
+                <Input
+                  id="smsSid"
+                  placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  value={smsForm.twilioAccountSid}
+                  onChange={(e) => setSmsForm((f) => ({ ...f, twilioAccountSid: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="smsToken" className="text-xs">{t('ministryBirthdayWishes', 'authToken', 'Auth Token')}</Label>
+                <Input
+                  id="smsToken"
+                  type="password"
+                  placeholder="••••••••••••••••"
+                  value={smsForm.twilioAuthToken}
+                  onChange={(e) => setSmsForm((f) => ({ ...f, twilioAuthToken: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="smsFrom" className="text-xs">{t('ministryBirthdayWishes', 'fromNumber', 'From number')}</Label>
+                <Input
+                  id="smsFrom"
+                  placeholder="+15551234567"
+                  value={smsForm.fromNumber}
+                  onChange={(e) => setSmsForm((f) => ({ ...f, fromNumber: e.target.value }))}
+                />
+              </div>
+            </div>
+            <Button size="sm" onClick={connectSms} disabled={connectingSms}>
+              {connectingSms ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Link2 className="h-4 w-4 mr-2" />}
+              {smsConfig?.connection_status === 'connected'
+                ? t('ministryBirthdayWishes', 'updateConnection', 'Update connection')
+                : t('ministryBirthdayWishes', 'connect', 'Connect')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Timing */}
       <Card>
         <CardHeader className="pb-2">
@@ -361,15 +520,22 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
                     </p>
                     {row.error && <p className="text-xs text-red-500 truncate">{row.error}</p>}
                   </div>
-                  {row.status === 'sent' ? (
-                    <Badge className="bg-green-100 text-green-700 border-0 flex-shrink-0">
-                      <CheckCircle2 className="h-3 w-3 mr-1" /> {t('ministryBirthdayWishes', 'sent', 'Sent')}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge variant="outline" className="text-gray-500 border-gray-200">
+                      {row.channel === 'sms'
+                        ? t('ministryBirthdayWishes', 'channelSms', 'SMS')
+                        : t('ministryBirthdayWishes', 'channelWhatsapp', 'WhatsApp')}
                     </Badge>
-                  ) : (
-                    <Badge variant="destructive" className="flex-shrink-0">
-                      <XCircle className="h-3 w-3 mr-1" /> {row.status}
-                    </Badge>
-                  )}
+                    {row.status === 'sent' ? (
+                      <Badge className="bg-green-100 text-green-700 border-0">
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> {t('ministryBirthdayWishes', 'sent', 'Sent')}
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive">
+                        <XCircle className="h-3 w-3 mr-1" /> {row.status}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
