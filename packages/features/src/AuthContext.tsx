@@ -3,7 +3,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { supabase, verifySession, verifyAdminAccess, clearSupabaseAuth } from '@rekindle/supabase';
-import { registerPush } from "./usePushNotifications";
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -608,15 +607,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     };
   }, [user, isRecoveryMode, refreshSession]);
-
-  useEffect(() => {
-    if (user && profile && !isRecoveryMode) {
-      const role = profile.role === 'counsellor' ? 'counsellor' : 'user';
-      registerPush(role, 'com.rekindle.app').catch((err) => {
-        console.warn('[AUTH] Push notification registration failed:', err);
-      });
-    }
-  }, [user, profile, isRecoveryMode]);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
