@@ -612,7 +612,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     if (user && profile && !isRecoveryMode) {
       const role = profile.role === 'counsellor' ? 'counsellor' : 'user';
-      registerPush(role).catch((err) => {
+      registerPush(role, 'com.rekindle.app').catch((err) => {
         console.warn('[AUTH] Push notification registration failed:', err);
       });
     }

@@ -61,7 +61,7 @@ interface NotificationSettings {
 export const PushNotificationSettings: React.FC = () => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
-  const { isSubscribed, subscribe, permission: pushPermission, checkStatus } = usePushNotifications();
+  const { isSubscribed, subscribe, permission: pushPermission, checkStatus } = usePushNotifications('com.rekindle.app');
 
   if (Capacitor.isNativePlatform()) {
     return (
@@ -214,7 +214,7 @@ export const PushNotificationSettings: React.FC = () => {
   useEffect(() => {
     if (!user || permissionStatus !== 'granted' || autoRegisteredRef.current) return;
     autoRegisteredRef.current = true;
-    registerPush('user')
+    registerPush('user', 'com.rekindle.app')
       .then((ok) => {
         if (ok) checkStatus();
         else console.warn('[Notifications] device auto-register returned false — check Firebase config/VAPID');

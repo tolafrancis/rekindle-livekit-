@@ -324,7 +324,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const location = useLocation();
 
   useEffect(() => {
-    registerPush('user').catch(console.error);
+    registerPush('user', 'com.rekindle.app').catch(console.error);
   }, []);
 
   // Safe auth hook with fallback values

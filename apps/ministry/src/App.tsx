@@ -133,7 +133,7 @@ function AuthedShell() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    registerPush('user').catch(console.error);
+    registerPush('user', 'com.rekindle.ministry').catch(console.error);
   }, []);
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
