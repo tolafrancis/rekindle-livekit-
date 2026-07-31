@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { MinistryPaymentSettings } from './MinistryPaymentSettings';
 import { MinistryDonationForm } from './MinistryDonationForm';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryDonationsManagerProps {
   ministryId: string;
@@ -909,10 +910,11 @@ export const MinistryDonationsManager: React.FC<MinistryDonationsManagerProps> =
             </div>
             <div>
               <Label>{t('ministryDonationsManager', 'campaignImageUrl', 'Campaign Image URL (Optional)')}</Label>
-              <Input
+              <ImageUpload
                 value={campaignForm.image_url}
-                onChange={(e) => setCampaignForm({ ...campaignForm, image_url: e.target.value })}
-                placeholder="https://..."
+                onChange={(url) => setCampaignForm({ ...campaignForm, image_url: url })}
+                folder="donations"
+                placeholder="Upload campaign image"
               />
             </div>
             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">

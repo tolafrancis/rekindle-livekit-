@@ -17,6 +17,7 @@ import {
   Edit, ThumbsUp, MessageSquare, Share2, Download, BarChart3, TrendingUp,
   Video, Image, Tag, X, Filter, Send, Mail, Award, Heart, Calendar
 } from 'lucide-react';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryTestimoniesManagerProps {
   ministryId: string;
@@ -761,10 +762,11 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>{t('ministryTestimoniesManager', 'imageUrlOptional', 'Image URL (Optional)')}</Label>
-                <Input
+                <ImageUpload
                   value={editForm.image_url}
-                  onChange={(e) => setEditForm({ ...editForm, image_url: e.target.value })}
-                  placeholder="https://..."
+                  onChange={(url) => setEditForm({ ...editForm, image_url: url })}
+                  folder="testimonies"
+                  placeholder="Upload testimony image"
                 />
               </div>
               <div>

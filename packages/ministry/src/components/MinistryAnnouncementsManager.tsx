@@ -19,12 +19,8 @@ import {
   Send, Calendar, Image, Link2, Users, Copy, CheckCircle, BarChart3,
   TrendingUp, AlertCircle, FileText, X, Download, Filter
 } from 'lucide-react';
-import {
-  SearchFilterPanel,
-  searchFilterIconClass,
-  searchFilterInputClass,
-  searchFilterSelectTriggerClass
-} from '@rekindle/features/components/SearchFilterPanel';
+import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass, searchFilterSelectTriggerClass } from '@rekindle/features/components/SearchFilterPanel';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryAnnouncementsManagerProps {
   ministryId: string;
@@ -249,6 +245,8 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
 
     setSaving(true);
     try {
+      const sendPush = formData.status === 'published';
+
       const dataToSave = {
         ministry_id: ministryId,
         title: formData.title.trim(),
@@ -258,7 +256,7 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
         priority: formData.priority,
         expires_at: formData.expires_at || null,
         publish_at: formData.publish_at || null,
-        send_push: formData.send_push,
+        send_push: sendPush,
         send_email: formData.send_email,
         target_audience: formData.target_audience,
         image_url: formData.image_url,
@@ -291,12 +289,12 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
 
       // -- Dispatch notifications when publishing ------------------------
       // Fire on first publish only: new announcements with status=published,
-      // OR edits where status is changing from non-published ? published.
+      // OR edits where status is changing from non-published -> published.
       const isBeingPublished =
         formData.status === 'published' &&
         (!editingAnnouncement || editingAnnouncement.status !== 'published');
 
-      if (isBeingPublished && (formData.send_push || formData.send_email)) {
+      if (isBeingPublished && (sendPush || formData.send_email)) {
         const notifyPromises: Promise<void>[] = [];
 
         const notificationPayload = {
@@ -306,7 +304,7 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
           title: formData.title.trim(),
         };
 
-        if (formData.send_push) {
+        if (sendPush) {
           notifyPromises.push(
             supabase.functions
               .invoke('send-push-notification', {
@@ -343,22 +341,21 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
         }
 
         const results = await Promise.allSettled(notifyPromises);
-        const allOk = results.every((r) => r.status === 'fulfilled');
 
         const channelLabels: string[] = [];
-        if (formData.send_push) {
+        if (sendPush) {
           channelLabels.push(
             results[0]?.status === 'fulfilled'
-              ? t('ministryAnnouncementsManager', 'pushSent', '? Push sent')
-              : t('ministryAnnouncementsManager', 'pushFailed', '? Push failed')
+              ? t('ministryAnnouncementsManager', 'pushSent', '✓ Push sent')
+              : t('ministryAnnouncementsManager', 'pushFailed', '✗ Push failed')
           );
         }
         if (formData.send_email) {
-          const idx = formData.send_push ? 1 : 0;
+          const idx = sendPush ? 1 : 0;
           channelLabels.push(
             results[idx]?.status === 'fulfilled'
-              ? t('ministryAnnouncementsManager', 'emailSent', '? Email sent')
-              : t('ministryAnnouncementsManager', 'emailFailed', '? Email failed')
+              ? t('ministryAnnouncementsManager', 'emailSent', '✓ Email sent')
+              : t('ministryAnnouncementsManager', 'emailFailed', '✗ Email failed')
           );
         }
 
@@ -708,200 +705,164 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
               {editingAnnouncement ? t('ministryAnnouncementsManager', 'editAnnouncement', 'Edit Announcement') : t('ministryAnnouncementsManager', 'newAnnouncement', 'New Announcement')}
             </DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="content" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="content">{t('ministryAnnouncementsManager', 'content', 'Content')}</TabsTrigger>
-              <TabsTrigger value="settings">{t('ministryAnnouncementsManager', 'settings', 'Settings')}</TabsTrigger>
-              <TabsTrigger value="delivery">{t('ministryAnnouncementsManager', 'delivery', 'Delivery')}</TabsTrigger>
-            </TabsList>
 
-            <TabsContent value="content" className="space-y-4 mt-4">
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'titleLabel', 'Title *')}</Label>
+              <Input
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder={t('ministryAnnouncementsManager', 'titlePlaceholder', 'Announcement title')}
+              />
+            </div>
+
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'content', 'Content')}</Label>
+              <Textarea
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                placeholder={t('ministryAnnouncementsManager', 'contentPlaceholder', 'Announcement content...')}
+                rows={6}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label>{t('ministryAnnouncementsManager', 'titleLabel', 'Title *')}</Label>
+                <Label>{t('ministryAnnouncementsManager', 'category', 'Category')}</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(v) => setFormData({ ...formData, category: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('ministryAnnouncementsManager', 'priority', 'Priority')}</Label>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(v) => setFormData({ ...formData, priority: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">{t('ministryAnnouncementsManager', 'normal', 'Normal')}</SelectItem>
+                    <SelectItem value="high">{t('ministryAnnouncementsManager', 'high', 'High')}</SelectItem>
+                    <SelectItem value="urgent">{t('ministryAnnouncementsManager', 'urgent', 'Urgent')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'status', 'Status')}</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(v) => setFormData({ ...formData, status: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">{t('ministryAnnouncementsManager', 'draft', 'Draft')}</SelectItem>
+                  <SelectItem value="published">{t('ministryAnnouncementsManager', 'published', 'Published')}</SelectItem>
+                  <SelectItem value="scheduled">{t('ministryAnnouncementsManager', 'scheduled', 'Scheduled')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'targetAudience', 'Target Audience')}</Label>
+              <Select
+                value={formData.target_audience}
+                onValueChange={(v) => setFormData({ ...formData, target_audience: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('ministryAnnouncementsManager', 'allMembers', 'All Members')}</SelectItem>
+                  <SelectItem value="leaders">{t('ministryAnnouncementsManager', 'leadersOnly', 'Leaders Only')}</SelectItem>
+                  <SelectItem value="premium">{t('ministryAnnouncementsManager', 'premiumMembers', 'Premium Members')}</SelectItem>
+                  <SelectItem value="volunteers">{t('ministryAnnouncementsManager', 'volunteers', 'Volunteers')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'featuredImageUrl', 'Featured Image URL (Optional)')}</Label>
+              <ImageUpload
+                value={formData.image_url}
+                onChange={(url) => setFormData({ ...formData, image_url: url })}
+                folder="announcements"
+                placeholder="Upload announcement image"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>{t('ministryAnnouncementsManager', 'linkUrl', 'Link URL (Optional)')}</Label>
                 <Input
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder={t('ministryAnnouncementsManager', 'titlePlaceholder', 'Announcement title')}
-                />
-              </div>
-
-              <div>
-                <Label>{t('ministryAnnouncementsManager', 'content', 'Content')}</Label>
-                <Textarea
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  placeholder={t('ministryAnnouncementsManager', 'contentPlaceholder', 'Announcement content...')}
-                  rows={6}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>{t('ministryAnnouncementsManager', 'category', 'Category')}</Label>
-                  <Select
-                    value={formData.category}
-                    onValueChange={(v) => setFormData({ ...formData, category: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.map(cat => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>{t('ministryAnnouncementsManager', 'priority', 'Priority')}</Label>
-                  <Select
-                    value={formData.priority}
-                    onValueChange={(v) => setFormData({ ...formData, priority: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="normal">{t('ministryAnnouncementsManager', 'normal', 'Normal')}</SelectItem>
-                      <SelectItem value="high">{t('ministryAnnouncementsManager', 'high', 'High')}</SelectItem>
-                      <SelectItem value="urgent">{t('ministryAnnouncementsManager', 'urgent', 'Urgent')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div>
-                <Label>{t('ministryAnnouncementsManager', 'featuredImageUrl', 'Featured Image URL (Optional)')}</Label>
-                <Input
-                  value={formData.image_url}
-                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                  value={formData.link_url}
+                  onChange={(e) => setFormData({ ...formData, link_url: e.target.value })}
                   placeholder="https://..."
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>{t('ministryAnnouncementsManager', 'linkUrl', 'Link URL (Optional)')}</Label>
-                  <Input
-                    value={formData.link_url}
-                    onChange={(e) => setFormData({ ...formData, link_url: e.target.value })}
-                    placeholder="https://..."
-                  />
-                </div>
-                <div>
-                  <Label>{t('ministryAnnouncementsManager', 'linkText', 'Link Text')}</Label>
-                  <Input
-                    value={formData.link_text}
-                    onChange={(e) => setFormData({ ...formData, link_text: e.target.value })}
-                    placeholder={t('ministryAnnouncementsManager', 'learnMore', 'Learn More')}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="settings" className="space-y-4 mt-4">
               <div>
-                <Label>{t('ministryAnnouncementsManager', 'status', 'Status')}</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(v) => setFormData({ ...formData, status: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">{t('ministryAnnouncementsManager', 'draft', 'Draft')}</SelectItem>
-                    <SelectItem value="published">{t('ministryAnnouncementsManager', 'published', 'Published')}</SelectItem>
-                    <SelectItem value="scheduled">{t('ministryAnnouncementsManager', 'scheduled', 'Scheduled')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>{t('ministryAnnouncementsManager', 'targetAudience', 'Target Audience')}</Label>
-                <Select
-                  value={formData.target_audience}
-                  onValueChange={(v) => setFormData({ ...formData, target_audience: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('ministryAnnouncementsManager', 'allMembers', 'All Members')}</SelectItem>
-                    <SelectItem value="leaders">{t('ministryAnnouncementsManager', 'leadersOnly', 'Leaders Only')}</SelectItem>
-                    <SelectItem value="premium">{t('ministryAnnouncementsManager', 'premiumMembers', 'Premium Members')}</SelectItem>
-                    <SelectItem value="volunteers">{t('ministryAnnouncementsManager', 'volunteers', 'Volunteers')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>{t('ministryAnnouncementsManager', 'publishAt', 'Publish At (Optional - for scheduled announcements)')}</Label>
+                <Label>{t('ministryAnnouncementsManager', 'linkText', 'Link Text')}</Label>
                 <Input
-                  type="datetime-local"
-                  value={formData.publish_at}
-                  onChange={(e) => setFormData({ ...formData, publish_at: e.target.value })}
+                  value={formData.link_text}
+                  onChange={(e) => setFormData({ ...formData, link_text: e.target.value })}
+                  placeholder={t('ministryAnnouncementsManager', 'learnMore', 'Learn More')}
                 />
               </div>
+            </div>
 
-              <div>
-                <Label>{t('ministryAnnouncementsManager', 'expirationDate', 'Expiration Date (Optional)')}</Label>
-                <Input
-                  type="datetime-local"
-                  value={formData.expires_at}
-                  onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
-                />
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'publishAt', 'Publish At (Optional - for scheduled announcements)')}</Label>
+              <Input
+                type="datetime-local"
+                value={formData.publish_at}
+                onChange={(e) => setFormData({ ...formData, publish_at: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label>{t('ministryAnnouncementsManager', 'expirationDate', 'Expiration Date (Optional)')}</Label>
+              <Input
+                type="datetime-local"
+                value={formData.expires_at}
+                onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+              <Switch
+                checked={formData.is_pinned}
+                onCheckedChange={(v) => setFormData({ ...formData, is_pinned: v })}
+              />
+              <Label>{t('ministryAnnouncementsManager', 'pinToTop', 'Pin to Top')}</Label>
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+              <Switch
+                checked={formData.send_email}
+                onCheckedChange={(v) => setFormData({ ...formData, send_email: v })}
+              />
+              <div className="flex-1">
+                <Label>{t('ministryAnnouncementsManager', 'sendEmailNotification', 'Send Email Notification')}</Label>
+                <p className="text-xs text-gray-500">{t('ministryAnnouncementsManager', 'sendEmailToAll', 'Send email to all members')}</p>
               </div>
+            </div>
+          </div>
 
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <Switch
-                  checked={formData.is_pinned}
-                  onCheckedChange={(v) => setFormData({ ...formData, is_pinned: v })}
-                />
-                <Label>{t('ministryAnnouncementsManager', 'pinToTop', 'Pin to Top')}</Label>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="delivery" className="space-y-4 mt-4">
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <Switch
-                  checked={formData.send_push}
-                  onCheckedChange={(v) => setFormData({ ...formData, send_push: v })}
-                />
-                <div className="flex-1">
-                  <Label>{t('ministryAnnouncementsManager', 'sendPushNotification', 'Send Push Notification')}</Label>
-                  <p className="text-xs text-gray-500">{t('ministryAnnouncementsManager', 'notifyInstantly', 'Notify members instantly when published')}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                <Switch
-                  checked={formData.send_email}
-                  onCheckedChange={(v) => setFormData({ ...formData, send_email: v })}
-                />
-                <div className="flex-1">
-                  <Label>{t('ministryAnnouncementsManager', 'sendEmailNotification', 'Send Email Notification')}</Label>
-                  <p className="text-xs text-gray-500">{t('ministryAnnouncementsManager', 'sendEmailToAll', 'Send email to all members')}</p>
-                </div>
-              </div>
-
-              {(formData.send_push || formData.send_email) && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm text-blue-700">
-                      <p className="font-medium mb-1">{t('ministryAnnouncementsManager', 'notificationsWillBeSent', 'Notifications will be sent:')}</p>
-                      <ul className="list-disc list-inside space-y-1">
-                        {formData.send_push && <li>{t('ministryAnnouncementsManager', 'pushToAppUsers', 'Push notification to app users')}</li>}
-                        {formData.send_email && <li>{t('ministryAnnouncementsManager', 'emailToMembers', 'Email to {audience} members').replace('{audience}', String(formData.target_audience))}</li>}
-                        <li>{t('ministryAnnouncementsManager', 'whenPublishedOrScheduled', 'When announcement is published or at scheduled time')}</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowModal(false)}>{t('ministryAnnouncementsManager', 'cancel', 'Cancel')}</Button>
             <Button onClick={handleSave} disabled={saving}>

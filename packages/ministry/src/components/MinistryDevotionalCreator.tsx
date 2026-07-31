@@ -16,6 +16,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { getLocalDateString } from '@rekindle/ui/utils';
 import { toast } from '@rekindle/ui/use-toast';
+import { ImageUpload } from './ImageUpload';
 import {
   Crown,
   Lock,
@@ -579,11 +580,11 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
                     <ImageIcon className="h-4 w-4" />
                     {t('ministryDevotionalCreator', 'imageUrlLabel', 'Image URL (Optional)')}
                   </Label>
-                  <Input
-                    id="imageUrl"
-                    placeholder="https://example.com/image.jpg"
+                  <ImageUpload
                     value={formData.imageUrl}
-                    onChange={(e) => handleInputChange('imageUrl', e.target.value)}
+                    onChange={(url) => handleInputChange('imageUrl', url)}
+                    folder="devotionals"
+                    placeholder="Upload image"
                   />
                 </div>
                 <div className="space-y-2">

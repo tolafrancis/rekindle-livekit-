@@ -13,6 +13,7 @@ import { DailyReminders } from '@rekindle/features/components/DailyReminders';
 import {
   User as UserIcon, Bell, Globe, ShieldCheck, LogOut, Loader2, Save, Languages,
 } from 'lucide-react';
+import { ImageUpload } from './ImageUpload';
 
 // Phase 7 — member Account settings for the standalone ministry app: profile,
 // notifications & reminders, language, and account controls. Reuses the shared
@@ -86,8 +87,13 @@ export default function MemberAccountSettings() {
               {avatarUrl ? <img src={avatarUrl} alt="" className="h-14 w-14 object-cover" /> : <UserIcon className="h-6 w-6 text-muted-foreground" />}
             </div>
             <div className="flex-1 space-y-1.5">
-              <Label htmlFor="avatar">Photo URL</Label>
-              <Input id="avatar" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://…" />
+              <Label htmlFor="avatar">Photo</Label>
+              <ImageUpload
+                value={avatarUrl}
+                onChange={(url) => setAvatarUrl(url)}
+                folder="avatars"
+                placeholder="Upload photo"
+              />
             </div>
           </div>
           <div className="space-y-1.5">

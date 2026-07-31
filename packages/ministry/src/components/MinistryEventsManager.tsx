@@ -19,6 +19,7 @@ import {
   Clock, Eye, Play, RefreshCw, Bell, Download, X, CheckCircle,
   PlayCircle, Radio, Film, User, Mail, Send, Link2, AlertCircle, Copy
 } from 'lucide-react';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryEventsManagerProps {
   ministryId: string;
@@ -864,10 +865,11 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
 
               <div>
                 <Label>{t('ministryEventsManager', 'labelFeaturedImage', 'Featured Image URL (Optional)')}</Label>
-                <Input
+                <ImageUpload
                   value={formData.featured_image}
-                  onChange={(e) => setFormData({ ...formData, featured_image: e.target.value })}
-                  placeholder="https://..."
+                  onChange={(url) => setFormData({ ...formData, featured_image: url })}
+                  folder="events"
+                  placeholder="Upload event image"
                 />
               </div>
             </TabsContent>
