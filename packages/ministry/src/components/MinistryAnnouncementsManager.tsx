@@ -19,12 +19,8 @@ import {
   Send, Calendar, Image, Link2, Users, Copy, CheckCircle, BarChart3,
   TrendingUp, AlertCircle, FileText, X, Download, Filter
 } from 'lucide-react';
-import {
-  SearchFilterPanel,
-  searchFilterIconClass,
-  searchFilterInputClass,
-  searchFilterSelectTriggerClass
-} from '@rekindle/features/components/SearchFilterPanel';
+import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass, searchFilterSelectTriggerClass } from '@rekindle/features/components/SearchFilterPanel';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryAnnouncementsManagerProps {
   ministryId: string;
@@ -802,10 +798,11 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
 
             <div>
               <Label>{t('ministryAnnouncementsManager', 'featuredImageUrl', 'Featured Image URL (Optional)')}</Label>
-              <Input
+              <ImageUpload
                 value={formData.image_url}
-                onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                placeholder="https://..."
+                onChange={(url) => setFormData({ ...formData, image_url: url })}
+                folder="announcements"
+                placeholder="Upload announcement image"
               />
             </div>
 

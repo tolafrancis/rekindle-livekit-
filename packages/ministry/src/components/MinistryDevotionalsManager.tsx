@@ -23,6 +23,7 @@ import {
   Download, TrendingUp, Users, Heart, MessageSquare, Share2,
   FileText, List, Grid, Save, X, Copy, CheckCircle
 } from 'lucide-react';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryDevotionalsManagerProps {
   ministryId: string;
@@ -1192,10 +1193,11 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
 
               <div>
                 <Label>{t('ministryDevotionalsManager2', 'featuredImageUrl', 'Featured Image URL')}</Label>
-                <Input
+                <ImageUpload
                   value={formData.featured_image}
-                  onChange={(e) => setFormData({ ...formData, featured_image: e.target.value })}
-                  placeholder="https://..."
+                  onChange={(url) => setFormData({ ...formData, featured_image: url })}
+                  folder="devotionals"
+                  placeholder="Upload featured image"
                 />
               </div>
 
@@ -1302,10 +1304,11 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
             </div>
             <div>
               <Label>{t('ministryDevotionalsManager2', 'seriesImageUrlOptional', 'Series Image URL (Optional)')}</Label>
-              <Input
+              <ImageUpload
                 value={seriesForm.image_url}
-                onChange={(e) => setSeriesForm({ ...seriesForm, image_url: e.target.value })}
-                placeholder="https://..."
+                onChange={(url) => setSeriesForm({ ...seriesForm, image_url: url })}
+                folder="devotionals"
+                placeholder="Upload series image"
               />
             </div>
             <div className="flex items-center gap-2">

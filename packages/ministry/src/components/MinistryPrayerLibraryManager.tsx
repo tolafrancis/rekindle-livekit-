@@ -18,6 +18,7 @@ import {
   Download, BookOpen, Copy, X, Folder, FolderPlus, Filter, Calendar,
   TrendingUp, Users, PlayCircle, List
 } from 'lucide-react';
+import { ImageUpload } from './ImageUpload';
 
 interface MinistryPrayerLibraryManagerProps {
   ministryId: string;
@@ -1001,10 +1002,11 @@ export const MinistryPrayerLibraryManager: React.FC<MinistryPrayerLibraryManager
 
             <div>
               <Label>{t('ministryPrayerLibraryManager', 'bannerImageUrlOptional', 'Banner Image URL (Optional)')}</Label>
-              <Input
+              <ImageUpload
                 value={campaignForm.banner_image}
-                onChange={(e) => setCampaignForm({ ...campaignForm, banner_image: e.target.value })}
-                placeholder="https://..."
+                onChange={(url) => setCampaignForm({ ...campaignForm, banner_image: url })}
+                folder="prayer"
+                placeholder="Upload banner image"
               />
             </div>
 
