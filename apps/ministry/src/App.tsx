@@ -203,6 +203,7 @@ function AppRoutes() {
     <Routes>
       {/* Public ministry-scoped entry points. */}
       <Route path="/join/:slug" element={<MinistryJoinLanding />} />
+      <Route path="/register/:slug" element={<MinistryJoinLanding />} />
       <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
       <Route path="/auth" element={<AuthRoute />} />
 
