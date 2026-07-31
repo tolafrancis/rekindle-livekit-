@@ -30,6 +30,24 @@ async function nativeOAuthSignIn(provider: 'google' | 'facebook') {
   return { error: 'Failed to get OAuth URL' };
 }
 
+async function nativeGoogleSignIn(): Promise<{ error?: string }> {
+  try {
+    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+    await GoogleAuth.initialize();
+    const googleUser = await GoogleAuth.signIn();
+    const idToken = googleUser.authentication.idToken;
+    if (!idToken) return { error: 'No ID token received from Google' };
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'google',
+      token: idToken,
+    });
+    if (error) return { error: error.message };
+    return {};
+  } catch (err: any) {
+    return { error: err.message || 'Google Sign-In failed' };
+  }
+}
+
 // ============================================
 // TYPES
 // ============================================
@@ -772,16 +790,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signInWithGoogle = async () => {
     try {
       if (Capacitor.isNativePlatform()) {
-        return await nativeOAuthSignIn('google');
+        return await nativeGoogleSignIn();
       }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: window.location.origin }
       });
-      if (error) return { error: error.message };
-      return {};
-    } catch (error: any) {
-      return { error: error.message || 'Google sign in failed' };
+      return error ? { error: error.message } : {};
+    } catch (err: any) {
+      return { error: err.message || 'Google sign in failed' };
     }
   };
 

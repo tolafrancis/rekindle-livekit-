@@ -323,10 +323,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    registerPush('user', 'com.rekindle.app').catch(console.error);
-  }, []);
-
   // Safe auth hook with fallback values
   let user: any = null;
   let profile: UserProfile | null = null;
@@ -345,6 +341,12 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   } catch (e) {
     console.warn('[AppLayout] Auth context not available');
   }
+
+  useEffect(() => {
+    if (user?.id) {
+      registerPush('user', 'com.rekindle.app').catch(console.error);
+    }
+  }, [user?.id]);
 
   // Language hook for translations
   const { t, language, isTranslating } = useLanguage();

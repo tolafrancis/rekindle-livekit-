@@ -23,6 +23,11 @@ const config: CapacitorConfig = {
   },
 
   plugins: {
+    GoogleAuth: {
+      scopes: ['profile', 'email'],
+      serverClientId: '1051029806700-cfguuqf00hvt19atva62c7utv63k15ue.apps.googleusercontent.com',
+      forceCodeForRefreshToken: true,
+    },
     // Keep the splash brief; the app shell renders fast from local assets.
     SplashScreen: {
       launchShowDuration: 800,

@@ -12,7 +12,12 @@
           "package_name": "com.rekindlebc.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1051029806700-cfguuqf00hvt19atva62c7utv63k15ue.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDl5Ctl6OU5AkvD8MFIWjfri_lIVqTSiHY"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1051029806700-cfguuqf00hvt19atva62c7utv63k15ue.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     },
@@ -31,7 +41,20 @@
           "package_name": "com.rekindlebc.ministry"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1051029806700-5l7r3ibu7mhpmapurgvps0kl234pjj49.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rekindlebc.ministry",
+            "certificate_hash": "835e985494a01127042235b2a3d4c93c7a17c51e"
+          }
+        },
+        {
+          "client_id": "1051029806700-cfguuqf00hvt19atva62c7utv63k15ue.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDl5Ctl6OU5AkvD8MFIWjfri_lIVqTSiHY"
@@ -39,7 +62,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1051029806700-cfguuqf00hvt19atva62c7utv63k15ue.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
