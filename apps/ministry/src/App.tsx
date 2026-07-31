@@ -128,13 +128,16 @@ function BrandedHeader() {
 // Inside CurrentMinistryProvider: members with no ministry self-onboard; everyone else
 // gets the branded shell with the child route rendered in <Outlet/>.
 function AuthedShell() {
+  const { user } = useAuth();
   const { ministries, loading, currentMinistry } = useCurrentMinistry();
   const { name } = useMinistryBranding();
   const navigate = useNavigate();
 
   useEffect(() => {
-    registerPush('user', 'com.rekindle.ministry').catch(console.error);
-  }, []);
+    if (user?.id) {
+      registerPush('user', 'com.rekindle.ministry').catch(console.error);
+    }
+  }, [user?.id]);
   if (loading) return <LoadingScreen />;
   if (ministries.length === 0) return <CreateMinistryWizard />;
   // Members and leaders both get onboarding, but different sets: leaders get the
