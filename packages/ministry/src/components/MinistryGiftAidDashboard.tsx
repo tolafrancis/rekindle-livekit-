@@ -25,6 +25,7 @@ import {
   type EligibleDonationRow,
 } from '../giftAid';
 import { GiftAidClaimsManager } from './GiftAidClaimsManager';
+import { GiftAidAutoSubmitGuide } from './GiftAidAutoSubmitGuide';
 import { GiftAidReports } from './GiftAidReports';
 import { GiftAidDeclarationsManager } from './GiftAidDeclarationsManager';
 
@@ -312,6 +313,9 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
           </CardContent>
         )}
       </Card>
+
+      {/* How to submit automatically (alongside the manual guide above) */}
+      <GiftAidAutoSubmitGuide themeColor={themeColor} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

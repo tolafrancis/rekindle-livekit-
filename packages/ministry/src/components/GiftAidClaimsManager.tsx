@@ -19,6 +19,7 @@ import {
 } from '../giftAid';
 import { validateClaim } from '../giftAid/r68Validation';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { GiftAidAutoSubmitGuide } from './GiftAidAutoSubmitGuide';
 
 interface Props {
   ministryId: string;
@@ -428,6 +429,8 @@ export const GiftAidClaimsManager: React.FC<Props> = ({ ministryId, themeColor =
   }
   return (
     <div className="space-y-4">
+      <GiftAidAutoSubmitGuide themeColor={themeColor} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t('giftAidClaimsManager', 'buildNewClaim', 'Build a new claim')}</CardTitle>
