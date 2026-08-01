@@ -59,7 +59,7 @@ function BrandedHeader() {
   const iconBtn = 'flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm transition-transform hover:scale-105';
   return (
     <header className="flex h-14 items-center gap-3 border-b px-3 sm:px-4">
-      {location.pathname !== '/' && (
+      {location.pathname !== '/' && location.pathname !== '/home' && (
         <Link to="/" aria-label="All Ministries" title="All Ministries"
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground shrink-0">
           <ArrowLeft className="h-4 w-4" />
@@ -71,7 +71,7 @@ function BrandedHeader() {
       {!whiteLabel && <span className="text-xs text-muted-foreground hidden sm:inline">· ReKindle</span>}
       <div className="ml-auto flex items-center gap-2">
         {firstName && <span className="hidden md:inline text-sm text-muted-foreground mr-1">Welcome back, {firstName}</span>}
-        <Link to="/" aria-label="Ministry Home" title="Ministry Home" className={`${iconBtn} bg-gradient-to-br from-fuchsia-500 to-pink-600`}>
+        <Link to="/home" aria-label="Ministry Home" title="Ministry Home" className={`${iconBtn} bg-gradient-to-br from-fuchsia-500 to-pink-600`}>
           <Home className="h-4 w-4" />
         </Link>
         <div className="relative">
@@ -222,6 +222,7 @@ function AppRoutes() {
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>
         <Route path="/" element={<MinistriesHub />} />
+        <Route path="/home" element={<MinistriesHub />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
         {/* Billing is web-only: native builds ship without purchase surfaces
             (Phase 0 — Apple 3.1.1). Deep-linking it natively lands on Home. */}
