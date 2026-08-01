@@ -32,12 +32,11 @@ async function nativeOAuthSignIn(provider: 'google' | 'facebook') {
 
 async function nativeGoogleSignIn(): Promise<{ error?: string }> {
   try {
-    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-    await GoogleAuth.initialize();
-    const googleUser = await GoogleAuth.signIn();
-    const idToken = googleUser.authentication.idToken;
+    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+    const result = await FirebaseAuthentication.signInWithGoogle();
+    const idToken = result.credential?.idToken;
     if (!idToken) return { error: 'No ID token received from Google' };
-    const { data, error } = await supabase.auth.signInWithIdToken({
+    const { error } = await supabase.auth.signInWithIdToken({
       provider: 'google',
       token: idToken,
     });

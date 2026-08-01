@@ -15,6 +15,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.3.0",
     "@rekindle/auth": "*",
     "@rekindle/supabase": "*",
     "@rekindle/types": "*",
