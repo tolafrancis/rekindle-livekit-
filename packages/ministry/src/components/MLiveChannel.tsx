@@ -22,6 +22,7 @@ import { ChannelRecordingsViewer } from '@rekindle/live/components/ChannelRecord
 import { LiveChannelViewer } from '@rekindle/live/components/LiveChannelViewer';
 import { LiveChannelAnalyticsDashboard } from '@rekindle/live/components/LiveChannelAnalyticsDashboard';
 import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
+import { getEffectiveRecordingRetentionDays } from '@rekindle/features/ministryBilling';
 import {
   Radio,
   Plus,
@@ -95,6 +96,13 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  // undefined = no storage_pack override, use the fixed default; null = "never".
+  const [retentionDaysOverride, setRetentionDaysOverride] = useState<number | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!ministryId) return;
+    getEffectiveRecordingRetentionDays(ministryId).then(setRetentionDaysOverride);
+  }, [ministryId]);
   // Nested inside MinistrySpace — the hook's state-merge composes with the parent
   // tab history so Back steps through these tabs then back out to MinistrySpace.
   const [activeTab, setActiveTab] = useViewHistory<string>('mlivechannel-tab', 'discover');
@@ -1078,6 +1086,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
             <ChannelRecordingsViewer
               channelId={recordingsChannel.id}
               isOwner={recordingsChannel.owner_id === user?.id}
+              retentionDaysOverride={retentionDaysOverride}
             />
           </DialogContent>
         </Dialog>

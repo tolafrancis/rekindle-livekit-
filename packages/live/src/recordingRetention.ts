@@ -1,17 +1,19 @@
 // Recording retention policy — how long a recording stays available to watch /
-// download before the daily cleanup job auto-deletes it.
+// download before the daily cleanup job (supabase/functions/ministry-retention-sweep)
+// auto-deletes it. These are the FREE/bundled-tier defaults that sweep enforces
+// (MEETING_RETENTION_DAYS / BROADCAST_RETENTION_DAYS there) — keep them in sync.
 //
-//   • Interactive meetings (private, member-facing): 30 days
-//   • Live broadcasts / sermons (public, evergreen):  90 days
+//   • Interactive meetings (private, member-facing): 7 days
+//   • Live broadcasts / sermons (public, evergreen):  30 days
 //
-// These numbers drive the "Available until …" badge in the UI. NOTE: the old
-// Mux `cleanup-recordings` job was removed with Mux — server-side auto-deletion of
-// LiveKit Egress recordings (livekit_recordings + object storage) still needs a
-// LiveKit-native cleanup job wired to these same windows.
+// Ministries with an active storage_pack add-on can override this with their
+// own recording_retention_days (including "never") — this constant is only the
+// fallback used when no such override applies (pass one via recordingExpiryInfo's
+// overrideDays param: a number to override the window, or null for "never").
 
 export const RECORDING_RETENTION_DAYS = {
-  meeting: 30,
-  broadcast: 90,
+  meeting: 7,
+  broadcast: 30,
 } as const;
 
 export type RecordingKind = keyof typeof RECORDING_RETENTION_DAYS;
@@ -25,28 +27,43 @@ export function retentionDays(kind: RecordingKind): number {
   return RECORDING_RETENTION_DAYS[kind];
 }
 
-/** The date a recording will be auto-deleted, from its creation time + kind. */
-export function recordingExpiry(createdIso: string, kind: RecordingKind): Date {
-  return new Date(new Date(createdIso).getTime() + retentionDays(kind) * DAY_MS);
+/** The date a recording will be auto-deleted, from its creation time + kind
+ *  (or an explicit override day-count, for a storage_pack ministry's custom
+ *  retention setting). */
+export function recordingExpiry(createdIso: string, kind: RecordingKind, overrideDays?: number): Date {
+  const days = overrideDays ?? retentionDays(kind);
+  return new Date(new Date(createdIso).getTime() + days * DAY_MS);
 }
 
 export interface ExpiryInfo {
-  expiresAt: Date;
-  /** Whole days remaining (ceil); negative once past expiry. */
-  daysLeft: number;
+  /** null when the recording is kept indefinitely (neverExpires). */
+  expiresAt: Date | null;
+  /** Whole days remaining (ceil); negative once past expiry; null if neverExpires. */
+  daysLeft: number | null;
   expired: boolean;
   /** Within RETENTION_WARNING_DAYS of expiry. */
   soon: boolean;
-  /** Human label, e.g. "Available until 4 Aug 2026" / "Expires in 2 days". */
+  /** True for a storage_pack ministry that set retention to "Never delete". */
+  neverExpires: boolean;
+  /** Human label, e.g. "Available until 4 Aug 2026" / "Expires in 2 days" / "Kept indefinitely". */
   label: string;
 }
 
+/**
+ * @param overrideDays A storage_pack ministry's custom recording_retention_days:
+ *   omit/undefined to use the kind's fixed default, a number to use that many
+ *   days instead, or `null` for "Never delete" (neverExpires: true).
+ */
 export function recordingExpiryInfo(
   createdIso: string,
   kind: RecordingKind,
   now: number = Date.now(),
+  overrideDays?: number | null,
 ): ExpiryInfo {
-  const expiresAt = recordingExpiry(createdIso, kind);
+  if (overrideDays === null) {
+    return { expiresAt: null, daysLeft: null, expired: false, soon: false, neverExpires: true, label: 'Kept indefinitely' };
+  }
+  const expiresAt = recordingExpiry(createdIso, kind, overrideDays);
   const msLeft = expiresAt.getTime() - now;
   const daysLeft = Math.ceil(msLeft / DAY_MS);
   const expired = msLeft <= 0;
@@ -59,5 +76,5 @@ export function recordingExpiryInfo(
     : soon
       ? (daysLeft <= 1 ? 'Expires today' : `Expires in ${daysLeft} days`)
       : `Available until ${dateStr}`;
-  return { expiresAt, daysLeft, expired, soon, label };
+  return { expiresAt, daysLeft, expired, soon, neverExpires: false, label };
 }

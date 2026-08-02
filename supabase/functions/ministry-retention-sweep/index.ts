@@ -163,7 +163,37 @@ serve(async (req) => {
     const { data: addonRows } = await admin
       .from('ministry_addons').select('ministry_id')
       .eq('addon_type', 'storage_pack').eq('status', 'active');
-    const exempt = new Set((addonRows ?? []).map((r: { ministry_id: string }) => r.ministry_id));
+    const premiumIds = [...new Set((addonRows ?? []).map((r: { ministry_id: string }) => r.ministry_id))];
+
+    // Per-ministry retention preference for storage_pack ministries only —
+    // recording_retention_days null (the default, including for ministries
+    // that have never touched the setting) means "never delete", same as the
+    // old blanket exemption. A ministry with no active storage_pack has no
+    // entry here and always falls back to the fixed MEETING/BROADCAST days.
+    const premiumMap = new Map<string, { retentionDays: number | null; updatedAt: string | null }>();
+    if (premiumIds.length > 0) {
+      const { data: groupRows } = await admin
+        .from('ministry_groups')
+        .select('id, recording_retention_days, recording_retention_updated_at')
+        .in('id', premiumIds);
+      for (const g of (groupRows ?? []) as { id: string; recording_retention_days: number | null; recording_retention_updated_at: string | null }[]) {
+        premiumMap.set(g.id, { retentionDays: g.recording_retention_days, updatedAt: g.recording_retention_updated_at });
+      }
+    }
+
+    // Effective retention window (in days) for a ministry + content kind,
+    // and whether it's still within the post-change grace period (in which
+    // case notices still fire, but nothing gets deleted yet — see 0269).
+    function effectiveRetention(ministryId: string, fallbackDays: number): { days: number; inGrace: boolean } | null {
+      const premium = premiumMap.get(ministryId);
+      if (premium) {
+        if (premium.retentionDays == null) return null; // never delete
+        const inGrace = !!premium.updatedAt
+          && (now - new Date(premium.updatedAt).getTime()) / MS_PER_DAY < NOTICE_DAYS_BEFORE;
+        return { days: premium.retentionDays, inGrace };
+      }
+      return { days: fallbackDays, inGrace: false };
+    }
 
     const now = Date.now();
     let expiredCount = 0;
@@ -191,12 +221,14 @@ serve(async (req) => {
       meeting_id: string | null; ended_at: string; filepath: string; retention_notice_sent_at: string | null;
     }[]) {
       const ministryId = await resolveMinistryId(admin, rec);
-      if (!ministryId || exempt.has(ministryId)) continue; // no ministry (individual) or storage-add-on exempt
+      if (!ministryId) continue; // individual meeting, not ministry-billed
 
-      const retentionDays = rec.kind === 'meeting' ? MEETING_RETENTION_DAYS : BROADCAST_RETENTION_DAYS;
+      const retention = effectiveRetention(ministryId, rec.kind === 'meeting' ? MEETING_RETENTION_DAYS : BROADCAST_RETENTION_DAYS);
+      if (!retention) continue; // storage-pack ministry set to "never delete"
+      const { days: retentionDays, inGrace } = retention;
       const ageDays = (now - new Date(rec.ended_at).getTime()) / MS_PER_DAY;
 
-      if (ageDays >= retentionDays) {
+      if (ageDays >= retentionDays && !inGrace) {
         await deletePrefix(s3, s3cfg, rec.filepath);
         await admin.from('livekit_recordings').delete().eq('id', rec.id);
         expiredCount++;
@@ -231,19 +263,21 @@ serve(async (req) => {
       id: string; ministry_id: string; raw_storage_key: string | null;
       published_at: string | null; created_at: string; retention_notice_sent_at: string | null;
     }[]) {
-      if (exempt.has(v.ministry_id)) continue;
+      const retention = effectiveRetention(v.ministry_id, VIDEO_MESSAGE_RETENTION_DAYS);
+      if (!retention) continue; // storage-pack ministry set to "never delete"
+      const { days: retentionDays, inGrace } = retention;
       const anchor = v.published_at ?? v.created_at;
       const ageDays = (now - new Date(anchor).getTime()) / MS_PER_DAY;
 
-      if (ageDays >= VIDEO_MESSAGE_RETENTION_DAYS) {
+      if (ageDays >= retentionDays && !inGrace) {
         if (v.raw_storage_key) await deleteKey(r2, r2cfg, v.raw_storage_key);
         await deletePrefix(r2, r2cfg, `processed/${v.ministry_id}/${v.id}`);
         // Archive, don't hard-delete — keeps title/engagement history around
         // (status='archived' is already a valid state for this table).
         await admin.from('ministry_video_messages').update({ status: 'archived' }).eq('id', v.id);
         expiredCount++;
-      } else if (VIDEO_MESSAGE_RETENTION_DAYS - ageDays <= NOTICE_DAYS_BEFORE && !v.retention_notice_sent_at) {
-        const daysLeft = Math.max(0, Math.ceil(VIDEO_MESSAGE_RETENTION_DAYS - ageDays));
+      } else if (retentionDays - ageDays <= NOTICE_DAYS_BEFORE && !v.retention_notice_sent_at) {
+        const daysLeft = Math.max(0, Math.ceil(retentionDays - ageDays));
         await notifyAdmins(
           admin, v.ministry_id, 'Video message expires soon',
           `A pastoral video message will be removed in ${daysLeft} day(s) — download it now if you want to keep it.`,

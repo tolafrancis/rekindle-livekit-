@@ -12,6 +12,13 @@ interface MeetingLike {
   enable_recording?: boolean;
 }
 
+/** undefined = fixed default, null = "never", number = custom days. */
+function retentionLabel(overrideDays: number | null | undefined): string {
+  if (overrideDays === null) return 'Recordings are kept indefinitely.';
+  const days = overrideDays ?? RECORDING_RETENTION_DAYS.meeting;
+  return `Recordings are kept for ${days} days, then removed automatically.`;
+}
+
 interface LibraryItem extends MeetingRecording {
   meetingTitle: string;
 }
@@ -28,7 +35,12 @@ const formatDuration = (s?: number) => {
  * Egress recordings from every recording-enabled meeting in the ministry,
  * independent of any single meeting's card or link. Read-only.
  */
-export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ meetings }) => {
+export const MinistryRecordingsTab: React.FC<{
+  meetings: MeetingLike[];
+  /** A storage_pack ministry's custom recording_retention_days: omit for the
+   *  fixed default, null for "never". */
+  retentionDaysOverride?: number | null;
+}> = ({ meetings, retentionDaysOverride }) => {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [active, setActive] = useState<LibraryItem | null>(null);
@@ -86,7 +98,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
           saved automatically — you don't need to start a meeting to watch them.
         </p>
         <p className="mt-3 inline-flex items-center gap-1 text-xs text-gray-400">
-          <Clock className="h-3 w-3" /> Recordings are kept for {RECORDING_RETENTION_DAYS.meeting} days, then removed automatically.
+          <Clock className="h-3 w-3" /> {retentionLabel(retentionDaysOverride)}
         </p>
       </div>
     );
@@ -95,7 +107,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
   return (
     <div className="space-y-4">
       <p className="inline-flex items-center gap-1 text-xs text-gray-500">
-        <Clock className="h-3 w-3" /> Recordings are kept for {RECORDING_RETENTION_DAYS.meeting} days, then removed automatically — download any you want to keep.
+        <Clock className="h-3 w-3" /> {retentionLabel(retentionDaysOverride)} Download any you want to keep.
       </p>
 
       {active && (
@@ -114,7 +126,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
               <p className="text-sm text-gray-500">
                 {new Date(active.created).toLocaleString()} · {formatDuration(active.duration)}
               </p>
-              <RecordingRetentionBadge createdAt={active.created} kind="meeting" className="mt-1" />
+              <RecordingRetentionBadge createdAt={active.created} kind="meeting" className="mt-1" retentionDaysOverride={retentionDaysOverride} />
             </div>
             {(() => {
               const dl = (active as any).download || muxDownloadUrl(active.hls, `${active.meetingTitle}-${new Date(active.created).toISOString().slice(0, 10)}`);

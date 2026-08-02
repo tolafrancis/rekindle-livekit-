@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { supabase } from '@rekindle/supabase';
 import { useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
 import { useMinistryEntitlements } from '@rekindle/features/useMinistryEntitlements';
@@ -33,6 +34,18 @@ import { toast } from '@rekindle/ui/use-toast';
 const money = (amount: number, currency: string) =>
   currency === 'NGN' ? `₦${amount.toLocaleString()}` : `$${amount.toLocaleString()}`;
 
+// Recording retention is a storage_pack perk — everyone else stays on the
+// sweep's fixed 7/30-day defaults (see recordingRetention.ts). 'never' maps
+// to a null recording_retention_days column, matching what a storage_pack
+// ministry already got implicitly before this setting existed.
+const RETENTION_OPTIONS: { value: string; label: string; days: number | null }[] = [
+  { value: 'never', label: 'Never delete', days: null },
+  { value: '30', label: '30 days', days: 30 },
+  { value: '60', label: '60 days', days: 60 },
+  { value: '90', label: '90 days', days: 90 },
+  { value: '180', label: '180 days', days: 180 },
+];
+
 export default function BillingSettings() {
   const { currentMinistryId } = useCurrentMinistry();
   const { name: ministryName } = useMinistryBranding();
@@ -50,6 +63,10 @@ export default function BillingSettings() {
   const [addonCatalog, setAddonCatalog] = useState<MinistryAddonCatalogItem[]>([]);
   const [myAddons, setMyAddons] = useState<MinistryAddon[]>([]);
   const [buyingAddonId, setBuyingAddonId] = useState<string | null>(null);
+
+  // undefined = not loaded yet; null = "never delete"; number = custom days.
+  const [retentionDays, setRetentionDays] = useState<number | null | undefined>(undefined);
+  const [savingRetention, setSavingRetention] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -74,6 +91,34 @@ export default function BillingSettings() {
       setMyAddons(addons);
     })();
   }, [currentMinistryId]);
+
+  useEffect(() => {
+    if (!currentMinistryId) return;
+    (async () => {
+      const { data } = await supabase
+        .from('ministry_groups')
+        .select('recording_retention_days')
+        .eq('id', currentMinistryId)
+        .maybeSingle();
+      setRetentionDays((data as { recording_retention_days: number | null } | null)?.recording_retention_days ?? null);
+    })();
+  }, [currentMinistryId]);
+
+  const saveRetention = async (value: string) => {
+    if (!currentMinistryId) return;
+    const days = value === 'never' ? null : Number(value);
+    setSavingRetention(true);
+    const { error } = await supabase
+      .from('ministry_groups')
+      .update({ recording_retention_days: days, recording_retention_updated_at: new Date().toISOString() })
+      .eq('id', currentMinistryId);
+    setSavingRetention(false);
+    if (error) {
+      return toast({ title: 'Could not update retention setting', description: error.message, variant: 'destructive' });
+    }
+    setRetentionDays(days);
+    toast({ title: 'Recording retention updated' });
+  };
 
   const buyAddon = async (item: MinistryAddonCatalogItem) => {
     if (!currentMinistryId) return;
@@ -100,6 +145,7 @@ export default function BillingSettings() {
   const currentSlug = entitlements.tierSlug;
   const isPaid = currentSlug !== 'free';
   const isNigeria = country === 'NG';
+  const hasStoragePack = myAddons.some((a) => a.addonType === 'storage_pack');
 
   const selectPlan = (plan: MinistryPartnerPlan) => {
     setSelectedPlan(plan);
@@ -315,6 +361,27 @@ export default function BillingSettings() {
               <p className="text-xs text-muted-foreground">
                 Add-ons are charged to the card on file for your plan (Stripe) — subscribe with a card first if you haven't.
               </p>
+            )}
+
+            {hasStoragePack && (
+              <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">Recording retention</p>
+                  <p className="text-xs text-muted-foreground">
+                    How long meeting/broadcast recordings and video messages are kept before automatic deletion.
+                  </p>
+                </div>
+                <Select
+                  value={retentionDays === undefined ? undefined : retentionDays === null ? 'never' : String(retentionDays)}
+                  onValueChange={saveRetention}
+                  disabled={savingRetention || retentionDays === undefined}
+                >
+                  <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {RETENTION_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
           </CardContent>
         </Card>
