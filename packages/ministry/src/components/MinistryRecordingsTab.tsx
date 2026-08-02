@@ -9,8 +9,6 @@ import { Loader2, Video, Download, Clock } from 'lucide-react';
 interface MeetingLike {
   id: string;
   title: string;
-  cf_live_input_uid?: string;
-  hls_playback_url?: string;
   enable_recording?: boolean;
 }
 
@@ -26,22 +24,21 @@ const formatDuration = (s?: number) => {
 };
 
 /**
- * A standalone recordings library for a ministry. It gathers the Cloudflare
- * recordings from every webinar in the ministry (any meeting that has a live
- * input), independent of any single meeting's card or link. Read-only.
+ * A standalone recordings library for a ministry. It gathers the LiveKit
+ * Egress recordings from every recording-enabled meeting in the ministry,
+ * independent of any single meeting's card or link. Read-only.
  */
 export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ meetings }) => {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [active, setActive] = useState<LibraryItem | null>(null);
 
-  // A meeting can have recordings if it was ever provisioned for streaming
-  // (Mux meetings carry an hls_playback_url; legacy Cloudflare ones a
-  // cf_live_input_uid) AND the host left recording enabled. Mux records every
-  // stream automatically, so this toggle controls whether we *surface* it.
-  const sourceMeetings = meetings.filter(
-    (m) => (m.hls_playback_url || m.cf_live_input_uid) && m.enable_recording !== false,
-  );
+  // Any meeting recorded via LiveKit Egress may have recordings, keyed by its
+  // own id (see getMeetingRecordings) — not by hls_playback_url/cf_live_input_uid,
+  // which only webinar broadcasts (start-hls) ever set and plain meeting
+  // recordings (start-recording) never do. The recording-enabled toggle is
+  // still worth filtering on to skip the fetch for meetings that never record.
+  const sourceMeetings = meetings.filter((m) => m.enable_recording !== false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +66,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetings.map((m) => `${m.hls_playback_url || m.cf_live_input_uid || ''}:${m.enable_recording !== false}`).join(',')]);
+  }, [meetings.map((m) => `${m.id}:${m.enable_recording !== false}`).join(',')]);
 
   if (loading) {
     return (

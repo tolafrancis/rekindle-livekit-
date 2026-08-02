@@ -18,3 +18,12 @@ verify_jwt = true
 [functions.generate-prayer-content]
 enabled = true
 verify_jwt = true
+
+[functions.livekit-egress]
+enabled = true
+# start/stop-recording call supabase.auth.getUser() on the forwarded Bearer
+# token themselves; list-recordings is intentionally open (read-only VOD
+# list). Gateway JWT verification stays on, matching its livekit-token /
+# livekit-moderation siblings — only livekit-webhook (LiveKit's own signed
+# call, no Supabase JWT) needs it off.
+verify_jwt = true
