@@ -221,7 +221,7 @@ serve(async (req) => {
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
 
-      const { data: row } = await admin.from('livekit_recordings').insert({
+      const { data: row, error: insertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
         room_name: body.roomName,
         kind: isChannelBroadcast ? 'channel' : 'meeting',
@@ -232,6 +232,10 @@ serve(async (req) => {
         filepath: prefix,
         playback_url: playbackUrl,
       }).select('id').maybeSingle();
+      // The Egress has already started billing on LiveKit's side even if this insert
+      // fails — surface it loudly rather than silently losing the tracking row (as
+      // happened for every recording before the meeting_table column existed).
+      if (insertError) console.error('[livekit-egress] failed to insert livekit_recordings row:', insertError);
 
       // Mark the meeting row as recording (best-effort — column set may vary by table).
       if (meetingTable && body.context?.meetingId) {
@@ -278,7 +282,7 @@ serve(async (req) => {
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
 
       // The live HLS doubles as the VOD (§12) — track it as a recording too.
-      await admin.from('livekit_recordings').insert({
+      const { error: hlsInsertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
         room_name: body.roomName,
         kind: isChannel ? 'channel' : 'meeting',
@@ -289,6 +293,7 @@ serve(async (req) => {
         filepath: prefix,
         playback_url: playbackUrl,
       });
+      if (hlsInsertError) console.error('[livekit-egress] failed to insert livekit_recordings row (start-hls):', hlsInsertError);
 
       if (isChannel) {
         await admin.from('channel_streams').upsert(
