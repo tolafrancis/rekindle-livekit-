@@ -84,11 +84,11 @@ export interface MeetingRecording {
 }
 
 /** List a webinar's recordings — LiveKit Egress outputs (livekit_recordings),
- *  keyed by the meeting's room. Returns [] when none. */
+ *  keyed by the meeting's id. Returns [] when none. */
 export async function getMeetingRecordings(meetingId: string): Promise<MeetingRecording[]> {
   try {
     const { data, error } = await supabase.functions.invoke('livekit-egress', {
-      body: { action: 'list-recordings', roomName: meetingId },
+      body: { action: 'list-recordings', meetingId },
     });
     if (error || !data?.recordings) return [];
     return data.recordings as MeetingRecording[];

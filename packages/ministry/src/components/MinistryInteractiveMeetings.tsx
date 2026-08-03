@@ -63,6 +63,7 @@ import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
 import { MeetingRecordings } from '@rekindle/live/components/MeetingRecordings';
 import { MinistryRecordingsTab } from './MinistryRecordingsTab';
+import { getEffectiveRecordingRetentionDays } from '@rekindle/features/ministryBilling';
 
 // Import subscription enforcement functions
 import {
@@ -1312,6 +1313,13 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   // AI Insights state
   const [insightsMeeting, setInsightsMeeting] = useState<MinistryVideoMeeting | null>(null);
   const [showInsightsDialog, setShowInsightsDialog] = useState(false);
+  // undefined = no storage_pack override, use the fixed default; null = "never".
+  const [retentionDaysOverride, setRetentionDaysOverride] = useState<number | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!ministryId) return;
+    getEffectiveRecordingRetentionDays(ministryId).then(setRetentionDaysOverride);
+  }, [ministryId]);
 
   // Check if user is ministry leader or owner
   useEffect(() => {
@@ -1680,7 +1688,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       </div>
 
       {subTab === 'recordings' ? (
-        <MinistryRecordingsTab meetings={meetings} />
+        <MinistryRecordingsTab meetings={meetings} retentionDaysOverride={retentionDaysOverride} />
       ) : isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -2067,6 +2075,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         meetingId={recordingsMeeting?.id || ''}
         open={!!recordingsMeeting}
         onClose={() => setRecordingsMeeting(null)}
+        retentionDaysOverride={retentionDaysOverride}
       />
 
       {/* AI Insights Dialog - view post-session insights for any meeting */}

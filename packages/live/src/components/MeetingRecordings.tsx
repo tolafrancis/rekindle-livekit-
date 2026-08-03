@@ -11,6 +11,9 @@ interface MeetingRecordingsProps {
   meetingId: string;
   open: boolean;
   onClose: () => void;
+  /** A storage_pack ministry's custom recording_retention_days (see
+   *  RecordingRetentionBadge): omit for the fixed default, null for "never". */
+  retentionDaysOverride?: number | null;
 }
 
 const formatDuration = (s?: number) => {
@@ -20,7 +23,7 @@ const formatDuration = (s?: number) => {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 };
 
-export const MeetingRecordings: React.FC<MeetingRecordingsProps> = ({ meetingId, open, onClose }) => {
+export const MeetingRecordings: React.FC<MeetingRecordingsProps> = ({ meetingId, open, onClose, retentionDaysOverride }) => {
   const [loading, setLoading] = useState(false);
   const [recordings, setRecordings] = useState<MeetingRecording[]>([]);
   const [active, setActive] = useState<MeetingRecording | null>(null);
@@ -75,7 +78,7 @@ export const MeetingRecordings: React.FC<MeetingRecordingsProps> = ({ meetingId,
               const dl = (active as any).download || muxDownloadUrl(active.hls, filename);
               return (
                 <div className="flex items-center justify-between gap-3">
-                  <RecordingRetentionBadge createdAt={active.created} kind="meeting" />
+                  <RecordingRetentionBadge createdAt={active.created} kind="meeting" retentionDaysOverride={retentionDaysOverride} />
                   {dl ? (
                     <a
                       href={dl}

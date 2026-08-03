@@ -18,3 +18,22 @@ verify_jwt = true
 [functions.generate-prayer-content]
 enabled = true
 verify_jwt = true
+
+[functions.livekit-egress]
+enabled = true
+# start/stop-recording call supabase.auth.getUser() on the forwarded Bearer
+# token themselves; list-recordings is intentionally open (read-only VOD
+# list). Gateway JWT verification stays on, matching its livekit-token /
+# livekit-moderation siblings — only livekit-webhook (LiveKit's own signed
+# call, no Supabase JWT) needs it off.
+verify_jwt = true
+
+[functions.ministry-retention-sweep]
+enabled = true
+# Deletes recordings/video messages across every ministry — service-role only
+# (the cron job). Its own decodeJwtRole() check only base64-decodes the
+# Authorization header, it never verifies the signature, so with gateway
+# verification off a forged unsigned "JWT" claiming role:service_role would
+# pass both checks. Was found deployed with verify_jwt=false despite the
+# function's own header comment saying it must stay on — restoring that.
+verify_jwt = true

@@ -8,6 +8,9 @@ import { RECORDING_RETENTION_DAYS } from '../recordingRetention';
 interface ChannelRecordingsViewerProps {
   channelId: string;
   isOwner?: boolean;
+  /** A storage_pack ministry's custom recording_retention_days (see
+   *  RecordingRetentionBadge): omit for the fixed default, null for "never". */
+  retentionDaysOverride?: number | null;
 }
 
 function formatDuration(s?: number): string {
@@ -23,7 +26,7 @@ function formatDuration(s?: number): string {
  * (Daily handles the live stream; Mux handles the recording) and serves them as
  * HLS, so they play in-app with no download step or S3 setup.
  */
-export const ChannelRecordingsViewer: React.FC<ChannelRecordingsViewerProps> = ({ channelId }) => {
+export const ChannelRecordingsViewer: React.FC<ChannelRecordingsViewerProps> = ({ channelId, retentionDaysOverride }) => {
   const [loading, setLoading] = useState(true);
   const [recordings, setRecordings] = useState<MuxRecording[]>([]);
   const [active, setActive] = useState<MuxRecording | null>(null);
@@ -84,7 +87,7 @@ export const ChannelRecordingsViewer: React.FC<ChannelRecordingsViewerProps> = (
         const dl = active.download || muxDownloadUrl(active.hls, `broadcast-${new Date(active.created).toISOString().slice(0, 10)}`);
         return (
           <div className="flex items-center justify-between gap-3">
-            <RecordingRetentionBadge createdAt={active.created} kind="broadcast" />
+            <RecordingRetentionBadge createdAt={active.created} kind="broadcast" retentionDaysOverride={retentionDaysOverride} />
             {dl ? (
               <a
                 href={dl}

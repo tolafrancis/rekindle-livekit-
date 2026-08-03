@@ -202,6 +202,24 @@ export async function fetchMinistryAddons(ministryId: string): Promise<{ addons:
 }
 
 /**
+ * A ministry's effective recording-retention override for RecordingRetentionBadge
+ * (see BillingSettings.tsx, where storage_pack ministries set this):
+ *   - undefined: no active storage_pack — badge should use its fixed kind default.
+ *   - null:      storage_pack, retention set to "Never delete".
+ *   - number:    storage_pack, custom day count.
+ */
+export async function getEffectiveRecordingRetentionDays(ministryId: string): Promise<number | null | undefined> {
+  const { addons } = await fetchMinistryAddons(ministryId);
+  if (!addons.some((a) => a.addonType === 'storage_pack')) return undefined;
+  const { data } = await supabase
+    .from('ministry_groups')
+    .select('recording_retention_days')
+    .eq('id', ministryId)
+    .maybeSingle();
+  return (data as { recording_retention_days: number | null } | null)?.recording_retention_days ?? null;
+}
+
+/**
  * Buy an add-on. Stripe purchases complete immediately (no url returned —
  * it's added to the ministry's existing subscription synchronously);
  * Paystack returns a hosted authorization url to redirect to, same as the

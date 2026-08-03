@@ -9,9 +9,14 @@ import { Loader2, Video, Download, Clock } from 'lucide-react';
 interface MeetingLike {
   id: string;
   title: string;
-  cf_live_input_uid?: string;
-  hls_playback_url?: string;
   enable_recording?: boolean;
+}
+
+/** undefined = fixed default, null = "never", number = custom days. */
+function retentionLabel(overrideDays: number | null | undefined): string {
+  if (overrideDays === null) return 'Recordings are kept indefinitely.';
+  const days = overrideDays ?? RECORDING_RETENTION_DAYS.meeting;
+  return `Recordings are kept for ${days} days, then removed automatically.`;
 }
 
 interface LibraryItem extends MeetingRecording {
@@ -26,22 +31,26 @@ const formatDuration = (s?: number) => {
 };
 
 /**
- * A standalone recordings library for a ministry. It gathers the Cloudflare
- * recordings from every webinar in the ministry (any meeting that has a live
- * input), independent of any single meeting's card or link. Read-only.
+ * A standalone recordings library for a ministry. It gathers the LiveKit
+ * Egress recordings from every recording-enabled meeting in the ministry,
+ * independent of any single meeting's card or link. Read-only.
  */
-export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ meetings }) => {
+export const MinistryRecordingsTab: React.FC<{
+  meetings: MeetingLike[];
+  /** A storage_pack ministry's custom recording_retention_days: omit for the
+   *  fixed default, null for "never". */
+  retentionDaysOverride?: number | null;
+}> = ({ meetings, retentionDaysOverride }) => {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [active, setActive] = useState<LibraryItem | null>(null);
 
-  // A meeting can have recordings if it was ever provisioned for streaming
-  // (Mux meetings carry an hls_playback_url; legacy Cloudflare ones a
-  // cf_live_input_uid) AND the host left recording enabled. Mux records every
-  // stream automatically, so this toggle controls whether we *surface* it.
-  const sourceMeetings = meetings.filter(
-    (m) => (m.hls_playback_url || m.cf_live_input_uid) && m.enable_recording !== false,
-  );
+  // Any meeting recorded via LiveKit Egress may have recordings, keyed by its
+  // own id (see getMeetingRecordings) — not by hls_playback_url/cf_live_input_uid,
+  // which only webinar broadcasts (start-hls) ever set and plain meeting
+  // recordings (start-recording) never do. The recording-enabled toggle is
+  // still worth filtering on to skip the fetch for meetings that never record.
+  const sourceMeetings = meetings.filter((m) => m.enable_recording !== false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +78,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetings.map((m) => `${m.hls_playback_url || m.cf_live_input_uid || ''}:${m.enable_recording !== false}`).join(',')]);
+  }, [meetings.map((m) => `${m.id}:${m.enable_recording !== false}`).join(',')]);
 
   if (loading) {
     return (
@@ -89,7 +98,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
           saved automatically — you don't need to start a meeting to watch them.
         </p>
         <p className="mt-3 inline-flex items-center gap-1 text-xs text-gray-400">
-          <Clock className="h-3 w-3" /> Recordings are kept for {RECORDING_RETENTION_DAYS.meeting} days, then removed automatically.
+          <Clock className="h-3 w-3" /> {retentionLabel(retentionDaysOverride)}
         </p>
       </div>
     );
@@ -98,7 +107,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
   return (
     <div className="space-y-4">
       <p className="inline-flex items-center gap-1 text-xs text-gray-500">
-        <Clock className="h-3 w-3" /> Recordings are kept for {RECORDING_RETENTION_DAYS.meeting} days, then removed automatically — download any you want to keep.
+        <Clock className="h-3 w-3" /> {retentionLabel(retentionDaysOverride)} Download any you want to keep.
       </p>
 
       {active && (
@@ -117,7 +126,7 @@ export const MinistryRecordingsTab: React.FC<{ meetings: MeetingLike[] }> = ({ m
               <p className="text-sm text-gray-500">
                 {new Date(active.created).toLocaleString()} · {formatDuration(active.duration)}
               </p>
-              <RecordingRetentionBadge createdAt={active.created} kind="meeting" className="mt-1" />
+              <RecordingRetentionBadge createdAt={active.created} kind="meeting" className="mt-1" retentionDaysOverride={retentionDaysOverride} />
             </div>
             {(() => {
               const dl = (active as any).download || muxDownloadUrl(active.hls, `${active.meetingTitle}-${new Date(active.created).toISOString().slice(0, 10)}`);
