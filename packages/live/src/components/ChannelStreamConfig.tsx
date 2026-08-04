@@ -472,6 +472,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     try {
       const res = await startChannelBroadcast(channel.id);
       if (res?.playbackUrl) {
+        await supabase.from('live_channels').update({ is_live: true }).eq('id', channel.id);
         setIsObsBroadcasting(true);
         if (prov) {
           setProv({ ...prov, playbackUrl: res.playbackUrl });
@@ -502,6 +503,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     setObsBusy(true);
     try {
       await stopChannelBroadcast(channel.id);
+      await supabase.from('live_channels').update({ is_live: false }).eq('id', channel.id);
       setIsObsBroadcasting(false);
       toast({
         title: t('channelStreamConfig', 'broadcastStopped', 'Broadcast stopped'),
