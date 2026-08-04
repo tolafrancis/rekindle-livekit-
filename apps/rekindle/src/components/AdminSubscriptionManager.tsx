@@ -161,7 +161,7 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
           }
         },
         {
-          slug: 'premium-plus',
+          slug: 'premium_plus',
           name: 'Individual Partner — Tier 2',
           description: 'Everything in Tier 1, plus meeting recording & replays',
           price_monthly: 18,
@@ -186,65 +186,14 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
             can_schedule_recurring_sessions: true,
             can_access_counsellor_dashboard: true
           }
-        },
-        {
-          slug: 'ministry',
-          name: 'Ministry',
-          description: 'For church leaders and ministry organizations',
-          price_monthly: 49.99,
-          price_yearly: 499.99,
-          display_order: 4,
-          is_active: true,
-          features: {
-            max_journal_entries: 100,
-            devotional_library_access_level: 'unlimited',
-            prayer_library_access_level: 'unlimited',
-            prayer_wall_access_level: 'unlimited',
-            max_scripture_memory_verses: null,
-            can_access_book_summaries: true,
-            can_book_counsellor: true,
-            can_share_revelations: true,
-            can_create_live_channel: true,
-            max_live_channels: 3,
-            can_access_replays: true,
-            max_replay_access: 10,
-            can_schedule_recurring_sessions: true,
-            can_use_broadcast_messaging: true,
-            can_access_analytics: true,
-            can_export_data: true,
-            can_access_counsellor_dashboard: true
-          }
-        },
-        {
-          slug: 'ministry-plus',
-          name: 'Ministry Plus',
-          description: 'Unlimited features for growing ministries',
-          price_monthly: 99.99,
-          price_yearly: 999.99,
-          display_order: 5,
-          is_active: true,
-          features: {
-            max_journal_entries: null,
-            devotional_library_access_level: 'unlimited',
-            prayer_library_access_level: 'unlimited',
-            prayer_wall_access_level: 'unlimited',
-            max_scripture_memory_verses: null,
-            can_access_book_summaries: true,
-            can_book_counsellor: true,
-            can_share_revelations: true,
-            can_create_live_channel: true,
-            max_live_channels: null,
-            can_access_replays: true,
-            max_replay_access: null,
-            can_schedule_recurring_sessions: true,
-            can_use_broadcast_messaging: true,
-            can_access_analytics: true,
-            can_export_data: true,
-            can_record_meetings: true,
-            can_download_replays: true,
-            can_access_counsellor_dashboard: true
-          }
         }
+        // Ministry / Ministry Plus used to live here as individual-user tiers
+        // ($49.99/$99.99/mo). Ministry billing has since moved entirely to the
+        // Ministry Partner model (ministry_partner_plans / ministry_subscriptions
+        // — see the "Partner Plans" and "Subscription Plans" tabs in Platform
+        // Admin). Those two subscription_tiers rows were deactivated (0271),
+        // not deleted — one admin test assignment still references ministry_plus's
+        // tier_id via FK.
       ];
 
       // Insert or update each tier
@@ -596,7 +545,7 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
             {t('adminSubscriptionManager', 'subtitle', 'Manage user subscriptions, assign tiers, and view analytics')}
           </p>
         </div>
-        {isSuperAdmin && tiers.length < 5 && (
+        {isSuperAdmin && tiers.length < 3 && (
           <Button 
             onClick={initializeAllTiers}
             disabled={actionLoading}
@@ -614,17 +563,17 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
       </div>
 
       {/* Tier Warning */}
-      {tiers.length < 5 && (
+      {tiers.length < 3 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
           <div className="flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
             <div className="text-sm text-amber-800">
               <p className="font-semibold mb-1">{t('adminSubscriptionManager', 'missingTiers', 'Missing Subscription Tiers')}</p>
               <p className="mb-2">
-                {t('adminSubscriptionManager', 'missingTiersDesc', 'Only {count} of 5 expected tiers found in database. Click "Initialize All Tiers" to set up all subscription tiers.').replace('{count}', String(tiers.length))}
+                {t('adminSubscriptionManager', 'missingTiersDesc', 'Only {count} of 3 expected tiers found in database. Click "Initialize All Tiers" to set up all subscription tiers.').replace('{count}', String(tiers.length))}
               </p>
               <p className="text-xs text-amber-700">
-                {t('adminSubscriptionManager', 'expectedTiers', 'Expected tiers: Free, Premium, Premium Plus, Ministry, Ministry Plus')}
+                {t('adminSubscriptionManager', 'expectedTiers', 'Expected tiers: Free, Premium, Premium Plus')}
               </p>
             </div>
           </div>
@@ -882,10 +831,10 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
 
             <div>
               <Label>{t('adminSubscriptionManager', 'subscriptionTier', 'Subscription Tier')}</Label>
-              {tiers.length < 5 && (
+              {tiers.length < 3 && (
                 <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
                   <AlertCircle className="h-3 w-3 inline mr-1" />
-                  {t('adminSubscriptionManager', 'tiersAvailableWarn', 'Only {count} tier(s) available. Click "Initialize All Tiers" button at the top to add all 5 tiers.').replace('{count}', String(tiers.length))}
+                  {t('adminSubscriptionManager', 'tiersAvailableWarn', 'Only {count} tier(s) available. Click "Initialize All Tiers" button at the top to add all 3 tiers.').replace('{count}', String(tiers.length))}
                 </div>
               )}
               <Select value={assignData.tierSlug} onValueChange={(value) => setAssignData({ ...assignData, tierSlug: value })}>

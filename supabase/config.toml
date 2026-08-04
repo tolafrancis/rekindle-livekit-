@@ -37,3 +37,11 @@ enabled = true
 # pass both checks. Was found deployed with verify_jwt=false despite the
 # function's own header comment saying it must stay on — restoring that.
 verify_jwt = true
+
+[functions.livekit-ingress]
+enabled = true
+# create/get/delete all reveal or manage a live RTMP stream key (unlike
+# egress's list-recordings, which is a public playback URL) — every action
+# requires supabase.auth.getUser() + channel-ownership. Gateway JWT
+# verification stays on, matching livekit-egress/livekit-token/livekit-moderation.
+verify_jwt = true

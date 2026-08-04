@@ -13,8 +13,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Crown, Building2, Users, HardDrive, Zap, Palette, Globe,
-  Loader2, Edit, CheckCircle, Search, RefreshCw
+  Loader2, Edit, CheckCircle, Search, RefreshCw, UserPlus
 } from 'lucide-react';
+
+// The real plan catalog (see MinistryPartnerPlansManager) — only the fields
+// ministry-billing-webhook's upsert() actually reads to derive limits.
+interface PartnerPlan {
+  id: string;
+  slug: string;
+  name: string;
+  max_members: number | null;
+  storage_gb: number | null;
+  meeting_hours_included: number | null;
+  broadcast_hours_included: number | null;
+  is_active: boolean;
+}
 
 interface Subscription {
   id: string;
@@ -119,6 +132,14 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
   const [editForm, setEditForm] = useState<Partial<Subscription>>({});
   const [saving, setSaving] = useState(false);
 
+  const [partnerPlans, setPartnerPlans] = useState<PartnerPlan[]>([]);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignMinistryId, setAssignMinistryId] = useState('');
+  const [assignPlanSlug, setAssignPlanSlug] = useState('');
+  const [assignCycle, setAssignCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [assignReason, setAssignReason] = useState('');
+  const [assigning, setAssigning] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -126,12 +147,16 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
   const loadData = async () => {
     setLoading(true);
     try {
-      const [subsRes, ministriesRes] = await Promise.all([
+      const [subsRes, ministriesRes, plansRes] = await Promise.all([
         supabase.from('ministry_subscriptions').select('*').order('created_at', { ascending: false }),
-        supabase.from('ministry_groups').select('id, name, theme_color, member_count')
+        supabase.from('ministry_groups').select('id, name, theme_color, member_count'),
+        supabase.from('ministry_partner_plans')
+          .select('id, slug, name, max_members, storage_gb, meeting_hours_included, broadcast_hours_included, is_active')
+          .eq('is_active', true).order('display_order', { ascending: true }),
       ]);
 
       setSubscriptions(subsRes.data || []);
+      setPartnerPlans((plansRes.data || []) as PartnerPlan[]);
 
       const ministryMap: Record<string, Ministry> = {};
       (ministriesRes.data || []).forEach(m => { ministryMap[m.id] = m; });
@@ -141,6 +166,81 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
       toast({ title: t('subscriptionPlansManager', 'error', 'Error'), description: t('subscriptionPlansManager', 'failedToLoad', 'Failed to load subscriptions'), variant: 'destructive' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openAssignModal = () => {
+    setAssignMinistryId('');
+    setAssignPlanSlug(partnerPlans[0]?.slug ?? '');
+    setAssignCycle('monthly');
+    setAssignReason('');
+    setShowAssignModal(true);
+  };
+
+  // Admin override: assign a Ministry Partner plan directly to a ministry,
+  // bypassing checkout. Mirrors ministry-billing-webhook's upsert() limit
+  // derivation so an admin-assigned ministry gets the same entitlements a
+  // real checkout would grant (see ministryEntitlements.ts's capsFromSub).
+  const handleAssignPlan = async () => {
+    if (!assignMinistryId || !assignPlanSlug || !assignReason.trim()) {
+      toast({
+        title: t('subscriptionPlansManager', 'error', 'Error'),
+        description: t('subscriptionPlansManager', 'assignMissingFields', 'Ministry, plan, and reason are all required'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setAssigning(true);
+    try {
+      const plan = partnerPlans.find((p) => p.slug === assignPlanSlug);
+      if (!plan) throw new Error('Plan not found');
+
+      const row = {
+        ministry_id: assignMinistryId,
+        plan_type: plan.slug,
+        status: 'active',
+        billing_cycle: assignCycle,
+        member_limit: plan.max_members ?? -1,
+        storage_limit_mb: plan.storage_gb != null ? plan.storage_gb * 1024 : null,
+        meeting_hours_limit: plan.meeting_hours_included ?? null,
+        broadcast_hours_limit: plan.broadcast_hours_included ?? null,
+        broadcast_limit: -1,
+        video_minutes_limit: -1,
+        white_label_enabled: plan.slug === 'ministry_plus',
+        priority_support: plan.slug === 'ministry_plus',
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: existing } = await supabase
+        .from('ministry_subscriptions').select('id')
+        .eq('ministry_id', assignMinistryId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      const { error } = existing?.id
+        ? await supabase.from('ministry_subscriptions').update(row).eq('id', existing.id)
+        : await supabase.from('ministry_subscriptions').insert(row);
+      if (error) throw error;
+
+      await supabase.from('ministry_groups').update({ subscription_status: 'active' }).eq('id', assignMinistryId);
+
+      await supabase.from('ministry_audit_logs').insert({
+        ministry_id: assignMinistryId,
+        actor_id: user?.id,
+        actor_type: 'platform_admin',
+        action: 'admin_assigned_subscription',
+        resource_type: 'subscription',
+        resource_id: existing?.id ?? null,
+        new_values: { ...row, reason: assignReason },
+      });
+
+      toast({ title: t('subscriptionPlansManager', 'success', 'Success'), description: t('subscriptionPlansManager', 'planAssigned', 'Plan assigned') });
+      setShowAssignModal(false);
+      loadData();
+      onUpdate();
+    } catch (err: any) {
+      toast({ title: t('subscriptionPlansManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -297,6 +397,13 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button onClick={openAssignModal} disabled={partnerPlans.length === 0}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          {t('subscriptionPlansManager', 'assignPlanToMinistry', 'Assign Plan to Ministry')}
+        </Button>
+      </div>
+
       {/* Plan Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {Object.entries(PLAN_CONFIGS).map(([key, config]) => {
@@ -635,6 +742,85 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
             <Button onClick={handleSaveSubscription} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {t('subscriptionPlansManager', 'saveChanges', 'Save Changes')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Plan to Ministry Modal */}
+      <Dialog open={showAssignModal} onOpenChange={setShowAssignModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-purple-600" />
+              {t('subscriptionPlansManager', 'assignPlanTitle', 'Assign Plan to Ministry')}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-amber-50 p-3 rounded-lg text-sm text-amber-700">
+              <strong>{t('subscriptionPlansManager', 'adminOverrideWarn', '⚠️ Admin Override:')}</strong>{' '}
+              {t('subscriptionPlansManager', 'adminOverrideWarnDesc', "This bypasses checkout and directly grants the ministry this plan's entitlements.")}
+            </div>
+
+            <div>
+              <Label>{t('subscriptionPlansManager', 'ministry', 'Ministry')}</Label>
+              <Select value={assignMinistryId} onValueChange={setAssignMinistryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('subscriptionPlansManager', 'selectMinistry', 'Select a ministry')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.values(ministries)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>{t('subscriptionPlansManager', 'plan', 'Plan')}</Label>
+              <Select value={assignPlanSlug} onValueChange={setAssignPlanSlug}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {partnerPlans.map((p) => (
+                    <SelectItem key={p.slug} value={p.slug}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>{t('subscriptionPlansManager', 'billingCycle', 'Billing Cycle')}</Label>
+              <Select value={assignCycle} onValueChange={(v) => setAssignCycle(v as 'monthly' | 'yearly')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">{t('subscriptionPlansManager', 'monthly', 'Monthly')}</SelectItem>
+                  <SelectItem value="yearly">{t('subscriptionPlansManager', 'yearly', 'Yearly')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>{t('subscriptionPlansManager', 'reasonRequired', 'Reason (Required)')}</Label>
+              <Input
+                placeholder={t('subscriptionPlansManager', 'reasonAssignPh', 'e.g., Partnership, trial extension, migration from old plan')}
+                value={assignReason}
+                onChange={(e) => setAssignReason(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAssignModal(false)}>{t('subscriptionPlansManager', 'cancel', 'Cancel')}</Button>
+            <Button onClick={handleAssignPlan} disabled={assigning}>
+              {assigning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+              {t('subscriptionPlansManager', 'assignPlan', 'Assign Plan')}
             </Button>
           </DialogFooter>
         </DialogContent>

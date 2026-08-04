@@ -97,8 +97,15 @@ async function upsert(sub: {
     updated_at: new Date().toISOString(),
   };
 
-  if (existing?.id) await db.from('ministry_subscriptions').update(row).eq('id', existing.id);
-  else await db.from('ministry_subscriptions').insert(row);
+  // A failed write here means a paying ministry silently never gets its
+  // entitlements (see 0270 — this exact class of bug already happened once
+  // from a stale plan_type CHECK constraint) — always check and log it.
+  const { error: writeError } = existing?.id
+    ? await db.from('ministry_subscriptions').update(row).eq('id', existing.id)
+    : await db.from('ministry_subscriptions').insert(row);
+  if (writeError) {
+    console.error('[ministry-billing-webhook] ministry_subscriptions write failed:', writeError, { ministryId: sub.ministryId, plan: sub.plan });
+  }
 
   // Reflect lifecycle on the tenant (subscriptionEnforcement/UI read this).
   await db.from('ministry_groups').update({ subscription_status: sub.status }).eq('id', sub.ministryId);
