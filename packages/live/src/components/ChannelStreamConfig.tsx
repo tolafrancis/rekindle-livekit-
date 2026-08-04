@@ -10,6 +10,7 @@ import { Loader2, Copy, Check, Radio, Eye, EyeOff, ExternalLink, ChevronDown, Al
 import {
   provisionChannelStream, getChannelStreamCreds, deleteChannelStream, reprovisionChannelStream, type MuxProvision,
   addSimulcastTarget, removeSimulcastTarget, listSimulcastTargets,
+  startChannelBroadcast, stopChannelBroadcast,
   type SimulcastPlatform, type SimulcastTarget,
 } from '../muxStream';
 import { SIMULCAST_DESTINATIONS, SIMULCAST_PLATFORMS } from '../simulcastDestinations';
@@ -337,6 +338,8 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
   const [recBusy, setRecBusy] = useState(false);
   const [errDetail, setErrDetail] = useState<string | null>(null);
   const [showEncoder, setShowEncoder] = useState(false);
+  const [obsBusy, setObsBusy] = useState(false);
+  const [isObsBroadcasting, setIsObsBroadcasting] = useState<boolean>(!!channel?.is_live);
 
   useEffect(() => {
     if (!open || !channel?.id) return;
@@ -464,6 +467,56 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     }
   };
 
+  const handleStartObsBroadcast = async () => {
+    setObsBusy(true);
+    try {
+      const res = await startChannelBroadcast(channel.id);
+      if (res?.playbackUrl) {
+        setIsObsBroadcasting(true);
+        if (prov) {
+          setProv({ ...prov, playbackUrl: res.playbackUrl });
+        }
+        toast({
+          title: t('channelStreamConfig', 'broadcastStarted', 'Broadcast started'),
+          description: t('channelStreamConfig', 'broadcastStartedDesc', 'Your OBS stream is now live for viewers.'),
+        });
+      } else {
+        toast({
+          title: t('channelStreamConfig', 'couldNotStartBroadcast', 'Could not start broadcast'),
+          description: t('channelStreamConfig', 'obsStartFailedDesc', 'Make sure OBS is actively streaming before starting the broadcast.'),
+          variant: 'destructive',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: t('channelStreamConfig', 'couldNotStartBroadcast', 'Could not start broadcast'),
+        description: e?.message || t('channelStreamConfig', 'obsStartFailedDesc', 'Make sure OBS is actively streaming before starting the broadcast.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setObsBusy(false);
+    }
+  };
+
+  const handleStopObsBroadcast = async () => {
+    setObsBusy(true);
+    try {
+      await stopChannelBroadcast(channel.id);
+      setIsObsBroadcasting(false);
+      toast({
+        title: t('channelStreamConfig', 'broadcastStopped', 'Broadcast stopped'),
+      });
+    } catch (e: any) {
+      toast({
+        title: t('channelStreamConfig', 'couldNotStopBroadcast', 'Could not stop broadcast'),
+        description: e?.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setObsBusy(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -520,6 +573,34 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
                   <p className="text-xs text-gray-400">
                     {t('channelStreamConfig', 'obsInstructions', 'In OBS: Settings → Stream → Service "Custom", paste the Server URL and Stream Key. Keep the Stream Key private. Low-latency mode (~5s).')}
                   </p>
+                  <div className="pt-2 border-t flex items-center justify-between">
+                    <div className="text-xs text-gray-500">
+                      {isObsBroadcasting
+                        ? t('channelStreamConfig', 'obsBroadcastingActive', 'Broadcast is currently live.')
+                        : t('channelStreamConfig', 'obsBroadcastingIdle', 'Start stream in OBS first, then click Start Broadcast.')}
+                    </div>
+                    {isObsBroadcasting ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={handleStopObsBroadcast}
+                        disabled={obsBusy}
+                      >
+                        {obsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('channelStreamConfig', 'stopBroadcast', 'Stop Broadcast')}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleStartObsBroadcast}
+                        disabled={obsBusy}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        {obsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('channelStreamConfig', 'startBroadcast', 'Start Broadcast')}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
