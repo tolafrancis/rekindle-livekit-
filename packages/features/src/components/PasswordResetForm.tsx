@@ -53,7 +53,7 @@ export const PasswordResetForm: React.FC<PasswordResetFormProps> = ({ onSwitchTo
       hasRecoveryToken, 
       isRecoveryMode, 
       userEmail: user?.email,
-      hash: window.location.hash 
+      hasHash: Boolean(window.location.hash) 
     });
     
     // If we have a recovery token or isRecoveryMode is true, show update form
