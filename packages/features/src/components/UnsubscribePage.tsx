@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@rekindle/supabase';
 import { Loader2, CheckCircle2, XCircle, Mail, MailX, ArrowLeft } from 'lucide-react';
 
 type Status = 'idle' | 'loading' | 'unsubscribed' | 'resubscribed' | 'error' | 'invalid';

@@ -18,11 +18,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import AdminPage from "./pages/AdminPage";
 import LandingPage from "./pages/LandingPage";
-import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
-import TermsOfServicePage from "./pages/TermsOfServicePage";
+import PrivacyPolicyPage from "@rekindle/features/components/PrivacyPolicyPage";
+import TermsOfServicePage from "@rekindle/features/components/TermsOfServicePage";
+import UnsubscribePage from "@rekindle/features/components/UnsubscribePage";
 import Skeleton from "./components/Skeleton";
 import NotFound from "./pages/NotFound";
-import UnsubscribePage from "./pages/UnsubscribePage";
 import { BackToTop } from "./components/BackToTop";
 // Import the wrapper component that renders MLiveChannel (same architecture as LiveChannels)
 import MinistryLiveWrapper from "./components/MinistryLiveWrapper";
