@@ -33,7 +33,9 @@ async function nativeOAuthSignIn(provider: 'google' | 'facebook') {
 async function nativeGoogleSignIn(): Promise<{ error?: string }> {
   try {
     const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-    const result = await FirebaseAuthentication.signInWithGoogle();
+    const result = await FirebaseAuthentication.signInWithGoogle({
+      mode: 'popup',
+    });
     const idToken = result.credential?.idToken;
     if (!idToken) return { error: 'No ID token received from Google' };
     const { error } = await supabase.auth.signInWithIdToken({
