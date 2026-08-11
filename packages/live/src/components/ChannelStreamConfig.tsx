@@ -10,6 +10,7 @@ import { Loader2, Copy, Check, Radio, Eye, EyeOff, ExternalLink, ChevronDown, Al
 import {
   provisionChannelStream, getChannelStreamCreds, deleteChannelStream, reprovisionChannelStream, type MuxProvision,
   addSimulcastTarget, removeSimulcastTarget, listSimulcastTargets,
+  startChannelBroadcast, stopChannelBroadcast,
   type SimulcastPlatform, type SimulcastTarget,
 } from '../muxStream';
 import { SIMULCAST_DESTINATIONS, SIMULCAST_PLATFORMS } from '../simulcastDestinations';
@@ -337,6 +338,11 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
   const [recBusy, setRecBusy] = useState(false);
   const [errDetail, setErrDetail] = useState<string | null>(null);
   const [showEncoder, setShowEncoder] = useState(false);
+  const [obsBusy, setObsBusy] = useState(false);
+  const [isObsBroadcasting, setIsObsBroadcasting] = useState<boolean>(!!channel?.is_live);
+  const [isVideoEnabled, setIsVideoEnabled] = useState<boolean>(!!channel?.is_video_enabled);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [startedManuallyThisSession, setStartedManuallyThisSession] = useState(false);
 
   useEffect(() => {
     if (!open || !channel?.id) return;
@@ -344,6 +350,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     setLoading(true);
     setErrDetail(null);
     setRecordEnabled(channel.enable_recording !== false);
+    setIsVideoEnabled(!!channel.is_video_enabled);
     (async () => {
       // Reuse the channel's existing live stream if it already has one (exactly
       // what "Go Live" does), and only create a new one when there isn't one yet.
@@ -464,6 +471,84 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     }
   };
 
+  const toggleVideoMode = async (next: boolean) => {
+    setVideoBusy(true);
+    try {
+      await supabase.from('live_channels').update({ is_video_enabled: next }).eq('id', channel.id);
+      setIsVideoEnabled(next);
+      toast({
+        title: next
+          ? t('channelStreamConfig', 'videoModeEnabled', 'Video broadcast enabled')
+          : t('channelStreamConfig', 'audioModeEnabled', 'Audio-only broadcast enabled'),
+        description: next
+          ? t('channelStreamConfig', 'videoModeDesc', 'Viewers will see video when you go live.')
+          : t('channelStreamConfig', 'audioModeDesc', 'Viewers will hear audio with an audio visualizer.'),
+      });
+    } catch (e: any) {
+      toast({
+        title: t('channelStreamConfig', 'couldNotChangeVideoMode', 'Could not change video mode'),
+        description: e?.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setVideoBusy(false);
+    }
+  };
+
+  const handleStartObsBroadcast = async () => {
+    setObsBusy(true);
+    try {
+      const res = await startChannelBroadcast(channel.id);
+      if (res?.playbackUrl) {
+        await supabase.from('live_channels').update({ is_live: true }).eq('id', channel.id);
+        setIsObsBroadcasting(true);
+        setStartedManuallyThisSession(true);
+        if (prov) {
+          setProv({ ...prov, playbackUrl: res.playbackUrl });
+        }
+        toast({
+          title: t('channelStreamConfig', 'broadcastStarted', 'Broadcast started'),
+          description: t('channelStreamConfig', 'broadcastStartedDesc', 'Your OBS stream is now live for viewers.'),
+        });
+      } else {
+        toast({
+          title: t('channelStreamConfig', 'couldNotStartBroadcast', 'Could not start broadcast'),
+          description: t('channelStreamConfig', 'obsStartFailedDesc', 'Make sure OBS is actively streaming before starting the broadcast.'),
+          variant: 'destructive',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: t('channelStreamConfig', 'couldNotStartBroadcast', 'Could not start broadcast'),
+        description: e?.message || t('channelStreamConfig', 'obsStartFailedDesc', 'Make sure OBS is actively streaming before starting the broadcast.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setObsBusy(false);
+    }
+  };
+
+  const handleStopObsBroadcast = async () => {
+    setObsBusy(true);
+    try {
+      await stopChannelBroadcast(channel.id);
+      await supabase.from('live_channels').update({ is_live: false }).eq('id', channel.id);
+      setIsObsBroadcasting(false);
+      setStartedManuallyThisSession(false);
+      toast({
+        title: t('channelStreamConfig', 'broadcastStopped', 'Broadcast stopped'),
+      });
+    } catch (e: any) {
+      toast({
+        title: t('channelStreamConfig', 'couldNotStopBroadcast', 'Could not stop broadcast'),
+        description: e?.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setObsBusy(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -514,12 +599,56 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
               </button>
               {showEncoder && (
                 <div className="px-3 pb-3 space-y-3 border-t pt-3">
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-gray-50/50">
+                    <div>
+                      <Label className="text-xs font-semibold">{t('channelStreamConfig', 'thisIsVideoBroadcast', 'This is a video broadcast')}</Label>
+                      <p className="text-[11px] text-gray-500">
+                        {isVideoEnabled
+                          ? t('channelStreamConfig', 'videoBroadcastActive', 'Video enabled — viewers will see your video feed.')
+                          : t('channelStreamConfig', 'audioBroadcastActive', 'Audio-only — viewers will hear audio and see a visualizer.')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {videoBusy && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+                      <Switch checked={isVideoEnabled} disabled={videoBusy} onCheckedChange={toggleVideoMode} />
+                    </div>
+                  </div>
                   <Field label={t('channelStreamConfig', 'serverUrl', 'Server URL')} value={prov.serverUrl} />
                   <Field label={t('channelStreamConfig', 'streamKeySecret', 'Stream Key (secret)')} value={prov.streamKey} secret />
                   <Field label={t('channelStreamConfig', 'playbackUrl', 'Playback URL')} value={prov.playbackUrl} />
                   <p className="text-xs text-gray-400">
                     {t('channelStreamConfig', 'obsInstructions', 'In OBS: Settings → Stream → Service "Custom", paste the Server URL and Stream Key. Keep the Stream Key private. Low-latency mode (~5s).')}
                   </p>
+                  <div className="pt-2 border-t flex items-center justify-between">
+                    <div className="text-xs text-gray-500">
+                      {isObsBroadcasting
+                        ? (startedManuallyThisSession
+                            ? t('channelStreamConfig', 'obsBroadcastingActive', 'Broadcast is currently live.')
+                            : t('channelStreamConfig', 'obsBroadcastingAuto', 'Broadcast started automatically — OBS is live.'))
+                        : t('channelStreamConfig', 'obsBroadcastingIdle', 'Start stream in OBS first, then click Start Broadcast.')}
+                    </div>
+                    {isObsBroadcasting ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={handleStopObsBroadcast}
+                        disabled={obsBusy}
+                      >
+                        {obsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('channelStreamConfig', 'stopBroadcast', 'Stop Broadcast')}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleStartObsBroadcast}
+                        disabled={obsBusy}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        {obsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('channelStreamConfig', 'startBroadcast', 'Start Broadcast')}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
