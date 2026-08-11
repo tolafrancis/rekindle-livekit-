@@ -26,3 +26,4 @@ supabase/.temp
 # IDE metadata (machine-local, not project config)
 .idea
 **/.idea
+*.code-workspace
