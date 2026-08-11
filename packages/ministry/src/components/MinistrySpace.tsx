@@ -455,24 +455,35 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // directly rather than waiting on the homepage list, since it may be an
   // older/archived one not among the "previous messages" shown there.
   useEffect(() => {
-    const dl = consumeDeepLink('ministry-videos');
-    if (!dl?.id) return;
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from('ministry_video_messages')
-          .select('*')
-          .eq('id', dl.id)
-          .eq('ministry_id', ministry.id)
-          .maybeSingle();
-        if (data?.playback_url) {
-          setActiveVideoMessage(data);
-          setShowVideoPlayer(true);
+    const dlVideo = consumeDeepLink('ministry-videos');
+    if (dlVideo?.id) {
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from('ministry_video_messages')
+            .select('*')
+            .eq('id', dlVideo.id)
+            .eq('ministry_id', ministry.id)
+            .maybeSingle();
+          if (data?.playback_url) {
+            setActiveVideoMessage(data);
+            setShowVideoPlayer(true);
+          }
+        } catch (err) {
+          console.error('Error opening shared video message:', err);
         }
-      } catch (err) {
-        console.error('Error opening shared video message:', err);
-      }
-    })();
+      })();
+    }
+
+    const dlDev = consumeDeepLink('ministry-devotional');
+    if (dlDev?.id) {
+      setActiveTab('devotionals');
+    }
+
+    const dlPrayer = consumeDeepLink('ministry-prayer');
+    if (dlPrayer?.id) {
+      setActiveTab('requests');
+    }
   }, [ministry.id]);
 
   // Load community data when community tab is first activated

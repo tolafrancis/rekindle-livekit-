@@ -271,25 +271,44 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     loadData();
   }, [loadMinistries, loadMyMinistries, authInitialized]);
 
-  // A shared video-message link (/ministry-videos/:id) only carries the video's
-  // id, not which ministry it belongs to — resolve that here and enter the
-  // right ministry. MinistrySpace itself consumes (and clears) the deep link
-  // to open the specific video once it mounts.
+  // Shared ministry links (/ministry-videos/:id, /ministry-devotional/:id, /ministry-prayer/:id)
+  // carry an item id, not which ministry it belongs to — resolve that here and
+  // enter the right ministry. MinistrySpace itself consumes (and clears) the deep link.
   useEffect(() => {
     if (loading || selectedMinistry) return;
     const dl = peekDeepLink();
-    if (dl?.type !== 'ministry-videos' || !dl.id) return;
+    if (!dl?.id) return;
 
     (async () => {
       try {
-        const { data: video } = await supabase
-          .from('ministry_video_messages')
-          .select('ministry_id')
-          .eq('id', dl.id)
-          .maybeSingle();
-        if (!video?.ministry_id) return;
+        let targetMinistryId: string | null = null;
 
-        const known = [...myMinistries, ...ministries].find(m => m.id === video.ministry_id);
+        if (dl.type === 'ministry-videos') {
+          const { data: video } = await supabase
+            .from('ministry_video_messages')
+            .select('ministry_id')
+            .eq('id', dl.id)
+            .maybeSingle();
+          targetMinistryId = video?.ministry_id || null;
+        } else if (dl.type === 'ministry-devotional') {
+          const { data: dev } = await supabase
+            .from('ministry_devotionals')
+            .select('ministry_id')
+            .eq('id', dl.id)
+            .maybeSingle();
+          targetMinistryId = dev?.ministry_id || null;
+        } else if (dl.type === 'ministry-prayer') {
+          const { data: prayer } = await supabase
+            .from('ministry_prayer_requests')
+            .select('ministry_id')
+            .eq('id', dl.id)
+            .maybeSingle();
+          targetMinistryId = prayer?.ministry_id || null;
+        }
+
+        if (!targetMinistryId) return;
+
+        const known = [...myMinistries, ...ministries].find(m => m.id === targetMinistryId);
         if (known) {
           handleEnterMinistry(known);
           return;
@@ -297,11 +316,11 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         const { data: ministry } = await supabase
           .from('ministry_groups')
           .select('*')
-          .eq('id', video.ministry_id)
+          .eq('id', targetMinistryId)
           .maybeSingle();
         if (ministry) handleEnterMinistry(ministry);
       } catch (err) {
-        console.error('Error resolving shared video message link:', err);
+        console.error('Error resolving shared link:', err);
       }
     })();
     // Only needs to run once the lists have settled after the initial load.

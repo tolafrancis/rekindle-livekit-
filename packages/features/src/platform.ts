@@ -30,5 +30,5 @@ export function nativePlatform(): string {
  * Subscriptions are bought on the web; entitlements still resolve in the app.
  */
 export function canShowPurchaseUI(): boolean {
-  return !isNativeApp();
+  return nativePlatform() !== 'ios';
 }
