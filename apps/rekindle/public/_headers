@@ -1,0 +1,18 @@
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(), microphone=(self), camera=(self)
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://unpkg.com https://js.stripe.com https://js.paystack.co https://connect.facebook.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://vpnpembyqbbaaiynfvli.supabase.co https://d64gsuwffb70l.cloudfront.net https://ui-avatars.com https://lh3.googleusercontent.com https://avatars.githubusercontent.com; media-src 'self' data: blob: https://vpnpembyqbbaaiynfvli.supabase.co; connect-src 'self' https://vpnpembyqbbaaiynfvli.supabase.co wss://vpnpembyqbbaaiynfvli.supabase.co wss://livekit.rekindlebc.com https://livekit.rekindlebc.com wss://*.livekit.cloud https://*.livekit.cloud https://api.stripe.com https://checkout.stripe.com https://api.paystack.co https://fcmregistrations.googleapis.com https://firebaseinstallations.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://bible-api.com; frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://checkout.paystack.com https://js.paystack.co https://accounts.google.com; object-src 'none'; base-uri 'self';
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+  Expires: 0
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+  Expires: 0
