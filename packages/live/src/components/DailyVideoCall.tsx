@@ -7,13 +7,10 @@ import { isLiveKitBackend } from '../videoBackend';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
-import { VirtualBackgroundButton } from './VirtualBackgroundButton';
-import { AudioOutputButton } from './AudioOutputButton';
-import { EffectsButton } from './EffectsButton';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
-  Maximize2, Minimize2, Settings, Volume2, VolumeX, CheckCircle2,
+  Maximize2, Minimize2, Settings, VolumeX, CheckCircle2,
   XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
@@ -57,6 +54,14 @@ interface DailyVideoCallProps {
    *  ReactionButton — instead of it living in the control bar. Fired on mount and
    *  whenever handRaised changes. */
   onRaiseHandStateChange?: (state: { handRaised: boolean; raiseHand: () => void }) => void;
+  /** Virtual-background/effects picker lives inside useDailyRoom (internal to this
+   *  component); this lets the parent render its own Background button — e.g.
+   *  beside its floating ReactionButton and Raise Hand button — instead of it
+   *  living in the control bar (which was cramped on mobile). `isNative` tells the
+   *  parent which trigger to render: EffectsButton (native — bundles audio-output
+   *  too) or VirtualBackgroundButton (web). Fired on mount and whenever
+   *  videoBackground changes. */
+  onBackgroundStateChange?: (state: { videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean }) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -916,6 +921,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onSidePanelToggle,
   onReact,
   onRaiseHandStateChange,
+  onBackgroundStateChange,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1120,6 +1126,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   useEffect(() => {
     onRaiseHandStateChange?.({ handRaised, raiseHand });
   }, [handRaised, raiseHand, onRaiseHandStateChange]);
+
+  // Background/effects state lives in useDailyRoom (internal to this component);
+  // surface it to the parent so it can render its own Background button (e.g.
+  // beside its floating ReactionButton and Raise Hand button) instead of the
+  // control bar.
+  useEffect(() => {
+    onBackgroundStateChange?.({ videoBackground, setVideoBackground, isNative });
+  }, [videoBackground, setVideoBackground, isNative, onBackgroundStateChange]);
 
   // The host pushes the call's composite to Mux via one RTMP stream. This serves
   // two purposes depending on mode: in a webinar it's the feed the HLS audience
@@ -1978,56 +1992,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 {isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
               </span>
             </button>
-
-            {isNative ? (
-              <EffectsButton
-                value={videoBackground}
-                onChange={setVideoBackground}
-                trigger={
-                  <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                    <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
-                      <Sparkles className="h-5 w-5 sm:h-7 sm:w-7" />
-                    </div>
-                    <span className="hidden sm:block text-xs font-medium text-gray-300">
-                      {t('dailyVideoCall', 'effects', 'Effects')}
-                    </span>
-                  </button>
-                }
-              />
-            ) : (
-              <>
-                {/* Virtual background */}
-                <VirtualBackgroundButton
-                  value={videoBackground}
-                  onChange={setVideoBackground}
-                  trigger={
-                    <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                      <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 ${videoBackground !== 'none' ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
-                        <Sparkles className="h-5 w-5 sm:h-7 sm:w-7" />
-                      </div>
-                      <span className="hidden sm:block text-xs font-medium text-gray-300">
-                        {t('dailyVideoCall', 'background', 'Background')}
-                      </span>
-                    </button>
-                  }
-                />
-
-                {/* Audio Output */}
-                <AudioOutputButton
-                  align="center"
-                  trigger={
-                    <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105 bg-gray-700 hover:bg-gray-600 text-white">
-                        <Volume2 className="h-5 w-5 sm:h-7 sm:w-7" />
-                      </div>
-                      <span className="hidden sm:block text-xs font-medium text-gray-300">
-                        {t('dailyVideoCall', 'speaker', 'Speaker')}
-                      </span>
-                    </button>
-                  }
-                />
-              </>
-            )}
 
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button
