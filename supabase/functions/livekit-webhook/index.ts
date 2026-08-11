@@ -1,4 +1,4 @@
-// supabase/livekit-webhook/index.ts
+// supabase/functions/livekit-webhook/index.ts
 //
 // LiveKit server -> Supabase webhook receiver.
 // Handles:

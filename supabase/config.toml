@@ -45,3 +45,10 @@ enabled = true
 # requires supabase.auth.getUser() + channel-ownership. Gateway JWT
 # verification stays on, matching livekit-egress/livekit-token/livekit-moderation.
 verify_jwt = true
+
+[functions.livekit-webhook]
+enabled = true
+# LiveKit signs webhook requests using its API Key & Secret HMAC payload signature,
+# not a Supabase User JWT session. Gateway JWT verification must be disabled.
+verify_jwt = false
+
