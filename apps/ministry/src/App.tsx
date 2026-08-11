@@ -12,10 +12,15 @@ import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
 import MinistryKiosk from '@rekindle/ministry/components/MinistryKiosk';
+import MemberMinistryProfile from '@rekindle/ministry/components/MemberMinistryProfile';
 import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWizard';
 import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSettings';
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
+import PrivacyPolicyPage from '@rekindle/features/components/PrivacyPolicyPage';
+import TermsOfServicePage from '@rekindle/features/components/TermsOfServicePage';
+import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
+import { setDeepLink, DEEP_LINK_TAB } from '@rekindle/features/deepLink';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, Globe, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
@@ -30,6 +35,7 @@ import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
 import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
 import LandingPage from '@rekindle/features/components/LandingPage';
 import { registerPush } from '@rekindle/features/usePushNotifications';
+import { ErrorBoundary } from '@rekindle/features/components/ErrorBoundary';
 import AuthScreen from './screens/AuthScreen';
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
@@ -205,7 +211,13 @@ function AppRoutes() {
       <Route path="/join/:slug" element={<MinistryJoinLanding />} />
       <Route path="/register/:slug" element={<MinistryJoinLanding />} />
       <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
+      <Route path="/my-membership/:slug" element={<MemberMinistryProfile />} />
       <Route path="/auth" element={<AuthRoute />} />
+
+      {/* Legal & support pages */}
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/terms" element={<TermsOfServicePage />} />
+      <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
       {/* Public live-broadcast watch link (channel Share builds /channels/:id).
           Mounted OUTSIDE the auth gate so guests can watch without an account. */}
@@ -223,6 +235,16 @@ function AppRoutes() {
       <Route element={<AuthedArea />}>
         <Route path="/" element={<MinistriesHub />} />
         <Route path="/home" element={<MinistriesHub />} />
+        <Route path="/devotional-series/:id" element={<MinistriesHub />} />
+        <Route path="/daily-devotional/:id" element={<MinistriesHub />} />
+        <Route path="/ministry-devotional/:id" element={<MinistriesHub />} />
+        <Route path="/prayer-series/:id" element={<MinistriesHub />} />
+        <Route path="/prayer-topics/:id" element={<MinistriesHub />} />
+        <Route path="/prayer-watch/:id" element={<MinistriesHub />} />
+        <Route path="/prayer-watch/:id/:slot" element={<MinistriesHub />} />
+        <Route path="/ministry-prayer/:id" element={<MinistriesHub />} />
+        <Route path="/ministry-videos/:id" element={<MinistriesHub />} />
+        <Route path="/books/:id" element={<MinistriesHub />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
         {/* Billing is web-only: native builds ship without purchase surfaces
             (Phase 0 — Apple 3.1.1). Deep-linking it natively lands on Home. */}
@@ -260,6 +282,21 @@ const PushNotificationNavHandler = () => {
   return null;
 };
 
+const SharedContentDeepLinkHandler = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    const segments = location.pathname.split('/').filter(Boolean);
+    const type = segments[0];
+    if (type && DEEP_LINK_TAB[type] && segments[1]) {
+      const ref = new URLSearchParams(location.search).get('ref') || undefined;
+      setDeepLink({ type, id: segments[1], extra: segments[2], ref });
+    }
+  }, [location.pathname, location.search]);
+
+  return null;
+};
+
 export default function App() {
   useEffect(() => {
     const handler = (e: Event) => {
@@ -276,27 +313,30 @@ export default function App() {
   // ThemeProvider MUST wrap the tree: the Sonner toaster calls useTheme(),
   // which throws (blanking the whole app) when no provider is present.
   return (
-    <ThemeProvider defaultTheme="light">
-      <AuthProvider>
-        <LanguageProvider>
-          <GlobalAudioProvider>
-            <ActiveCallProvider>
-            {/* Toast renderers — without these mounted, every toast() call in the
-                ministry app (channel/meeting copy confirmations, etc.) is silent.
-                Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <PushNotificationNavHandler />
-              <AppRoutes />
-              {/* Persistent meeting layer — keeps a live call mounted across
-                  navigation and shows the minimized mini-player. */}
-              <ActiveCallHost />
-            </BrowserRouter>
-            </ActiveCallProvider>
-          </GlobalAudioProvider>
-        </LanguageProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="light">
+        <AuthProvider>
+          <LanguageProvider>
+            <GlobalAudioProvider>
+              <ActiveCallProvider>
+              {/* Toast renderers — without these mounted, every toast() call in the
+                  ministry app (channel/meeting copy confirmations, etc.) is silent.
+                  Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <PushNotificationNavHandler />
+                <SharedContentDeepLinkHandler />
+                <AppRoutes />
+                {/* Persistent meeting layer — keeps a live call mounted across
+                    navigation and shows the minimized mini-player. */}
+                <ActiveCallHost />
+              </BrowserRouter>
+              </ActiveCallProvider>
+            </GlobalAudioProvider>
+          </LanguageProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
