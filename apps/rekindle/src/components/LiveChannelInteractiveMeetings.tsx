@@ -59,6 +59,8 @@ import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@/components/MeetingReactions';
+import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
+import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
 import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 
@@ -184,6 +186,9 @@ const EnhancedVideoCallWrapper = ({
   // In-call raise-hand, reported by DailyVideoCall so the button can sit beside
   // ReactionButton instead of taking a slot in the control bar.
   const [callHandRaise, setCallHandRaise] = useState<{ handRaised: boolean; raiseHand: () => void } | null>(null);
+  // Same idea for the Background/Effects picker — reported by DailyVideoCall so
+  // it can sit beside ReactionButton + Raise Hand instead of the control bar.
+  const [callBackground, setCallBackground] = useState<{ videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean } | null>(null);
 
   // Draggable host "stage" panel position.
   const [stagePanelPos, setStagePanelPos] = useState({ x: 0, y: 0 });
@@ -443,17 +448,27 @@ const EnhancedVideoCallWrapper = ({
         onSidePanelToggle={setPanelOpen}
         onReact={sendReaction}
         onRaiseHandStateChange={setCallHandRaise}
+        onBackgroundStateChange={setCallBackground}
       />
 
       {/* Floating reactions + a single reaction button that opens a popover just
           above the control bar — available in every meeting, not just webinars
           (transport is Supabase realtime broadcast). HIDDEN in PiP mode. Raise
-          Hand sits right beside it (moved out of the control bar, which was too
-          cramped on mobile). */}
+          Hand, the Background/Effects picker, and Speaker all sit right beside
+          it (all moved out of the control bar, which was overflowing the
+          screen on mobile with too many buttons in one row). */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
         <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+          {callBackground && (
+            <FloatingBackgroundButton
+              isNative={callBackground.isNative}
+              value={callBackground.videoBackground}
+              onChange={callBackground.setVideoBackground}
+            />
+          )}
+          {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
           <ReactionButton onReact={sendReaction} />
           {callHandRaise && (
             <button
