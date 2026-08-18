@@ -589,6 +589,7 @@ const EnhancedVideoCallWrapper = ({
               ministryId={meeting.ministry_id}
               roomName={meeting.room_name}
               isHost={isHost}
+              userId={userId}
             />
           )}
           <ReactionButton onReact={sendReaction} />

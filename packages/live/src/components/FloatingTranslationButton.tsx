@@ -22,28 +22,30 @@ type CaptionMode = 'off' | 'original' | string;
 export interface TranslationControls {
   tracks: Array<{ language: string; botIdentity: string }>;
   currentLanguage: string | null;
-  setLanguage: (language: string | null, originalSpeakerIdentity?: string) => void;
+  setLanguage: (language: string | null) => void;
 }
 
 interface FloatingTranslationButtonProps {
   translation: TranslationControls;
-  /** Needed to dispatch start_bot_session for "+ Add language" (host-only) —
-   *  the meeting's own LiveKit room name and ministry, from `meeting.room_name`
-   *  / `meeting.ministry_id`. */
+  /** Needed to dispatch start_bot_session for "+ Add language" (host-only)
+   *  and for "Ask a question" (any participant) — the meeting's own LiveKit
+   *  room name and ministry, from `meeting.room_name` / `meeting.ministry_id`. */
   ministryId: string;
   roomName: string;
-  /** language_configs.speaker_identity for this ministry, if the caller has
-   *  it — passed through to setLanguage so the wrapper can locally mute the
-   *  original speaker while a translation plays (build plan §2.7). Also used
-   *  as the default for newly-started languages. */
-  speakerIdentity?: string | null;
   /** Shows the per-language Stop control and "+ Add language". Advisory
    *  only — start_bot_session/stop_bot_session actually require
-   *  is_group_admin server-side (migration 0273), so a non-admin "host"
-   *  (e.g. a meeting co-host who isn't a ministry admin) would see the
-   *  buttons but get an RPC error, same as every other
-   *  advisory-vs-server-enforced control in this file (mute-all, etc). */
+   *  is_group_admin (or, for "Ask a question", ministry membership —
+   *  migration 0278) server-side, so a non-admin "host" (e.g. a meeting
+   *  co-host who isn't a ministry admin) would see the buttons but get an
+   *  RPC error, same as every other advisory-vs-server-enforced control in
+   *  this file (mute-all, etc). */
   isHost?: boolean;
+  /** This participant's own LiveKit identity (== auth.uid() for a real
+   *  user) — needed for "Ask a question": migration 0278 only allows a
+   *  self-service start_bot_session call when p_speaker_identity is
+   *  literally the caller's own auth.uid(), so the button is hidden
+   *  entirely without this. */
+  userId?: string;
 }
 
 const sessionIdFromBotIdentity = (botIdentity: string): string => botIdentity.replace(/^rlt-bot-/, '');
@@ -61,8 +63,8 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   translation,
   ministryId,
   roomName,
-  speakerIdentity,
   isHost = false,
+  userId,
 }) => {
   const { tracks, currentLanguage, setLanguage } = translation;
   const [stoppingLanguage, setStoppingLanguage] = useState<string | null>(null);
@@ -71,6 +73,20 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
   const [newLanguage, setNewLanguage] = useState('');
   const [starting, setStarting] = useState(false);
+
+  // "Ask a question" (bidirectional Q&A — build plan) — a participant
+  // push-to-talks a REVERSE translation (their language -> sourceLanguage,
+  // the room's own language) instead of waiting on a host. askingLanguage
+  // is captured at start (not re-derived from myLanguage below) so it
+  // can't silently change out from under an in-progress question if the
+  // asker fiddles with their own Audio/Captions selection mid-question.
+  const [askingSessionId, setAskingSessionId] = useState<string | null>(null);
+  const [askingLanguage, setAskingLanguage] = useState<string | null>(null);
+  const [askStarting, setAskStarting] = useState(false);
+  // Which languages already had a track last render — lets the host-facing
+  // auto-surface effect below tell "a Q&A track for MY language just
+  // appeared" apart from "it was already there."
+  const prevTrackLangsRef = useRef<Set<string>>(new Set());
 
   // In-meeting captions (real first-class option, not just the "copy link
   // to /display" workaround) — same translation_logs Realtime feed
@@ -136,11 +152,12 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionMode, tracks]);
 
-  // Loaded lazily (host-only, only once "+ Add language" is opened) rather
-  // than for every participant on every meeting — this is a config lookup
-  // most people in the call never need.
+  // Used to be loaded lazily (host-only, only once "+ Add language" was
+  // opened). Now fetched eagerly for everyone on mount — "Ask a question"
+  // needs sourceLanguage (the room's own language, i.e. what a reverse
+  // translation should target) available to any participant, not just a
+  // host who happens to open the add-language panel.
   useEffect(() => {
-    if (!showAddLanguage || !isHost) return;
     supabase
       .from('language_configs')
       .select('source_language, supported_target_languages')
@@ -152,7 +169,88 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           setSupportedLanguages(data.supported_target_languages || []);
         }
       });
-  }, [showAddLanguage, isHost, ministryId]);
+  }, [ministryId]);
+
+  // "MY own spoken/understood language" — inferred from whichever picker
+  // they've actually engaged with (per the product decision: no extra
+  // "what language do you speak" prompt). Audio takes priority since it's
+  // the stronger signal (they chose to LISTEN in that language, not just
+  // read along); Captions is the fallback for someone who muted audio
+  // entirely but is following the text.
+  const myLanguage = currentLanguage || (captionMode !== 'off' && captionMode !== 'original' ? captionMode : null);
+
+  const askQuestion = async () => {
+    if (!myLanguage || !userId || myLanguage === sourceLanguage) return;
+    setAskStarting(true);
+    try {
+      const { data, error } = await supabase.rpc('start_bot_session', {
+        p_ministry_id: ministryId,
+        p_room_name: roomName,
+        p_source_language: myLanguage,
+        p_target_language: sourceLanguage,
+        p_speaker_identity: userId,
+      });
+      if (error) throw error;
+      setAskingSessionId((data as { session_id: string })?.session_id ?? null);
+      setAskingLanguage(myLanguage);
+      toast({ title: 'Go ahead, ask your question', description: `Translating to ${sourceLanguage.toUpperCase()} for the host — tap "Done asking" when finished.` });
+    } catch (err: any) {
+      toast({ title: 'Could not start', description: err.message, variant: 'destructive' });
+    } finally {
+      setAskStarting(false);
+    }
+  };
+
+  const doneAsking = async () => {
+    if (!askingSessionId) return;
+    const sessionId = askingSessionId;
+    setAskingSessionId(null);
+    setAskingLanguage(null);
+    try {
+      await supabase.rpc('stop_bot_session', { p_session_id: sessionId });
+    } catch (err: any) {
+      console.error('[FloatingTranslationButton] failed to stop Q&A session:', err);
+    }
+  };
+
+  // Host-facing auto-surface: when a NEW track appears in the room's OWN
+  // language (i.e. someone just started a reverse "Ask a question"
+  // translation aimed at the host), automatically switch the host's Audio
+  // to it and announce it — they shouldn't have to notice a new dropdown
+  // entry mid-service to hear a question. Reverts to Original once that
+  // track goes away (question finished), but only if they hadn't since
+  // manually switched to something else themselves.
+  useEffect(() => {
+    const currentLangs = new Set(tracks.map((t) => t.language));
+    const prevLangs = prevTrackLangsRef.current;
+
+    if (isHost) {
+      const newlyAppeared = [...currentLangs].filter((l) => !prevLangs.has(l));
+      const questionTrack = newlyAppeared.find((l) => l === sourceLanguage);
+      if (questionTrack) {
+        setLanguage(questionTrack);
+        toast({ title: '🎤 Question incoming', description: `Playing the translated question in ${questionTrack.toUpperCase()} now.` });
+      }
+      const disappeared = [...prevLangs].filter((l) => !currentLangs.has(l));
+      if (disappeared.includes(sourceLanguage) && currentLanguage === sourceLanguage) {
+        setLanguage(null);
+        toast({ title: 'Question finished', description: 'Back to the room\'s normal audio.' });
+      }
+    }
+
+    prevTrackLangsRef.current = currentLangs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks, isHost, sourceLanguage]);
+
+  // My own in-progress question ended from the other side too (e.g. it
+  // auto-stopped) — don't leave the "Asking…" UI stuck forever.
+  useEffect(() => {
+    if (askingLanguage && !tracks.some((t) => t.language === sourceLanguage)) {
+      setAskingSessionId(null);
+      setAskingLanguage(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks]);
 
   const addLanguage = async () => {
     if (!newLanguage) return;
@@ -163,7 +261,10 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         p_room_name: roomName,
         p_source_language: sourceLanguage,
         p_target_language: newLanguage,
-        p_speaker_identity: speakerIdentity || null,
+        // No configured speaker identity here — the host's "+ Add language"
+        // has always run in first-active-speaker fallback mode in practice
+        // (this call site never actually had a speakerIdentity to pass).
+        p_speaker_identity: null,
       });
       if (error) throw error;
       toast({ title: `${newLanguage.toUpperCase()} translation starting…` });
@@ -282,7 +383,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <div key={track.botIdentity} className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => setLanguage(track.language, speakerIdentity || undefined)}
+                  onClick={() => setLanguage(track.language)}
                   className={`${row} flex-1 ${sel(currentLanguage === track.language)}`}
                 >
                   <Languages className="h-4 w-4" />
@@ -345,6 +446,26 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               </button>
             ))}
           </div>
+
+          {/* Ask a question — bidirectional Q&A (build plan). Only makes
+              sense once we know MY language (inferred from Audio/Captions
+              above) and it differs from the room's own language — asking
+              "in English" back to an English-speaking host is a no-op. */}
+          {userId && myLanguage && myLanguage !== sourceLanguage && (
+            <div className="mt-2 border-t pt-2">
+              {askingSessionId ? (
+                <button type="button" onClick={doneAsking} className={`${row} text-red-600 hover:bg-red-50`}>
+                  <Square className="h-4 w-4" />
+                  <span className="flex-1">Asking in {askingLanguage?.toUpperCase()}… tap when done</span>
+                </button>
+              ) : (
+                <button type="button" onClick={askQuestion} disabled={askStarting} className={`${row} text-indigo-700 hover:bg-indigo-50 disabled:opacity-50`}>
+                  {askStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
+                  <span className="flex-1">Ask a question in {myLanguage.toUpperCase()}</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {isHost && !showAddLanguage && (
           <button
