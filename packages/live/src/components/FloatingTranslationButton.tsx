@@ -214,9 +214,13 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           layout) so it never overlaps the controls beneath it. Only takes
           up space once a caption language is actually chosen. */}
       {captionMode !== 'off' && (
-        <div className="fixed bottom-40 sm:bottom-44 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] sm:max-w-xl px-3">
-          <div className="flex items-center gap-2 rounded-lg bg-black/75 backdrop-blur-sm text-white px-4 py-2.5 shadow-lg">
-            <p className="flex-1 text-sm sm:text-base text-center leading-snug">
+        // text-base on mobile, not text-sm — captions are read at a glance
+        // mid-call; smaller-on-the-smaller-screen was backwards from what
+        // on-screen captions actually need (real bug report: "captions
+        // display text is in a small box").
+        <div className="fixed bottom-40 sm:bottom-44 left-1/2 -translate-x-1/2 z-50 w-[92vw] sm:w-auto sm:max-w-xl px-2">
+          <div className="flex items-center gap-2 rounded-lg bg-black/75 backdrop-blur-sm text-white px-4 py-3 shadow-lg">
+            <p className="flex-1 text-base sm:text-lg text-center leading-snug">
               {captionText ?? (captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…')}
             </p>
             <button

@@ -136,7 +136,21 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       await room.connect(url, token);
       this.joined = true;
       this.joining = false;
-      
+
+      // Real bug found live (2026-08-18): a bot that started translating
+      // BEFORE this participant joined was never discovered. Every trigger
+      // for notifyTranslationTracksChanged() (ParticipantConnected,
+      // TrackPublished, etc. — see wireEvents() below) only fires for
+      // events that happen AFTER you're already connected; a track
+      // published earlier by an already-present bot produces none of them
+      // for a participant joining now. The bot's track was genuinely
+      // there and genuinely translating — the participant's picker just
+      // never got told, and stayed stuck on "no translation running" or
+      // an empty list forever, with no event ever coming along to fix it.
+      // One explicit scan right after connect() picks up whatever's
+      // already live at join time; everything after that stays reactive.
+      this.notifyTranslationTracksChanged();
+
       // Set local participant name explicitly — ensures guest display names persist.
       // The LiveKit token should include the name, but set it explicitly as a backup.
       if (userName && this.room?.localParticipant) {
