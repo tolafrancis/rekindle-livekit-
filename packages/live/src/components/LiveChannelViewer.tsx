@@ -12,6 +12,7 @@ import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { LiveChannelChat } from './LiveChannelChat';
 import { HlsPlayer } from './HlsPlayer';
+import { BroadcastTranslationButton } from './BroadcastTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar } from './MeetingReactions';
@@ -161,9 +162,20 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const canAccessReplays = entitlements.canAccessReplays;
   const canDownloadReplays = entitlements.canAccessReplays;
 
+  // Same room string used both for the (speaker-only, post-fix) LiveKit
+  // join below and for BroadcastTranslationButton's own listener-token
+  // connection — one source of truth so they can't drift apart.
+  const liveKitRoomName = channel.daily_room_name || `channel-${channel.id}`;
+  // Matches HlsPlayer's own default targetLatencySeconds — passed
+  // explicitly to both it and BroadcastTranslationButton below instead of
+  // relying on HlsPlayer's default, so the translated-audio delay buffer
+  // can never silently drift out of sync with the video's actual buffer.
+  const HLS_LATENCY_SECONDS = 6;
+  const [translationActive, setTranslationActive] = useState(false);
+
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
   const dailyRoom = useDailyRoom({
-    roomName: channel.daily_room_name || `channel-${channel.id}`,
+    roomName: liveKitRoomName,
     userName: profile?.full_name || user?.email?.split('@')[0] || 'Viewer',
     userId: user?.id || 'anonymous',
     isHost: false,
@@ -911,7 +923,27 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
             )}
 
             {watchViaHls ? (
-              <HlsPlayer src={hlsPlaybackUrl!} muted={isMuted} poster={posterUrl} className="w-full h-full" />
+              <>
+                {/* translationActive OR-ed in, not swapped in for isMuted —
+                    the viewer's own manual mute choice is preserved and
+                    restored once translation is turned back off, same idea
+                    as the meeting picker's mute-the-room-not-yourself fix. */}
+                <HlsPlayer
+                  src={hlsPlaybackUrl!}
+                  muted={isMuted || translationActive}
+                  poster={posterUrl}
+                  className="w-full h-full"
+                  targetLatencySeconds={HLS_LATENCY_SECONDS}
+                />
+                <div className="absolute bottom-4 left-4 z-50">
+                  <BroadcastTranslationButton
+                    channelId={channel.id}
+                    roomName={liveKitRoomName}
+                    delaySeconds={HLS_LATENCY_SECONDS}
+                    onActiveChange={setTranslationActive}
+                  />
+                </div>
+              </>
             ) : channel.is_video_enabled ? (() => {
               // All remote participants who have video OR audio (show avatar for audio-only speakers)
               const visibleParticipants = dailyRoom.remoteParticipants.filter(
