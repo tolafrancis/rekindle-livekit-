@@ -269,7 +269,12 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionMode, sessions]);
 
-  if (sessions.length === 0) return null; // nothing to translate yet — no point showing an empty picker
+  // Real bug found live (2026-08-19), the same one already fixed once for
+  // the meeting picker: hiding this entirely when there's nothing running
+  // yet makes a STATE ("no translation started") look exactly like a
+  // PERMISSION ("this feature doesn't exist here") — confirmed live
+  // against a real broadcast with is_hls_live=true but zero
+  // translation_sessions rows for its room. Always render; say so instead.
 
   const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors';
   const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
@@ -330,6 +335,11 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-72 p-2">
+          {sessions.length === 0 && (
+            <p className="text-xs text-muted-foreground px-2.5 py-2">
+              No live translation running yet — once the host starts one, it'll show up here automatically.
+            </p>
+          )}
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1">Audio</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
             <button type="button" onClick={() => setCurrentLanguage(null)} className={`${row} ${sel(currentLanguage === null)}`}>
