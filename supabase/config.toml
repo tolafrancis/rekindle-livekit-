@@ -52,3 +52,11 @@ enabled = true
 # not a Supabase User JWT session. Gateway JWT verification must be disabled.
 verify_jwt = false
 
+[functions.translation-listener-token]
+enabled = true
+# Called by anonymous /display visitors with no real Supabase session — the
+# JS client sends the anon key as Bearer, which passes gateway verify_jwt
+# fine (it's a validly-signed project JWT, just role:anon), while the
+# function's own anon-scoped Postgres lookup is the real access-control gate
+# (see the file's header comment — same RLS the page's own row fetch uses).
+verify_jwt = true

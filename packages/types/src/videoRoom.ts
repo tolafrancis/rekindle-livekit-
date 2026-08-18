@@ -43,6 +43,12 @@ export interface VideoWrapperCallbacks {
   onMediaStateChange?: (video: boolean, audio: boolean) => void;
   /** LiveKit `DataReceived` — feeds the Phase 3 advisory (hand-raise/spotlight) handler. */
   onData?: (data: any, fromIdentity?: string) => void;
+  /** ReKindle Live Translation — fires whenever the set of available
+   *  "rlt-translated-{lang}" tracks changes (a bot joins/leaves or
+   *  publishes/unpublishes). LiveKit-only, additive; unset on the Daily
+   *  path (there is none left, but kept optional for interface stability —
+   *  see LiveKitRoomWrapper.getAvailableTranslations). */
+  onTranslationTracksChanged?: (tracks: Array<{ language: string; botIdentity: string }>) => void;
 }
 
 /**
