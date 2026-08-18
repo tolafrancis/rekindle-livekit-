@@ -213,15 +213,22 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     || (channel as any).featured_image_url
     || (channel as any).channel_logo_url
     || muxPoster;
-  // On LiveKit, viewers subscribe to the broadcast over WebRTC (sub-second latency,
-  // and they see the host directly from the room) instead of the ~6s HLS path — a
-  // normal low-latency live stream/webinar. This also ignores any stale Mux
-  // hls_playback_url left over from a previous Daily/Mux broadcast. HLS Egress still
-  // runs for recording/VOD (and can front huge audiences later), but the LIVE view
-  // is WebRTC. On Daily/Mux, keep the original HLS-when-live behaviour.
-  // LiveKit-only: the live view is always WebRTC (no legacy Mux/Daily HLS-when-live
-  // path). HLS Egress still runs for recording/VOD; the LIVE view never uses it.
-  const watchViaHls = false;
+  // Cost/scale fix (2026-08-19): this used to be hardcoded `false` — EVERY
+  // viewer, however many, joined the LiveKit room directly over WebRTC,
+  // billed as a real connection-minute participant each. Fine at a handful
+  // of viewers, not at the audience sizes "broadcast" implies (1000
+  // viewers = 1000 WebRTC participants). Now a plain audience member
+  // watches the HLS Egress feed instead — a few seconds of extra latency,
+  // but flat/cheap CDN delivery with no per-viewer connection cost. A
+  // promoted speaker (isSpeaker below) still needs the real room, since
+  // they publish. Only takes effect once HLS Egress is actually live for
+  // this channel (isHlsLive) — LiveChannelBroadcast.tsx now starts it
+  // unconditionally when going live, but falls back gracefully (this
+  // stays false, and the join effect below falls back to the room) if
+  // Egress fails to start for any reason (a ministry's broadcast-hours
+  // quota exhausted, a transient error) or just hasn't finished starting
+  // up yet.
+  const watchViaHls = isLive && isHlsLive && !!hlsPlaybackUrl && !isSpeaker;
 
   // Join the channel's live presence so the host can see/count this viewer — even
   // when watching via HLS (no Daily room). Mirrors the meetings presence layer.

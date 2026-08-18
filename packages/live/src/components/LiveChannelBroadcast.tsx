@@ -253,14 +253,24 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
-        // Live viewers subscribe over WebRTC (sub-second). HLS Egress is only needed
-        // to RECORD the broadcast to VOD, so start it only when recording is on.
-        if (isRecording) {
-          const res = await startChannelBroadcast(channel.id);
-          if (res) console.log('[Broadcast] LiveKit HLS Egress (VOD) live:', res.playbackUrl);
-          else { console.warn('[Broadcast] HLS Egress did not start'); muxBridgeStartedRef.current = false; }
-        } else {
-          // Pure WebRTC webinar — clear any stale HLS flag so viewers use the room.
+        // Cost/scale fix (2026-08-19): this used to start HLS Egress only
+        // when recording was on, on the theory that live viewers always
+        // subscribe over WebRTC anyway (sub-second) so HLS was purely a
+        // recording artifact. That's no longer true — LiveChannelViewer.tsx
+        // now puts the general audience on HLS specifically to avoid every
+        // viewer costing a WebRTC connection-minute, so Egress needs to be
+        // running for ANY live broadcast, recorded or not. (It already
+        // doubles as the VOD source when recording is on — nothing else
+        // about that changes.) startChannelBroadcast still goes through the
+        // same broadcast-hours/storage quota gate as before (livekit-egress's
+        // checkMinistryCanRecord) — a ministry that hits it just falls back
+        // to the pre-fix WebRTC-for-everyone behavior for this broadcast,
+        // same as if Egress had failed for any other reason.
+        const res = await startChannelBroadcast(channel.id);
+        if (res) console.log('[Broadcast] LiveKit HLS Egress live:', res.playbackUrl);
+        else {
+          console.warn('[Broadcast] HLS Egress did not start — viewers will join the room directly');
+          muxBridgeStartedRef.current = false;
           await supabase.from('live_channels').update({ is_hls_live: false }).eq('id', channel.id);
         }
       })();
