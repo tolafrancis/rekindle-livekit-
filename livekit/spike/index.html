@@ -37,6 +37,7 @@
     <button id="cam" disabled>Camera</button>
     <button id="mic" disabled>Mic</button>
     <button id="screen" disabled>Share screen</button>
+    <button id="unlock" hidden>🔊 Enable audio</button>
   </div>
 
   <div id="status">idle</div>
@@ -58,6 +59,7 @@
 
     let room = null;
     let camOn = false, micOn = false, screenOn = false;
+    const audioEls = [];
 
     const grid = $('grid');
     function tileFor(id, label) {
@@ -97,6 +99,16 @@
             attach(p.identity + (isScreen ? '-screen' : ''), p.identity + (isScreen ? ' (screen)' : ''), track);
           } else if (track.kind === Track.Kind.Audio) {
             const el = track.attach(); el.autoplay = true; document.body.appendChild(el);
+            audioEls.push(el);
+            // track.attach() calls play() internally, but a rejected promise
+            // (browser autoplay block) is otherwise silent — no error, no
+            // sound, nothing in this page's log. Surface it explicitly and
+            // show the unlock button so a blocked track isn't mistaken for
+            // "nothing published."
+            el.play().catch((err) => {
+              log(`AUTOPLAY BLOCKED for ${pub.source} from ${p.identity}: ${err.message} — click "Enable audio" above`);
+              $('unlock').hidden = false;
+            });
           }
           log(`subscribed ${track.kind}/${pub.source} from ${p.identity}`);
         })
@@ -130,6 +142,13 @@
 
     $('connect').onclick = connect;
     $('disconnect').onclick = disconnect;
+    // Direct click = real user gesture, so play() is guaranteed to succeed
+    // here even if the original autoplay attempt was blocked.
+    $('unlock').onclick = () => {
+      audioEls.forEach((el) => el.play().catch((err) => log('still failed: ' + err.message)));
+      $('unlock').hidden = true;
+      log('audio unlocked');
+    };
 
     $('cam').onclick = async () => {
       camOn = !camOn;

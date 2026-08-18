@@ -106,6 +106,10 @@ export interface UseDailyRoomReturn {
   // Virtual background: 'none' | 'blur' | <image URL>.
   videoBackground: string;
   setVideoBackground: (mode: string) => Promise<void>;
+  // ReKindle Live Translation — see LiveKitRoomWrapper.getAvailableTranslations/setTranslationLanguage.
+  translationTracks: Array<{ language: string; botIdentity: string }>;
+  translationLanguage: string | null;
+  setTranslationLanguage: (language: string | null, originalSpeakerIdentity?: string) => Promise<void>;
   /** Directly enables mic+optional video for an accepted speaker, bypassing the permission gate */
   enableSpeakerMedia: (withVideo: boolean) => Promise<void>;
   startScreenShare: () => Promise<void>;
@@ -212,6 +216,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [videoBackground, setVideoBackgroundState] = useState<string>('none');
   const [audioInputState, setAudioInputState] = useState<'available' | 'blocked' | 'detecting' | 'unavailable'>('unavailable');
+  // ReKindle Live Translation — available "rlt-translated-{lang}" tracks and
+  // which one (if any) this listener has picked. LiveKit-only; stays empty
+  // on any path that never fires onTranslationTracksChanged.
+  const [translationTracks, setTranslationTracks] = useState<Array<{ language: string; botIdentity: string }>>([]);
+  const [translationLanguage, setTranslationLanguageState] = useState<string | null>(null);
 
   // Enhanced state for role-based system
   const [participantStates, setParticipantStates] = useState<ParticipantState[]>([]);
@@ -759,13 +768,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           console.log('[Daily] Wrapper: Media state changed - video:', video, 'audio:', audio);
           setIsCameraOn(video);
           setIsMicOn(audio);
-          
+
           // Attach video track when video is enabled
           if (video) {
             setTimeout(() => {
               attachLocalVideoTrack();
             }, 100);
           }
+        },
+        onTranslationTracksChanged: (tracks) => {
+          setTranslationTracks(tracks);
         }
       });
 
@@ -1890,6 +1902,23 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [attachLocalVideoTrack, updateParticipants]);
 
+  // ReKindle Live Translation — pick a translated audio track, or pass null
+  // for "Original". originalSpeakerIdentity should be
+  // language_configs.speaker_identity for this ministry, if the caller has
+  // it, so the wrapper can locally mute the source speaker while a
+  // translation plays (build plan §2.7).
+  const setTranslationLanguage = useCallback(async (language: string | null, originalSpeakerIdentity?: string) => {
+    const wrapper = wrapperRef.current as any;
+    if (!wrapper?.setTranslationLanguage) return;
+    try {
+      await wrapper.setTranslationLanguage(language, originalSpeakerIdentity);
+      setTranslationLanguageState(language);
+    } catch (e: any) {
+      console.error('[Daily] Failed to set translation language:', e);
+      toast({ title: 'Translation Error', description: 'Could not switch language.', variant: 'destructive' });
+    }
+  }, []);
+
   // Start screen share
   const startScreenShare = useCallback(async () => {
     const wrapper = wrapperRef.current;
@@ -2373,6 +2402,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     toggleCamera,
     videoBackground,
     setVideoBackground,
+    translationTracks,
+    translationLanguage,
+    setTranslationLanguage,
     enableSpeakerMedia,
     startScreenShare,
     stopScreenShare,

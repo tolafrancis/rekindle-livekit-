@@ -62,6 +62,17 @@ interface DailyVideoCallProps {
    *  too) or VirtualBackgroundButton (web). Fired on mount and whenever
    *  videoBackground changes. */
   onBackgroundStateChange?: (state: { videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean }) => void;
+  /** ReKindle Live Translation — same lift-state-to-parent pattern as
+   *  onBackgroundStateChange/onRaiseHandStateChange, so the parent can render
+   *  its own floating language-picker/status control instead of it living in
+   *  the control bar. `tracks` is every "rlt-translated-{lang}" track
+   *  currently published in the room; empty means no translation bot has
+   *  joined. Fired on mount and whenever the track list or selection changes. */
+  onTranslationControlsChange?: (state: {
+    tracks: Array<{ language: string; botIdentity: string }>;
+    currentLanguage: string | null;
+    setLanguage: (language: string | null, originalSpeakerIdentity?: string) => void;
+  }) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -922,6 +933,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onReact,
   onRaiseHandStateChange,
   onBackgroundStateChange,
+  onTranslationControlsChange,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1081,6 +1093,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     raisedHands,
     chatMessages,
     sendChatMessage,
+    translationTracks,
+    translationLanguage,
+    setTranslationLanguage,
   } = useDailyRoom({
     roomName,
     userName,
@@ -1134,6 +1149,17 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   useEffect(() => {
     onBackgroundStateChange?.({ videoBackground, setVideoBackground, isNative });
   }, [videoBackground, setVideoBackground, isNative, onBackgroundStateChange]);
+
+  // ReKindle Live Translation state lives in useDailyRoom too (via the
+  // LiveKit wrapper); surface it the same way so the parent can render its
+  // own floating language-picker instead of it living in the control bar.
+  useEffect(() => {
+    onTranslationControlsChange?.({
+      tracks: translationTracks,
+      currentLanguage: translationLanguage,
+      setLanguage: setTranslationLanguage,
+    });
+  }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange]);
 
   // The host pushes the call's composite to Mux via one RTMP stream. This serves
   // two purposes depending on mode: in a webinar it's the feed the HLS audience

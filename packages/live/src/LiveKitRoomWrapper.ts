@@ -26,6 +26,8 @@ import {
   type LocalParticipant,
   type LocalVideoTrack,
   type TrackPublication,
+  type RemoteTrack,
+  type RemoteTrackPublication,
 } from 'livekit-client';
 import { BackgroundBlur, VirtualBackground } from '@livekit/track-processors';
 
@@ -260,6 +262,112 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     }
   }
 
+  // ---- ReKindle Live Translation audio (LiveKit-only, additive) ----
+  //
+  // Same "extra method not on IVideoRoomWrapper, called via `(wrapper as
+  // any).method?.()`" pattern setCameraBackground/getCameraBackground
+  // already use above — see useDailyRoom.ts's setVideoBackground for the
+  // precedent. Deliberately NOT touching normalize()/getParticipants(): a
+  // translation bot is a real room participant (identity "rlt-bot-
+  // {sessionId}") but its audio must never auto-play the way a normal
+  // participant's microphone does, so it publishes with Track.Source.Unknown
+  // rather than .Microphone (see rekindle-translation-bot's LiveKitAgent.ts)
+  // and is invisible to the existing mic/camera/screen-share lookups here —
+  // it just shows up as a normal-looking silent tile with no camera. A
+  // dedicated tile-filter is a reasonable follow-up, not done here.
+
+  private translationAudioEl: HTMLAudioElement | null = null;
+  private mutedSpeakerTrack: RemoteTrack | null = null;
+  private currentTranslationLanguage: string | null = null;
+
+  /** Every "rlt-translated-{lang}" track currently published by any rlt-bot-*
+   *  participant in the room — i.e. every language a listener can switch to. */
+  getAvailableTranslations(): Array<{ language: string; botIdentity: string }> {
+    if (!this.room) return [];
+    const out: Array<{ language: string; botIdentity: string }> = [];
+    this.room.remoteParticipants.forEach((p) => {
+      if (!p.identity.startsWith('rlt-bot-')) return;
+      p.audioTrackPublications.forEach((pub) => {
+        const m = /^rlt-translated-(.+)$/.exec(pub.trackName);
+        if (m) out.push({ language: m[1], botIdentity: p.identity });
+      });
+    });
+    return out;
+  }
+
+  getCurrentTranslationLanguage(): string | null {
+    return this.currentTranslationLanguage;
+  }
+
+  /**
+   * Switch the local listener's audio to a translated track, or back to
+   * "Original" with `language = null`. `originalSpeakerIdentity` (from
+   * language_configs.speaker_identity, same field the bot uses) gets
+   * locally muted while a translation plays and restored on switch-back —
+   * build plan §2.7: "Selecting 'Translated': subscribes to the
+   * rlt-translated LiveKit audio track; mutes the original track." This
+   * mute is local only (MediaStreamTrack.enabled = false) — it doesn't
+   * touch what the speaker publishes or what anyone else hears.
+   */
+  async setTranslationLanguage(language: string | null, originalSpeakerIdentity?: string): Promise<void> {
+    if (this.mutedSpeakerTrack) {
+      try { this.mutedSpeakerTrack.mediaStreamTrack.enabled = true; } catch { /* track may be gone already */ }
+      this.mutedSpeakerTrack = null;
+    }
+    if (this.translationAudioEl) {
+      this.translationAudioEl.pause();
+      this.translationAudioEl.srcObject = null;
+      this.translationAudioEl = null;
+    }
+    this.currentTranslationLanguage = null;
+
+    if (!language || !this.room) return;
+
+    let targetPub: RemoteTrackPublication | undefined;
+    this.room.remoteParticipants.forEach((p) => {
+      if (targetPub || !p.identity.startsWith('rlt-bot-')) return;
+      p.audioTrackPublications.forEach((pub) => {
+        if (pub.trackName === `rlt-translated-${language}`) targetPub = pub;
+      });
+    });
+    if (!targetPub) return; // language no longer available — caller should re-check getAvailableTranslations()
+
+    // Should already be auto-subscribed (this wrapper never disables
+    // autoSubscribe); explicit call is a defensive no-op either way.
+    targetPub.setSubscribed(true);
+    const track = targetPub.track as RemoteTrack | undefined;
+    if (track) {
+      const el = new Audio();
+      el.autoplay = true;
+      el.srcObject = new MediaStream([track.mediaStreamTrack]);
+      this.translationAudioEl = el;
+    }
+
+    if (originalSpeakerIdentity) {
+      const speaker = this.room.remoteParticipants.get(originalSpeakerIdentity);
+      const micPub = speaker?.getTrackPublication(Track.Source.Microphone);
+      if (micPub?.track) {
+        try {
+          micPub.track.mediaStreamTrack.enabled = false;
+          this.mutedSpeakerTrack = micPub.track as RemoteTrack;
+        } catch { /* ignore */ }
+      }
+    }
+
+    this.currentTranslationLanguage = language;
+  }
+
+  /** Called from wireEvents() whenever a bot's tracks or presence change, so the
+   *  UI (via VideoWrapperCallbacks.onTranslationTracksChanged) can refresh its
+   *  language list and fall back to Original if the selected one disappeared. */
+  private notifyTranslationTracksChanged(): void {
+    const tracks = this.getAvailableTranslations();
+    if (this.currentTranslationLanguage && !tracks.some((t) => t.language === this.currentTranslationLanguage)) {
+      this.setTranslationLanguage(null).catch(() => {});
+    }
+    this.callbacks.onTranslationTracksChanged?.(tracks);
+  }
+
   async startScreenShare(): Promise<boolean> {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return false;
@@ -332,10 +440,14 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         this.joined = false;
         this.callbacks.onLeft?.();
       })
-      .on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) =>
-        this.callbacks.onParticipantJoined?.(this.normalize(p, false)))
-      .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) =>
-        this.callbacks.onParticipantLeft?.(this.normalize(p, false)))
+      .on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
+        this.callbacks.onParticipantJoined?.(this.normalize(p, false));
+        if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
+      })
+      .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
+        this.callbacks.onParticipantLeft?.(this.normalize(p, false));
+        if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
+      })
       .on(RoomEvent.ParticipantMetadataChanged, (_prev, p: Participant) =>
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
       .on(RoomEvent.TrackMuted, (_pub, p: Participant) => {
@@ -354,10 +466,14 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // or STOPPING) must refresh that participant so tiles recompute. Without the
       // unpublished case, a viewer's screen-share stage stayed frozen after the host
       // stopped sharing until some other event forced a re-render (a manual toggle).
-      .on(RoomEvent.TrackPublished, (_pub, p: Participant) =>
-        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
-      .on(RoomEvent.TrackUnpublished, (_pub, p: Participant) =>
-        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
+      .on(RoomEvent.TrackPublished, (_pub, p: Participant) => {
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
+        if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
+      })
+      .on(RoomEvent.TrackUnpublished, (_pub, p: Participant) => {
+        this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
+        if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
+      })
       .on(RoomEvent.LocalTrackPublished, () => {
         this.syncLocalMediaState();
         // Refresh the local participant so the video TILES re-attach the new track.

@@ -10,7 +10,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import {
   BookOpen, Heart, Calendar, Gift, Users, Megaphone, Star,
   Settings, BarChart3, MessageSquare, Loader2, ArrowLeft, Cake, ClipboardList, Inbox, HandCoins,
-  HeartHandshake, Video
+  HeartHandshake, Video, Radio
 } from 'lucide-react';
 
 // Import all manager components
@@ -31,6 +31,7 @@ import MinistryRegistrations from './MinistryRegistrations';
 import { EvangelismInbox } from './EvangelismInbox';
 import { MinistryWhatsAppHub } from './MinistryWhatsAppHub';
 import { MinistryBirthdayWishes } from './MinistryBirthdayWishes';
+import { MinistryTranslationHub } from './MinistryTranslationHub';
 
 interface MinistryManagementProps {
   ministryId: string;
@@ -69,6 +70,7 @@ const TABS = [
   { id: 'members',         label: 'Members',         icon: Users,         color: 'text-indigo-600' },
   { id: 'volunteers',      label: 'Volunteers',      icon: HeartHandshake, color: 'text-teal-600'   },
   { id: 'video-messages',  label: 'Video Messages',  icon: Video,         color: 'text-violet-600' },
+  { id: 'translation',     label: 'Live Translation', icon: Radio,        color: 'text-indigo-600' },
   { id: 'registrations',   label: 'Registrations',   icon: ClipboardList, color: 'text-purple-600' },
   { id: 'whatsapp',        label: 'WhatsApp',        icon: MessageSquare, color: 'text-green-600'  },
   { id: 'inbox',           label: 'Inbox',           icon: Inbox,         color: 'text-cyan-600'   },
@@ -178,6 +180,9 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
 
       case 'video-messages':
         return <MinistryVideoMessagesManager ministryId={ministryId} ministryName={ministry.name} />;
+
+      case 'translation':
+        return <MinistryTranslationHub ministryId={ministryId} ministryName={ministry.name} />;
 
       case 'registrations':
         return <MinistryRegistrations ministryId={ministryId} ministryName={ministry.name} />;

@@ -60,6 +60,7 @@ import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@rekindle/live/components/MeetingReactions';
 import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
+import { FloatingTranslationButton, type TranslationControls } from '@rekindle/live/components/FloatingTranslationButton';
 import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner';
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
@@ -169,6 +170,8 @@ const EnhancedVideoCallWrapper = ({
   // Same idea for the Background/Effects picker — reported by DailyVideoCall so
   // it can sit beside ReactionButton + Raise Hand instead of the control bar.
   const [callBackground, setCallBackground] = useState<{ videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean } | null>(null);
+  // ReKindle Live Translation — same lift-to-parent pattern as callBackground.
+  const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -532,6 +535,7 @@ const EnhancedVideoCallWrapper = ({
         onReact={sendReaction}
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
+        onTranslationControlsChange={setCallTranslation}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
@@ -552,6 +556,14 @@ const EnhancedVideoCallWrapper = ({
             />
           )}
           {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
+          {callTranslation && (
+            <FloatingTranslationButton
+              translation={callTranslation}
+              ministryId={meeting.ministry_id}
+              roomName={meeting.room_name}
+              isHost={isHost}
+            />
+          )}
           <ReactionButton onReact={sendReaction} />
           {callHandRaise && (
             <button

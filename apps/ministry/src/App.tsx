@@ -24,6 +24,8 @@ import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDisplayPage';
+import { TranslationDisplayLanding } from '@rekindle/live/components/TranslationDisplayLanding';
 import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
 import { GlobalAudioProvider } from '@rekindle/features/GlobalAudioContext';
 import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
@@ -218,6 +220,13 @@ function AppRoutes() {
       <Route path="/ministry/:ministryId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/channel/:channelId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />
+
+      {/* ReKindle Live Translation — public /display links. Anyone with the
+          link or QR code lands here with no ReKindle account, same as the
+          channel/meeting links above. RLS in migration 0273 gates public vs
+          private, not this route gate. */}
+      <Route path="/display/:sessionId" element={<TranslationDisplayPage />} />
+      <Route path="/display" element={<TranslationDisplayLanding />} />
 
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Loader2, PhoneOff } from 'lucide-react';
+import { Loader2, PhoneOff, Volume2 } from 'lucide-react';
 
 interface HlsPlayerProps {
   src: string;
@@ -34,6 +34,19 @@ interface HlsPlayerProps {
 export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, className, poster, onEnded, targetLatencySeconds = 6, debug = false }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<'loading' | 'playing' | 'waiting' | 'ended' | 'error'>('loading');
+  // Real bug found live (2026-08-15), reproduced on BOTH mobile and desktop
+  // Chrome, not just Safari: both play() calls below used to `.catch(() =>
+  // {})`, silently swallowing the rejection. Autoplay-with-sound requires a
+  // *trusted, low-latency* user gesture — but the actual play() call here
+  // only fires after hls.js fetches and parses the manifest over the
+  // network, which is enough async delay for browsers to no longer count it
+  // as gesture-linked and block it outright. No error ever surfaced: the UI
+  // showed "Listening" (this component mounted, `listening` flipped true)
+  // with total silence and no way to tell why. Fixed by surfacing the
+  // rejection and offering a real retry — a tap on THIS overlay calls
+  // play() directly inside its own click handler, which browsers always
+  // treat as gesture-linked regardless of how the player got here.
+  const [needsUnlock, setNeedsUnlock] = useState(false);
 
   const showDebug = debug || (typeof window !== 'undefined' && /hlsdebug/.test(window.location.search + window.location.hash));
   const [debugInfo, setDebugInfo] = useState<{ lag: number | null; recoveries: number }>({ lag: null, recoveries: 0 });
@@ -48,6 +61,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     const video = videoRef.current;
     if (!video || !src) return;
 
+    setNeedsUnlock(false); // fresh src (or first mount) — no stale unlock prompt from a previous stream
     let hls: Hls | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let endGuard: ReturnType<typeof setTimeout> | null = null;
@@ -89,8 +103,8 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       // Native HLS (Safari, iOS) — already sits near the live edge for live streams
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
-        video.play().catch(() => {});
-        video.onplaying = () => { wasLive = true; markPlaying(); };
+        video.play().then(() => setNeedsUnlock(false)).catch(() => setNeedsUnlock(true));
+        video.onplaying = () => { wasLive = true; setNeedsUnlock(false); markPlaying(); };
         video.onended = () => { tentativeEnd(); };
         video.onerror = () => { markRecovering(); retryTimer = setTimeout(setup, 2000); };
         return;
@@ -149,9 +163,11 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         hls.loadSource(src);
         hls.attachMedia(video);
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().then(() => setNeedsUnlock(false)).catch(() => setNeedsUnlock(true));
+        });
         // Any successfully rendered frame means we're live and stable.
-        video.onplaying = () => { wasLive = true; markPlaying(); };
+        video.onplaying = () => { wasLive = true; setNeedsUnlock(false); markPlaying(); };
 
         hls.on(Hls.Events.LEVEL_LOADED, (_event, data: any) => {
           const details = data?.details;
@@ -240,7 +256,22 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           <div>status: {status}</div>
         </div>
       )}
-      {status !== 'playing' && (
+      {needsUnlock && (
+        // Takes priority over the status overlay below — the stream itself
+        // may be perfectly healthy (loaded, buffered, ready), just blocked
+        // from making sound until a gesture browsers actually trust unlocks
+        // it. This button's own onClick IS that trusted gesture: play()
+        // called directly inside it, with zero async gap, always counts.
+        <button
+          type="button"
+          onClick={() => videoRef.current?.play().then(() => setNeedsUnlock(false)).catch(() => {})}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white bg-black/60 hover:bg-black/70 transition-colors"
+        >
+          <Volume2 className="h-8 w-8" />
+          <p className="text-sm font-medium">Tap to enable sound</p>
+        </button>
+      )}
+      {!needsUnlock && status !== 'playing' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 bg-black/40">
           {status === 'ended' ? (
             <>
