@@ -487,7 +487,26 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
         if (p.isLocal) this.syncLocalMediaState();
       })
-      .on(RoomEvent.TrackSubscribed, (track, _pub, p) => this.callbacks.onTrackStarted?.({ track, participant: p }))
+      .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+        this.callbacks.onTrackStarted?.({ track, participant: p });
+        // Real bug found live (2026-08-19): setTranslationLanguage() only
+        // muted whoever ALREADY had a published mic at the moment a
+        // language was selected — a one-time snapshot, not a standing
+        // rule. A participant exploring the picker before the host even
+        // unmuted would select a language, the mute loop would find
+        // nothing to mute (no mic published yet), and the host's mic —
+        // subscribed later — would play completely unmuted for the rest
+        // of the call: real double audio, confirmed live. Now enforced
+        // continuously: any mic that shows up (or comes back) WHILE a
+        // translation is selected gets muted immediately, not just
+        // whatever existed at selection time.
+        if (this.currentTranslationLanguage && !p.identity.startsWith('rlt-bot-') && pub.source === Track.Source.Microphone) {
+          try {
+            track.mediaStreamTrack.enabled = false;
+            this.mutedSpeakerTracks.push(track as RemoteTrack);
+          } catch { /* ignore */ }
+        }
+      })
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => this.callbacks.onTrackStopped?.({ track, participant: p }))
       // A remote track being PUBLISHED / UNPUBLISHED (e.g. a screen share starting
       // or STOPPING) must refresh that participant so tiles recompute. Without the
