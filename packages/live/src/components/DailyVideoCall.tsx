@@ -17,6 +17,7 @@ import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useActiveCallOptional } from '../ActiveCallContext';
+import { useAudioOutput } from '../AudioOutputContext';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
@@ -890,18 +891,32 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
 // otherwise silently cut that participant's audio.
 const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
   const ref = useRef<HTMLAudioElement>(null);
+  // Real bug found live (2026-08-19): this element never registered with
+  // AudioOutputContext, so picking a device in the Speaker picker did
+  // nothing to actual call audio — selectDevice() only ever applies
+  // setSinkId to elements that called registerAudioElement, and this was
+  // never one of them. Doesn't fix Android's earpiece/speaker limitation
+  // (that's a real platform gap, not a wiring bug — see FloatingSpeakerButton's
+  // doc comment), but it makes the picker actually work for the cases it
+  // legitimately can: Bluetooth headsets, wired headphones, multi-speaker
+  // desktop setups.
+  const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
   useEffect(() => {
     const track = participant.audioTrack;
     const el = ref.current;
     if (!el || !track || track.readyState !== 'live') return;
     el.srcObject = new MediaStream([track]);
+    registerAudioElement(el);
     el.play().catch(() => {
       // Autoplay can be blocked until a user gesture — resume on the next click.
       const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
       document.addEventListener('click', resume);
     });
-    return () => { if (el) el.srcObject = null; };
-  }, [participant.audioTrack]);
+    return () => {
+      unregisterAudioElement(el);
+      if (el) el.srcObject = null;
+    };
+  }, [participant.audioTrack, registerAudioElement, unregisterAudioElement]);
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 };
 
