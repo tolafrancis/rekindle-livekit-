@@ -23,7 +23,7 @@ import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@rekindle/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@rekindle/ui/dialog';
 import { LiveChannelChat } from './LiveChannelChat';
-import { BroadcastTranslationHostControl } from './BroadcastTranslationHostControl';
+import { FloatingTranslationButton } from './FloatingTranslationButton';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import SavedMeetingInsights from './SavedMeetingInsights';
 // REMOVED: import { LiveChannelParticipantManager } from './LiveChannelParticipantManager';
@@ -1448,13 +1448,29 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               }
             />
 
-            {/* Live translation — only meaningful for a ministry-owned
-                LiveKit-backend channel (start_bot_session requires a
-                ministry_id and only the LiveKit bot pipeline exists). Auto-
-                fills the room from channelId, same as a meeting's own
-                "+ Add language" auto-fills from the meeting it's already in. */}
+            {/* Live translation — reuses FloatingTranslationButton wholesale
+                (not a bespoke broadcast-only control) because the host is
+                genuinely a real-time WebRTC room participant here, exactly
+                like a meeting host — same dailyRoom.translationTracks /
+                setTranslationLanguage shape, so this gives the host the
+                EXACT same Audio + Captions + "+ Add language" experience a
+                meeting host gets, not a lesser management-only stand-in.
+                Only meaningful for a ministry-owned LiveKit-backend channel
+                (start_bot_session requires a ministry_id and only the
+                LiveKit bot pipeline exists). Auto-fills the room from
+                channelId, same as a meeting auto-fills from its own room. */}
             {isLiveKitBackend() && (channel as any).ministry_id && (
-              <BroadcastTranslationHostControl channelId={channel.id} ministryId={(channel as any).ministry_id} />
+              <FloatingTranslationButton
+                translation={{
+                  tracks: dailyRoom.translationTracks,
+                  currentLanguage: dailyRoom.translationLanguage,
+                  setLanguage: dailyRoom.setTranslationLanguage,
+                }}
+                ministryId={(channel as any).ministry_id}
+                roomName={`channel-${channel.id}`}
+                isHost
+                userId={user?.id}
+              />
             )}
 
             <Button
