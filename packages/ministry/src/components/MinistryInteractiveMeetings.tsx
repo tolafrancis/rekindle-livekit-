@@ -324,6 +324,30 @@ const EnhancedVideoCallWrapper = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, isWebinar, meeting.id, userId]);
 
+  // Real bug found live (2026-08-18): ending a meeting never stopped its
+  // translation bot(s) — they just stayed connected to the now-dead room
+  // indefinitely, and a later "+ Add language" for the SAME room (e.g. a
+  // recurring meeting reusing the room name) would reuse that stale
+  // session instead of starting a fresh one (migration 0277's dedupe
+  // guard, working as designed against a session that should have ended).
+  // The bot itself now also self-stops once the room empties out (see
+  // LiveKitAgent.ts's ParticipantDisconnected handler), but that's a
+  // reaction to participants leaving — ending the meeting explicitly here
+  // is a more deliberate, immediate signal, so both matter.
+  const stopTranslationForRoom = useCallback(async (roomName: string) => {
+    try {
+      const { data } = await supabase
+        .from('translation_sessions')
+        .select('id')
+        .eq('livekit_room_name', roomName)
+        .in('status', ['initialising', 'joining', 'active', 'paused']);
+      if (!data || data.length === 0) return;
+      await Promise.all(data.map((s) => supabase.rpc('stop_bot_session', { p_session_id: s.id })));
+    } catch (err) {
+      console.error('[stopTranslationForRoom] failed to stop translation session(s):', err);
+    }
+  }, []);
+
   // Wrap leave so a seated participant releases their seat on the way out.
   const handleLeave = useCallback(async () => {
     if (!isHost && isWebinar) {
@@ -341,12 +365,13 @@ const EnhancedVideoCallWrapper = ({
           .from('ministry_video_meetings')
           .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
           .eq('id', meeting.id);
+        await stopTranslationForRoom(meeting.room_name);
       } catch (e) {
         console.error('[handleLeave] failed to end webinar on host leave:', e);
       }
     }
     onLeave();
-  }, [isHost, isWebinar, stage, userId, onLeave, meeting.id]);
+  }, [isHost, isWebinar, stage, userId, onLeave, meeting.id, meeting.room_name, stopTranslationForRoom]);
 
   // Handle host ending meeting for all participants
   const handleHostEndMeeting = async () => {
@@ -367,6 +392,8 @@ const EnhancedVideoCallWrapper = ({
           participant_count: 0
         })
         .eq('id', meeting.id);
+
+      await stopTranslationForRoom(meeting.room_name);
 
       toast.success(t('ministryInteractiveMeetings', 'meetingEndedForAll', 'Meeting ended for all participants'));
 
