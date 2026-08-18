@@ -74,6 +74,36 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   const roomRef = useRef<Room | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // Created synchronously inside the language button's own onClick — see
+  // primeAudioContext() below — so it's reliably treated as gesture-linked
+  // by the browser's autoplay policy. playTrack() consumes this instead of
+  // constructing a fresh (and, by then, no-longer-gesture-linked) context
+  // once the track actually arrives several awaits later.
+  const primedCtxRef = useRef<AudioContext | null>(null);
+
+  // Real fix (2026-08-19): constructing the AudioContext only once the
+  // track finally arrived — after a token fetch + a full WebRTC handshake —
+  // meant `resume()` ran well outside the window most browsers treat as
+  // "linked to a user gesture," so it silently needed a second, separate
+  // tap almost every time (real report: "translated audio isn't playing on
+  // its own, it's mute"). Creating + resuming the context RIGHT HERE,
+  // synchronously inside the click itself, is what browsers actually honor.
+  const primeAudioContext = () => {
+    // Close out a previous primed-but-never-consumed context first (rapid
+    // re-clicking before the last selection's track ever subscribed) so it
+    // doesn't leak.
+    if (primedCtxRef.current) {
+      primedCtxRef.current.close().catch(() => {});
+      primedCtxRef.current = null;
+    }
+    try {
+      const ctx = new AudioContext();
+      ctx.resume().catch(() => {});
+      primedCtxRef.current = ctx;
+    } catch {
+      /* ignore — playTrack() falls back to creating its own */
+    }
+  };
 
   // Which languages the bot currently has running for this broadcast —
   // realtime, same pattern MinistryTranslationServiceManager.tsx already
@@ -105,21 +135,43 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     };
   }, [channelId, roomName]);
 
+  // Bumped every time the selected language changes — every async callback
+  // below (the resume() promise especially) checks this before touching
+  // anything, so a callback that was already in flight when the user
+  // switched languages can never act on stale state.
+  const generationRef = useRef(0);
+
   const teardownAudio = () => {
     roomRef.current?.disconnect().catch(() => {});
     roomRef.current = null;
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
-      audioCtxRef.current = null;
+    const ctx = audioCtxRef.current;
+    audioCtxRef.current = null; // clear the ref BEFORE closing (async) so any
+    // in-flight callback closing over the old `ctx` can tell it's stale by
+    // comparing against the ref, not just by checking truthiness.
+    if (ctx) ctx.close().catch(() => {});
+    // A primed-but-never-consumed context (selected, then switched away
+    // before the track ever subscribed) would otherwise leak silently.
+    if (primedCtxRef.current) {
+      primedCtxRef.current.close().catch(() => {});
+      primedCtxRef.current = null;
     }
   };
 
-  // Selecting a language joins a fresh subscribe-only room connection for
-  // just that session's track; selecting Original tears it down. Mirrors
-  // TranslationDisplayPage.tsx's connect effect closely — same token
-  // endpoint, same autoSubscribe:false + explicit-subscribe pattern — with
-  // a DelayNode spliced into the playback graph as the one real addition.
+  // Real bug found live (2026-08-19): selecting a language whose audio got
+  // autoplay-blocked (common — the resume() call below lands well after the
+  // original click, once several awaits have passed, so it's no longer
+  // treated as gesture-linked), then switching back to Original, could
+  // leave TWO things audible: the video's own audio (correctly unmuted)
+  // AND the translated dub (which the earlier resume() call — still
+  // pending, not yet rejected — finally resolved once the NEW click on
+  // "Original" gave the browser a fresh, valid gesture to retroactively
+  // honor). The teardown for switching away ran, but a dangling .then()
+  // from the OLD selection's resume() call fired afterward and started
+  // audio from a context that was already supposed to be dead. Every
+  // callback below now checks generationRef before doing anything, so a
+  // late resume() from an abandoned selection can never produce sound.
   useEffect(() => {
+    const myGeneration = ++generationRef.current;
     teardownAudio();
     setNeedsUnlock(false);
     onActiveChange?.(!!currentLanguage);
@@ -135,7 +187,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       return;
     }
 
-    let cancelled = false;
+    const stale = () => generationRef.current !== myGeneration;
     setAudioStatus('connecting');
     setAudioError(null);
 
@@ -143,7 +195,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       const { data, error } = await supabase.functions.invoke('translation-listener-token', {
         body: { sessionId: session.id },
       });
-      if (cancelled) return;
+      if (stale()) return;
       if (error || !data?.token) {
         setAudioError((data as { error?: string })?.error ?? 'connection_failed');
         setAudioStatus('error');
@@ -158,9 +210,14 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
         participant.identity.startsWith('rlt-bot-') && pub.trackName === trackName;
 
       const playTrack = (track: RemoteTrack) => {
-        if (cancelled) return;
+        if (stale()) return;
         try {
-          const audioCtx = new AudioContext();
+          // Prefer the context primed synchronously in the click handler
+          // (primeAudioContext) — already resumed there, while it still
+          // counted as gesture-linked. Consume-and-clear so a later
+          // selection can't accidentally reuse a stale primed context.
+          const audioCtx = primedCtxRef.current ?? new AudioContext();
+          primedCtxRef.current = null;
           audioCtxRef.current = audioCtx;
           const source = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
           // maxDelayTime headroom well above delaySeconds so a later config
@@ -170,11 +227,23 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           source.connect(delayNode);
           delayNode.connect(audioCtx.destination);
           setAudioStatus('live');
-          audioCtx.resume().then(() => setNeedsUnlock(false)).catch(() => setNeedsUnlock(true));
+          audioCtx.resume().then(() => {
+            // The generation check alone isn't quite enough here — a NEWER
+            // selection could in principle have already created its own
+            // audioCtx by the time this resolves. Comparing against the
+            // ref (not just truthiness) catches both cases.
+            if (stale() || audioCtxRef.current !== audioCtx) return;
+            setNeedsUnlock(false);
+          }).catch(() => {
+            if (stale() || audioCtxRef.current !== audioCtx) return;
+            setNeedsUnlock(true);
+          });
         } catch (err) {
           console.error('[BroadcastTranslationButton] Web Audio setup failed:', err);
-          setAudioError('connection_failed');
-          setAudioStatus('error');
+          if (!stale()) {
+            setAudioError('connection_failed');
+            setAudioStatus('error');
+          }
         }
       };
 
@@ -185,12 +254,12 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
         if (isBotTranslatedTrack(pub, participant)) playTrack(track);
       });
       room.on(RoomEvent.Disconnected, () => {
-        if (!cancelled) setCurrentLanguage(null);
+        if (!stale()) setCurrentLanguage(null);
       });
 
       try {
         await room.connect(url, token, { autoSubscribe: false });
-        if (cancelled) return;
+        if (stale()) return;
         room.remoteParticipants.forEach((participant) => {
           participant.trackPublications.forEach((pub) => {
             if (isBotTranslatedTrack(pub as RemoteTrackPublication, participant)) {
@@ -199,7 +268,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           });
         });
       } catch (err) {
-        if (!cancelled) {
+        if (!stale()) {
           console.error('[BroadcastTranslationButton] LiveKit connect failed:', err);
           setAudioError('connection_failed');
           setAudioStatus('error');
@@ -208,7 +277,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     })();
 
     return () => {
-      cancelled = true;
+      generationRef.current += 1; // in case this unmount races a same-tick re-run
       teardownAudio();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -351,7 +420,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
               <button
                 key={s.id}
                 type="button"
-                onClick={() => setCurrentLanguage(s.target_language)}
+                onClick={() => { primeAudioContext(); setCurrentLanguage(s.target_language); }}
                 className={`${row} ${sel(currentLanguage === s.target_language)}`}
               >
                 {currentLanguage === s.target_language && audioStatus === 'connecting'
