@@ -205,29 +205,46 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
 
   const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors';
   const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
-  const captionText = captionMode === 'off' ? null : captionLines[captionLines.length - 1]?.text ?? null;
+  const placeholderText = captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…';
 
   return (
     <>
       {/* In-meeting captions — a real overlay, not a link out to /display.
           Sits above the floating-pill row (bottom-24/28 in the meeting
           layout) so it never overlaps the controls beneath it. Only takes
-          up space once a caption language is actually chosen. */}
+          up space once a caption language is actually chosen.
+          Widened + restyled per a real usability report ("not fitting and
+          appealing... should be wider") — was capped at max-w-xl (576px),
+          cramped against a real video-call width; now scales with the
+          viewport up to a much larger cap, with room for the previous line
+          too (context, like any real captions bar) instead of just the
+          latest one. */}
       {captionMode !== 'off' && (
-        // text-base on mobile, not text-sm — captions are read at a glance
-        // mid-call; smaller-on-the-smaller-screen was backwards from what
-        // on-screen captions actually need (real bug report: "captions
-        // display text is in a small box").
-        <div className="fixed bottom-40 sm:bottom-44 left-1/2 -translate-x-1/2 z-50 w-[92vw] sm:w-auto sm:max-w-xl px-2">
-          <div className="flex items-center gap-2 rounded-lg bg-black/75 backdrop-blur-sm text-white px-4 py-3 shadow-lg">
-            <p className="flex-1 text-base sm:text-lg text-center leading-snug">
-              {captionText ?? (captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…')}
-            </p>
+        <div className="fixed bottom-40 sm:bottom-44 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2">
+          <div className="flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10">
+            <div className="flex-1 min-w-0 space-y-1">
+              {captionLines.length === 0 ? (
+                <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
+              ) : (
+                captionLines.map((line, i) => (
+                  <p
+                    key={line.id}
+                    className={`text-center leading-relaxed ${
+                      i === captionLines.length - 1
+                        ? 'text-base sm:text-xl font-medium'
+                        : 'text-sm sm:text-base text-white/50'
+                    }`}
+                  >
+                    {line.text}
+                  </p>
+                ))
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setCaptionMode('off')}
               title="Turn off captions"
-              className="shrink-0 text-white/60 hover:text-white"
+              className="shrink-0 text-white/60 hover:text-white mt-0.5"
             >
               <X className="h-4 w-4" />
             </button>

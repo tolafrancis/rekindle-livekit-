@@ -291,7 +291,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   // dedicated tile-filter is a reasonable follow-up, not done here.
 
   private translationAudioEl: HTMLAudioElement | null = null;
-  private mutedSpeakerTrack: RemoteTrack | null = null;
+  private mutedSpeakerTracks: RemoteTrack[] = [];
   private currentTranslationLanguage: string | null = null;
 
   /** Every "rlt-translated-{lang}" track currently published by any rlt-bot-*
@@ -315,18 +315,31 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
 
   /**
    * Switch the local listener's audio to a translated track, or back to
-   * "Original" with `language = null`. `originalSpeakerIdentity` (from
-   * language_configs.speaker_identity, same field the bot uses) gets
-   * locally muted while a translation plays and restored on switch-back —
-   * build plan §2.7: "Selecting 'Translated': subscribes to the
-   * rlt-translated LiveKit audio track; mutes the original track." This
-   * mute is local only (MediaStreamTrack.enabled = false) — it doesn't
-   * touch what the speaker publishes or what anyone else hears.
+   * "Original" with `language = null`. Every real (non-bot) participant's
+   * microphone gets locally muted while a translation plays and restored
+   * on switch-back — build plan §2.7: "Selecting 'Translated': subscribes
+   * to the rlt-translated LiveKit audio track; mutes the original track."
+   * This mute is local only (MediaStreamTrack.enabled = false) — it
+   * doesn't touch what anyone publishes or what anyone else hears.
+   *
+   * Real bug found live (2026-08-19): this used to take an
+   * `originalSpeakerIdentity` param and mute only that one specific
+   * identity — but MinistryInteractiveMeetings.tsx never actually passed
+   * one to FloatingTranslationButton, so the mute never fired at all and
+   * a participant heard the real voice AND the translated bot voice
+   * simultaneously. Muting every non-bot participant instead of hunting
+   * for "the" configured speaker sidesteps that plumbing gap entirely —
+   * it also just makes more sense: choosing a translated language is
+   * "give me dubbed audio instead of the room's," not "mute one
+   * specific person," and it works identically whether or not a
+   * ministry has ever configured language_configs.speaker_identity.
    */
-  async setTranslationLanguage(language: string | null, originalSpeakerIdentity?: string): Promise<void> {
-    if (this.mutedSpeakerTrack) {
-      try { this.mutedSpeakerTrack.mediaStreamTrack.enabled = true; } catch { /* track may be gone already */ }
-      this.mutedSpeakerTrack = null;
+  async setTranslationLanguage(language: string | null): Promise<void> {
+    if (this.mutedSpeakerTracks.length > 0) {
+      for (const track of this.mutedSpeakerTracks) {
+        try { track.mediaStreamTrack.enabled = true; } catch { /* track may be gone already */ }
+      }
+      this.mutedSpeakerTracks = [];
     }
     if (this.translationAudioEl) {
       this.translationAudioEl.pause();
@@ -357,16 +370,16 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       this.translationAudioEl = el;
     }
 
-    if (originalSpeakerIdentity) {
-      const speaker = this.room.remoteParticipants.get(originalSpeakerIdentity);
-      const micPub = speaker?.getTrackPublication(Track.Source.Microphone);
+    this.room.remoteParticipants.forEach((p) => {
+      if (p.identity.startsWith('rlt-bot-')) return; // bots don't publish a mic track anyway
+      const micPub = p.getTrackPublication(Track.Source.Microphone);
       if (micPub?.track) {
         try {
           micPub.track.mediaStreamTrack.enabled = false;
-          this.mutedSpeakerTrack = micPub.track as RemoteTrack;
+          this.mutedSpeakerTracks.push(micPub.track as RemoteTrack);
         } catch { /* ignore */ }
       }
-    }
+    });
 
     this.currentTranslationLanguage = language;
   }
