@@ -313,6 +313,7 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
                 'members': 'tabMembers',
                 'volunteers': 'tabVolunteers',
                 'video-messages': 'tabVideoMessages',
+                'translation': 'tabLiveTranslation',
                 'registrations': 'tabRegistrations',
                 'whatsapp': 'tabWhatsApp',
                 'inbox': 'tabInbox',
