@@ -227,16 +227,29 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           source.connect(delayNode);
           delayNode.connect(audioCtx.destination);
           setAudioStatus('live');
+          const stillCurrent = () => !stale() && audioCtxRef.current === audioCtx;
           audioCtx.resume().then(() => {
             // The generation check alone isn't quite enough here — a NEWER
             // selection could in principle have already created its own
             // audioCtx by the time this resolves. Comparing against the
             // ref (not just truthiness) catches both cases.
-            if (stale() || audioCtxRef.current !== audioCtx) return;
-            setNeedsUnlock(false);
+            if (stillCurrent()) setNeedsUnlock(false);
           }).catch(() => {
-            if (stale() || audioCtxRef.current !== audioCtx) return;
-            setNeedsUnlock(true);
+            if (stillCurrent()) setNeedsUnlock(true);
+          });
+          // Real bug found live (2026-08-19): some browsers leave resume()
+          // pending indefinitely instead of ever resolving or rejecting —
+          // confirmed live (captions worked, proving the session/connection
+          // were fine, but audio stayed permanently silent with no error
+          // and no unlock button ever appearing — exactly what a
+          // never-settling promise looks like). Don't trust the promise
+          // alone: check the context's actual state directly, twice, and
+          // force the unlock affordance if it's still not 'running' by
+          // then, regardless of what resume() ever reports.
+          [800, 2500].forEach((delayMs) => {
+            setTimeout(() => {
+              if (stillCurrent() && audioCtx.state !== 'running') setNeedsUnlock(true);
+            }, delayMs);
           });
         } catch (err) {
           console.error('[BroadcastTranslationButton] Web Audio setup failed:', err);
