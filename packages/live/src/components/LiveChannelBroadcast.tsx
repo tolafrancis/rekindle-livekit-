@@ -23,6 +23,7 @@ import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@rekindle/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@rekindle/ui/dialog';
 import { LiveChannelChat } from './LiveChannelChat';
+import { BroadcastTranslationHostControl } from './BroadcastTranslationHostControl';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import SavedMeetingInsights from './SavedMeetingInsights';
 // REMOVED: import { LiveChannelParticipantManager } from './LiveChannelParticipantManager';
@@ -1446,6 +1447,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 </Button>
               }
             />
+
+            {/* Live translation — only meaningful for a ministry-owned
+                LiveKit-backend channel (start_bot_session requires a
+                ministry_id and only the LiveKit bot pipeline exists). Auto-
+                fills the room from channelId, same as a meeting's own
+                "+ Add language" auto-fills from the meeting it's already in. */}
+            {isLiveKitBackend() && (channel as any).ministry_id && (
+              <BroadcastTranslationHostControl channelId={channel.id} ministryId={(channel as any).ministry_id} />
+            )}
 
             <Button
               variant={dailyRoom.isScreenSharing ? 'default' : 'outline'}
