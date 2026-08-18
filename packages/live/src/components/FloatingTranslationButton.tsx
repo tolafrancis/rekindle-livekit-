@@ -50,9 +50,13 @@ const sessionIdFromBotIdentity = (botIdentity: string): string => botIdentity.re
 
 /** Live-translation language picker + status, styled to match the other
  *  floating pills (FloatingSpeakerButton, FloatingBackgroundButton) that sit
- *  bottom-center above the control bar. For non-hosts with no translation
- *  active yet, renders nothing — nothing to pick, nothing to add. Hosts
- *  still get the button (to add a language), even with zero tracks so far. */
+ *  bottom-center above the control bar. Always visible to every participant
+ *  now — it used to hide itself entirely for non-hosts with zero tracks
+ *  ("nothing to pick yet"), but that made a state ("no language started")
+ *  read exactly like a permission ("only the host can see this"), which is
+ *  the opposite of what was intended. Non-hosts with nothing available yet
+ *  now see the button with a "not started yet" message instead of no
+ *  button at all — see the tracks.length === 0 branch in the popover body. */
 export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps> = ({
   translation,
   ministryId,
@@ -150,8 +154,6 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       });
   }, [showAddLanguage, isHost, ministryId]);
 
-  if (tracks.length === 0 && !isHost) return null;
-
   const addLanguage = async () => {
     if (!newLanguage) return;
     setStarting(true);
@@ -243,6 +245,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           </button>
         </PopoverTrigger>
         <PopoverContent align="center" className="w-72 p-2">
+          {tracks.length === 0 && !isHost && (
+            <p className="text-xs text-muted-foreground px-2.5 py-2">
+              No live translation running yet — ask the host to start one, and it'll show up here automatically.
+            </p>
+          )}
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1">Audio</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
             <button type="button" onClick={() => setLanguage(null)} className={`${row} ${sel(currentLanguage === null)}`}>
