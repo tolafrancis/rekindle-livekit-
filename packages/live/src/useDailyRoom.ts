@@ -1213,22 +1213,32 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    await wrapper.sendAppMessage({
-      type: 'remove-participant',
-      participantId
-    }, participantId);
-    if (isLiveKitBackend()) await moderate('remove-participant', { identity: participantId });
+    // Real bug found live (2026-08-18): this had no try/catch, so a thrown
+    // moderate() error (now that the edge fn actually reports failures
+    // instead of always claiming success) surfaced as nothing more than an
+    // unhandled promise rejection — no toast, the "Participant Removed"
+    // success message never shown either, but also nothing telling the host
+    // it failed. Now a failure is explicit either way.
+    try {
+      await wrapper.sendAppMessage({
+        type: 'remove-participant',
+        participantId
+      }, participantId);
+      if (isLiveKitBackend()) await moderate('remove-participant', { identity: participantId });
 
-    // Update database
-    if (options.meetingId) {
-      await supabase
-        .from('meeting_participants')
-        .update({ is_active: false, left_at: new Date().toISOString() })
-        .eq('meeting_id', options.meetingId)
-        .eq('session_id', participantId);
+      // Update database
+      if (options.meetingId) {
+        await supabase
+          .from('meeting_participants')
+          .update({ is_active: false, left_at: new Date().toISOString() })
+          .eq('meeting_id', options.meetingId)
+          .eq('session_id', participantId);
+      }
+
+      toast({ title: 'Participant Removed', description: 'Participant has been removed from the meeting' });
+    } catch (err: any) {
+      toast({ title: 'Could not remove participant', description: err?.message || 'Unknown error', variant: 'destructive' });
     }
-
-    toast({ title: 'Participant Removed', description: 'Participant has been removed from the meeting' });
   }, [options.isHost, options.meetingId]);
 
   // Admit participant from waiting room
