@@ -72,6 +72,24 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
+  // Timing instrumentation (2026-08-19) — a real report of translated audio
+  // taking 15-20s to be heard, vs. the bot's own server-side pipeline logging
+  // well under 1.5s per utterance (translate + TTS) and audio flowing into
+  // the outgoing WebRTC track within ~20ms of that. That accounts for maybe
+  // 7-8s total with the deliberate delaySeconds alignment buffer added in —
+  // nowhere near 15-20s. The remaining gap has to be in the one link server
+  // logs can't see: THIS component's own token-fetch + WebRTC connect +
+  // subscribe path. Logged (and shown on-screen, so a live report doesn't
+  // need devtools) at every stage so the next test pins down exactly which
+  // one is slow instead of guessing again.
+  const timingT0Ref = useRef(0);
+  const [timingStatus, setTimingStatus] = useState<string | null>(null);
+  const markTiming = (label: string) => {
+    const elapsedMs = Date.now() - timingT0Ref.current;
+    console.log(`[BroadcastTranslationButton] +${elapsedMs}ms: ${label}`);
+    setTimingStatus(`${label} (${(elapsedMs / 1000).toFixed(1)}s)`);
+  };
+
   const roomRef = useRef<Room | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   // Created synchronously inside the language button's own onClick — see
@@ -178,6 +196,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
     if (!currentLanguage) {
       setAudioStatus('idle');
+      setTimingStatus(null);
       return;
     }
     const session = sessions.find((s) => s.target_language === currentLanguage);
@@ -190,6 +209,8 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     const stale = () => generationRef.current !== myGeneration;
     setAudioStatus('connecting');
     setAudioError(null);
+    timingT0Ref.current = Date.now();
+    markTiming('language selected — fetching listener token');
 
     (async () => {
       const { data, error } = await supabase.functions.invoke('translation-listener-token', {
@@ -201,6 +222,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
         setAudioStatus('error');
         return;
       }
+      markTiming('token received — opening WebRTC connection');
       const { url, token, trackName } = data as ListenerToken;
 
       const room = new Room({ adaptiveStream: true });
@@ -211,6 +233,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
       const playTrack = (track: RemoteTrack) => {
         if (stale()) return;
+        markTiming(`translated track subscribed — wiring up audio (~${delaySeconds}s alignment delay still ahead)`);
         try {
           // Prefer the context primed synchronously in the click handler
           // (primeAudioContext) — already resumed there, while it still
@@ -229,6 +252,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           setAudioStatus('live');
           const stillCurrent = () => !stale() && audioCtxRef.current === audioCtx;
           audioCtx.resume().then(() => {
+            markTiming(`audio graph running — sound reaches speakers ~${delaySeconds}s after this point`);
             // The generation check alone isn't quite enough here — a NEWER
             // selection could in principle have already created its own
             // audioCtx by the time this resolves. Comparing against the
@@ -273,6 +297,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       try {
         await room.connect(url, token, { autoSubscribe: false });
         if (stale()) return;
+        markTiming('WebRTC room connected — looking for the translated track');
         room.remoteParticipants.forEach((participant) => {
           participant.trackPublications.forEach((pub) => {
             if (isBotTranslatedTrack(pub as RemoteTrackPublication, participant)) {
@@ -386,6 +411,19 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
             <button type="button" onClick={() => setCaptionMode('off')} title="Turn off captions" className="shrink-0 text-white/60 hover:text-white mt-0.5">
               <X className="h-4 w-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Temporary diagnostic readout (2026-08-19) — see markTiming above.
+          Shows exactly which stage the connection is at and how long it took
+          to get there, so a "voice is delayed" report can be pinned to a
+          specific stage instead of guessed at. Safe to remove once the
+          15-20s report is resolved and confirmed fixed. */}
+      {timingStatus && audioStatus !== 'idle' && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[90vw]">
+          <div className="rounded-full bg-black/70 text-white text-[11px] px-3 py-1.5 text-center backdrop-blur-sm">
+            {timingStatus}
           </div>
         </div>
       )}
