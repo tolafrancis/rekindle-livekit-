@@ -1292,8 +1292,21 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   }
 
   // Live broadcast screen
+  //
+  // Mobile-fit fix (2026-08-20): this root only ever had min-height, never a
+  // real height, at every breakpoint. Below `sm` that leaves the percentage-
+  // height chain the layout depends on (the row below is `h-full`, its
+  // children are `flex-1`) with nothing concrete to resolve against — a
+  // browser can't compute "100% of auto", so it falls through to each
+  // element's own intrinsic size instead. For the host's <video> that means
+  // rendering at its native camera resolution rather than being constrained
+  // to the container, which is exactly "the frame is too large, doesn't
+  // fit" on a phone. `h-[100dvh]` (not `100vh` — accounts for mobile browser
+  // chrome) gives mobile a real height to resolve against; `sm:h-auto` above
+  // that resets to the EXACT prior behavior (auto + min-height) at every
+  // breakpoint `sm` and up, so nothing changes there.
   return (
-    <div className="min-h-[400px] sm:min-h-[500px] lg:min-h-[600px] bg-gray-900 rounded-xl overflow-hidden">
+    <div className="h-[100dvh] sm:h-auto sm:min-h-[500px] lg:min-h-[600px] bg-gray-900 sm:rounded-xl overflow-hidden flex flex-col">
       {!canUseBroadcastMessaging && (
         <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-4 py-2">
           <div className="flex items-center justify-between text-white text-sm">
@@ -1312,9 +1325,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         </div>
       )}
       
-      <div className="flex h-full">
+      {/* flex-1 + min-h-0, not h-full — h-full would try to be 100% of the
+          ROOT (now a real height on mobile), ignoring the banner above
+          sharing that same space; flex-1 correctly claims only what's left.
+          min-h-0 overrides the flex default of min-height:auto, which is
+          what let this row (and everything inside it) refuse to shrink
+          below its content's natural size even inside a bounded parent —
+          the other half of the same mobile-fit bug. */}
+      <div className="flex flex-1 min-h-0">
         {/* Main Video/Audio Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 min-h-0 flex flex-col">
           {/* Top Bar */}
           <div className="flex items-center justify-between px-2 sm:px-4 py-2 sm:py-3 bg-gray-800 border-b border-gray-700">
             <div className="flex items-center gap-3">
@@ -1374,7 +1394,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
           {/* Video Container — host feed + active invited speakers */}
           <div
             ref={videoContainerRef}
-            className="flex-1 relative bg-black flex items-center justify-center overflow-hidden"
+            className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden"
           >
             {/* Live reactions — audience + host share the `channel.id` broadcast channel */}
             <MeetingReactionsLayer reactions={reactions} />
