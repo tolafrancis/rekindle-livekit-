@@ -627,6 +627,26 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     }
   };
 
+  // §latency fix (2026-08-19): the host joins muted by design (nothing auto-
+  // publishes without an explicit tap) — but starting media used to mean two
+  // separate taps (mic, then camera), and channel broadcasts only start HLS
+  // Egress once BOTH tracks exist (Track Composite can't add one later). A
+  // real pause between those two taps became a pause the whole audience sat
+  // through waiting for video. enableSpeakerMedia() does both in one call —
+  // no gap for a human to leave between them — while still requiring the one
+  // explicit tap the "join muted" design intends.
+  const [startingMedia, setStartingMedia] = useState(false);
+  const startBroadcastingMedia = async () => {
+    if (startingMedia) return;
+    setStartingMedia(true);
+    try {
+      await dailyRoom.enableSpeakerMedia(isVideoMode);
+    } catch (err) {
+      console.error('[Broadcast] Failed to start mic/camera:', err);
+    } finally {
+      setStartingMedia(false);
+    }
+  };
 
   // Start broadcast
   const startBroadcast = async () => {
@@ -712,13 +732,20 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       console.log('[Broadcast] Waiting for room to be fully ready...');
       await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // The room now joins MUTED — mic + camera start OFF (no auto-publish race).
-      // Nudge the host to turn them on when ready. For a video broadcast we point
-      // them at both mic + camera; for audio-only, just the mic.
+      // The room now joins MUTED — mic + camera start OFF (no auto-publish race),
+      // by deliberate design (nothing auto-publishes without an explicit tap — same
+      // "join muted, prompt" rule meetings follow). Point the host at the single
+      // "Start Broadcasting" button (rendered over the video area below) rather
+      // than the two separate mic/camera buttons: those still exist for muting
+      // mid-broadcast, but for the INITIAL start they used to require two taps —
+      // and channel broadcasts wait for BOTH tracks to exist before starting HLS
+      // Egress (Track Composite locks onto whatever's there and can't add a track
+      // later), so a pause between those two taps directly became a pause the
+      // whole audience sat through. One combined action removes that gap.
       toast({
         title: t('liveChannelBroadcast', 'youreLiveMuted', "You're live — you're muted"),
         description: isVideoMode
-          ? t('liveChannelBroadcast', 'tapMicCamToStart', 'Tap the microphone and camera buttons below to start your audio and video.')
+          ? t('liveChannelBroadcast', 'tapStartBroadcastingToStart', 'Tap "Start Broadcasting" over your video to start your audio and video.')
           : t('liveChannelBroadcast', 'tapMicToStart', 'Tap the microphone button below to start speaking.'),
       });
 
@@ -1328,6 +1355,28 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
             <div className="absolute top-3 left-3 z-50">
               <MeetingNotesBanner active={notesActive} />
             </div>
+
+            {/* Single-tap start — see startBroadcastingMedia above for why this
+                exists instead of leaving the host to find the mic + camera
+                buttons separately. Disappears once either is on; the control
+                bar's individual buttons keep working normally after that. */}
+            {!dailyRoom.isMicOn && !dailyRoom.isCameraOn && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60">
+                <Button
+                  size="lg"
+                  onClick={startBroadcastingMedia}
+                  disabled={startingMedia}
+                  className="rounded-full px-6 sm:px-8 h-12 sm:h-14 text-base sm:text-lg bg-red-500 hover:bg-red-600 text-white flex items-center gap-2 shadow-xl"
+                >
+                  {startingMedia ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Radio className="h-5 w-5" />
+                  )}
+                  {t('liveChannelBroadcast', 'startBroadcasting', 'Start Broadcasting')}
+                </Button>
+              </div>
+            )}
 
             {(() => {
               const remoteSpeakers = dailyRoom.remoteParticipants.filter(
