@@ -341,14 +341,40 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   useEffect(() => {
     // We handle track attachment per-participant via SpeakerVideoTile below
     // This effect only handles the legacy single-ref audio for non-video broadcasts
+    // — the WebRTC fallback path (watchViaHls false: no HLS yet, or a promoted
+    // speaker). Real report (2026-08-19): original audio audible in real time
+    // AT THE SAME TIME as the correctly-delayed translated dub, on a broadcast
+    // that WAS on the HLS path (translation only exists there). This element
+    // had no cleanup — if a viewer was briefly on this WebRTC fallback before
+    // Egress caught up (watchViaHls flips true only once isHlsLive does),
+    // nothing here ever explicitly stopped it once that happened. Not
+    // confirmed as the exact cause, but real neglect either way: an <audio>
+    // element with a live srcObject and no teardown when its own condition
+    // stops holding is exactly the shape of a leftover-audio bug.
     const hostParticipant = dailyRoom.remoteParticipants.find(p => p.isOwner);
     if (hostParticipant?.audioTrack && remoteAudioRef.current && !channel.is_video_enabled) {
       const stream = new MediaStream([hostParticipant.audioTrack]);
       remoteAudioRef.current.srcObject = stream;
       remoteAudioRef.current.muted = isMuted;
       remoteAudioRef.current.play().catch(() => {});
+    } else if (remoteAudioRef.current?.srcObject) {
+      // Conditions no longer hold (video enabled, host gone, or — critically —
+      // we've since moved to the HLS path) — stop it explicitly instead of
+      // leaving a live srcObject sitting on a forgotten element.
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
     }
   }, [dailyRoom.remoteParticipants, isMuted, channel.is_video_enabled]);
+
+  // Belt-and-braces for the same leak: the instant we're actually on the HLS
+  // path, this legacy element has no business playing anything, regardless
+  // of what dailyRoom.remoteParticipants happens to still report.
+  useEffect(() => {
+    if (watchViaHls && remoteAudioRef.current?.srcObject) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
+    }
+  }, [watchViaHls]);
 
   // Subscribe to channel updates
   useEffect(() => {

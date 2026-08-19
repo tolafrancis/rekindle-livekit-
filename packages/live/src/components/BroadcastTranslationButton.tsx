@@ -347,6 +347,21 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     const field = captionMode === 'original' ? 'source_text' : 'translated_text';
     let cancelled = false;
 
+    // Caption/audio sync (2026-08-19) — real report: translated captions
+    // appeared well ahead of the translated audio (captions come straight off
+    // this realtime feed the instant the bot writes a row; audio can't beat
+    // its own translate+TTS pipeline plus the deliberate `delaySeconds`
+    // alignment buffer). Original-language captions have nothing to sync
+    // against but the ALREADY-real-time original audio, so those stay
+    // immediate. For a translated language, hold each new caption line back
+    // by roughly the same delay the audio is under, minus a small lead —
+    // captions arriving a beat before their audio reads naturally (same
+    // convention broadcast subtitles use), arriving well ahead of it doesn't.
+    const isTranslated = captionMode !== 'original';
+    const CAPTION_LEAD_SECONDS = 0.4;
+    const captionDelayMs = isTranslated ? Math.max((delaySeconds - CAPTION_LEAD_SECONDS) * 1000, 0) : 0;
+    const pendingTimers: ReturnType<typeof setTimeout>[] = [];
+
     supabase
       .from('translation_logs')
       .select('id, source_text, translated_text')
@@ -355,6 +370,8 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       .limit(2)
       .then(({ data }) => {
         if (cancelled || !data) return;
+        // Catch-up view of recent history on first opening captions — these
+        // already happened, so show them immediately regardless of mode.
         setCaptionLines([...data].reverse().map((row: any) => ({ id: row.id, text: row[field] })));
       });
 
@@ -364,17 +381,24 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
         { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           const row = payload.new as { id: string; source_text: string; translated_text: string };
-          setCaptionLines((prev) => [...prev, { id: row.id, text: field === 'source_text' ? row.source_text : row.translated_text }].slice(-2));
+          const line = { id: row.id, text: field === 'source_text' ? row.source_text : row.translated_text };
+          const apply = () => {
+            if (cancelled) return;
+            setCaptionLines((prev) => [...prev, line].slice(-2));
+          };
+          if (captionDelayMs > 0) pendingTimers.push(setTimeout(apply, captionDelayMs));
+          else apply();
         })
       .subscribe();
     captionChannelRef.current = channel;
 
     return () => {
       cancelled = true;
+      pendingTimers.forEach(clearTimeout);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [captionMode, sessions]);
+  }, [captionMode, sessions, delaySeconds]);
 
   // Real bug found live (2026-08-19), the same one already fixed once for
   // the meeting picker: hiding this entirely when there's nothing running
