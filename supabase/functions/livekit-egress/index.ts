@@ -29,7 +29,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { EgressClient, SegmentedFileOutput, S3Upload, StreamOutput, StreamProtocol } from 'https://esm.sh/livekit-server-sdk@2';
+import { EgressClient, RoomServiceClient, SegmentedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -189,6 +189,7 @@ serve(async (req) => {
     if (!(await isDbHost(admin, user.id, body.context))) return json({ error: 'Only the host can record' }, 403);
 
     const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+    const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
 
     if (action === 'start-recording') {
       if (!body.roomName) return json({ error: 'roomName required' }, 400);
@@ -278,7 +279,52 @@ serve(async (req) => {
         segmentDuration: 4,
         output: { case: 's3', value: s3 },
       });
-      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
+
+      // Cold-start fix (2026-08-19), channel broadcasts only: Room Composite
+      // Egress spins up a full compositor (a headless browser rendering a
+      // grid layout) — real, measured cost on top of an already-slow first
+      // segment. A channel broadcast is realistically one active speaker
+      // (the host) at a time, so Track Composite Egress — encoding their
+      // raw published tracks directly, no layout render step — should
+      // cold-start faster. `user.id` IS the host here (isDbHost already
+      // confirmed it for this exact request), so their track SIDs are
+      // resolved directly rather than trusting any client-supplied ID.
+      // Meeting webinars keep Room Composite (unchanged below) — multiple
+      // simultaneous speakers are a more central case there, and Track
+      // Composite can't automatically pick up whoever's on screen the way
+      // Room Composite does.
+      let info: Awaited<ReturnType<typeof egressClient.startRoomCompositeEgress>>;
+      if (isChannel) {
+        let audioTrackId: string | undefined;
+        let videoTrackId: string | undefined;
+        try {
+          const participants = await roomService.listParticipants(body.roomName);
+          const hostP = participants.find((p) => p.identity === user!.id);
+          for (const t of hostP?.tracks ?? []) {
+            if (t.source === TrackSource.MICROPHONE) audioTrackId = t.sid;
+            if (t.source === TrackSource.CAMERA) videoTrackId = t.sid;
+          }
+        } catch (lookupErr) {
+          console.warn('[livekit-egress] host track lookup failed, falling back to Room Composite:', lookupErr);
+        }
+
+        if (audioTrackId || videoTrackId) {
+          info = await egressClient.startTrackCompositeEgress(
+            body.roomName,
+            { segments: output },
+            { audioTrackId, videoTrackId },
+          );
+        } else {
+          // Safety net: host has no track published yet, or the lookup
+          // failed — Room Composite doesn't need one upfront and will pick
+          // up tracks as they appear, so a broadcast never silently ends up
+          // with no HLS at all.
+          console.warn('[livekit-egress] no host track found for channel broadcast — using Room Composite fallback');
+          info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
+        }
+      } else {
+        info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
+      }
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
 
       // The live HLS doubles as the VOD (§12) — track it as a recording too.

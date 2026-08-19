@@ -251,9 +251,24 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     // to HLS. No Mux provision, no callObject.startLiveStreaming — just start the
     // HLS Egress (which also sets hls_playback_url + is_hls_live server-side).
     if (isLiveKitBackend()) {
+      // Cold-start fix (2026-08-19): the host joins MUTED — mic/camera start
+      // OFF, and they have to tap to enable them (see the "You're live —
+      // you're muted" toast below). livekit-egress now uses Track Composite
+      // for channel broadcasts, which needs a REAL track to reference — so
+      // wait for the host to actually have one, instead of firing the
+      // instant the room connects (which used to start Egress compositing
+      // literal silence for however long the host took to find the mic
+      // button — wasted Egress time AND part of the measured cold-start gap).
+      if (!dailyRoom.isMicOn && !dailyRoom.isCameraOn) return;
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
+        // Small grace window: if the host taps mic then camera (or vice
+        // versa) a beat apart — the common case, both buttons sit right
+        // next to each other — this gives the second tap a chance to land
+        // before track IDs get resolved, so Track Composite picks up BOTH
+        // instead of locking onto just whichever came first.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         // Cost/scale fix (2026-08-19): this used to start HLS Egress only
         // when recording was on, on the theory that live viewers always
         // subscribe over WebRTC anyway (sub-second) so HLS was purely a
@@ -329,7 +344,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         muxBridgeStartedRef.current = false;
       }
     })();
-  }, [hasStarted, dailyRoom.callObject, channel.id, isRecording]);
+  }, [hasStarted, dailyRoom.callObject, dailyRoom.isMicOn, dailyRoom.isCameraOn, channel.id, isRecording]);
 
   // Update viewer count in database
   const updateViewerCount = async (count: number) => {
