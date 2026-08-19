@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Loader2, PhoneOff, Volume2 } from 'lucide-react';
+import { Loader2, PhoneOff, Volume2, VolumeX } from 'lucide-react';
 
 interface HlsPlayerProps {
   src: string;
@@ -317,9 +317,29 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     };
   }, [src, showDebug]);
 
+  // Real report (2026-08-19): translated audio selected but original audio
+  // kept playing alongside it — "double voices". The prop plumbing here
+  // (LiveChannelViewer passes `muted={isMuted || translationActive}`) reads
+  // correctly on paper, so rather than guess again: track and SHOW the
+  // actual DOM .muted state (ground truth, not the prop we asked for) so a
+  // live report can confirm or rule out a prop/DOM desync directly.
+  const [actualMuted, setActualMuted] = useState(muted);
   useEffect(() => {
-    if (videoRef.current) videoRef.current.muted = muted;
+    if (videoRef.current) {
+      videoRef.current.muted = muted;
+      console.log(`[HlsPlayer] muted prop changed to ${muted}, applied to video element`);
+    }
+    setActualMuted(muted);
   }, [muted]);
+  // Poll the REAL DOM property too, independent of the prop — catches any
+  // case where something else (browser autoplay policy, another effect,
+  // manual DOM manipulation) silently overrides what we just set.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (videoRef.current) setActualMuted(videoRef.current.muted);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className={`relative w-full h-full ${className || ''}`}>
@@ -336,8 +356,17 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           <div>edge lag: {debugInfo.lag != null ? `${debugInfo.lag.toFixed(1)}s` : '—'}</div>
           <div>recoveries: {debugInfo.recoveries}</div>
           <div>status: {status}</div>
+          <div>muted (prop): {String(muted)}</div>
+          <div>muted (actual DOM): {String(actualMuted)}</div>
         </div>
       )}
+      {/* Always-on ground-truth mute badge — not gated behind ?hlsdebug=1.
+          Reflects the video element's REAL .muted property (polled), not just
+          the prop we asked for, so a "double voices" report can be checked
+          against actual state at a glance instead of only trusting the code. */}
+      <div className="absolute top-2 right-2 z-10 rounded-full bg-black/60 p-1.5">
+        {actualMuted ? <VolumeX className="h-3.5 w-3.5 text-white/70" /> : <Volume2 className="h-3.5 w-3.5 text-white" />}
+      </div>
       {needsUnlock && (
         // Takes priority over the status overlay below — the stream itself
         // may be perfectly healthy (loaded, buffered, ready), just blocked
