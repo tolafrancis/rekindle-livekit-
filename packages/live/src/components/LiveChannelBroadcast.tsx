@@ -244,6 +244,13 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   // channel's Mux stream, starts the RTMP push, and flags HLS live so viewers
   // watch the Mux stream instead of joining Daily as participants.
   const muxBridgeStartedRef = useRef(false);
+  // Kept current across renders so the async block below (which starts once,
+  // from a single effect firing) can poll the LATEST camera state rather than
+  // whatever it was at the instant the effect happened to fire — see the
+  // camera-grace-window comment below for why that distinction matters.
+  const isCameraOnRef = useRef(dailyRoom.isCameraOn);
+  useEffect(() => { isCameraOnRef.current = dailyRoom.isCameraOn; }, [dailyRoom.isCameraOn]);
+
   useEffect(() => {
     if (!hasStarted) return;
 
@@ -253,23 +260,10 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     if (isLiveKitBackend()) {
       // Cold-start fix (2026-08-19): the host joins MUTED — mic/camera start
       // OFF, and they have to tap to enable them (see the "You're live —
-      // you're muted" toast below). livekit-egress now uses Track Composite
-      // for channel broadcasts, which needs a REAL track to reference — so
-      // wait for the host to actually have one, instead of firing the
-      // instant the room connects (which used to start Egress compositing
-      // literal silence for however long the host took to find the mic
-      // button — wasted Egress time AND part of the measured cold-start gap).
-      //
-      // Regression fix (same day): this used to fire on mic OR camera, so a
-      // host who tapped only mic (or tapped camera much later) locked Track
-      // Composite onto audio-only forever — it never picks up a track
-      // published after it starts, unlike Room Composite. For a video
-      // broadcast, wait for BOTH so the video track actually exists by the
-      // time Egress asks for it.
-      const readyToStartEgress = isVideoMode
-        ? (dailyRoom.isMicOn && dailyRoom.isCameraOn)
-        : dailyRoom.isMicOn;
-      if (!readyToStartEgress) return;
+      // you're muted" toast below). Only mic is required to trigger this at
+      // all now — see below for why camera used to gate it too and why that
+      // was wrong.
+      if (!dailyRoom.isMicOn) return;
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
@@ -285,6 +279,31 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         // no reason for a fixed multi-second client-side sleep here too —
         // that was pure added latency once the two waits were doing the same job.
         await new Promise((resolve) => setTimeout(resolve, 300));
+
+        // Real bug reported live (2026-08-19): a PREVIOUS version of this fix
+        // required BOTH mic AND camera before ever starting Egress, for video
+        // broadcasts — closing the "video never shows up" bug (Track Composite
+        // locks onto whatever's there and can't add a track later). But a host
+        // who deliberately stays audio-only for a session (declines camera,
+        // or simply never taps it — a completely valid choice even on a
+        // video-enabled channel) then NEVER got Egress at all: no HLS, so
+        // viewers silently fell back to WebRTC-for-everyone (defeating the
+        // cost fix) AND lost the translation button (HLS-only). Rigidly
+        // requiring camera "forever" was the wrong trade — the actual need is
+        // just: give the common case (single-tap start turns both on almost
+        // simultaneously) a brief chance to have both ready, then proceed
+        // with whatever's actually there instead of waiting indefinitely.
+        let expectVideo = isVideoMode && isCameraOnRef.current;
+        if (isVideoMode && !isCameraOnRef.current) {
+          for (let i = 0; i < 8 && !isCameraOnRef.current; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+          expectVideo = isVideoMode && isCameraOnRef.current;
+          if (!expectVideo) {
+            console.log('[Broadcast] Camera never came on — starting Egress audio-only');
+          }
+        }
+
         // Cost/scale fix (2026-08-19): this used to start HLS Egress only
         // when recording was on, on the theory that live viewers always
         // subscribe over WebRTC anyway (sub-second) so HLS was purely a
@@ -298,7 +317,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         // checkMinistryCanRecord) — a ministry that hits it just falls back
         // to the pre-fix WebRTC-for-everyone behavior for this broadcast,
         // same as if Egress had failed for any other reason.
-        const res = await startChannelBroadcast(channel.id, isVideoMode);
+        const res = await startChannelBroadcast(channel.id, expectVideo);
         if (res) console.log('[Broadcast] LiveKit HLS Egress live:', res.playbackUrl);
         else {
           console.warn('[Broadcast] HLS Egress did not start — viewers will join the room directly');
