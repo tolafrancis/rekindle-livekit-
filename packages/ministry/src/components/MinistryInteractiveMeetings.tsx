@@ -57,7 +57,7 @@ import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeeting
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
-import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@rekindle/live/components/MeetingReactions';
+import { MeetingReactionsLayer, ReactionButton } from '@rekindle/live/components/MeetingReactions';
 import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
 import { FloatingTranslationButton, type TranslationControls } from '@rekindle/live/components/FloatingTranslationButton';
@@ -487,7 +487,7 @@ const EnhancedVideoCallWrapper = ({
 
           <div className="z-50 flex flex-col items-center gap-2 py-3 sm:py-0 sm:absolute sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2">
             {/* Reactions — open to everyone, including guests */}
-            <ReactionBar onReact={sendReaction} />
+            <ReactionButton onReact={sendReaction} />
             {/* Raise hand stays as a small secondary action (it's how you ask for a live seat) */}
             {isGuest ? (
               <div className="bg-gray-800/80 backdrop-blur-sm text-gray-300 text-xs rounded-md px-2.5 py-1">

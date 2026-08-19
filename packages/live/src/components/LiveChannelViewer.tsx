@@ -15,7 +15,7 @@ import { HlsPlayer } from './HlsPlayer';
 import { BroadcastTranslationButton } from './BroadcastTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
-import { MeetingReactionsLayer, ReactionBar } from './MeetingReactions';
+import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
 import ReplayAccessGate from '@rekindle/features/components/ReplayAccessGate';
 import {
   Radio,
@@ -918,7 +918,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
             <MeetingReactionsLayer reactions={reactions} />
             {isLive && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50">
-                <ReactionBar onReact={sendReaction} compact />
+                <ReactionButton onReact={sendReaction} />
               </div>
             )}
 

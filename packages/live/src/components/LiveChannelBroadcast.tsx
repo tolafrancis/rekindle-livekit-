@@ -8,7 +8,7 @@ import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, re
 import { isLiveKitBackend } from '../videoBackend';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
-import { MeetingReactionsLayer, ReactionBar } from './MeetingReactions';
+import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
 import { VirtualBackgroundButton } from './VirtualBackgroundButton';
 import { AudioOutputButton } from './AudioOutputButton';
 import { MeetingNotesBanner } from './MeetingNotesBanner';
@@ -273,13 +273,18 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
-        // Small grace window: the client-side isMicOn/isCameraOn flags flip
-        // before the publish has actually round-tripped to the LiveKit
-        // server, so the host's track(s) may not be visible to a server-side
-        // lookup yet — this gives that a head start before track IDs get
-        // resolved (the server itself also retries — see resolveHostTracks
-        // in livekit-egress — this just keeps the common case fast).
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Small grace window — NOT the same 1500ms this used to be. Media now
+        // only ever turns on via startBroadcastingMedia() → enableSpeakerMedia(),
+        // which internally AWAITS setMicrophoneEnabled/setCameraEnabled — those
+        // resolve only once the publish signaling round-trip to the LiveKit
+        // server actually completes, so by the time this effect re-runs
+        // (isMicOn/isCameraOn just flipped true) the track(s) are already
+        // realistically visible server-side. This is just React-render-cycle
+        // + last-mile settling margin; the server's own resolveHostTracks
+        // retry loop (livekit-egress) covers the rest adaptively, so there's
+        // no reason for a fixed multi-second client-side sleep here too —
+        // that was pure added latency once the two waits were doing the same job.
+        await new Promise((resolve) => setTimeout(resolve, 300));
         // Cost/scale fix (2026-08-19): this used to start HLS Egress only
         // when recording was on, on the theory that live viewers always
         // subscribe over WebRTC anyway (sub-second) so HLS was purely a
@@ -729,8 +734,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         console.warn('[Broadcast] Failed to cleanup messages:', cleanupErr);
       }
 
+      // This used to be a longer pause left over from when mic/camera auto-published
+      // on join and needed time to acquire devices. Media is now fully explicit (the
+      // host taps "Start Broadcasting", see startBroadcastingMedia below) and
+      // dailyRoom.joinRoom() above already awaited the real room connection — so this
+      // is just a brief settle/toast-pacing buffer, not something later steps need to
+      // wait on. Every extra ms here is a second the host can't even SEE the button
+      // that starts their video, i.e. it's directly in the audience's cold-start path.
       console.log('[Broadcast] Waiting for room to be fully ready...');
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // The room now joins MUTED — mic + camera start OFF (no auto-publish race),
       // by deliberate design (nothing auto-publishes without an explicit tap — same
@@ -1348,7 +1360,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
             {/* Live reactions — audience + host share the `channel.id` broadcast channel */}
             <MeetingReactionsLayer reactions={reactions} />
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
-              <ReactionBar onReact={sendReaction} compact />
+              <ReactionButton onReact={sendReaction} placement="down" />
             </div>
 
             {/* Consent notice — AI notes transcribe every participant's mic */}

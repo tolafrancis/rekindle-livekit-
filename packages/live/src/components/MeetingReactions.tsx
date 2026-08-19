@@ -62,13 +62,18 @@ export const ReactionBar: React.FC<{
 
 /**
  * A single compact button that opens a popover of the reaction emojis, instead of
- * showing all six inline. Meant to sit just above the control bar; the popover opens
- * UPWARD and clamps to the viewport width so it never spills off-screen, and it
- * dismisses on outside click or Escape.
+ * showing all six inline. The popover clamps to the viewport width so it never
+ * spills off-screen, and it dismisses on outside click or Escape.
+ *
+ * `placement` picks which way the popover unfolds: 'up' (default) for a button
+ * that sits near the bottom of its container (e.g. next to a control bar), 'down'
+ * for one that sits near the top (e.g. a broadcast host's top overlay row) —
+ * opening upward there would push the popover off the top of the screen.
  */
 export const ReactionButton: React.FC<{
   onReact: (emoji: string) => void;
-}> = ({ onReact }) => {
+  placement?: 'up' | 'down';
+}> = ({ onReact, placement = 'up' }) => {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
@@ -93,7 +98,9 @@ export const ReactionButton: React.FC<{
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-gray-900/90 px-2 py-1.5 shadow-lg backdrop-blur-sm max-w-[calc(100vw-1.5rem)]"
+          className={`absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-gray-900/90 px-2 py-1.5 shadow-lg backdrop-blur-sm max-w-[calc(100vw-1.5rem)] ${
+            placement === 'down' ? 'top-full mt-2' : 'bottom-full mb-2'
+          }`}
         >
           {REACTIONS.map((r) => (
             <button
