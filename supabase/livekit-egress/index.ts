@@ -103,6 +103,46 @@ async function checkMinistryCanRecord(
   return { allowed: true };
 }
 
+// Track Composite Egress (channel broadcasts, see start-hls below) needs the
+// host's track SIDs to already exist server-side at the moment it's called —
+// unlike Room Composite it never picks up a track published after it starts.
+// The host joins muted and taps mic/camera client-side; even after the client
+// sees isMicOn/isCameraOn flip, the publish still has to round-trip to the
+// LiveKit server before listParticipants() reflects it. A single lookup right
+// after the client's own fixed delay was racing that — most commonly losing
+// the video track, which is exactly the "host video never shows up" bug: a
+// Track Composite job started audio-only stays audio-only forever, it never
+// gets a second chance at the video track. Retry a few times, and don't
+// hand back a call the caller can start on if a REQUIRED track never showed.
+async function resolveHostTracks(
+  roomService: RoomServiceClient,
+  roomName: string,
+  hostIdentity: string,
+  needsVideo: boolean,
+): Promise<{ audioTrackId?: string; videoTrackId?: string }> {
+  const attempts = 6;
+  let last: { audioTrackId?: string; videoTrackId?: string } = {};
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const participants = await roomService.listParticipants(roomName);
+      const hostP = participants.find((p) => p.identity === hostIdentity);
+      let audioTrackId: string | undefined;
+      let videoTrackId: string | undefined;
+      for (const t of hostP?.tracks ?? []) {
+        if (t.source === TrackSource.MICROPHONE) audioTrackId = t.sid;
+        if (t.source === TrackSource.CAMERA) videoTrackId = t.sid;
+      }
+      last = { audioTrackId, videoTrackId };
+      const haveEnough = (audioTrackId || videoTrackId) && (!needsVideo || videoTrackId);
+      if (haveEnough) return last;
+    } catch (lookupErr) {
+      console.warn(`[livekit-egress] host track lookup attempt ${i + 1}/${attempts} failed:`, lookupErr);
+    }
+    if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+  return last;
+}
+
 async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, ctx: any): Promise<boolean> {
   const c = ctx ?? {};
   const table = HOST_TABLE[c.kind ?? 'meeting'];
@@ -293,33 +333,36 @@ serve(async (req) => {
       // simultaneous speakers are a more central case there, and Track
       // Composite can't automatically pick up whoever's on screen the way
       // Room Composite does.
+      //
+      // Regression fix (2026-08-19, same day): a channel broadcast's `expectVideo`
+      // flag (set by the client from its own video-mode toggle) says whether a
+      // video track is actually expected. If it is, and resolveHostTracks never
+      // finds one (host tapped camera late, or its publish hadn't round-tripped
+      // yet), Track Composite would otherwise lock onto audio-only forever —
+      // Track Composite never picks up a track published after it starts, unlike
+      // Room Composite. That was the "participant can no longer see host video"
+      // bug: audio played, video never appeared. Fall back to Room Composite in
+      // that case so video isn't silently lost.
+      const expectVideo = !!body.expectVideo;
       let info: Awaited<ReturnType<typeof egressClient.startRoomCompositeEgress>>;
       if (isChannel) {
-        let audioTrackId: string | undefined;
-        let videoTrackId: string | undefined;
-        try {
-          const participants = await roomService.listParticipants(body.roomName);
-          const hostP = participants.find((p) => p.identity === user!.id);
-          for (const t of hostP?.tracks ?? []) {
-            if (t.source === TrackSource.MICROPHONE) audioTrackId = t.sid;
-            if (t.source === TrackSource.CAMERA) videoTrackId = t.sid;
-          }
-        } catch (lookupErr) {
-          console.warn('[livekit-egress] host track lookup failed, falling back to Room Composite:', lookupErr);
-        }
+        const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
+        const canUseTrackComposite = (audioTrackId || videoTrackId) && (!expectVideo || videoTrackId);
 
-        if (audioTrackId || videoTrackId) {
+        if (canUseTrackComposite) {
           info = await egressClient.startTrackCompositeEgress(
             body.roomName,
             { segments: output },
             { audioTrackId, videoTrackId },
           );
         } else {
-          // Safety net: host has no track published yet, or the lookup
-          // failed — Room Composite doesn't need one upfront and will pick
-          // up tracks as they appear, so a broadcast never silently ends up
-          // with no HLS at all.
-          console.warn('[livekit-egress] no host track found for channel broadcast — using Room Composite fallback');
+          // Safety net: either no track was published at all, or this is a
+          // video broadcast and the video track specifically never showed up
+          // after retrying — Room Composite doesn't need one upfront and will
+          // pick up tracks as they appear, so video is never silently lost.
+          console.warn(
+            `[livekit-egress] channel broadcast falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
+          );
           info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
         }
       } else {

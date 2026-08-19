@@ -45,10 +45,14 @@ export const getChannelStreamCreds = (channelId: string) => ingress('get', chann
 export const deleteChannelStream = (channelId: string) => ingress('delete', channelId);
 
 /** §6A — start the channel's live broadcast: composite the room → HLS via Egress
- *  and publish the playback URL. */
-export async function startChannelBroadcast(channelId: string): Promise<{ playbackUrl: string } | null> {
+ *  and publish the playback URL. `expectVideo` tells the server whether this is
+ *  a video broadcast — Track Composite Egress locks onto whatever tracks exist
+ *  at the moment it starts and never picks up a later one, so if a video track
+ *  is expected but not found yet, the server retries and, failing that, falls
+ *  back to Room Composite rather than starting a call that can never show video. */
+export async function startChannelBroadcast(channelId: string, expectVideo = false): Promise<{ playbackUrl: string } | null> {
   const { data, error } = await supabase.functions.invoke('livekit-egress', {
-    body: { action: 'start-hls', roomName: channelRoom(channelId), channelId, context: { kind: 'channel', channelId } },
+    body: { action: 'start-hls', roomName: channelRoom(channelId), channelId, expectVideo, context: { kind: 'channel', channelId } },
   });
   if (error || !data?.playbackUrl) return null;
   return { playbackUrl: data.playbackUrl };

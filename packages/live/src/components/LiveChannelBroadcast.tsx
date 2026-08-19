@@ -259,15 +259,26 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       // instant the room connects (which used to start Egress compositing
       // literal silence for however long the host took to find the mic
       // button — wasted Egress time AND part of the measured cold-start gap).
-      if (!dailyRoom.isMicOn && !dailyRoom.isCameraOn) return;
+      //
+      // Regression fix (same day): this used to fire on mic OR camera, so a
+      // host who tapped only mic (or tapped camera much later) locked Track
+      // Composite onto audio-only forever — it never picks up a track
+      // published after it starts, unlike Room Composite. For a video
+      // broadcast, wait for BOTH so the video track actually exists by the
+      // time Egress asks for it.
+      const readyToStartEgress = isVideoMode
+        ? (dailyRoom.isMicOn && dailyRoom.isCameraOn)
+        : dailyRoom.isMicOn;
+      if (!readyToStartEgress) return;
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
-        // Small grace window: if the host taps mic then camera (or vice
-        // versa) a beat apart — the common case, both buttons sit right
-        // next to each other — this gives the second tap a chance to land
-        // before track IDs get resolved, so Track Composite picks up BOTH
-        // instead of locking onto just whichever came first.
+        // Small grace window: the client-side isMicOn/isCameraOn flags flip
+        // before the publish has actually round-tripped to the LiveKit
+        // server, so the host's track(s) may not be visible to a server-side
+        // lookup yet — this gives that a head start before track IDs get
+        // resolved (the server itself also retries — see resolveHostTracks
+        // in livekit-egress — this just keeps the common case fast).
         await new Promise((resolve) => setTimeout(resolve, 1500));
         // Cost/scale fix (2026-08-19): this used to start HLS Egress only
         // when recording was on, on the theory that live viewers always
@@ -282,7 +293,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         // checkMinistryCanRecord) — a ministry that hits it just falls back
         // to the pre-fix WebRTC-for-everyone behavior for this broadcast,
         // same as if Egress had failed for any other reason.
-        const res = await startChannelBroadcast(channel.id);
+        const res = await startChannelBroadcast(channel.id, isVideoMode);
         if (res) console.log('[Broadcast] LiveKit HLS Egress live:', res.playbackUrl);
         else {
           console.warn('[Broadcast] HLS Egress did not start — viewers will join the room directly');
@@ -344,7 +355,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         muxBridgeStartedRef.current = false;
       }
     })();
-  }, [hasStarted, dailyRoom.callObject, dailyRoom.isMicOn, dailyRoom.isCameraOn, channel.id, isRecording]);
+  }, [hasStarted, dailyRoom.callObject, dailyRoom.isMicOn, dailyRoom.isCameraOn, channel.id, isRecording, isVideoMode]);
 
   // Update viewer count in database
   const updateViewerCount = async (count: number) => {
