@@ -175,7 +175,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     }
   };
 
-  // Real bug found live (2026-08-19): selecting a language whose audio got
+  // Real bug found live (2026-08-15): selecting a language whose audio got
   // autoplay-blocked (common — the resume() call below lands well after the
   // original click, once several awaits have passed, so it's no longer
   // treated as gesture-linked), then switching back to Original, could
@@ -188,6 +188,27 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   // audio from a context that was already supposed to be dead. Every
   // callback below now checks generationRef before doing anything, so a
   // late resume() from an abandoned selection can never produce sound.
+  //
+  // The IDENTITY of the currently selected session — not just the language
+  // STRING. Real bug found live (2026-08-19), described as "cracking" audio
+  // with the first few words repeated twice: this effect used to depend on
+  // [currentLanguage] alone. Across a session restart during testing (same
+  // target language, e.g. host stops and starts a new "vi" session), the
+  // LANGUAGE never changed, so the effect never re-ran — the listener's
+  // Room stayed connected to the OLD session's now-abandoned bot, with its
+  // TrackPublished/TrackSubscribed handlers still live. When the NEW bot
+  // joined the SAME physical room and published a track with the same name
+  // (rlt-translated-vi), those still-active handlers picked it up too —
+  // playTrack() ran a SECOND time, building a second AudioContext/DelayNode
+  // graph on top of the first. Two overlapping copies of the same speech
+  // playing back a moment apart is exactly "cracking" + "repeated twice".
+  // Keying on the actual session id instead forces a full teardown+reconnect
+  // whenever the underlying session changes, even if the language string
+  // the user picked didn't.
+  const currentSessionId = currentLanguage
+    ? sessions.find((s) => s.target_language === currentLanguage)?.id ?? null
+    : null;
+
   useEffect(() => {
     const myGeneration = ++generationRef.current;
     teardownAudio();
@@ -199,9 +220,9 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       setTimingStatus(null);
       return;
     }
-    const session = sessions.find((s) => s.target_language === currentLanguage);
-    if (!session) {
-      // The language disappeared (bot stopped) while selected.
+    if (!currentSessionId) {
+      // The language disappeared (bot stopped, or hasn't started its
+      // replacement session yet) while selected.
       setCurrentLanguage(null);
       return;
     }
@@ -214,7 +235,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
     (async () => {
       const { data, error } = await supabase.functions.invoke('translation-listener-token', {
-        body: { sessionId: session.id },
+        body: { sessionId: currentSessionId },
       });
       if (stale()) return;
       if (error || !data?.token) {
@@ -318,8 +339,10 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       generationRef.current += 1; // in case this unmount races a same-tick re-run
       teardownAudio();
     };
+    // currentSessionId, not currentLanguage — see the comment above this
+    // effect for why the session identity has to be what re-triggers it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLanguage]);
+  }, [currentSessionId]);
 
   useEffect(() => () => teardownAudio(), []);
 
