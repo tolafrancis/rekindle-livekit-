@@ -48,6 +48,17 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
   // treat as gesture-linked regardless of how the player got here.
   const [needsUnlock, setNeedsUnlock] = useState(false);
 
+  // Real gap found live (2026-08-19), measured with a real timed test: a
+  // fresh broadcast's Egress job can take up to ~30s to produce its FIRST
+  // segment (compositor worker cold start, well before any segment-duration
+  // math even applies) — but the loading overlay just said "Connecting to
+  // live stream…" the whole time, indistinguishable from something being
+  // stuck. Track elapsed loading time and graduate the message so a long
+  // wait reads as "this is normal, hang on" instead of "this is broken".
+  // Self-adapts for a mid-broadcast joiner too — segments already exist for
+  // them, so they clear 'loading' before ever seeing the later messages.
+  const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
+
   const showDebug = debug || (typeof window !== 'undefined' && /hlsdebug/.test(window.location.search + window.location.hash));
   const [debugInfo, setDebugInfo] = useState<{ lag: number | null; recoveries: number }>({ lag: null, recoveries: 0 });
   const recoveriesRef = useRef(0);
@@ -56,6 +67,17 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
   // player effect (which would tear down + rebuild hls on every parent render).
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+
+  // Ticks once a second for as long as we're in the initial 'loading' state
+  // — resets fresh each time we (re-)enter it. Drives the graduated message
+  // below; irrelevant once playing, ended, or mid-stream reconnecting
+  // ('waiting' has its own fixed message regardless of duration).
+  useEffect(() => {
+    if (status !== 'loading') return;
+    setLoadingElapsedSec(0);
+    const interval = setInterval(() => setLoadingElapsedSec((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [status]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -272,18 +294,41 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         </button>
       )}
       {!needsUnlock && status !== 'playing' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 bg-black/40">
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 bg-black/40 px-6 text-center">
           {status === 'ended' ? (
             <>
               <PhoneOff className="h-8 w-8 mb-2 text-gray-400" />
               <p className="text-sm font-medium">The broadcast has ended</p>
             </>
+          ) : status === 'error' ? (
+            <>
+              <Loader2 className="h-8 w-8 animate-spin mb-2 text-purple-400" />
+              <p className="text-sm">Playback not supported on this device</p>
+            </>
+          ) : status === 'waiting' ? (
+            <>
+              <Loader2 className="h-8 w-8 animate-spin mb-2 text-purple-400" />
+              <p className="text-sm">Reconnecting…</p>
+            </>
           ) : (
             <>
               <Loader2 className="h-8 w-8 animate-spin mb-2 text-purple-400" />
               <p className="text-sm">
-                {status === 'error' ? 'Playback not supported on this device' : 'Connecting to live stream…'}
+                {loadingElapsedSec < 6
+                  ? 'Connecting to live stream…'
+                  : loadingElapsedSec < 15
+                  ? 'Starting the stream…'
+                  : 'Still starting…'}
               </p>
+              {/* A fresh broadcast's Egress can take up to ~30s to produce
+                  its first segment (compositor cold start, confirmed with a
+                  real timed test) — say so past the point where silence
+                  starts reading as "stuck" rather than "working". */}
+              {loadingElapsedSec >= 15 && (
+                <p className="text-xs text-gray-400 mt-1 max-w-[220px]">
+                  A brand-new broadcast can take up to 30 seconds to begin — hang tight.
+                </p>
+              )}
             </>
           )}
         </div>
