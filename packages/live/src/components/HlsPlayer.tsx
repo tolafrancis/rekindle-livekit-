@@ -89,6 +89,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     let endGuard: ReturnType<typeof setTimeout> | null = null;
     let recoverTimer: ReturnType<typeof setTimeout> | null = null;
     let debugTimer: ReturnType<typeof setInterval> | null = null;
+    let resyncTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     let wasLive = false;
 
@@ -136,6 +137,8 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         // Where to START, in seconds behind the edge. hls.js holds this position
         // and corrects drift by playback rate, not by seeking.
         const target = Math.min(Math.max(targetLatencySeconds, 2), 10);
+        // Shared with the resync watchdog below, so both agree on the same ceiling.
+        const maxLatency = Math.max(target + 8, 12);
         hls = new Hls({
           // lowLatencyMode intentionally OFF: Mux isn't serving usable LL-HLS
           // parts here (we measure ~10s), so it bought no latency and only made
@@ -147,7 +150,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           liveSyncDuration: target,
           // Only let hls.js re-seek if we fall WELL behind — a generous ceiling so
           // ordinary jitter is absorbed by the 1.1x catch-up, not a jarring seek.
-          liveMaxLatencyDuration: Math.max(target + 8, 12),
+          liveMaxLatencyDuration: maxLatency,
           maxLiveSyncPlaybackRate: 1.1,
           backBufferLength: 10,
           // While the audience waits for the host to go live, Mux returns 412
@@ -184,6 +187,45 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         });
         hls.loadSource(src);
         hls.attachMedia(video);
+
+        // Resync watchdog (2026-08-19) — real bug reported live: playback started
+        // near real-time, then a mid-stream stall (buffer underrun, backgrounded
+        // tab, brief network jitter — anything that isn't a `fatal` hls.js error)
+        // left the player sitting tens of seconds behind the live edge, and it
+        // STAYED there. liveMaxLatencyDuration is supposed to make hls.js hard-seek
+        // back toward the target once latency crosses that ceiling, but that
+        // correction lives inside hls.js's internal stream/buffer controllers and
+        // only evaluates against ongoing segment-loading — a genuinely STALLED
+        // video (nothing fires MEDIA_ERROR/NETWORK_ERROR, so none of our existing
+        // handlers see it) can fall outside that loop entirely. Once behind, the
+        // only passive recovery is the ≤1.1x catch-up rate — closing a 20s gap at
+        // 0.1x extra speed takes ~200s, which reads as "just stuck at 25s".
+        // Independently watch measured latency and force a seek back to the
+        // intended live-sync position if it's been over the ceiling for a few
+        // consecutive samples (not one — a single spike can be a normal transient
+        // the passive mechanisms are already handling; we only step in when they
+        // provably haven't).
+        // setup() can re-run without the effect's own cleanup firing (tentativeEnd's
+        // retryTimer, or the fatal-error reload path both call setup() directly) —
+        // clear any interval from a previous run first so they don't pile up.
+        if (resyncTimer) clearInterval(resyncTimer);
+        let overCeilingStreak = 0;
+        resyncTimer = setInterval(() => {
+          if (cancelled || !hls) return;
+          const h = hls as any;
+          const lag = isFinite(h.latency) && h.latency > 0 ? h.latency : null;
+          if (lag == null) { overCeilingStreak = 0; return; }
+          if (lag <= maxLatency) { overCeilingStreak = 0; return; }
+          overCeilingStreak += 1;
+          if (overCeilingStreak < 3) return; // ~6s sustained, not a blip
+          overCeilingStreak = 0;
+          const syncPos = isFinite(h.liveSyncPosition) ? h.liveSyncPosition : null;
+          if (syncPos != null && syncPos > video.currentTime) {
+            console.warn(`[HlsPlayer] resync watchdog: ${lag.toFixed(1)}s behind edge (ceiling ${maxLatency}s) — seeking back to live sync position`);
+            markRecovering();
+            try { video.currentTime = syncPos; } catch { /* noop */ }
+          }
+        }, 2000);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().then(() => setNeedsUnlock(false)).catch(() => setNeedsUnlock(true));
@@ -253,6 +295,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       if (endGuard) clearTimeout(endGuard);
       if (recoverTimer) clearTimeout(recoverTimer);
       if (debugTimer) clearInterval(debugTimer);
+      if (resyncTimer) clearInterval(resyncTimer);
       if (hls) hls.destroy();
     };
   }, [src, showDebug]);
