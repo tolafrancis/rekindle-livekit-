@@ -92,12 +92,16 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     let resyncTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     let wasLive = false;
+    // Tracks whether we've EVER reached clean playback — a plain closure var
+    // (like wasLive above), not React state, since the watchdog interval below
+    // needs the current value and this effect only runs once per `src` change.
+    let hasPlayedOnce = false;
 
     const clearEndGuard = () => { if (endGuard) { clearTimeout(endGuard); endGuard = null; } };
     const clearRecover = () => { if (recoverTimer) { clearTimeout(recoverTimer); recoverTimer = null; } };
 
     // Playback resumed cleanly — cancel any pending "reconnecting" overlay.
-    const markPlaying = () => { clearRecover(); clearEndGuard(); setStatus('playing'); };
+    const markPlaying = () => { hasPlayedOnce = true; clearRecover(); clearEndGuard(); setStatus('playing'); };
 
     // A transient error is recovering IN PLACE. Don't flash the overlay for a
     // sub-second blip — only show "reconnecting" if it hasn't resumed shortly.
@@ -212,6 +216,13 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         let overCeilingStreak = 0;
         resyncTimer = setInterval(() => {
           if (cancelled || !hls) return;
+          // Guard added after a live report that this made things WORSE — the
+          // most likely cause is hls.latency reading a bogus/inflated value
+          // during the initial cold-start window (before the live edge and our
+          // starting position have both stabilized), which isn't a real "stuck
+          // behind" stall at all. Only ever act once we've reached clean
+          // playback at least once, so the watchdog can't fire during startup.
+          if (!hasPlayedOnce) { overCeilingStreak = 0; return; }
           const h = hls as any;
           const lag = isFinite(h.latency) && h.latency > 0 ? h.latency : null;
           if (lag == null) { overCeilingStreak = 0; return; }
@@ -220,11 +231,17 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           if (overCeilingStreak < 3) return; // ~6s sustained, not a blip
           overCeilingStreak = 0;
           const syncPos = isFinite(h.liveSyncPosition) ? h.liveSyncPosition : null;
-          if (syncPos != null && syncPos > video.currentTime) {
-            console.warn(`[HlsPlayer] resync watchdog: ${lag.toFixed(1)}s behind edge (ceiling ${maxLatency}s) — seeking back to live sync position`);
-            markRecovering();
-            try { video.currentTime = syncPos; } catch { /* noop */ }
+          if (syncPos == null || syncPos <= video.currentTime) return;
+          // Only seek somewhere already buffered — landing in an unbuffered gap
+          // would itself cause a fresh stall, defeating the point of this fix.
+          let landsInBuffer = false;
+          for (let i = 0; i < video.buffered.length; i++) {
+            if (syncPos >= video.buffered.start(i) && syncPos <= video.buffered.end(i)) { landsInBuffer = true; break; }
           }
+          if (!landsInBuffer) return;
+          console.warn(`[HlsPlayer] resync watchdog: ${lag.toFixed(1)}s behind edge (ceiling ${maxLatency}s) — seeking back to live sync position`);
+          markRecovering();
+          try { video.currentTime = syncPos; } catch { /* noop */ }
         }, 2000);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
