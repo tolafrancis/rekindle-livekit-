@@ -543,6 +543,8 @@ const EnhancedVideoCallWrapper = ({
                 enableRecording={meeting.enable_recording}
                 inCallOverlay={true}
                 canTakeNotes={hasMinistryAccess}
+                roomName={meeting.room_name}
+                ministryId={ministryId ?? undefined}
                 onStateChange={(s) => setNotesActive(s === 'recording')}
               />
             </div>

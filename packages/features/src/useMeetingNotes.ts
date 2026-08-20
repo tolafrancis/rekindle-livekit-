@@ -53,6 +53,7 @@ export function useMeetingNotes(
   enabled: boolean = true,
   roomName?: string,
   ministryId?: string,
+  userId?: string,
 ): UseMeetingNotes {
   const [active, setActive] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -78,22 +79,73 @@ export function useMeetingNotes(
     setLines((prev) => [...prev, line]);
   }, []);
 
-  // ── Poll & Subscribe to Active Bot Sessions ───────────────────────────────
+  // ── Poll & Subscribe to Active Bot Sessions and translation_logs ─────────
   useEffect(() => {
     if (!roomName) return;
     let cancelled = false;
+    let logChannel: ReturnType<typeof supabase.channel> | null = null;
+    let currentSessionId: string | null = null;
 
-    const fetchSessions = () => {
+    const setupLogSubscription = (sessionId: string, sourceLang: string) => {
+      if (currentSessionId === sessionId && logChannel) return;
+      currentSessionId = sessionId;
+
+      if (logChannel) {
+        supabase.removeChannel(logChannel);
+        logChannel = null;
+      }
+
+      const useSourceText = selectedLanguage === 'en' || selectedLanguage === sourceLang;
+
+      // Fetch historical logs for active session
+      supabase
+        .from('translation_logs')
+        .select('id, source_text, translated_text, created_at')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true })
+        .then(({ data: logs }) => {
+          if (cancelled || !logs || !Array.isArray(logs)) return;
+          const mapped: TranscriptLine[] = logs
+            .filter((row: any) => row && (row.source_text || row.translated_text))
+            .map((row: any) => ({
+              speaker: 'Speaker',
+              text: useSourceText ? (row.source_text ?? '') : (row.translated_text ?? ''),
+              timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
+            }));
+          setLines(mapped);
+        });
+
+      // Realtime insert listener on translation_logs for active session
+      logChannel = supabase
+        .channel(`notes-logs-${sessionId}-${selectedLanguage}`)
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
+          (payload) => {
+            const row = payload.new as any;
+            if (!row) return;
+            const line: TranscriptLine = {
+              speaker: 'Speaker',
+              text: useSourceText ? (row.source_text ?? '') : (row.translated_text ?? ''),
+              timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
+            };
+            setLines((prev) => [...prev, line]);
+          })
+        .subscribe();
+    };
+
+    const syncSession = () => {
       supabase
         .from('translation_sessions')
-        .select('id, target_language, status')
+        .select('id, target_language, source_language, status')
         .eq('livekit_room_name', roomName)
         .in('status', ['initialising', 'joining', 'active', 'paused'])
+        .order('created_at', { ascending: false })
         .then(({ data }) => {
           if (cancelled || !data || !Array.isArray(data)) return;
           const validSessions = data.filter((s: any) => s && s.target_language);
           const langs = Array.from(new Set(['en', ...validSessions.map((s: any) => s.target_language)]));
           setAvailableLanguages(langs);
+
           if (validSessions.length > 0) {
             if (startTimeoutRef.current) {
               clearTimeout(startTimeoutRef.current);
@@ -101,17 +153,23 @@ export function useMeetingNotes(
             }
             setActive(true);
             setIsStarting(false);
+
+            const matchingSession = validSessions.find((s: any) => s.target_language === selectedLanguage) || validSessions[0];
+            if (matchingSession && matchingSession.id) {
+              setupLogSubscription(matchingSession.id, matchingSession.source_language ?? 'en');
+            }
           }
         });
     };
 
-    fetchSessions();
+    syncSession();
 
-    const subChannel = supabase
+    // Re-sync whenever translation_sessions for this room changes (e.g. new bot session created)
+    const sessionChannel = supabase
       .channel(`notes-sessions-${roomName}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'translation_sessions', filter: `livekit_room_name=eq.${roomName}` },
-        fetchSessions)
+        syncSession)
       .subscribe();
 
     return () => {
@@ -120,69 +178,7 @@ export function useMeetingNotes(
         clearTimeout(startTimeoutRef.current);
         startTimeoutRef.current = null;
       }
-      supabase.removeChannel(subChannel);
-    };
-  }, [roomName]);
-
-  // ── Fetch & Realtime Subscribe to translation_logs ──────────────────────
-  useEffect(() => {
-    if (!roomName) return;
-    let cancelled = false;
-    let logChannel: ReturnType<typeof supabase.channel> | null = null;
-
-    supabase
-      .from('translation_sessions')
-      .select('id, target_language, source_language')
-      .eq('livekit_room_name', roomName)
-      .in('status', ['initialising', 'joining', 'active', 'paused'])
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (cancelled || !data || !Array.isArray(data) || data.length === 0) return;
-
-        const matchingSession = data.find((s: any) => s && s.target_language === selectedLanguage) || data[0];
-        if (!matchingSession || !matchingSession.id) return;
-
-        const sessionId = matchingSession.id;
-        const useSourceText = selectedLanguage === 'en' || selectedLanguage === (matchingSession.source_language ?? 'en');
-
-        // Fetch historical logs
-        supabase
-          .from('translation_logs')
-          .select('id, source_text, translated_text, created_at')
-          .eq('session_id', sessionId)
-          .order('created_at', { ascending: true })
-          .then(({ data: logs }) => {
-            if (cancelled || !logs || !Array.isArray(logs)) return;
-            const mapped: TranscriptLine[] = logs
-              .filter((row: any) => row && (row.source_text || row.translated_text))
-              .map((row: any) => ({
-                speaker: 'Speaker',
-                text: useSourceText ? (row.source_text ?? '') : (row.translated_text ?? ''),
-                timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
-              }));
-            setLines(mapped);
-          });
-
-        // Realtime insert listener
-        logChannel = supabase
-          .channel(`notes-logs-${sessionId}-${selectedLanguage}`)
-          .on('postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
-            (payload) => {
-              const row = payload.new as any;
-              if (!row) return;
-              const line: TranscriptLine = {
-                speaker: 'Speaker',
-                text: useSourceText ? (row.source_text ?? '') : (row.translated_text ?? ''),
-                timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
-              };
-              setLines((prev) => [...prev, line]);
-            })
-          .subscribe();
-      });
-
-    return () => {
-      cancelled = true;
+      supabase.removeChannel(sessionChannel);
       if (logChannel) supabase.removeChannel(logChannel);
     };
   }, [roomName, selectedLanguage]);
@@ -283,7 +279,7 @@ export function useMeetingNotes(
             p_room_name: roomName,
             p_source_language: 'en',
             p_target_language: 'en',
-            p_speaker_identity: null,
+            p_speaker_identity: userId || null,
           });
           if (rpcError) {
             console.warn('[useMeetingNotes] start_bot_session returned error:', rpcError);

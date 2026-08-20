@@ -92,7 +92,7 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Distributed note-taking + server STT bot trigger.
-  const notes = useMeetingNotes(meetingId, speakerName, true, roomName, ministryId);
+  const notes = useMeetingNotes(meetingId, speakerName, true, roomName, ministryId, userId);
   // Only the browser that started notes runs the (paid) AI pipeline + persistence.
   const isInitiatorRef = useRef(false);
   // Row created when notes stop, so the transcript survives even if the user never
@@ -353,10 +353,20 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
                 <Button
                   size="sm"
                   onClick={handleStartRecording}
-                  className="w-full h-7 text-xs bg-purple-600 hover:bg-purple-700"
+                  disabled={notes.isStarting}
+                  className="w-full h-7 text-xs bg-purple-600 hover:bg-purple-700 disabled:opacity-75"
                 >
-                  <FileText className="h-3 w-3 mr-1" />
-                  Take Notes
+                  {notes.isStarting ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Starting…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-3 w-3 mr-1" />
+                      Take Notes
+                    </>
+                  )}
                 </Button>
               )}
               {recordingState === 'idle' && !isHost && !canTakeNotes && (
