@@ -12,7 +12,8 @@ import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { LiveChannelChat } from './LiveChannelChat';
 import { HlsPlayer } from './HlsPlayer';
-import { BroadcastTranslationButton } from './BroadcastTranslationButton';
+// BroadcastTranslationButton import withdrawn (2026-08-20) along with the
+// JSX that used it — see the comment where it used to render, further down.
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
@@ -39,8 +40,7 @@ import {
   Lock,
   UserPlus,
   VideoIcon,
-  Hand,
-  Languages
+  Hand
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { ShareChannelButton } from './ShareChannelButton';
@@ -990,61 +990,20 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
               </div>
             )}
 
-            {/* Real request (2026-08-20): don't show the translate control to
-                every viewer — ask up front whether they need it at all, and
-                only render the button for viewers who say yes. Doesn't need
-                HLS either way — BroadcastTranslationButton owns its own
-                independent WebRTC connection to the bot's translated track
-                (see that file) — so it's available on every playback path
-                once opted in, same as the host's own translation control
-                (FloatingTranslationButton in LiveChannelBroadcast.tsx) is
-                available to them from the start. */}
-            {isLive && wantsTranslation === null && (
-              <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
-                <div className="w-full max-w-xs rounded-xl bg-white p-5 text-center shadow-xl">
-                  <Languages className="mx-auto mb-2 h-7 w-7 text-indigo-600" />
-                  <p className="mb-4 text-sm font-medium text-gray-900">
-                    {t('liveChannelViewer', 'translationPromptTitle', 'Do you need translated audio or captions for this broadcast?')}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1" onClick={() => setWantsTranslation(false)}>
-                      {t('liveChannelViewer', 'translationPromptNo', 'No thanks')}
-                    </Button>
-                    <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={() => setWantsTranslation(true)}>
-                      {t('liveChannelViewer', 'translationPromptYes', 'Yes, I need it')}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {isLive && wantsTranslation && (
-              <div className="absolute bottom-4 left-4 z-50">
-                {/* delaySeconds only applies on the HLS path — that's the
-                    only path where the VIDEO itself is running several
-                    seconds behind real time, so translated audio has to be
-                    held back to match it. On the WebRTC fallback (audio-only
-                    or video-before-Egress-catches-up) the video is real-time,
-                    so adding the same synthetic delay there would just make
-                    translated audio lag for no reason — 0 lets it play as
-                    soon as the bot's translate+TTS pipeline produces it. */}
-                <BroadcastTranslationButton
-                  channelId={channel.id}
-                  roomName={liveKitRoomName}
-                  delaySeconds={watchViaHls ? HLS_LATENCY_SECONDS : 0}
-                  onActiveChange={setTranslationActive}
-                />
-              </div>
-            )}
-
-            {/* Real report (2026-08-20): a small "change your mind" icon used
-                to sit here for viewers who said no — but it occupied the
-                exact same spot the translate button itself does, so it read
-                as "the button is still there" even though it wasn't. Removed
-                entirely: a viewer who declines gets nothing displayed, full
-                stop, matching what was actually asked for. Rejoining (e.g. a
-                refresh) re-asks, since wantsTranslation resets to null on a
-                fresh mount. */}
+            {/* Translate control WITHDRAWN for viewers (2026-08-20) — real
+                decision after live testing kept surfacing HLS-path problems
+                (video freezing, high latency) that traced back to the CDN/
+                Egress delivery chain, not to translation code (confirmed:
+                origin segment timing and CORS both checked clean on every
+                affected broadcast). Rather than keep layering fixes onto an
+                unreliable HLS path while also carrying translation UI on
+                top of it, pulling this back out entirely for now so the
+                viewer experience matches the pre-translation baseline while
+                the HLS path itself gets sorted. The isolation work in
+                `translationMuteOverride` above is left in place — re-adding
+                this is a small, self-contained JSX change (see git history
+                around commit 0c66b1a for the prompt + button block), not a
+                re-architecture, whenever this comes back. */}
 
             {watchViaHls ? (
               <>
