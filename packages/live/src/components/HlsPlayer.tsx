@@ -203,9 +203,14 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           // Sit ~`target`s behind the edge, time-based so it's segment-agnostic.
           liveSyncDuration: target,
           // Only let hls.js re-seek if we fall WELL behind — a generous ceiling so
-          // ordinary jitter is absorbed by the 1.1x catch-up, not a jarring seek.
+          // ordinary jitter is absorbed by the passive catch-up, not a jarring seek.
           liveMaxLatencyDuration: maxLatency,
-          maxLiveSyncPlaybackRate: 1.1,
+          // 1.1 -> 1.15 (2026-08-20): after repeated live reports that hard-seek
+          // corrections (see the resync watchdog below, now much more
+          // conservative) are themselves the visible "freeze," lean harder on
+          // this SMOOTH mechanism to close gaps faster without ever jumping —
+          // still gentle enough not to be perceptible as sped-up audio/video.
+          maxLiveSyncPlaybackRate: 1.15,
           backBufferLength: 10,
           // While the audience waits for the host to go live, Mux returns 412
           // (stream not active) until RTMP starts. Poll STEADILY (linear, ~1.5s
@@ -277,17 +282,27 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         // stutter — status never left 'playing' and never showed
         // 'waiting' (this ISN'T a stall/reconnect), yet "recoveries: 4"
         // in the debug readout proved the watchdog itself fired 4 times,
-        // each one a hard `currentTime` jump. Correcting too eagerly
-        // trades a smooth stream for shaving off a few seconds of
-        // ordinary jitter that the passive ≤1.1x catch-up would have
-        // absorbed on its own. Loosened back toward a middle ground —
-        // meaningfully tighter than hls.js's own 14s ceiling (which is
-        // what let a stream get stuck there forever) but with enough
-        // room that everyday jitter doesn't repeatedly trigger a visible
-        // seek. Also require a longer sustained window before acting, for
-        // the same reason: a brief spike is exactly what the passive
-        // mechanism is already supposed to absorb.
-        const watchdogCeiling = target + 6;
+        // each one a hard `currentTime` jump. Loosening to target+6
+        // (still same day) wasn't enough either — same report shape
+        // (status stayed 'playing', recoveries kept climbing) even AFTER
+        // that loosening AND after widening the target latency itself
+        // (more buffer before drift becomes a problem, per a live-edge-
+        // race theory that didn't hold up: it still fired).
+        //
+        // Re-read across every report: the actual complaint was never a
+        // specific number of seconds — it was the FREEZE. A hard seek IS
+        // that freeze, no matter how the trigger is tuned. So stop tuning
+        // the trigger and change the PRIORITY instead: this watchdog now
+        // only exists for the pathological case it was originally built
+        // for — a stream that would otherwise be stuck behind forever
+        // (the ~200s-to-recover-at-1.1x math from the original "stuck at
+        // 25s" bug) — not for ordinary/moderate drift, which the passive,
+        // never-jarring catch-up (maxLiveSyncPlaybackRate, bumped to 1.15
+        // above) is left to resolve on its own even if that takes a while
+        // longer. A fixed, near-absolute floor rather than a multiple of
+        // target — moderate drift should never trip this again regardless
+        // of what target latency ends up being.
+        const watchdogCeiling = Math.max(target * 3, 30);
         // setup() can re-run without the effect's own cleanup firing (tentativeEnd's
         // retryTimer, or the fatal-error reload path both call setup() directly) —
         // clear any interval from a previous run first so they don't pile up.
