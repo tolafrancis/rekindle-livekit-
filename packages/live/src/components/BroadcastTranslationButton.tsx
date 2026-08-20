@@ -252,8 +252,25 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       const isBotTranslatedTrack = (pub: RemoteTrackPublication, participant: RemoteParticipant) =>
         participant.identity.startsWith('rlt-bot-') && pub.trackName === trackName;
 
+      // Real bug found live (2026-08-20): "every speech is said twice," then
+      // self-correcting back to normal after a while — two subscribe paths
+      // both target the SAME publication (TrackPublished's auto-subscribe
+      // below, and the post-connect "subscribe to whatever's already there"
+      // loop further down, for the case where the bot was already publishing
+      // before we connected) — if TrackSubscribed ends up firing twice for
+      // that one publication, playTrack ran twice and built TWO independent
+      // MediaStreamSource/DelayNode graphs off the SAME track, each playing
+      // every chunk — exactly "said twice." The self-correcting part fits
+      // too: LiveKit reconciling a redundant subscribe eventually stops
+      // feeding one of the two, leaving just one graph. Only `stale()`
+      // (superseded generation) was guarded before — nothing stopped a
+      // SECOND call within the still-current generation. One graph per
+      // generation, no matter how many times the event fires.
+      let audioWired = false;
+
       const playTrack = (track: RemoteTrack) => {
-        if (stale()) return;
+        if (stale() || audioWired) return;
+        audioWired = true;
         markTiming(`translated track subscribed — wiring up audio (~${delaySeconds}s alignment delay still ahead)`);
         try {
           // Prefer the context primed synchronously in the click handler
