@@ -60,3 +60,12 @@ enabled = true
 # function's own anon-scoped Postgres lookup is the real access-control gate
 # (see the file's header comment — same RLS the page's own row fetch uses).
 verify_jwt = true
+
+[functions.translation-list-voices]
+enabled = true
+# Proxies the TTS provider's own voice catalog for the settings UI's voice
+# picker — requires a real signed-in user (auth.getUser() inside the
+# function itself), not just any validly-signed project JWT, since this
+# counts against our own TTS account's usage. Gateway JWT verification
+# stays on, matching every other real-auth function in this file.
+verify_jwt = true

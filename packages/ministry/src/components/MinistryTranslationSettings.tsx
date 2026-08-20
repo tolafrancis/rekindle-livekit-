@@ -1,18 +1,124 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Switch } from '@rekindle/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Badge } from '@rekindle/ui/badge';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { Languages, Loader2, Lock, Plus, X } from 'lucide-react';
+import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown } from 'lucide-react';
 
 interface MinistryTranslationSettingsProps {
   ministryId: string;
 }
+
+interface VoiceOption {
+  voice_id: string;
+  name: string;
+  preview_url: string | null;
+  category: string | null;
+}
+
+// Shared by both the ministry-default picker and every per-language picker
+// (RLT Phase 1, docs/rlt-voice-cloning-plan.md) — a real list with preview
+// audio, not a bare "paste an ID you already know" field. Voices are
+// fetched once (on first open, any picker) via the translation-list-voices
+// Edge Function, which proxies the TTS provider's catalog server-side so
+// its API key never reaches the browser. Falls back to letting an admin
+// type an ID directly if the catalog can't be loaded — the underlying
+// value is always just a plain voice_id string either way, so nothing
+// downstream (save(), the bot) needs to know or care which path set it.
+const VoicePicker: React.FC<{
+  value: string;
+  onChange: (voiceId: string) => void;
+  voices: VoiceOption[] | null;
+  voicesLoading: boolean;
+  onOpen: () => void;
+  placeholder: string;
+  className?: string;
+}> = ({ value, onChange, voices, voicesLoading, onOpen, placeholder, className }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [manualEntry, setManualEntry] = useState('');
+  const selected = voices?.find(v => v.voice_id === value);
+
+  const playPreview = (voice: VoiceOption, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!voice.preview_url || !audioRef.current) return;
+    if (playingId === voice.voice_id) {
+      audioRef.current.pause();
+      setPlayingId(null);
+      return;
+    }
+    audioRef.current.src = voice.preview_url;
+    audioRef.current.play().catch(() => {});
+    setPlayingId(voice.voice_id);
+  };
+
+  const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors cursor-pointer';
+  const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
+
+  return (
+    <Popover onOpenChange={open => { if (open) onOpen(); }}>
+      <audio ref={audioRef} className="hidden" onEnded={() => setPlayingId(null)} />
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" className={`justify-between font-normal ${className || ''}`}>
+          <span className="truncate">{selected ? selected.name : value ? value : placeholder}</span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-2">
+        <button type="button" onClick={() => onChange('')} className={`${row} ${sel(!value)}`}>
+          <span className="flex-1">{placeholder}</span>
+          {!value && <Check className="h-3.5 w-3.5" />}
+        </button>
+
+        {voicesLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : voices && voices.length > 0 ? (
+          <div className="max-h-64 overflow-y-auto space-y-0.5 mt-1">
+            {voices.map(v => (
+              <div key={v.voice_id} onClick={() => onChange(v.voice_id)} className={`${row} ${sel(value === v.voice_id)}`}>
+                <button
+                  type="button"
+                  onClick={e => playPreview(v, e)}
+                  disabled={!v.preview_url}
+                  title={v.preview_url ? 'Preview' : 'No preview available'}
+                  className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  {playingId === v.voice_id ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                </button>
+                <span className="flex-1 truncate">{v.name}</span>
+                {v.category && <span className="text-[10px] text-muted-foreground uppercase">{v.category}</span>}
+                {value === v.voice_id && <Check className="h-3.5 w-3.5 shrink-0" />}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground px-2.5 py-2">
+            Couldn't load the voice catalog — paste a voice ID directly below instead.
+          </p>
+        )}
+
+        <div className="border-t mt-2 pt-2 px-0.5">
+          <Input
+            value={manualEntry}
+            onChange={e => setManualEntry(e.target.value)}
+            onBlur={() => { if (manualEntry.trim()) { onChange(manualEntry.trim()); setManualEntry(''); } }}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+            placeholder="Or paste a voice ID directly"
+            className="text-xs h-8"
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 interface LanguageConfigState {
   source_language: string;
@@ -68,6 +174,27 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   // happens if there's no row at all).
   const [perLanguageVoices, setPerLanguageVoices] = useState<Record<string, string>>({});
   const [savedPerLanguageVoices, setSavedPerLanguageVoices] = useState<Record<string, string>>({});
+
+  // Voice catalog is shared across every picker on this page (the ministry
+  // default plus one per language) — fetched once, lazily, on whichever
+  // picker gets opened first. `null` = not yet requested; `[]` = requested
+  // and failed/empty (pickers fall back to manual entry in that case).
+  const [voices, setVoices] = useState<VoiceOption[] | null>(null);
+  const [voicesLoading, setVoicesLoading] = useState(false);
+  const loadVoicesOnce = async () => {
+    if (voices !== null || voicesLoading) return;
+    setVoicesLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-list-voices');
+      if (error) throw error;
+      setVoices(data?.voices || []);
+    } catch (err: any) {
+      console.error('[MinistryTranslationSettings] loading voice catalog failed:', err);
+      setVoices([]);
+    } finally {
+      setVoicesLoading(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -290,9 +417,12 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
                 {config.supported_target_languages.map(code => (
                   <div key={code} className="flex items-center gap-2">
                     <span className="w-28 shrink-0 text-sm text-muted-foreground">{languageLabel(code)}</span>
-                    <Input
+                    <VoicePicker
                       value={perLanguageVoices[code] || ''}
-                      onChange={e => setPerLanguageVoices(v => ({ ...v, [code]: e.target.value }))}
+                      onChange={voiceId => setPerLanguageVoices(v => ({ ...v, [code]: voiceId }))}
+                      voices={voices}
+                      voicesLoading={voicesLoading}
+                      onOpen={loadVoicesOnce}
                       placeholder="Uses the default voice below"
                       className="max-w-[280px]"
                     />
@@ -320,11 +450,18 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
           </div>
 
           <div className="space-y-1.5">
-            <Label>ElevenLabs voice ID (optional)</Label>
-            <Input
+            <Label>Default voice (optional)</Label>
+            <p className="text-xs text-muted-foreground">
+              Used for any language above that doesn't have its own voice set.
+            </p>
+            <VoicePicker
               value={config.elevenlabs_voice_id || ''}
-              onChange={e => setConfig(c => ({ ...c, elevenlabs_voice_id: e.target.value || null }))}
-              placeholder="Defaults to the ministry's standard voice"
+              onChange={voiceId => setConfig(c => ({ ...c, elevenlabs_voice_id: voiceId || null }))}
+              voices={voices}
+              voicesLoading={voicesLoading}
+              onOpen={loadVoicesOnce}
+              placeholder="Uses the ministry's standard voice"
+              className="max-w-[320px]"
             />
           </div>
 
