@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 
 const STORAGE_KEY = 'rk_preferred_audio_output';
@@ -120,19 +120,58 @@ export const AudioOutputProvider: React.FC<{ children: React.ReactNode }> = ({ c
     elementsRef.current.forEach((el) => applySinkId(el, deviceId));
   }, [applySinkId]);
 
+  // Real root cause found live (2026-08-20): registerAudioElement used to
+  // depend on [selectedDeviceId, applySinkId] — meaning ITS identity changed
+  // every time selectedDeviceId changed, most commonly the very first time
+  // (mount → async enumerateDevices() resolves → a persisted preferred
+  // device from localStorage gets applied, a real state change that happens
+  // moments AFTER a call already has real-time audio flowing). Every
+  // consumer's effect that lists registerAudioElement in its own dependency
+  // array (RemoteAudio in DailyVideoCall.tsx) was then forced to re-run:
+  // tear down (unregisterAudioElement + el.srcObject = null — silence) and
+  // immediately rebuild (new MediaStream wrapping the SAME already-flowing
+  // WebRTC track). That's a real, live audio stream being torn down and
+  // recreated for a reason that has nothing to do with the track itself —
+  // exactly the shape of bug that can knock a browser's WebRTC jitter
+  // buffer into a more conservative (higher-latency) state that doesn't
+  // recover for the rest of the call, matching a live report precisely:
+  // near-real-time at first, a glitch shortly after the meeting starts
+  // (exactly when device enumeration resolves), then 15-20s of sustained
+  // added latency for the rest of the session — on BOTH normal and
+  // translated audio, since this element carries every remote participant's
+  // voice regardless of what feature is active.
+  //
+  // Fixed by mirroring selectedDeviceId into a ref: registerAudioElement
+  // still applies the CURRENT device to a newly-registering element (reads
+  // the ref, always up to date), but its own identity no longer depends on
+  // that value — it's now permanently stable (applySinkId is already `[]`),
+  // so no consumer's effect is ever forced to tear down a live stream just
+  // because the selected output device changed elsewhere.
+  const selectedDeviceIdRef = useRef(selectedDeviceId);
+  useEffect(() => { selectedDeviceIdRef.current = selectedDeviceId; }, [selectedDeviceId]);
+
   const registerAudioElement = useCallback((el: HTMLAudioElement) => {
     elementsRef.current.add(el);
-    if (selectedDeviceId && !Capacitor.isNativePlatform()) applySinkId(el, selectedDeviceId);
-  }, [selectedDeviceId, applySinkId]);
+    if (selectedDeviceIdRef.current && !Capacitor.isNativePlatform()) applySinkId(el, selectedDeviceIdRef.current);
+  }, [applySinkId]);
 
   const unregisterAudioElement = useCallback((el: HTMLAudioElement) => {
     elementsRef.current.delete(el);
   }, []);
 
+  // Memoized so the provider re-rendering (e.g. refreshDevices() setting a
+  // brand-new `devices` array even when its contents didn't change) doesn't
+  // hand every consumer a new object identity on every occurrence — belt
+  // and braces alongside the registerAudioElement fix above: the individual
+  // callbacks were already the thing that mattered for that specific bug,
+  // but there's no reason to churn the wrapping object either.
+  const value = useMemo<AudioOutputContextValue>(
+    () => ({ isSupported, devices, selectedDeviceId, selectDevice, registerAudioElement, unregisterAudioElement }),
+    [isSupported, devices, selectedDeviceId, selectDevice, registerAudioElement, unregisterAudioElement],
+  );
+
   return (
-    <AudioOutputContext.Provider
-      value={{ isSupported, devices, selectedDeviceId, selectDevice, registerAudioElement, unregisterAudioElement }}
-    >
+    <AudioOutputContext.Provider value={value}>
       {children}
     </AudioOutputContext.Provider>
   );
