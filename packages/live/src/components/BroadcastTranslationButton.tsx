@@ -72,6 +72,24 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
+  // Real regression found live (2026-08-20): this component is now mounted
+  // for EVERY viewer the instant they're on the live channel (see
+  // LiveChannelViewer.tsx — it used to be delayed until watchViaHls, i.e.
+  // only after Egress had caught up, which naturally staggered viewers out).
+  // Un-gating it meant every viewer's translation-sessions realtime
+  // subscription now fires the moment they load the page, all at once — a
+  // burst of new Supabase Realtime channels landing right as viewers pile
+  // into a freshly-started broadcast. Live-tested result: hls.js recoveries
+  // in the teens (vs. 4-5 max before) AND the HOST's own page freezing /
+  // "Start Broadcasting" going unresponsive when viewers joined — Realtime
+  // is shared infra, so a connection burst here can degrade the host's own
+  // presence/live-status channel too. None of this data is actually needed
+  // until someone opens the picker (the panel already says "No live
+  // translation running yet" when sessions is empty), so don't fetch or
+  // subscribe until they do — `hasOpened` flips once, on first open, and
+  // stays true so re-opening doesn't need to re-arm anything.
+  const [hasOpened, setHasOpened] = useState(false);
+
   // Timing instrumentation (2026-08-19) — a real report of translated audio
   // taking 15-20s to be heard, vs. the bot's own server-side pipeline logging
   // well under 1.5s per utterance (translate + TTS) and audio flowing into
@@ -125,8 +143,11 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   // Which languages the bot currently has running for this broadcast —
   // realtime, same pattern MinistryTranslationServiceManager.tsx already
-  // uses for the dashboard's own session list.
+  // uses for the dashboard's own session list. Deferred until `hasOpened`
+  // (see the comment above that state) so idle viewers who never touch the
+  // button cost nothing.
   useEffect(() => {
+    if (!hasOpened) return;
     let cancelled = false;
     const load = () => {
       supabase
@@ -151,7 +172,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [channelId, roomName]);
+  }, [channelId, roomName, hasOpened]);
 
   // Bumped every time the selected language changes — every async callback
   // below (the resume() promise especially) checks this before touching
@@ -505,7 +526,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
         </div>
       )}
 
-      <Popover>
+      <Popover onOpenChange={(open) => { if (open) setHasOpened(true); }}>
         <PopoverTrigger asChild>
           <button
             type="button"
