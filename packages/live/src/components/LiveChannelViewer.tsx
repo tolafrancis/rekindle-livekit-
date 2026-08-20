@@ -196,6 +196,19 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // one-time prompt per page load, not a blocking gate — video/audio keep
   // loading underneath it, so answering it doesn't add to join latency.
   const [wantsTranslation, setWantsTranslation] = useState<boolean | null>(null);
+  // Real request (2026-08-20): make "translation off" STRUCTURALLY identical
+  // to the pre-translation-button baseline (commit cc9d342 — confirmed live,
+  // real-time, zero breaks), not just conditionally equivalent because
+  // translationActive happens to stay false. BroadcastTranslationButton is
+  // literally unmounted whenever `wantsTranslation` isn't true, so
+  // translationActive genuinely can't become true in that case anyway — but
+  // deriving the effective override THROUGH `wantsTranslation` here, instead
+  // of reading `translationActive` directly at each use site, makes that
+  // guarantee visible at every call site rather than relying on an
+  // unenforced invariant between two components. When this is false, every
+  // mute computation below reduces to exactly what it was before translation
+  // existed: `isMuted`, nothing else.
+  const translationMuteOverride = wantsTranslation === true && translationActive;
 
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
   const dailyRoom = useDailyRoom({
@@ -384,7 +397,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
       // path (2026-08-20), so the ORIGINAL audio has to be muted while a
       // translated dub is selected here too, or it's the same double-voice
       // bug already fixed for HLS viewers.
-      remoteAudioRef.current.muted = isMuted || translationActive;
+      remoteAudioRef.current.muted = isMuted || translationMuteOverride;
       remoteAudioRef.current.play().catch(() => {});
     } else if (remoteAudioRef.current?.srcObject) {
       // Conditions no longer hold (video enabled, host gone, or — critically —
@@ -393,7 +406,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
       remoteAudioRef.current.pause();
       remoteAudioRef.current.srcObject = null;
     }
-  }, [dailyRoom.remoteParticipants, isMuted, translationActive, channel.is_video_enabled]);
+  }, [dailyRoom.remoteParticipants, isMuted, translationMuteOverride, channel.is_video_enabled]);
 
   // Belt-and-braces for the same leak: the instant we're actually on the HLS
   // path, this legacy element has no business playing anything, regardless
@@ -876,7 +889,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const toggleMute = () => {
     setIsMuted(!isMuted);
     if (remoteAudioRef.current) {
-      remoteAudioRef.current.muted = !isMuted || translationActive;
+      remoteAudioRef.current.muted = !isMuted || translationMuteOverride;
     }
   };
 
@@ -1041,7 +1054,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                     as the meeting picker's mute-the-room-not-yourself fix. */}
                 <HlsPlayer
                   src={hlsPlaybackUrl!}
-                  muted={isMuted || translationActive}
+                  muted={isMuted || translationMuteOverride}
                   poster={posterUrl}
                   className="w-full h-full"
                   targetLatencySeconds={HLS_LATENCY_SECONDS}
@@ -1066,7 +1079,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 return (
                   <SpeakerVideoTile
                     participant={visibleParticipants[0]}
-                    muted={isMuted || translationActive}
+                    muted={isMuted || translationMuteOverride}
                     isLarge
                   />
                 );
@@ -1078,13 +1091,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 <div className="w-full h-full flex gap-1 p-1">
                   {/* Main / host feed */}
                   <div className="flex-1 min-w-0">
-                    <SpeakerVideoTile participant={hostP} muted={isMuted || translationActive} isLarge />
+                    <SpeakerVideoTile participant={hostP} muted={isMuted || translationMuteOverride} isLarge />
                   </div>
                   {/* Speaker strip on the right */}
                   <div className={`flex flex-col gap-1 ${speakerPs.length === 1 ? 'w-24 sm:w-40' : 'w-28 sm:w-48'}`}>
                     {speakerPs.map(sp => (
                       <div key={sp.sessionId} className="flex-1 min-h-0">
-                        <SpeakerVideoTile participant={sp} muted={isMuted || translationActive} />
+                        <SpeakerVideoTile participant={sp} muted={isMuted || translationMuteOverride} />
                       </div>
                     ))}
                   </div>

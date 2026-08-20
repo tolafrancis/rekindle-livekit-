@@ -365,10 +365,15 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
 
   // Real report (2026-08-19): translated audio selected but original audio
   // kept playing alongside it — "double voices". The prop plumbing here
-  // (LiveChannelViewer passes `muted={isMuted || translationActive}`) reads
-  // correctly on paper, so rather than guess again: track and SHOW the
-  // actual DOM .muted state (ground truth, not the prop we asked for) so a
-  // live report can confirm or rule out a prop/DOM desync directly.
+  // (LiveChannelViewer passes `muted={isMuted || translationMuteOverride}`,
+  // itself gated so it can only ever be non-zero when translation was
+  // actually opted into — see LiveChannelViewer.tsx) reads correctly on
+  // paper, so rather than guess again: track and SHOW the actual DOM .muted
+  // state (ground truth, not the prop we asked for) so a live report can
+  // confirm or rule out a prop/DOM desync directly. Note this component
+  // itself takes no translation-derived input beyond this single `muted`
+  // boolean — no translation code touches hls.js config, buffering, or
+  // recovery logic here at all.
   const [actualMuted, setActualMuted] = useState(muted);
   useEffect(() => {
     if (videoRef.current) {
