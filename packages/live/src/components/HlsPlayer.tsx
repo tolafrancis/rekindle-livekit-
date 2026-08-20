@@ -203,14 +203,14 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           // Sit ~`target`s behind the edge, time-based so it's segment-agnostic.
           liveSyncDuration: target,
           // Only let hls.js re-seek if we fall WELL behind — a generous ceiling so
-          // ordinary jitter is absorbed by the passive catch-up, not a jarring seek.
+          // ordinary jitter is absorbed by the 1.1x catch-up, not a jarring seek.
           liveMaxLatencyDuration: maxLatency,
-          // 1.1 -> 1.15 (2026-08-20): after repeated live reports that hard-seek
-          // corrections (see the resync watchdog below, now much more
-          // conservative) are themselves the visible "freeze," lean harder on
-          // this SMOOTH mechanism to close gaps faster without ever jumping —
-          // still gentle enough not to be perceptible as sped-up audio/video.
-          maxLiveSyncPlaybackRate: 1.15,
+          // Briefly bumped to 1.15 (2026-08-20) while chasing the freeze-vs-
+          // latency trade below, then reverted back to 1.1 the same day — once
+          // watchdogCeiling was restored to target+6 (the configuration
+          // actually confirmed working, "for audio the latency is better"),
+          // this was the one remaining difference from that known-good state.
+          maxLiveSyncPlaybackRate: 1.1,
           backBufferLength: 10,
           // While the audience waits for the host to go live, Mux returns 412
           // (stream not active) until RTMP starts. Poll STEADILY (linear, ~1.5s
