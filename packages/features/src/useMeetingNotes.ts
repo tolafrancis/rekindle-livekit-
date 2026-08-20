@@ -24,6 +24,8 @@ import type { TranscriptLine } from './meetingAIEngine';
 export interface UseMeetingNotes {
   /** True while notes are being taken anywhere in the meeting. */
   active: boolean;
+  /** True while start_bot_session RPC or session lookup is in flight. */
+  isStarting: boolean;
   /** Display name of whoever started notes (for the banner). */
   startedBy: string | null;
   /** Merged, speaker-attributed transcript from all participants. */
@@ -53,6 +55,7 @@ export function useMeetingNotes(
   ministryId?: string,
 ): UseMeetingNotes {
   const [active, setActive] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [startedBy, setStartedBy] = useState<string | null>(null);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [interimText, setInterimText] = useState('');
@@ -63,6 +66,7 @@ export function useMeetingNotes(
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const startedAtRef = useRef<number | null>(null);
+  const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRef = useRef(false);
   const speakerRef = useRef(speakerName);
   useEffect(() => { speakerRef.current = speakerName; }, [speakerName]);
@@ -86,11 +90,17 @@ export function useMeetingNotes(
         .eq('livekit_room_name', roomName)
         .in('status', ['initialising', 'joining', 'active', 'paused'])
         .then(({ data }) => {
-          if (cancelled || !data) return;
-          const langs = Array.from(new Set(['en', ...data.map((s: any) => s.target_language)]));
+          if (cancelled || !data || !Array.isArray(data)) return;
+          const validSessions = data.filter((s: any) => s && s.target_language);
+          const langs = Array.from(new Set(['en', ...validSessions.map((s: any) => s.target_language)]));
           setAvailableLanguages(langs);
-          if (data.length > 0) {
+          if (validSessions.length > 0) {
+            if (startTimeoutRef.current) {
+              clearTimeout(startTimeoutRef.current);
+              startTimeoutRef.current = null;
+            }
             setActive(true);
+            setIsStarting(false);
           }
         });
     };
@@ -106,6 +116,10 @@ export function useMeetingNotes(
 
     return () => {
       cancelled = true;
+      if (startTimeoutRef.current) {
+        clearTimeout(startTimeoutRef.current);
+        startTimeoutRef.current = null;
+      }
       supabase.removeChannel(subChannel);
     };
   }, [roomName]);
@@ -123,11 +137,13 @@ export function useMeetingNotes(
       .in('status', ['initialising', 'joining', 'active', 'paused'])
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        if (cancelled || !data || data.length === 0) return;
+        if (cancelled || !data || !Array.isArray(data) || data.length === 0) return;
 
-        const matchingSession = data.find((s: any) => s.target_language === selectedLanguage) || data[0];
+        const matchingSession = data.find((s: any) => s && s.target_language === selectedLanguage) || data[0];
+        if (!matchingSession || !matchingSession.id) return;
+
         const sessionId = matchingSession.id;
-        const useSourceText = selectedLanguage === 'en' || selectedLanguage === matchingSession.source_language;
+        const useSourceText = selectedLanguage === 'en' || selectedLanguage === (matchingSession.source_language ?? 'en');
 
         // Fetch historical logs
         supabase
@@ -136,12 +152,14 @@ export function useMeetingNotes(
           .eq('session_id', sessionId)
           .order('created_at', { ascending: true })
           .then(({ data: logs }) => {
-            if (cancelled || !logs) return;
-            const mapped: TranscriptLine[] = logs.map((row: any) => ({
-              speaker: 'Speaker',
-              text: useSourceText ? row.source_text : row.translated_text,
-              timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
-            }));
+            if (cancelled || !logs || !Array.isArray(logs)) return;
+            const mapped: TranscriptLine[] = logs
+              .filter((row: any) => row && (row.source_text || row.translated_text))
+              .map((row: any) => ({
+                speaker: 'Speaker',
+                text: useSourceText ? (row.source_text ?? '') : (row.translated_text ?? ''),
+                timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
+              }));
             setLines(mapped);
           });
 
@@ -152,9 +170,10 @@ export function useMeetingNotes(
             { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
             (payload) => {
               const row = payload.new as any;
+              if (!row) return;
               const line: TranscriptLine = {
                 speaker: 'Speaker',
-                text: useSourceText ? row.source_text : row.translated_text,
+                text: useSourceText ? (row.source_text ?? '') : (row.translated_text ?? ''),
                 timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
               };
               setLines((prev) => [...prev, line]);
@@ -186,6 +205,7 @@ export function useMeetingNotes(
 
     channel.on('broadcast', { event: 'notes-stopped' }, () => {
       setActive(false);
+      setIsStarting(false);
       activeRef.current = false;
       setStartedBy(null);
     });
@@ -210,8 +230,26 @@ export function useMeetingNotes(
     setError(null);
     setLines([]);
     setStartedBy(speakerRef.current);
+    setIsStarting(true);
     setActive(true);
     activeRef.current = true;
+
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+
+    // 10-second startup safety timeout: prevents UI from staying on "Starting..." indefinitely
+    startTimeoutRef.current = setTimeout(() => {
+      setIsStarting((starting) => {
+        if (starting) {
+          console.warn('[useMeetingNotes] Bot startup timed out after 10s');
+          setError('AI notes bot timed out while starting. Please try again.');
+          setActive(false);
+          activeRef.current = false;
+          return false;
+        }
+        return false;
+      });
+    }, 10000);
+
     try {
       channelRef.current?.send({
         type: 'broadcast',
@@ -232,29 +270,48 @@ export function useMeetingNotes(
             .in('status', ['initialising', 'joining', 'active', 'paused'])
             .limit(1);
 
-          if (existing && existing.length > 0) {
+          if (existing && existing.length > 0 && existing[0]?.id) {
             console.log('[useMeetingNotes] Active bot session already running for room — reusing existing session');
+            if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+            setIsStarting(false);
             return;
           }
 
           // No bot session is running — start an English-only STT session
-          const { error } = await supabase.rpc('start_bot_session', {
+          const { error: rpcError } = await supabase.rpc('start_bot_session', {
             p_ministry_id: ministryId,
             p_room_name: roomName,
             p_source_language: 'en',
             p_target_language: 'en',
             p_speaker_identity: null,
           });
-          if (error) console.warn('[useMeetingNotes] start_bot_session returned error:', error);
-        } catch (err) {
+          if (rpcError) {
+            console.warn('[useMeetingNotes] start_bot_session returned error:', rpcError);
+            if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+            setError(rpcError.message || 'Failed to start AI notes bot.');
+            setIsStarting(false);
+            setActive(false);
+            activeRef.current = false;
+          }
+        } catch (err: any) {
           console.warn('[useMeetingNotes] start_bot_session check failed:', err);
+          if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+          setError(err?.message || 'Failed to start AI notes bot.');
+          setIsStarting(false);
+          setActive(false);
+          activeRef.current = false;
         }
       })();
+    } else {
+      if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+      setIsStarting(false);
     }
   }, [roomName, ministryId]);
 
   const stopNotes = useCallback(() => {
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
     setActive(false);
+    setIsStarting(false);
     activeRef.current = false;
     setStartedBy(null);
     try {
@@ -263,13 +320,16 @@ export function useMeetingNotes(
   }, []);
 
   const reset = useCallback(() => {
+    if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
     setLines([]);
     setInterimText('');
     startedAtRef.current = null;
+    setIsStarting(false);
   }, []);
 
   return {
     active,
+    isStarting,
     startedBy,
     lines,
     interimText,
