@@ -289,20 +289,19 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         // (more buffer before drift becomes a problem, per a live-edge-
         // race theory that didn't hold up: it still fired).
         //
-        // Re-read across every report: the actual complaint was never a
-        // specific number of seconds — it was the FREEZE. A hard seek IS
-        // that freeze, no matter how the trigger is tuned. So stop tuning
-        // the trigger and change the PRIORITY instead: this watchdog now
-        // only exists for the pathological case it was originally built
-        // for — a stream that would otherwise be stuck behind forever
-        // (the ~200s-to-recover-at-1.1x math from the original "stuck at
-        // 25s" bug) — not for ordinary/moderate drift, which the passive,
-        // never-jarring catch-up (maxLiveSyncPlaybackRate, bumped to 1.15
-        // above) is left to resolve on its own even if that takes a while
-        // longer. A fixed, near-absolute floor rather than a multiple of
-        // target — moderate drift should never trip this again regardless
-        // of what target latency ends up being.
-        const watchdogCeiling = Math.max(target * 3, 30);
+        // Pushed all the way to a near-inactive floor (30s+) the same day,
+        // reasoning the complaint was purely about the freeze — but that
+        // went too far the other way: with correction effectively
+        // disabled, latency climbed back to ~20s (explicitly reported as
+        // worse than the ~8-12s this middle-ground threshold had been
+        // producing). The freeze-vs-latency trade doesn't have a setting
+        // that eliminates both — passive catch-up alone (maxLiveSyncPlaybackRate,
+        // still 1.15) isn't strong enough to hold the line on a real,
+        // jittery connection. Restored to the middle ground that was
+        // actually measured to work reasonably (occasional corrections,
+        // but latency back in the range that was asked for) rather than
+        // the untested extremes on either side.
+        const watchdogCeiling = target + 6;
         // setup() can re-run without the effect's own cleanup firing (tentativeEnd's
         // retryTimer, or the fatal-error reload path both call setup() directly) —
         // clear any interval from a previous run first so they don't pile up.
