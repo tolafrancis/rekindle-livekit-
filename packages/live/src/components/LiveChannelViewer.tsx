@@ -166,11 +166,21 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // join below and for BroadcastTranslationButton's own listener-token
   // connection — one source of truth so they can't drift apart.
   const liveKitRoomName = channel.daily_room_name || `channel-${channel.id}`;
-  // Matches HlsPlayer's own default targetLatencySeconds — passed
-  // explicitly to both it and BroadcastTranslationButton below instead of
-  // relying on HlsPlayer's default, so the translated-audio delay buffer
-  // can never silently drift out of sync with the video's actual buffer.
-  const HLS_LATENCY_SECONDS = 6;
+  // Passed explicitly to both HlsPlayer and BroadcastTranslationButton below
+  // (rather than relying on HlsPlayer's own default) so the translated-audio
+  // delay buffer can never silently drift out of sync with the video's
+  // actual buffer.
+  //
+  // Widened 6 -> 8 (2026-08-20), a deliberate latency-for-reliability trade,
+  // requested and confirmed live: recurring "breaks" traced to sitting close
+  // to the live edge — segments get fetched right at the boundary of when
+  // Egress finishes writing them, which is inherently more exposed to "not
+  // fully ready yet" races the closer the target sits to the edge. 2 extra
+  // seconds of buffer headroom gives that race more room before it turns
+  // into a visible stall, at the cost of 2 more seconds of delay. If this
+  // doesn't measurably reduce break frequency, the root cause isn't the
+  // live-edge race and this should be reverted rather than pushed further.
+  const HLS_LATENCY_SECONDS = 8;
   const [translationActive, setTranslationActive] = useState(false);
 
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
