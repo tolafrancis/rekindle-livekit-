@@ -39,7 +39,8 @@ import {
   Lock,
   UserPlus,
   VideoIcon,
-  Hand
+  Hand,
+  Languages
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { ShareChannelButton } from './ShareChannelButton';
@@ -188,6 +189,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // instead of by adding buffer headroom).
   const HLS_LATENCY_SECONDS = 6;
   const [translationActive, setTranslationActive] = useState(false);
+  // Real request (2026-08-20): don't show the translate control to every
+  // viewer by default — ask up front, before they're settled into the
+  // broadcast, whether they need translation at all, and only render the
+  // button for viewers who say yes. `null` = not asked yet. This is a
+  // one-time prompt per page load, not a blocking gate — video/audio keep
+  // loading underneath it, so answering it doesn't add to join latency.
+  const [wantsTranslation, setWantsTranslation] = useState<boolean | null>(null);
 
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
   const dailyRoom = useDailyRoom({
@@ -969,20 +977,35 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
               </div>
             )}
 
-            {/* Real bug found live (2026-08-20): this used to only be mounted
-                inside the watchViaHls branch below, so the audience had NO
-                translation control at all whenever they weren't (yet) on the
-                HLS path — e.g. right at broadcast start, before Egress has
-                caught up, or on a pure audio-only broadcast that never goes
-                through HLS. BroadcastTranslationButton doesn't actually need
-                HLS — it owns its own independent WebRTC connection to the
-                bot's translated track (see that file) — so it belongs here,
-                unconditionally, same as the reaction button above. The host
-                already gets translation immediately (FloatingTranslationButton
-                in LiveChannelBroadcast.tsx, since the host is a real room
-                participant from the start); this puts the audience on equal
-                footing regardless of which playback path they're on. */}
-            {isLive && (
+            {/* Real request (2026-08-20): don't show the translate control to
+                every viewer — ask up front whether they need it at all, and
+                only render the button for viewers who say yes. Doesn't need
+                HLS either way — BroadcastTranslationButton owns its own
+                independent WebRTC connection to the bot's translated track
+                (see that file) — so it's available on every playback path
+                once opted in, same as the host's own translation control
+                (FloatingTranslationButton in LiveChannelBroadcast.tsx) is
+                available to them from the start. */}
+            {isLive && wantsTranslation === null && (
+              <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+                <div className="w-full max-w-xs rounded-xl bg-white p-5 text-center shadow-xl">
+                  <Languages className="mx-auto mb-2 h-7 w-7 text-indigo-600" />
+                  <p className="mb-4 text-sm font-medium text-gray-900">
+                    {t('liveChannelViewer', 'translationPromptTitle', 'Do you need translated audio or captions for this broadcast?')}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setWantsTranslation(false)}>
+                      {t('liveChannelViewer', 'translationPromptNo', 'No thanks')}
+                    </Button>
+                    <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700" onClick={() => setWantsTranslation(true)}>
+                      {t('liveChannelViewer', 'translationPromptYes', 'Yes, I need it')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isLive && wantsTranslation && (
               <div className="absolute bottom-4 left-4 z-50">
                 {/* delaySeconds only applies on the HLS path — that's the
                     only path where the VIDEO itself is running several
@@ -999,6 +1022,19 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                   onActiveChange={setTranslationActive}
                 />
               </div>
+            )}
+
+            {/* Declined viewers can still change their mind — a small,
+                unobtrusive re-ask rather than no way back without a reload. */}
+            {isLive && wantsTranslation === false && (
+              <button
+                type="button"
+                onClick={() => setWantsTranslation(null)}
+                title="Need translation?"
+                className="absolute bottom-4 left-4 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white"
+              >
+                <Languages className="h-4 w-4" />
+              </button>
             )}
 
             {watchViaHls ? (
