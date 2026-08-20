@@ -81,3 +81,17 @@ enabled = true
 # Admin-only (is_group_admin) — function does its own auth. Gateway JWT
 # verification stays on.
 verify_jwt = true
+
+[functions.translation-search-voice-library]
+enabled = true
+# Read-only search against the TTS provider's PUBLIC voice library — no
+# ministry-specific data involved, just requires a real signed-in user
+# (prevents anonymous scraping/quota drain). Gateway JWT verification
+# stays on.
+verify_jwt = true
+
+[functions.translation-add-library-voice]
+enabled = true
+# Admin-only (is_group_admin) — function does its own auth. Gateway JWT
+# verification stays on.
+verify_jwt = true

@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Badge } from '@rekindle/ui/badge';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown, Mic, Upload, Trash2 } from 'lucide-react';
+import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown, Mic, Upload, Trash2, Search, LibraryBig } from 'lucide-react';
 
 interface MinistryTranslationSettingsProps {
   ministryId: string;
@@ -27,6 +27,22 @@ interface CustomVoice {
   label: string;
   external_voice_id: string;
   created_at: string;
+}
+
+// Result shape from translation-search-voice-library — the provider's
+// shared voice library, distinct from the account's own catalog above.
+// Adding one (translation-add-library-voice) mints a NEW voice_id in the
+// account, so `voice_id` here is only ever used as a search-result key,
+// never assigned directly to a language the way VoiceOption's is.
+interface LibraryVoice {
+  voice_id: string;
+  public_owner_id: string;
+  name: string;
+  language: string | null;
+  accent: string | null;
+  gender: string | null;
+  preview_url: string | null;
+  category: string | null;
 }
 
 // Shared by both the ministry-default picker and every per-language picker
@@ -313,6 +329,76 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
       toast({ title: 'Could not replace sample', description: err.message, variant: 'destructive' });
     } finally {
       setReplacingVoiceId(null);
+    }
+  };
+
+  // Phase 3b (2026-08-21) — real gap found live: the account's own
+  // catalog above had almost no non-English voices, so a language like
+  // Vietnamese had nothing to pick. The TTS provider's actual library of
+  // voices in every language lives at a separate endpoint; this searches
+  // it and lets an admin pull a real match into the account, after which
+  // it behaves exactly like a cloned voice (shows in the normal picker,
+  // assignable to any language, deletable).
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryLanguage, setLibraryLanguage] = useState('');
+  const [libraryResults, setLibraryResults] = useState<LibraryVoice[] | null>(null);
+  const [librarySearching, setLibrarySearching] = useState(false);
+  const [libraryPlayingId, setLibraryPlayingId] = useState<string | null>(null);
+  const [addingVoiceId, setAddingVoiceId] = useState<string | null>(null);
+  const libraryAudioRef = useRef<HTMLAudioElement>(null);
+
+  const searchLibrary = async () => {
+    setLibrarySearching(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-search-voice-library', {
+        body: libraryLanguage.trim() ? { language: libraryLanguage.trim() } : {},
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setLibraryResults(data?.voices || []);
+    } catch (err: any) {
+      console.error('[MinistryTranslationSettings] library search failed:', err);
+      toast({ title: 'Could not search the voice library', description: err.message, variant: 'destructive' });
+      setLibraryResults([]);
+    } finally {
+      setLibrarySearching(false);
+    }
+  };
+
+  const playLibraryPreview = (voice: LibraryVoice) => {
+    if (!voice.preview_url || !libraryAudioRef.current) return;
+    if (libraryPlayingId === voice.voice_id) {
+      libraryAudioRef.current.pause();
+      setLibraryPlayingId(null);
+      return;
+    }
+    libraryAudioRef.current.src = voice.preview_url;
+    libraryAudioRef.current.play().catch(() => {});
+    setLibraryPlayingId(voice.voice_id);
+  };
+
+  const addLibraryVoice = async (voice: LibraryVoice) => {
+    setAddingVoiceId(voice.voice_id);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-add-library-voice', {
+        body: {
+          ministryId,
+          publicOwnerId: voice.public_owner_id,
+          voiceId: voice.voice_id,
+          label: voice.name,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({ title: 'Voice added', description: `"${voice.name}" is ready to assign to a language.` });
+      await loadCustomVoices();
+      if (voices !== null) await fetchVoices();
+    } catch (err: any) {
+      console.error('[MinistryTranslationSettings] add library voice failed:', err);
+      toast({ title: 'Could not add voice', description: err.message, variant: 'destructive' });
+    } finally {
+      setAddingVoiceId(null);
     }
   };
 
@@ -730,6 +816,85 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
               {cloning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
               Clone Voice
             </Button>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <audio ref={libraryAudioRef} className="hidden" onEnded={() => setLibraryPlayingId(null)} />
+            <button
+              type="button"
+              onClick={() => setLibraryOpen(o => !o)}
+              className="flex w-full items-center justify-between text-sm font-medium"
+            >
+              <span className="flex items-center gap-2">
+                <LibraryBig className="h-4 w-4" />
+                Browse the voice library
+              </span>
+              <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <p className="text-xs text-muted-foreground">
+              Don't have a sample to clone? Search the provider's full voice library by language — e.g. Vietnamese —
+              and add a ready-made one instead.
+            </p>
+
+            {libraryOpen && (
+              <div className="space-y-2 pt-1">
+                <div className="flex gap-2">
+                  <Input
+                    value={libraryLanguage}
+                    onChange={e => setLibraryLanguage(e.target.value)}
+                    placeholder="Language code, e.g. vi (leave blank to browse all)"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchLibrary(); } }}
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={searchLibrary} disabled={librarySearching}>
+                    {librarySearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  </Button>
+                </div>
+
+                {libraryResults !== null && (
+                  <div className="max-h-72 overflow-y-auto space-y-1.5">
+                    {libraryResults.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-1 py-2">No voices found for that language.</p>
+                    ) : (
+                      libraryResults.map(v => (
+                        <div key={v.voice_id} className="flex items-center justify-between rounded-lg border px-2.5 py-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => playLibraryPreview(v)}
+                              disabled={!v.preview_url}
+                              title={v.preview_url ? 'Preview' : 'No preview available'}
+                              className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                            >
+                              {libraryPlayingId === v.voice_id
+                                ? <Square className="h-3.5 w-3.5" />
+                                : <Play className="h-3.5 w-3.5" />}
+                            </button>
+                            <div className="min-w-0">
+                              <p className="text-sm truncate">{v.name}</p>
+                              <p className="text-[10px] text-muted-foreground uppercase truncate">
+                                {[v.language, v.accent, v.gender].filter(Boolean).join(' · ')}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addLibraryVoice(v)}
+                            disabled={addingVoiceId === v.voice_id}
+                            className="shrink-0"
+                          >
+                            {addingVoiceId === v.voice_id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : 'Add'}
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

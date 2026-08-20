@@ -7,7 +7,56 @@ and live** — schema, Edge Functions, and UI all deployed; consent is
 handled outside this app entirely (explicit product decision), and
 support-either-voice (pastor's own or a house narrator) was chosen over
 picking one. **Phase 3 (re-record/replace an existing clone) shipped and
-live.** **Phase 1b (FPT) dropped.** All phases in this plan are closed.
+live. Phase 3b (voice library search + add-to-account) shipped and live**
+— real gap found live: the account's own catalog had almost no non-English
+voices, so languages like Vietnamese had nothing to select; this searches
+the provider's actual library by language and pulls a match into the
+account. **Phase 1b (FPT) dropped.** All phases in this plan are closed.
+
+## Phase 3b — voice library search (2026-08-21)
+
+**Why this exists.** After Phase 1 shipped, testing surfaced that the
+picker had almost nothing for non-English languages — Vietnamese included.
+Root cause, confirmed against the provider's own docs, not guessed: the
+picker's catalog (`GET /v2/voices`) only ever returns voices already sitting
+in *this account's own collection* — it was never meant to be the full
+catalog. The actual library of voices in every language lives at a
+**separate** endpoint, `GET /v1/shared-voices`, filterable by `language`
+directly. A voice found there has to be explicitly added
+(`POST /v1/voices/add/{public_owner_id}/{voice_id}`, which mints a brand
+new voice_id in the account) before it shows up in the regular catalog.
+
+**What shipped:**
+- `translation-search-voice-library` — proxies the shared-library search,
+  filterable by language. Read-only against public data, so only requires
+  being signed in, not ministry membership.
+- `translation-add-library-voice` — admin-gated, adds a chosen library
+  voice into the account and records it in `translation_custom_voices`
+  (`is_cloned = false` — "added from the library," not "cloned from our
+  own sample," though both are handled identically everywhere downstream).
+- Settings UI: a collapsible "Browse the voice library" panel inside
+  Custom Voices — search by language code, preview, one-click add.
+- **Ministry-scoping filter widened** (`translation-list-voices`): library-
+  added voices commonly land in categories (`famous`, `high_quality`) the
+  original Phase 2 filter didn't account for — it only excluded
+  `cloned`/`generated`/`professional`. Now only `premade` (the provider's
+  own always-present defaults) is shown to every ministry unconditionally;
+  every other category requires the voice to be in the CALLING ministry's
+  own `translation_custom_voices`. Caught and fixed before this shipped,
+  not discovered as a leak afterward.
+- **Schema correction, unrelated bug caught in passing:** `create_custom_voice`
+  never actually accepted an `is_cloned` value — every row (Phase 2's real
+  clones included) had silently defaulted to `false` in the database
+  column since that migration shipped. Harmless (nothing read that column
+  directly — the picker computes its own `is_cloned` client-side from
+  ministry ownership), but wrong, and now actually matters with two
+  different creation paths writing into the same table. Fixed (migration
+  0284) alongside this phase.
+
+**Known caveat, not yet hit:** the provider's docs note Voice Library
+access via the API isn't available on the free tier. Untested against
+this account's actual plan — if it turns out to be gated, the search
+function will surface a clear `provider_error` rather than fail silently.
 
 ## Phase 1b — closed, not built
 

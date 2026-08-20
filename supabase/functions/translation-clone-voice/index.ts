@@ -189,6 +189,7 @@ serve(async (req) => {
       p_label: body.label,
       p_sample_path: body.samplePath,
       p_provider: 'elevenlabs',
+      p_is_cloned: true,
     });
     if (insertErr) {
       // The clone now exists on the provider even though saving our own

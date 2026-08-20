@@ -13,9 +13,9 @@
 // freely assign a voice ministry X cloned (and got consent for, outside
 // this app) the moment it exists. This function now cross-references
 // translation_custom_voices for the CALLING ministry and only returns:
-// stock/library voices (any category that isn't the provider's own
-// cloned/generated marker) + this ministry's own cloned voices. A voice
-// cloned by a different ministry is excluded entirely, not just unlabeled.
+// the provider's own always-present 'premade' voices + this ministry's
+// own cloned/library-added voices. A voice added by a different ministry
+// (however it got there) is excluded entirely, not just unlabeled.
 //
 // ── Deploy (Supabase dashboard or `supabase functions deploy`) ──────────
 //   Secrets needed: ELEVENLABS_API_KEY (already set for the bot's own
@@ -52,10 +52,18 @@ interface VoiceOut {
   is_cloned: boolean;
 }
 
-// The provider's own categories for a voice someone generated/cloned,
-// vs. its shared premade/professional library. Anything in this set is
-// excluded UNLESS it's also in this ministry's own translation_custom_voices.
-const CLONE_LIKE_CATEGORIES = new Set(['cloned', 'generated', 'professional']);
+// 'premade' is the provider's own always-present, built-in default voices
+// — safe to show every ministry unconditionally. Every OTHER category
+// ('cloned', 'generated', 'professional', 'famous', 'high_quality') can be
+// something a specific ministry added to this SHARED account, either by
+// cloning or (Phase 3b, 2026-08-21) by pulling a voice in from the shared
+// Voice Library — so all of them are excluded unless the voice is also in
+// this ministry's own translation_custom_voices. Widened from just
+// {'cloned','generated','professional'} once library-added voices turned
+// out to commonly land in 'famous'/'high_quality' too — a category-based
+// allowlist has to name every category that CAN be ministry-specific, not
+// just the ones a first pass happened to think of.
+const STOCK_CATEGORIES = new Set(['premade']);
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -108,7 +116,7 @@ serve(async (req) => {
     }
     const data = (await res.json()) as { voices?: any[] };
     const voices: VoiceOut[] = (data.voices || [])
-      .filter((v) => !CLONE_LIKE_CATEGORIES.has(v.category) || ownVoiceIds.has(v.voice_id))
+      .filter((v) => STOCK_CATEGORIES.has(v.category) || ownVoiceIds.has(v.voice_id))
       .map((v) => ({
         voice_id: v.voice_id,
         name: v.name,
