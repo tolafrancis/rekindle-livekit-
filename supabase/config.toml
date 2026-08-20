@@ -95,3 +95,13 @@ enabled = true
 # Admin-only (is_group_admin) — function does its own auth. Gateway JWT
 # verification stays on.
 verify_jwt = true
+
+[functions.translation-device-publish-token]
+enabled = true
+# Called by the edge agent with a DEVICE bearer token (authenticate_device),
+# never a Supabase user JWT — there is no user. Gateway JWT verification
+# must be OFF, same reasoning as livekit-webhook: a device token isn't a
+# validly-signed Supabase project JWT, so gateway verification would
+# reject every legitimate call before the function's own device-token
+# check ever runs.
+verify_jwt = false
