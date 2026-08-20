@@ -1076,118 +1076,85 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </div>
         </div>
 
-        {/* Ministry Navigation — mobile only (web uses the left sidebar).
-            Hamburger (labelled) menu + horizontal icon tabs. */}
+        {/* Ministry Navigation — mobile only (single full-width dropdown control). */}
         <div className="bg-white border-b md:hidden">
-          <div className="max-w-7xl mx-auto px-2 sm:px-4">
-            <div className="flex items-center gap-1 py-2">
-              {/* Mobile menu button: tap to reveal navigation with text labels */}
-              <div className="relative sm:hidden shrink-0">
-                <button
-                  onClick={() => setNavMenuOpen((o) => !o)}
-                  aria-label={t('ministrySpace', 'openNavMenu', 'Open navigation menu')}
-                  aria-expanded={navMenuOpen}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200"
-                >
-                  <Menu className="h-5 w-5" />
-                  <span className="max-w-[6.5rem] truncate">
-                    {navLabel(activeGroup)}
-                  </span>
-                  <ChevronDown className={`h-4 w-4 transition-transform ${navMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {navMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setNavMenuOpen(false)} />
-                    <div className="absolute left-0 top-full mt-1 z-50 w-60 max-h-[70vh] overflow-y-auto rounded-xl border bg-white shadow-xl py-1">
-                      {GROUPS.map((g) => {
-                        const GIcon = g.icon;
-                        const gActive = isGroupActive(g);
-                        return (
-                          <div key={g.id}>
-                            <button
-                              onClick={() => { goToGroup(g); if (!g.children) setNavMenuOpen(false); }}
-                              className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
-                              style={gActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
-                            >
-                              <GIcon className="h-4 w-4 shrink-0" />
-                              {navLabel(g)}
-                            </button>
-                            {g.children && gActive && g.children.map((c) => {
-                              const CIcon = c.icon;
-                              const cActive = isChildActive(g, c.id);
-                              return (
-                                <button
-                                  key={c.id}
-                                  onClick={() => { goToChild(g, c.id); setNavMenuOpen(false); }}
-                                  className={`flex w-full items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
-                                  style={cActive ? { color: themeColor } : {}}
-                                >
-                                  <CIcon className="h-3.5 w-3.5 shrink-0" />
-                                  {navLabel(c)}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                      {/* Back to Rekindle — exit the ministry space (return to the hub) */}
-                      <div className="my-1 border-t border-gray-100" />
-                      <button
-                        onClick={() => { setNavMenuOpen(false); onExit(); }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        <ArrowLeft className="h-4 w-4 shrink-0" />
-                        {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2">
+            <div className="relative w-full">
+              {/* Full-width mobile navigation trigger */}
+              <button
+                onClick={() => setNavMenuOpen((o) => !o)}
+                aria-label={t('ministrySpace', 'openNavMenu', 'Open navigation menu')}
+                aria-expanded={navMenuOpen}
+                className="flex w-full items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium text-gray-800 bg-gray-100 hover:bg-gray-200 transition-colors"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {(() => {
+                    const activeChild = activeGroup.children?.find((c) => c.id === activeTab);
+                    const ActiveIcon = activeChild ? activeChild.icon : activeGroup.icon;
+                    return (
+                      <>
+                        <span className={`flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br ${activeGroup.gradient} text-white shadow-sm shrink-0`}>
+                          <ActiveIcon className="h-4 w-4" />
+                        </span>
+                        <span className="font-semibold text-gray-900 truncate">
+                          {activeChild ? `${navLabel(activeGroup)} › ${navLabel(activeChild)}` : navLabel(activeGroup)}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+                <ChevronDown className={`h-4 w-4 text-gray-500 shrink-0 transition-transform ${navMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
 
-              {/* Primary group row (labels appear from sm+) */}
-              <div className="flex gap-1 overflow-x-auto">
-                {GROUPS.map((g) => {
-                  const GIcon = g.icon;
-                  const gActive = isGroupActive(g);
-                  return (
+              {/* Full-width mobile dropdown list */}
+              {navMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setNavMenuOpen(false)} />
+                  <div className="absolute left-0 right-0 top-full mt-1 z-50 w-full max-h-[75vh] overflow-y-auto rounded-xl border bg-white shadow-xl py-1.5">
+                    {GROUPS.map((g) => {
+                      const GIcon = g.icon;
+                      const gActive = isGroupActive(g);
+                      return (
+                        <div key={g.id}>
+                          <button
+                            onClick={() => { goToGroup(g); if (!g.children) setNavMenuOpen(false); }}
+                            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                            style={gActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
+                          >
+                            <GIcon className="h-4 w-4 shrink-0" />
+                            {navLabel(g)}
+                          </button>
+                          {g.children && gActive && g.children.map((c) => {
+                            const CIcon = c.icon;
+                            const cActive = isChildActive(g, c.id);
+                            return (
+                              <button
+                                key={c.id}
+                                onClick={() => { goToChild(g, c.id); setNavMenuOpen(false); }}
+                                className={`flex w-full items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                                style={cActive ? { color: themeColor } : {}}
+                              >
+                                <CIcon className="h-3.5 w-3.5 shrink-0" />
+                                {navLabel(c)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                    {/* Back to Rekindle — exit the ministry space (return to the hub) */}
+                    <div className="my-1 border-t border-gray-100" />
                     <button
-                      key={g.id}
-                      onClick={() => goToGroup(g)}
-                      className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors ${
-                        gActive ? 'text-gray-900' : 'text-gray-500'
-                      }`}
+                      onClick={() => { setNavMenuOpen(false); onExit(); }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
                     >
-                      <span className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${g.gradient} text-white shadow-sm ${gActive ? 'ring-2 ring-offset-1 ring-gray-300' : ''}`}>
-                        <GIcon className="h-[18px] w-[18px]" />
-                      </span>
-                      <span>{navLabel(g)}</span>
+                      <ArrowLeft className="h-4 w-4 shrink-0" />
+                      {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                </>
+              )}
             </div>
-            {/* Secondary sub-tab row for the active group */}
-            {activeGroup.children && (
-              <div className="flex gap-1 overflow-x-auto pb-2">
-                {activeGroup.children.map((c) => {
-                  const CIcon = c.icon;
-                  const cActive = isChildActive(activeGroup, c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => goToChild(activeGroup, c.id)}
-                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs whitespace-nowrap transition-colors ${
-                        cActive ? 'text-white' : 'text-gray-500 hover:bg-gray-100'
-                      }`}
-                      style={cActive ? { backgroundColor: themeColor } : {}}
-                    >
-                      <CIcon className="h-3.5 w-3.5" />
-                      {navLabel(c)}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
       </div>
