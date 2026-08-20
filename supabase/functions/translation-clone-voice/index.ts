@@ -19,18 +19,28 @@
 //   functions in this project).
 //
 // ── Request ───────────────────────────────────────────────────────────────
-//   POST { ministryId, samplePath, label }, Authorization: Bearer <user JWT>
+//   POST { ministryId, samplePath, label, customVoiceId? }, Authorization: Bearer <user JWT>
 //     samplePath: the object path within the translation-voice-samples
 //     bucket the client already uploaded to directly (its own upload
 //     policy — migration 0282 — already scopes that to admins of
 //     ministryId, so this function only needs to READ it back).
 //
+//     customVoiceId (Phase 3, migration 0283): when present, RE-RECORDS an
+//     EXISTING cloned voice instead of creating a new one — calls the
+//     provider's edit-voice endpoint (keeps the same external voice_id, so
+//     every language currently assigned to it stays correctly assigned,
+//     nothing to reassign) instead of its create endpoint, and updates the
+//     existing translation_custom_voices row instead of inserting one.
+//     The old sample is deleted from storage once the new one is saved.
+//
 //     → 200 { id, voice_id, label }
 //     → 400 { error: 'ministryId, samplePath, and label are required' }
 //     → 401 { error: 'unauthorized' }
 //     → 403 { error: 'not_authorized_for_ministry' }
-//     → 404 { error: 'sample_not_found' }
-//     → 502 { error: 'provider_error' }   TTS provider's cloning call failed
+//     → 404 { error: 'sample_not_found' }        the newly uploaded sample
+//     → 404 { error: 'custom_voice_not_found' }  customVoiceId doesn't exist
+//                                                 or belongs to another ministry
+//     → 502 { error: 'provider_error' }   TTS provider's clone/edit call failed
 // ───────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -51,6 +61,7 @@ interface RequestBody {
   ministryId: string;
   samplePath: string;
   label: string;
+  customVoiceId?: string;
 }
 
 serve(async (req) => {
@@ -95,11 +106,26 @@ serve(async (req) => {
     });
     if (adminErr || !isAdmin) return json({ error: 'not_authorized_for_ministry' }, 403);
 
+    // Re-record path (Phase 3): resolve the existing row FIRST, before
+    // touching the provider, so a bad customVoiceId fails fast with a
+    // clear error instead of burning a provider call for nothing.
+    const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    let existing: { external_voice_id: string; sample_path: string | null } | null = null;
+    if (body.customVoiceId) {
+      const { data: row, error: rowErr } = await service
+        .from('translation_custom_voices')
+        .select('external_voice_id, sample_path')
+        .eq('id', body.customVoiceId)
+        .eq('ministry_id', body.ministryId)
+        .maybeSingle();
+      if (rowErr || !row) return json({ error: 'custom_voice_not_found' }, 404);
+      existing = row;
+    }
+
     // Service-role only for the storage READ — the sample was uploaded
     // through the client's own authenticated session under an upload
     // policy already scoped to admins of this exact ministry (0282), so
     // this is just retrieving what that policy already allowed.
-    const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: sampleBlob, error: downloadErr } = await service.storage
       .from('translation-voice-samples')
       .download(body.samplePath);
@@ -112,25 +138,54 @@ serve(async (req) => {
     form.append('name', body.label);
     form.append('files', sampleBlob, 'sample');
 
-    const cloneRes = await fetch('https://api.elevenlabs.io/v1/voices/add', {
+    // Edit (same voice_id, new/added samples) vs. create (brand new
+    // voice_id) — see this file's header comment for why re-recording
+    // deliberately keeps the same voice_id rather than cloning fresh.
+    const providerUrl = existing
+      ? `https://api.elevenlabs.io/v1/voices/${existing.external_voice_id}/edit`
+      : 'https://api.elevenlabs.io/v1/voices/add';
+    const providerRes = await fetch(providerUrl, {
       method: 'POST',
       headers: { 'xi-api-key': TTS_API_KEY },
       body: form,
     });
-    if (!cloneRes.ok) {
-      console.error('translation-clone-voice: provider error', cloneRes.status, await cloneRes.text().catch(() => ''));
+    if (!providerRes.ok) {
+      console.error('translation-clone-voice: provider error', providerRes.status, await providerRes.text().catch(() => ''));
       return json({ error: 'provider_error' }, 502);
     }
-    const cloneData = (await cloneRes.json()) as { voice_id?: string };
+
+    let voiceId: string;
+    if (existing) {
+      // Edit responds { status: 'ok' }, no voice_id — it's unchanged by design.
+      voiceId = existing.external_voice_id;
+      const { error: updateErr } = await userClient.rpc('update_custom_voice', {
+        p_id: body.customVoiceId,
+        p_label: body.label,
+        p_sample_path: body.samplePath,
+      });
+      if (updateErr) {
+        console.error('translation-clone-voice: update_custom_voice failed:', updateErr.message);
+        return json({ error: 'save_failed' }, 500);
+      }
+      // Clean up the sample this one replaced — best-effort, a leftover
+      // file here is just wasted storage, not a correctness problem.
+      if (existing.sample_path && existing.sample_path !== body.samplePath) {
+        await service.storage.from('translation-voice-samples').remove([existing.sample_path]).catch(() => {});
+      }
+      return json({ id: body.customVoiceId, voice_id: voiceId, label: body.label });
+    }
+
+    const cloneData = (await providerRes.json()) as { voice_id?: string };
     if (!cloneData.voice_id) {
       console.error('translation-clone-voice: provider response had no voice_id', cloneData);
       return json({ error: 'provider_error' }, 502);
     }
+    voiceId = cloneData.voice_id;
 
     // Reuses Phase 1's exact write path — see this file's header comment.
     const { data: customVoiceId, error: insertErr } = await userClient.rpc('create_custom_voice', {
       p_ministry_id: body.ministryId,
-      p_external_voice_id: cloneData.voice_id,
+      p_external_voice_id: voiceId,
       p_label: body.label,
       p_sample_path: body.samplePath,
       p_provider: 'elevenlabs',
@@ -141,12 +196,12 @@ serve(async (req) => {
       // can be found and cleaned up rather than silently wasting a slot.
       console.error(
         `translation-clone-voice: create_custom_voice failed after a successful provider clone ` +
-        `(orphaned voice_id ${cloneData.voice_id}):`, insertErr.message,
+        `(orphaned voice_id ${voiceId}):`, insertErr.message,
       );
       return json({ error: 'save_failed' }, 500);
     }
 
-    return json({ id: customVoiceId, voice_id: cloneData.voice_id, label: body.label });
+    return json({ id: customVoiceId, voice_id: voiceId, label: body.label });
   } catch (error) {
     console.error('translation-clone-voice error:', error);
     return json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);

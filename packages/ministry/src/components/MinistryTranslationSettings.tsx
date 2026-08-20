@@ -265,6 +265,57 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
     }
   };
 
+  // Phase 3: re-record/replace an EXISTING clone's sample rather than the
+  // only option being clone-a-new-one + delete-the-old-one. Picking a file
+  // fires the replace immediately (no separate confirm step) — same
+  // pattern as a profile-photo "change" button.
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
+  const [replacingVoiceId, setReplacingVoiceId] = useState<string | null>(null);
+
+  const startReplaceSample = (id: string) => {
+    setReplaceTargetId(id);
+    replaceFileInputRef.current?.click();
+  };
+
+  const handleReplaceFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // lets the same filename be picked again later
+    const targetId = replaceTargetId;
+    setReplaceTargetId(null);
+    if (!file || !targetId) return;
+    const cv = customVoices.find(v => v.id === targetId);
+    if (!cv) return;
+
+    setReplacingVoiceId(targetId);
+    try {
+      const ext = file.name.split('.').pop() || 'audio';
+      const samplePath = `${ministryId}/${crypto.randomUUID()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('translation-voice-samples')
+        .upload(samplePath, file);
+      if (uploadErr) throw uploadErr;
+
+      // customVoiceId tells the function to EDIT this voice in place
+      // (same external voice_id — every language it's assigned to stays
+      // assigned) instead of cloning a brand new one.
+      const { data, error } = await supabase.functions.invoke('translation-clone-voice', {
+        body: { ministryId, samplePath, label: cv.label, customVoiceId: targetId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({ title: 'Voice sample replaced', description: `"${cv.label}" now uses the new recording.` });
+      await loadCustomVoices();
+      if (voices !== null) await fetchVoices();
+    } catch (err: any) {
+      console.error('[MinistryTranslationSettings] replace sample failed:', err);
+      toast({ title: 'Could not replace sample', description: err.message, variant: 'destructive' });
+    } finally {
+      setReplacingVoiceId(null);
+    }
+  };
+
   const deleteCustomVoice = async (id: string) => {
     setDeletingVoiceId(id);
     try {
@@ -612,22 +663,47 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
             app; make sure it's in place before uploading a sample.
           </p>
 
+          {/* Shared by every "Replace sample" button below — picking a file
+              fires the replace for whichever voice set replaceTargetId. */}
+          <input
+            ref={replaceFileInputRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={handleReplaceFileChosen}
+          />
+
           {customVoices.length > 0 && (
             <div className="space-y-1.5">
               {customVoices.map(cv => (
                 <div key={cv.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <span className="text-sm">{cv.label}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteCustomVoice(cv.id)}
-                    disabled={deletingVoiceId === cv.id}
-                  >
-                    {deletingVoiceId === cv.id
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Trash2 className="h-3.5 w-3.5 text-red-600" />}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      title="Replace sample (keeps this voice assigned everywhere it's used)"
+                      onClick={() => startReplaceSample(cv.id)}
+                      disabled={replacingVoiceId === cv.id || deletingVoiceId === cv.id}
+                    >
+                      {replacingVoiceId === cv.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Upload className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      title="Delete voice"
+                      onClick={() => deleteCustomVoice(cv.id)}
+                      disabled={deletingVoiceId === cv.id || replacingVoiceId === cv.id}
+                    >
+                      {deletingVoiceId === cv.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5 text-red-600" />}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

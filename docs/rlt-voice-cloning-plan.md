@@ -6,7 +6,8 @@ bare-ID-field version after real feedback). **Phase 2 (cloning) shipped
 and live** — schema, Edge Functions, and UI all deployed; consent is
 handled outside this app entirely (explicit product decision), and
 support-either-voice (pastor's own or a house narrator) was chosen over
-picking one. **Phase 1b (FPT) dropped.**
+picking one. **Phase 3 (re-record/replace an existing clone) shipped and
+live.** **Phase 1b (FPT) dropped.** All phases in this plan are closed.
 
 ## Phase 1b — closed, not built
 
@@ -315,9 +316,18 @@ table, the picker, the bot lookup) is reused unchanged.
 2. ~~Get FPT's real-time-tier API reference and run the throwaway latency/format
    spike~~ — done; confirmed no viable product exists. Phase 1b dropped.
 3. ✅ Phase 2 (cloning) — shipped, upload-based sample capture as planned.
-4. Phase 3 (nicer voice management UI) — the picker/preview/audition and the
-   Custom Voices delete panel from Phases 1–2 already cover most of what this
-   phase originally called for. What's left, if still wanted: a proper
-   `Select`-based catalog fetch/cache instead of the current on-open fetch
-   (minor), and re-record/replace for an existing cloned voice (not yet
-   built — today's flow is clone-a-new-one + delete-the-old-one).
+4. ✅ Phase 3 (voice management UI) — shipped (2026-08-21). Re-record/replace
+   for an existing cloned voice, confirmed against the TTS provider's actual
+   edit-voice endpoint (POST `/v1/voices/{voice_id}/edit`) — it keeps the
+   same external voice_id when new samples are submitted, so every language
+   currently assigned to that voice stays correctly assigned; nothing to
+   clear or reassign, unlike a delete. Picking a replacement file uploads it,
+   calls the provider's edit endpoint instead of create, updates the
+   existing `translation_custom_voices` row (`update_custom_voice`,
+   migration 0283) instead of inserting a new one, and cleans up the old
+   sample from storage. The other originally-listed item (a `Select`-based
+   catalog picker) wasn't pursued — the existing Popover-based picker
+   already does preview/audition, which a native `Select` can't support
+   well anyway, so it's a strict downgrade, not an upgrade.
+
+All phases from this plan are now closed (1, 2, 3 shipped; 1b dropped).
