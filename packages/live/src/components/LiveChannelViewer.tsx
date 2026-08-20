@@ -188,6 +188,15 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // instead of by adding buffer headroom).
   const HLS_LATENCY_SECONDS = 6;
   const [translationActive, setTranslationActive] = useState(false);
+  // Real correction (2026-08-20): the pre-join "do you need translation?"
+  // toggle was pulled back out — the button is unconditionally available to
+  // every viewer again, same as before that toggle ever existed. `translationActive`
+  // is only ever true when a viewer has actually picked a real language
+  // inside BroadcastTranslationButton's own popover (it's driven entirely by
+  // that component's `onActiveChange` callback), so it's already the
+  // correct, minimal condition on its own — kept under this name for the
+  // downstream call sites, which stay unchanged either way.
+  const translationMuteOverride = translationActive;
 
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
   const dailyRoom = useDailyRoom({
@@ -376,7 +385,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
       // path (2026-08-20), so the ORIGINAL audio has to be muted while a
       // translated dub is selected here too, or it's the same double-voice
       // bug already fixed for HLS viewers.
-      remoteAudioRef.current.muted = isMuted || translationActive;
+      remoteAudioRef.current.muted = isMuted || translationMuteOverride;
       remoteAudioRef.current.play().catch(() => {});
     } else if (remoteAudioRef.current?.srcObject) {
       // Conditions no longer hold (video enabled, host gone, or — critically —
@@ -385,7 +394,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
       remoteAudioRef.current.pause();
       remoteAudioRef.current.srcObject = null;
     }
-  }, [dailyRoom.remoteParticipants, isMuted, translationActive, channel.is_video_enabled]);
+  }, [dailyRoom.remoteParticipants, isMuted, translationMuteOverride, channel.is_video_enabled]);
 
   // Belt-and-braces for the same leak: the instant we're actually on the HLS
   // path, this legacy element has no business playing anything, regardless
@@ -868,7 +877,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const toggleMute = () => {
     setIsMuted(!isMuted);
     if (remoteAudioRef.current) {
-      remoteAudioRef.current.muted = !isMuted || translationActive;
+      remoteAudioRef.current.muted = !isMuted || translationMuteOverride;
     }
   };
 
@@ -969,19 +978,16 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
               </div>
             )}
 
-            {/* Real bug found live (2026-08-20): this used to only be mounted
-                inside the watchViaHls branch below, so the audience had NO
-                translation control at all whenever they weren't (yet) on the
-                HLS path — e.g. right at broadcast start, before Egress has
-                caught up, or on a pure audio-only broadcast that never goes
-                through HLS. BroadcastTranslationButton doesn't actually need
-                HLS — it owns its own independent WebRTC connection to the
-                bot's translated track (see that file) — so it belongs here,
-                unconditionally, same as the reaction button above. The host
-                already gets translation immediately (FloatingTranslationButton
-                in LiveChannelBroadcast.tsx, since the host is a real room
-                participant from the start); this puts the audience on equal
-                footing regardless of which playback path they're on. */}
+            {/* Real correction (2026-08-20): only the pre-join "do you need
+                translation?" TOGGLE/prompt was asked to come out, not the
+                translate control itself — that stays available to viewers
+                unconditionally, same as before the toggle was ever added.
+                BroadcastTranslationButton owns its own independent WebRTC
+                connection to the bot's translated track (see that file), so
+                it doesn't need HLS and doesn't affect the base stream when
+                unused — see translationMuteOverride above, which stays
+                false unless a viewer actually picks a language inside this
+                button's own popover. */}
             {isLive && (
               <div className="absolute bottom-4 left-4 z-50">
                 {/* delaySeconds only applies on the HLS path — that's the
@@ -1009,7 +1015,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                     as the meeting picker's mute-the-room-not-yourself fix. */}
                 <HlsPlayer
                   src={hlsPlaybackUrl!}
-                  muted={isMuted || translationActive}
+                  muted={isMuted || translationMuteOverride}
                   poster={posterUrl}
                   className="w-full h-full"
                   targetLatencySeconds={HLS_LATENCY_SECONDS}
@@ -1034,7 +1040,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 return (
                   <SpeakerVideoTile
                     participant={visibleParticipants[0]}
-                    muted={isMuted || translationActive}
+                    muted={isMuted || translationMuteOverride}
                     isLarge
                   />
                 );
@@ -1046,13 +1052,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 <div className="w-full h-full flex gap-1 p-1">
                   {/* Main / host feed */}
                   <div className="flex-1 min-w-0">
-                    <SpeakerVideoTile participant={hostP} muted={isMuted || translationActive} isLarge />
+                    <SpeakerVideoTile participant={hostP} muted={isMuted || translationMuteOverride} isLarge />
                   </div>
                   {/* Speaker strip on the right */}
                   <div className={`flex flex-col gap-1 ${speakerPs.length === 1 ? 'w-24 sm:w-40' : 'w-28 sm:w-48'}`}>
                     {speakerPs.map(sp => (
                       <div key={sp.sessionId} className="flex-1 min-h-0">
-                        <SpeakerVideoTile participant={sp} muted={isMuted || translationActive} />
+                        <SpeakerVideoTile participant={sp} muted={isMuted || translationMuteOverride} />
                       </div>
                     ))}
                   </div>

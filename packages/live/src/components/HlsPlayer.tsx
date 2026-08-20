@@ -99,8 +99,38 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     const clearEndGuard = () => { if (endGuard) { clearTimeout(endGuard); endGuard = null; } };
     const clearRecover = () => { if (recoverTimer) { clearTimeout(recoverTimer); recoverTimer = null; } };
 
+    // Real gap found live (2026-08-20): a fatal NETWORK_ERROR/MEDIA_ERROR
+    // recovers IN PLACE below (hls.startLoad() / hls.recoverMediaError()),
+    // which is right for a one-off blip — but if the underlying condition
+    // keeps failing (a flaky segment fetch, a bad CDN edge for that one
+    // viewer's connection), there was NO cap: it just kept retrying in
+    // place forever, "waiting" the whole time, with no escalation to a
+    // full rebuild. Confirmed against a real report on a single CONTINUOUS
+    // broadcast (host never restarted) whose Egress output was verified
+    // gap-free for its entire duration — so the stall was purely client-
+    // side recovery, not a real content gap. Two consequences of never
+    // escalating: "reconnecting" can drag on far longer than it should,
+    // and because in-place recovery resumes from wherever hls.js's
+    // internal position got stuck rather than resetting it, the viewer
+    // can land tens of seconds behind live once it finally does recover —
+    // a fresh setup() below re-syncs near the live edge instead. Mirrors
+    // the escalation the ENDLIST path (endGuard) already had; this is the
+    // same idea for the fatal-error path, which had none.
+    let recoveryEscalateTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearRecoveryEscalate = () => { if (recoveryEscalateTimer) { clearTimeout(recoveryEscalateTimer); recoveryEscalateTimer = null; } };
+    const armRecoveryEscalate = () => {
+      if (recoveryEscalateTimer || cancelled) return;
+      recoveryEscalateTimer = setTimeout(() => {
+        recoveryEscalateTimer = null;
+        if (cancelled) return;
+        console.warn('[HlsPlayer] in-place recovery did not resolve within 8s — forcing a full rebuild to re-sync near the live edge');
+        if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
+        setup();
+      }, 8000);
+    };
+
     // Playback resumed cleanly — cancel any pending "reconnecting" overlay.
-    const markPlaying = () => { hasPlayedOnce = true; clearRecover(); clearEndGuard(); setStatus('playing'); };
+    const markPlaying = () => { hasPlayedOnce = true; clearRecover(); clearRecoveryEscalate(); clearEndGuard(); setStatus('playing'); };
 
     // Real report, screenshotted live (2026-08-20): playback ran fine with
     // sound for a couple of seconds, froze, and came back demanding a FRESH
@@ -270,19 +300,31 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
+          // Logged unconditionally (2026-08-20) — a fatal error used to be
+          // handled completely silently, so a "why is it stuck" report had
+          // nothing to go on beyond the on-screen status. data.details is
+          // hls.js's specific error code (e.g. fragLoadTimeOut,
+          // levelLoadError) — that's the actual thing to look at next time.
+          console.warn('[HlsPlayer] fatal hls.js error:', data.type, data.details, data);
           // A fatal error is NOT proof the broadcast ended — at startup the live
           // playlist has only a few segments, so transient stalls / 404s are
-          // normal. Recover IN PLACE (no teardown, no overlay flash) and only do
-          // a full reload if in-place recovery isn't possible. The only
-          // authoritative "ended" signal is ENDLIST, handled in LEVEL_LOADED.
+          // normal. Recover IN PLACE (no teardown, no overlay flash) first, but
+          // cap how long we'll keep retrying in place before escalating to a
+          // full rebuild (armRecoveryEscalate — see its comment above) so a
+          // persistently-failing connection doesn't stay wedged indefinitely.
+          // The only authoritative "ended" signal is ENDLIST, handled in
+          // LEVEL_LOADED.
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             markRecovering();
+            armRecoveryEscalate();
             try { hls?.startLoad(); return; } catch { /* fall through to reload */ }
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
             markRecovering();
+            armRecoveryEscalate();
             try { hls?.recoverMediaError(); return; } catch { /* fall through to reload */ }
           }
           markRecovering();
+          clearRecoveryEscalate();
           if (hls) { hls.destroy(); hls = null; }
           retryTimer = setTimeout(setup, 2000);
         });
@@ -315,6 +357,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       if (retryTimer) clearTimeout(retryTimer);
       if (endGuard) clearTimeout(endGuard);
       if (recoverTimer) clearTimeout(recoverTimer);
+      if (recoveryEscalateTimer) clearTimeout(recoveryEscalateTimer);
       if (debugTimer) clearInterval(debugTimer);
       if (hls) hls.destroy();
     };
@@ -322,10 +365,15 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
 
   // Real report (2026-08-19): translated audio selected but original audio
   // kept playing alongside it — "double voices". The prop plumbing here
-  // (LiveChannelViewer passes `muted={isMuted || translationActive}`) reads
-  // correctly on paper, so rather than guess again: track and SHOW the
-  // actual DOM .muted state (ground truth, not the prop we asked for) so a
-  // live report can confirm or rule out a prop/DOM desync directly.
+  // (LiveChannelViewer passes `muted={isMuted || translationMuteOverride}`,
+  // itself gated so it can only ever be non-zero when translation was
+  // actually opted into — see LiveChannelViewer.tsx) reads correctly on
+  // paper, so rather than guess again: track and SHOW the actual DOM .muted
+  // state (ground truth, not the prop we asked for) so a live report can
+  // confirm or rule out a prop/DOM desync directly. Note this component
+  // itself takes no translation-derived input beyond this single `muted`
+  // boolean — no translation code touches hls.js config, buffering, or
+  // recovery logic here at all.
   const [actualMuted, setActualMuted] = useState(muted);
   useEffect(() => {
     if (videoRef.current) {
