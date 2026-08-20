@@ -6,9 +6,32 @@ bare-ID-field version after real feedback). **Phase 2 (cloning) shipped
 and live** — schema, Edge Functions, and UI all deployed; consent is
 handled outside this app entirely (explicit product decision), and
 support-either-voice (pastor's own or a house narrator) was chosen over
-picking one. **Phase 1b (FPT) blocked** on FPT's real-time-tier API
-reference — the user is setting this up directly in Supabase rather than
-handing it to Claude.
+picking one. **Phase 1b (FPT) dropped.**
+
+## Phase 1b — closed, not built
+
+Confirmed directly against FPT's own console documentation (pasted by the
+user, not just the public docs found earlier) that the only TTS product FPT
+offers — account or no account — is the async v5 REST API: 5 seconds to 2
+minutes per request, unpredictable, MP3/WAV only, no streaming. A follow-up
+search (general web, FPT's own docs site index, Vietnamese-market terms,
+SDK/WebSocket/gRPC-specific terms) turned up no separate real-time/streaming
+product anywhere discoverable. That rules this out structurally for live,
+per-utterance translation — not a tuning problem, a product-shape problem.
+
+Decision: drop Phase 1b rather than build integration code against a product
+that can't serve the live path. If FPT genuinely has a faster tier, it would
+need to come from a direct conversation with their sales/support, not
+anything visible in the self-serve console.
+
+**Good Vietnamese voice quality is still achievable without FPT** — Phase 1's
+per-language voice picker lets Vietnamese use its own dedicated voice, and
+Phase 2's cloning can produce a real Vietnamese speaker's voice for it, both
+already live. Worth judging quality directly against those before concluding
+anything is still missing.
+
+An `FPT_API_KEY` secret was set on the Supabase project for this — nothing
+reads it now that this phase is dropped; harmless to leave or remove.
 
 ## First: what "Default speaker identity" actually is
 
@@ -288,14 +311,13 @@ table, the picker, the bot lookup) is reused unchanged.
 
 ## Suggested order of work
 
-1. Phase 1 (per-language voice selection) — ships value immediately even before
-   cloning or FPT exist, and is the foundation everything else sits on.
-2. Get FPT's real-time-tier API reference and run the throwaway latency/format
-   spike (first task in Phase 1b) — this determines whether Phase 1b is even
-   viable as designed before any real code is written against it.
-3. Settle the consent/policy question for cloning while 1 and 2 are underway —
-   don't block engineering on it, but don't skip it either.
-4. Phase 1b (FPT + fallback for Vietnamese), once the spike confirms it's viable.
-5. Phase 2 (cloning), starting with upload-based sample capture.
-6. Phase 3 (nicer voice management UI) once the above are live and proven with
-   at least one real ministry.
+1. ✅ Phase 1 (per-language voice selection) — shipped.
+2. ~~Get FPT's real-time-tier API reference and run the throwaway latency/format
+   spike~~ — done; confirmed no viable product exists. Phase 1b dropped.
+3. ✅ Phase 2 (cloning) — shipped, upload-based sample capture as planned.
+4. Phase 3 (nicer voice management UI) — the picker/preview/audition and the
+   Custom Voices delete panel from Phases 1–2 already cover most of what this
+   phase originally called for. What's left, if still wanted: a proper
+   `Select`-based catalog fetch/cache instead of the current on-open fetch
+   (minor), and re-record/replace for an existing cloned voice (not yet
+   built — today's flow is clone-a-new-one + delete-the-old-one).
