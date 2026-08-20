@@ -171,16 +171,22 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // delay buffer can never silently drift out of sync with the video's
   // actual buffer.
   //
-  // Widened 6 -> 8 (2026-08-20), a deliberate latency-for-reliability trade,
-  // requested and confirmed live: recurring "breaks" traced to sitting close
-  // to the live edge — segments get fetched right at the boundary of when
-  // Egress finishes writing them, which is inherently more exposed to "not
-  // fully ready yet" races the closer the target sits to the edge. 2 extra
-  // seconds of buffer headroom gives that race more room before it turns
-  // into a visible stall, at the cost of 2 more seconds of delay. If this
-  // doesn't measurably reduce break frequency, the root cause isn't the
-  // live-edge race and this should be reverted rather than pushed further.
-  const HLS_LATENCY_SECONDS = 8;
+  // Widened 6 -> 8 (2026-08-20) as a deliberate latency-for-reliability
+  // trade, then REVERTED back to 6 the same day: real regression, live-
+  // tested — video got stuck in 'loading' forever ("no stream"), audio
+  // ballooned to ~18s. Root cause: liveSyncDuration (this value) tells
+  // hls.js to position playback THIS MANY SECONDS behind the live edge —
+  // but at cold-start, with segmentDuration=4s, that position needs at
+  // least `target / 4` segments to already exist in the playlist before
+  // hls.js can find a valid spot to start from at all. 8s needs 2 full
+  // segments already written; joining right as Egress cold-starts (1
+  // segment, sometimes none) left hls.js unable to position itself,
+  // which reads as "stuck loading" rather than "just a bit slow." The
+  // live-edge-race theory this widening was meant to test didn't pan
+  // out anyway (the freezes turned out to be the resync watchdog's own
+  // hard seeks — see HlsPlayer.tsx — now fixed at the actual source
+  // instead of by adding buffer headroom).
+  const HLS_LATENCY_SECONDS = 6;
   const [translationActive, setTranslationActive] = useState(false);
 
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
