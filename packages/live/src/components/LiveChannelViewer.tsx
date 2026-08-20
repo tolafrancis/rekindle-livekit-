@@ -12,8 +12,7 @@ import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { LiveChannelChat } from './LiveChannelChat';
 import { HlsPlayer } from './HlsPlayer';
-// BroadcastTranslationButton import withdrawn (2026-08-20) along with the
-// JSX that used it — see the comment where it used to render, further down.
+import { BroadcastTranslationButton } from './BroadcastTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
@@ -189,26 +188,15 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // instead of by adding buffer headroom).
   const HLS_LATENCY_SECONDS = 6;
   const [translationActive, setTranslationActive] = useState(false);
-  // Real request (2026-08-20): don't show the translate control to every
-  // viewer by default — ask up front, before they're settled into the
-  // broadcast, whether they need translation at all, and only render the
-  // button for viewers who say yes. `null` = not asked yet. This is a
-  // one-time prompt per page load, not a blocking gate — video/audio keep
-  // loading underneath it, so answering it doesn't add to join latency.
-  const [wantsTranslation, setWantsTranslation] = useState<boolean | null>(null);
-  // Real request (2026-08-20): make "translation off" STRUCTURALLY identical
-  // to the pre-translation-button baseline (commit cc9d342 — confirmed live,
-  // real-time, zero breaks), not just conditionally equivalent because
-  // translationActive happens to stay false. BroadcastTranslationButton is
-  // literally unmounted whenever `wantsTranslation` isn't true, so
-  // translationActive genuinely can't become true in that case anyway — but
-  // deriving the effective override THROUGH `wantsTranslation` here, instead
-  // of reading `translationActive` directly at each use site, makes that
-  // guarantee visible at every call site rather than relying on an
-  // unenforced invariant between two components. When this is false, every
-  // mute computation below reduces to exactly what it was before translation
-  // existed: `isMuted`, nothing else.
-  const translationMuteOverride = wantsTranslation === true && translationActive;
+  // Real correction (2026-08-20): the pre-join "do you need translation?"
+  // toggle was pulled back out — the button is unconditionally available to
+  // every viewer again, same as before that toggle ever existed. `translationActive`
+  // is only ever true when a viewer has actually picked a real language
+  // inside BroadcastTranslationButton's own popover (it's driven entirely by
+  // that component's `onActiveChange` callback), so it's already the
+  // correct, minimal condition on its own — kept under this name for the
+  // downstream call sites, which stay unchanged either way.
+  const translationMuteOverride = translationActive;
 
   // FIXED: Initialize Daily room as viewer with strict viewer-only mode
   const dailyRoom = useDailyRoom({
@@ -990,20 +978,34 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
               </div>
             )}
 
-            {/* Translate control WITHDRAWN for viewers (2026-08-20) — real
-                decision after live testing kept surfacing HLS-path problems
-                (video freezing, high latency) that traced back to the CDN/
-                Egress delivery chain, not to translation code (confirmed:
-                origin segment timing and CORS both checked clean on every
-                affected broadcast). Rather than keep layering fixes onto an
-                unreliable HLS path while also carrying translation UI on
-                top of it, pulling this back out entirely for now so the
-                viewer experience matches the pre-translation baseline while
-                the HLS path itself gets sorted. The isolation work in
-                `translationMuteOverride` above is left in place — re-adding
-                this is a small, self-contained JSX change (see git history
-                around commit 0c66b1a for the prompt + button block), not a
-                re-architecture, whenever this comes back. */}
+            {/* Real correction (2026-08-20): only the pre-join "do you need
+                translation?" TOGGLE/prompt was asked to come out, not the
+                translate control itself — that stays available to viewers
+                unconditionally, same as before the toggle was ever added.
+                BroadcastTranslationButton owns its own independent WebRTC
+                connection to the bot's translated track (see that file), so
+                it doesn't need HLS and doesn't affect the base stream when
+                unused — see translationMuteOverride above, which stays
+                false unless a viewer actually picks a language inside this
+                button's own popover. */}
+            {isLive && (
+              <div className="absolute bottom-4 left-4 z-50">
+                {/* delaySeconds only applies on the HLS path — that's the
+                    only path where the VIDEO itself is running several
+                    seconds behind real time, so translated audio has to be
+                    held back to match it. On the WebRTC fallback (audio-only
+                    or video-before-Egress-catches-up) the video is real-time,
+                    so adding the same synthetic delay there would just make
+                    translated audio lag for no reason — 0 lets it play as
+                    soon as the bot's translate+TTS pipeline produces it. */}
+                <BroadcastTranslationButton
+                  channelId={channel.id}
+                  roomName={liveKitRoomName}
+                  delaySeconds={watchViaHls ? HLS_LATENCY_SECONDS : 0}
+                  onActiveChange={setTranslationActive}
+                />
+              </div>
+            )}
 
             {watchViaHls ? (
               <>
