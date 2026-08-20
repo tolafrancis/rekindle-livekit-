@@ -103,6 +103,34 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     // Playback resumed cleanly — cancel any pending "reconnecting" overlay.
     const markPlaying = () => { hasPlayedOnce = true; clearRecover(); clearEndGuard(); setStatus('playing'); };
 
+    // Real report, screenshotted live (2026-08-20): playback ran fine with
+    // sound for a couple of seconds, froze, and came back demanding a FRESH
+    // "tap to enable sound" — even though sound had already been granted and
+    // was actively playing moments before. Every automatic recovery path
+    // below (tentativeEnd, the fatal-error fallback) used to call video.play()
+    // straight from an async retry with a bare .catch(() => setNeedsUnlock(true)),
+    // and an async retry is never gesture-linked, so a browser can legally
+    // block it — even on an origin that already has real media engagement.
+    // Once we've genuinely played before (hasPlayedOnce), that block is far
+    // more likely a transient hiccup than an actual missing gesture — don't
+    // punish the viewer for it on the first failure. Retry silently a couple
+    // times first; only surface the unlock prompt if it's still failing.
+    const attemptPlay = () => {
+      video.play().then(() => setNeedsUnlock(false)).catch(() => {
+        if (!hasPlayedOnce || cancelled) { setNeedsUnlock(true); return; }
+        let attempt = 0;
+        const retry = () => {
+          if (cancelled) return;
+          attempt += 1;
+          video.play().then(() => setNeedsUnlock(false)).catch(() => {
+            if (attempt >= 3) setNeedsUnlock(true);
+            else setTimeout(retry, 400 * attempt);
+          });
+        };
+        setTimeout(retry, 400);
+      });
+    };
+
     // A transient error is recovering IN PLACE. Don't flash the overlay for a
     // sub-second blip — only show "reconnecting" if it hasn't resumed shortly.
     // The next successful frame calls markPlaying() and cancels this.
@@ -112,15 +140,37 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       recoverTimer = setTimeout(() => { recoverTimer = null; setStatus('waiting'); }, 2500);
     };
 
-    // A single "ended"/finalized signal soon after going live is usually Daily's
-    // RTMP reconnecting at startup, not a real end. Reload and give it a grace
-    // window; if live playback resumes, the success paths cancel this. Only after
-    // the window passes with no recovery do we actually declare the stream ended.
+    // A single "ended"/finalized signal soon after going live is usually a
+    // transient hiccup (the source track briefly unpublishing/republishing,
+    // an origin write hiccup — anything that can make Egress momentarily
+    // finalize its current playlist), not a real end. Reload and give it a
+    // grace window; if live playback resumes, the success paths cancel this.
+    // Only after the window passes with no recovery do we actually declare
+    // the stream ended.
+    //
+    // Real report, screenshotted live (2026-08-20): this used to ALWAYS
+    // hls.destroy() + rebuild a brand-new Hls instance via setup() — which
+    // re-fires MANIFEST_PARSED and, with it, a fresh video.play() call. That
+    // call is never gesture-linked (it's an async retry, not a click), so a
+    // browser can legally block it — surfacing a SECOND "tap to enable
+    // sound" moments after the first one already succeeded and audio was
+    // playing fine. Recover the EXISTING Hls instance in place
+    // (stopLoad/startLoad, same idea as the NETWORK_ERROR handler already
+    // uses below) whenever one exists — it resumes the same video element's
+    // playback without ever re-running that handshake. Only fall back to a
+    // full rebuild when there's no hls instance to resume (the native
+    // Safari branch, which never creates one).
     const tentativeEnd = () => {
       if (endGuard) return; // already in a grace window
       markRecovering();
-      if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
-      retryTimer = setTimeout(setup, 1500);
+      let recoveredInPlace = false;
+      if (hls) {
+        try { hls.stopLoad(); hls.startLoad(); recoveredInPlace = true; } catch { /* fall through to full rebuild below */ }
+      }
+      if (!recoveredInPlace) {
+        if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
+        retryTimer = setTimeout(setup, 1500);
+      }
       endGuard = setTimeout(() => { endGuard = null; setStatus('ended'); onEndedRef.current?.(); }, 10000);
     };
 
@@ -130,7 +180,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       // Native HLS (Safari, iOS) — already sits near the live edge for live streams
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
-        video.play().then(() => setNeedsUnlock(false)).catch(() => setNeedsUnlock(true));
+        attemptPlay();
         video.onplaying = () => { wasLive = true; setNeedsUnlock(false); markPlaying(); };
         video.onended = () => { tentativeEnd(); };
         video.onerror = () => { markRecovering(); retryTimer = setTimeout(setup, 2000); };
@@ -209,6 +259,17 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         // consecutive samples (not one — a single spike can be a normal transient
         // the passive mechanisms are already handling; we only step in when they
         // provably haven't).
+        //
+        // Real report (2026-08-20): a stream that resettled at ~14s after a
+        // hiccup never triggered this at all — it was using the SAME ceiling
+        // (maxLatency, 14s for a 6s target) hls.js's own internal mechanism
+        // uses, deliberately generous so ordinary jitter isn't over-corrected.
+        // But "at the ceiling" and "over the ceiling" are different things —
+        // a stream sitting exactly at hls.js's own threshold sails right past
+        // our `> maxLatency` check forever. Our OWN threshold doesn't need to
+        // be as generous as hls.js's — a few seconds over the intended TARGET
+        // is already worth actively correcting, not just worth tolerating.
+        const watchdogCeiling = target + 4;
         // setup() can re-run without the effect's own cleanup firing (tentativeEnd's
         // retryTimer, or the fatal-error reload path both call setup() directly) —
         // clear any interval from a previous run first so they don't pile up.
@@ -226,7 +287,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           const h = hls as any;
           const lag = isFinite(h.latency) && h.latency > 0 ? h.latency : null;
           if (lag == null) { overCeilingStreak = 0; return; }
-          if (lag <= maxLatency) { overCeilingStreak = 0; return; }
+          if (lag <= watchdogCeiling) { overCeilingStreak = 0; return; }
           overCeilingStreak += 1;
           if (overCeilingStreak < 3) return; // ~6s sustained, not a blip
           overCeilingStreak = 0;
@@ -239,13 +300,13 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
             if (syncPos >= video.buffered.start(i) && syncPos <= video.buffered.end(i)) { landsInBuffer = true; break; }
           }
           if (!landsInBuffer) return;
-          console.warn(`[HlsPlayer] resync watchdog: ${lag.toFixed(1)}s behind edge (ceiling ${maxLatency}s) — seeking back to live sync position`);
+          console.warn(`[HlsPlayer] resync watchdog: ${lag.toFixed(1)}s behind edge (watchdog ceiling ${watchdogCeiling}s) — seeking back to live sync position`);
           markRecovering();
           try { video.currentTime = syncPos; } catch { /* noop */ }
         }, 2000);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().then(() => setNeedsUnlock(false)).catch(() => setNeedsUnlock(true));
+          attemptPlay();
         });
         // Any successfully rendered frame means we're live and stable.
         video.onplaying = () => { wasLive = true; setNeedsUnlock(false); markPlaying(); };
