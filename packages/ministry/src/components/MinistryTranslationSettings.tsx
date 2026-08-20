@@ -59,6 +59,16 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   const [pinSaving, setPinSaving] = useState(false);
   const [hasPin, setHasPin] = useState(false);
 
+  // RLT Phase 1 (docs/rlt-voice-cloning-plan.md) — optional per-language
+  // voice override. `perLanguageVoices` is the live-edited draft;
+  // `savedPerLanguageVoices` is the last-loaded-from-DB snapshot, kept
+  // separately so save() can tell which languages actually changed (and
+  // which need their translation_voices row DELETED, not just left blank —
+  // an empty input means "use the ministry default above", which only
+  // happens if there's no row at all).
+  const [perLanguageVoices, setPerLanguageVoices] = useState<Record<string, string>>({});
+  const [savedPerLanguageVoices, setSavedPerLanguageVoices] = useState<Record<string, string>>({});
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,6 +77,16 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   const load = async () => {
     setLoading(true);
     try {
+      const { data: voiceRows, error: voiceError } = await supabase
+        .from('translation_voices')
+        .select('target_language, voice_id')
+        .eq('ministry_id', ministryId);
+      if (voiceError) throw voiceError;
+      const voiceMap: Record<string, string> = {};
+      (voiceRows || []).forEach(row => { voiceMap[row.target_language] = row.voice_id; });
+      setPerLanguageVoices(voiceMap);
+      setSavedPerLanguageVoices(voiceMap);
+
       const { data, error } = await supabase
         .from('language_configs')
         .select('source_language, target_language, supported_target_languages, elevenlabs_voice_id, bot_enabled, is_public, speaker_identity, pin_hash')
@@ -107,6 +127,40 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
         p_speaker_identity: config.speaker_identity,
       });
       if (error) throw error;
+
+      // RLT Phase 1 — per-language voice overrides. Covers every language
+      // that's EITHER currently supported OR had a saved voice before (the
+      // latter case is a language that got removed above in this same
+      // save — its now-orphaned translation_voices row needs cleaning up,
+      // not leaving behind for a language that's no longer offered).
+      const relevantCodes = new Set([
+        ...config.supported_target_languages,
+        ...Object.keys(savedPerLanguageVoices),
+      ]);
+      const nextSaved: Record<string, string> = {};
+      for (const code of relevantCodes) {
+        const stillSupported = config.supported_target_languages.includes(code);
+        const value = stillSupported ? (perLanguageVoices[code] || '').trim() : '';
+        const hadSaved = !!savedPerLanguageVoices[code];
+        if (stillSupported && value) {
+          const { error: voiceErr } = await supabase.rpc('upsert_language_voice', {
+            p_ministry_id: ministryId,
+            p_target_language: code,
+            p_voice_id: value,
+          });
+          if (voiceErr) throw voiceErr;
+          nextSaved[code] = value;
+        } else if (hadSaved) {
+          const { error: removeErr } = await supabase.rpc('remove_language_voice', {
+            p_ministry_id: ministryId,
+            p_target_language: code,
+          });
+          if (removeErr) throw removeErr;
+        }
+      }
+      setSavedPerLanguageVoices(nextSaved);
+      setPerLanguageVoices(nextSaved);
+
       toast({ title: 'Translation settings saved' });
     } catch (err: any) {
       console.error('[MinistryTranslationSettings] save failed:', err);
@@ -224,6 +278,29 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
               </Button>
             </div>
           </div>
+
+          {config.supported_target_languages.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Per-language voices (optional)</Label>
+              <p className="text-xs text-muted-foreground">
+                Give a language its own voice — e.g. a different voice for Vietnamese than for Korean.
+                Leave blank to use the ministry's default voice below for that language.
+              </p>
+              <div className="space-y-2">
+                {config.supported_target_languages.map(code => (
+                  <div key={code} className="flex items-center gap-2">
+                    <span className="w-28 shrink-0 text-sm text-muted-foreground">{languageLabel(code)}</span>
+                    <Input
+                      value={perLanguageVoices[code] || ''}
+                      onChange={e => setPerLanguageVoices(v => ({ ...v, [code]: e.target.value }))}
+                      placeholder="Uses the default voice below"
+                      className="max-w-[280px]"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Default target language</Label>
