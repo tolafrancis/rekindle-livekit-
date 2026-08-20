@@ -89,7 +89,6 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     let endGuard: ReturnType<typeof setTimeout> | null = null;
     let recoverTimer: ReturnType<typeof setTimeout> | null = null;
     let debugTimer: ReturnType<typeof setInterval> | null = null;
-    let resyncTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     let wasLive = false;
     // Tracks whether we've EVER reached clean playback — a plain closure var
@@ -148,29 +147,22 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
     // Only after the window passes with no recovery do we actually declare
     // the stream ended.
     //
-    // Real report, screenshotted live (2026-08-20): this used to ALWAYS
-    // hls.destroy() + rebuild a brand-new Hls instance via setup() — which
-    // re-fires MANIFEST_PARSED and, with it, a fresh video.play() call. That
-    // call is never gesture-linked (it's an async retry, not a click), so a
-    // browser can legally block it — surfacing a SECOND "tap to enable
-    // sound" moments after the first one already succeeded and audio was
-    // playing fine. Recover the EXISTING Hls instance in place
-    // (stopLoad/startLoad, same idea as the NETWORK_ERROR handler already
-    // uses below) whenever one exists — it resumes the same video element's
-    // playback without ever re-running that handshake. Only fall back to a
-    // full rebuild when there's no hls instance to resume (the native
-    // Safari branch, which never creates one).
+    // 2026-08-20: briefly tried recovering the existing Hls instance in
+    // place here (stopLoad/startLoad) instead of a full destroy+rebuild, to
+    // avoid re-triggering the MANIFEST_PARSED -> video.play() handshake
+    // (which can demand a second "tap to enable sound"). Reverted the same
+    // day: a real side-by-side comparison (an old build without ANY of
+    // today's reconnect changes vs. the current one, same host, same
+    // network) showed the old destroy+rebuild behavior playing perfectly —
+    // zero breaks — while the newer in-place recovery attempt correlated
+    // with the reported breaks/latency. attemptPlay() below already covers
+    // the "don't demand a second tap" case on its own, so the full rebuild
+    // doesn't need the in-place workaround to get that benefit too.
     const tentativeEnd = () => {
       if (endGuard) return; // already in a grace window
       markRecovering();
-      let recoveredInPlace = false;
-      if (hls) {
-        try { hls.stopLoad(); hls.startLoad(); recoveredInPlace = true; } catch { /* fall through to full rebuild below */ }
-      }
-      if (!recoveredInPlace) {
-        if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
-        retryTimer = setTimeout(setup, 1500);
-      }
+      if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
+      retryTimer = setTimeout(setup, 1500);
       endGuard = setTimeout(() => { endGuard = null; setStatus('ended'); onEndedRef.current?.(); }, 10000);
     };
 
@@ -191,7 +183,6 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         // Where to START, in seconds behind the edge. hls.js holds this position
         // and corrects drift by playback rate, not by seeking.
         const target = Math.min(Math.max(targetLatencySeconds, 2), 10);
-        // Shared with the resync watchdog below, so both agree on the same ceiling.
         const maxLatency = Math.max(target + 8, 12);
         hls = new Hls({
           // lowLatencyMode intentionally OFF: Mux isn't serving usable LL-HLS
@@ -205,11 +196,6 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           // Only let hls.js re-seek if we fall WELL behind — a generous ceiling so
           // ordinary jitter is absorbed by the 1.1x catch-up, not a jarring seek.
           liveMaxLatencyDuration: maxLatency,
-          // Briefly bumped to 1.15 (2026-08-20) while chasing the freeze-vs-
-          // latency trade below, then reverted back to 1.1 the same day — once
-          // watchdogCeiling was restored to target+6 (the configuration
-          // actually confirmed working, "for audio the latency is better"),
-          // this was the one remaining difference from that known-good state.
           maxLiveSyncPlaybackRate: 1.1,
           backBufferLength: 10,
           // While the audience waits for the host to go live, Mux returns 412
@@ -247,96 +233,21 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         hls.loadSource(src);
         hls.attachMedia(video);
 
-        // Resync watchdog (2026-08-19) — real bug reported live: playback started
-        // near real-time, then a mid-stream stall (buffer underrun, backgrounded
-        // tab, brief network jitter — anything that isn't a `fatal` hls.js error)
-        // left the player sitting tens of seconds behind the live edge, and it
-        // STAYED there. liveMaxLatencyDuration is supposed to make hls.js hard-seek
-        // back toward the target once latency crosses that ceiling, but that
-        // correction lives inside hls.js's internal stream/buffer controllers and
-        // only evaluates against ongoing segment-loading — a genuinely STALLED
-        // video (nothing fires MEDIA_ERROR/NETWORK_ERROR, so none of our existing
-        // handlers see it) can fall outside that loop entirely. Once behind, the
-        // only passive recovery is the ≤1.1x catch-up rate — closing a 20s gap at
-        // 0.1x extra speed takes ~200s, which reads as "just stuck at 25s".
-        // Independently watch measured latency and force a seek back to the
-        // intended live-sync position if it's been over the ceiling for a few
-        // consecutive samples (not one — a single spike can be a normal transient
-        // the passive mechanisms are already handling; we only step in when they
-        // provably haven't).
-        //
-        // Real report (2026-08-20): a stream that resettled at ~14s after a
-        // hiccup never triggered this at all — it was using the SAME ceiling
-        // (maxLatency, 14s for a 6s target) hls.js's own internal mechanism
-        // uses, deliberately generous so ordinary jitter isn't over-corrected.
-        // But "at the ceiling" and "over the ceiling" are different things —
-        // a stream sitting exactly at hls.js's own threshold sails right past
-        // our `> maxLatency` check forever. Our OWN threshold doesn't need to
-        // be as generous as hls.js's — a few seconds over the intended TARGET
-        // is already worth actively correcting, not just worth tolerating.
-        //
-        // Real report, same day, on an actual production broadcast (real
-        // network jitter, not our clean test channel): tightening this to
-        // target+4 fixed the latency (confirmed — "audio latency is
-        // better"), but the forced seek this triggers is a real, visible
-        // stutter — status never left 'playing' and never showed
-        // 'waiting' (this ISN'T a stall/reconnect), yet "recoveries: 4"
-        // in the debug readout proved the watchdog itself fired 4 times,
-        // each one a hard `currentTime` jump. Loosening to target+6
-        // (still same day) wasn't enough either — same report shape
-        // (status stayed 'playing', recoveries kept climbing) even AFTER
-        // that loosening AND after widening the target latency itself
-        // (more buffer before drift becomes a problem, per a live-edge-
-        // race theory that didn't hold up: it still fired).
-        //
-        // Pushed all the way to a near-inactive floor (30s+) the same day,
-        // reasoning the complaint was purely about the freeze — but that
-        // went too far the other way: with correction effectively
-        // disabled, latency climbed back to ~20s (explicitly reported as
-        // worse than the ~8-12s this middle-ground threshold had been
-        // producing). The freeze-vs-latency trade doesn't have a setting
-        // that eliminates both — passive catch-up alone (maxLiveSyncPlaybackRate,
-        // still 1.15) isn't strong enough to hold the line on a real,
-        // jittery connection. Restored to the middle ground that was
-        // actually measured to work reasonably (occasional corrections,
-        // but latency back in the range that was asked for) rather than
-        // the untested extremes on either side.
-        const watchdogCeiling = target + 6;
-        // setup() can re-run without the effect's own cleanup firing (tentativeEnd's
-        // retryTimer, or the fatal-error reload path both call setup() directly) —
-        // clear any interval from a previous run first so they don't pile up.
-        if (resyncTimer) clearInterval(resyncTimer);
-        let overCeilingStreak = 0;
-        resyncTimer = setInterval(() => {
-          if (cancelled || !hls) return;
-          // Guard added after a live report that this made things WORSE — the
-          // most likely cause is hls.latency reading a bogus/inflated value
-          // during the initial cold-start window (before the live edge and our
-          // starting position have both stabilized), which isn't a real "stuck
-          // behind" stall at all. Only ever act once we've reached clean
-          // playback at least once, so the watchdog can't fire during startup.
-          if (!hasPlayedOnce) { overCeilingStreak = 0; return; }
-          const h = hls as any;
-          const lag = isFinite(h.latency) && h.latency > 0 ? h.latency : null;
-          if (lag == null) { overCeilingStreak = 0; return; }
-          if (lag <= watchdogCeiling) { overCeilingStreak = 0; return; }
-          overCeilingStreak += 1;
-          if (overCeilingStreak < 5) return; // ~10s sustained, not ordinary jitter
-          overCeilingStreak = 0;
-          const syncPos = isFinite(h.liveSyncPosition) ? h.liveSyncPosition : null;
-          if (syncPos == null || syncPos <= video.currentTime) return;
-          // Only seek somewhere already buffered — landing in an unbuffered gap
-          // would itself cause a fresh stall, defeating the point of this fix.
-          let landsInBuffer = false;
-          for (let i = 0; i < video.buffered.length; i++) {
-            if (syncPos >= video.buffered.start(i) && syncPos <= video.buffered.end(i)) { landsInBuffer = true; break; }
-          }
-          if (!landsInBuffer) return;
-          console.warn(`[HlsPlayer] resync watchdog: ${lag.toFixed(1)}s behind edge (watchdog ceiling ${watchdogCeiling}s) — seeking back to live sync position`);
-          markRecovering();
-          try { video.currentTime = syncPos; } catch { /* noop */ }
-        }, 2000);
-
+        // A resync watchdog (independently forcing a hard `currentTime` seek
+        // when measured latency crossed a threshold) lived here from
+        // 2026-08-19 to 2026-08-20 — added for a real "stuck behind forever"
+        // report, then tuned back and forth across several live tests
+        // (tighter -> better latency but visible stutters; looser/disabled
+        // -> smooth but latency drifted upward) without ever landing on a
+        // setting that avoided both complaints. Removed entirely after a
+        // decisive side-by-side comparison: an old build with NONE of this
+        // watchdog code, tested against the same host over the same
+        // network, played with zero breaks in real time, while every build
+        // that included some version of the watchdog kept reproducing
+        // breaks/latency in one shape or another. hls.js's own built-in
+        // mechanisms (liveMaxLatencyDuration + maxLiveSyncPlaybackRate,
+        // still configured above) are left to manage live-sync on their
+        // own, same as that old, working build did.
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           attemptPlay();
         });
@@ -405,7 +316,6 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       if (endGuard) clearTimeout(endGuard);
       if (recoverTimer) clearTimeout(recoverTimer);
       if (debugTimer) clearInterval(debugTimer);
-      if (resyncTimer) clearInterval(resyncTimer);
       if (hls) hls.destroy();
     };
   }, [src, showDebug]);
