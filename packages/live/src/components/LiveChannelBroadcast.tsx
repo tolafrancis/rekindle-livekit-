@@ -1705,6 +1705,8 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 tableName="channel_broadcasts"
                 enableRecording={isRecording}
                 inCallOverlay={false}
+                roomName={`channel-${channel.id}`}
+                ministryId={(channel as any).ministry_id}
                 onStateChange={(s) => setNotesActive(s === 'recording')}
               />
             </div>

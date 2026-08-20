@@ -34,62 +34,23 @@ export interface UseMeetingNotes {
   isSupported: boolean;
   /** Last fatal recognition error, if any (mic blocked, speech service refused…). */
   error: string | null;
+  /** Currently selected display language for transcripts ('en' default). */
+  selectedLanguage: string;
+  /** Set display language for transcripts. */
+  setSelectedLanguage: (lang: string) => void;
+  /** List of available transcript languages active for this room. */
+  availableLanguages: string[];
   startNotes: () => void;
   stopNotes: () => void;
   reset: () => void;
-}
-
-/** Errors that will never resolve by restarting — restarting just loops silently. */
-const FATAL_SPEECH_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported']);
-
-function describeSpeechError(code: string): string {
-  switch (code) {
-    case 'not-allowed':
-    case 'service-not-allowed':
-      return 'Microphone access for speech recognition was blocked. Allow the mic for this site, then start notes again.';
-    case 'audio-capture':
-      return 'No microphone was available to transcribe.';
-    case 'language-not-supported':
-      return 'Speech recognition does not support this language.';
-    case 'network':
-      return 'Speech recognition lost its network connection.';
-    default:
-      return `Speech recognition error: ${code}`;
-  }
-}
-
-// Minimal shapes for the (still non-standard) Web Speech API.
-interface SpeechResultEvent extends Event {
-  resultIndex: number;
-  results: { isFinal: boolean; 0: { transcript: string } ; length: number }[] & { length: number };
-}
-interface Recognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  maxAlternatives: number;
-  lang: string;
-  start(): void;
-  stop(): void;
-  onresult: ((e: SpeechResultEvent) => void) | null;
-  onerror: ((e: Event) => void) | null;
-  onend: (() => void) | null;
-}
-// NOTE: do NOT `declare global` for Window.SpeechRecognition here — MeetingTranscriptionPanel
-// already augments Window with its own (incompatible) shape, and two declarations conflict.
-// Resolve the constructor through a local cast instead.
-type RecognitionCtor = new () => Recognition;
-function getRecognitionCtor(): RecognitionCtor | undefined {
-  const w = window as unknown as {
-    SpeechRecognition?: RecognitionCtor;
-    webkitSpeechRecognition?: RecognitionCtor;
-  };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
 export function useMeetingNotes(
   meetingId: string,
   speakerName: string,
   enabled: boolean = true,
+  roomName?: string,
+  ministryId?: string,
 ): UseMeetingNotes {
   const [active, setActive] = useState(false);
   const [startedBy, setStartedBy] = useState<string | null>(null);
@@ -97,18 +58,14 @@ export function useMeetingNotes(
   const [interimText, setInterimText] = useState('');
   const [isSupported, setIsSupported] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
+  const [availableLanguages, setAvailableLanguages] = useState<string[]>(['en']);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const recognitionRef = useRef<Recognition | null>(null);
   const startedAtRef = useRef<number | null>(null);
-  // `active` inside recognition callbacks would be stale — mirror it in a ref.
   const activeRef = useRef(false);
   const speakerRef = useRef(speakerName);
   useEffect(() => { speakerRef.current = speakerName; }, [speakerName]);
-
-  useEffect(() => {
-    setIsSupported(!!getRecognitionCtor());
-  }, []);
 
   const elapsed = () =>
     startedAtRef.current ? Math.floor((Date.now() - startedAtRef.current) / 1000) : 0;
@@ -116,6 +73,100 @@ export function useMeetingNotes(
   const addLine = useCallback((line: TranscriptLine) => {
     setLines((prev) => [...prev, line]);
   }, []);
+
+  // ── Poll & Subscribe to Active Bot Sessions ───────────────────────────────
+  useEffect(() => {
+    if (!roomName) return;
+    let cancelled = false;
+
+    const fetchSessions = () => {
+      supabase
+        .from('translation_sessions')
+        .select('id, target_language, status')
+        .eq('livekit_room_name', roomName)
+        .in('status', ['initialising', 'joining', 'active', 'paused'])
+        .then(({ data }) => {
+          if (cancelled || !data) return;
+          const langs = Array.from(new Set(['en', ...data.map((s: any) => s.target_language)]));
+          setAvailableLanguages(langs);
+          if (data.length > 0) {
+            setActive(true);
+          }
+        });
+    };
+
+    fetchSessions();
+
+    const subChannel = supabase
+      .channel(`notes-sessions-${roomName}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'translation_sessions', filter: `livekit_room_name=eq.${roomName}` },
+        fetchSessions)
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(subChannel);
+    };
+  }, [roomName]);
+
+  // ── Fetch & Realtime Subscribe to translation_logs ──────────────────────
+  useEffect(() => {
+    if (!roomName) return;
+    let cancelled = false;
+    let logChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    supabase
+      .from('translation_sessions')
+      .select('id, target_language, source_language')
+      .eq('livekit_room_name', roomName)
+      .in('status', ['initialising', 'joining', 'active', 'paused'])
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (cancelled || !data || data.length === 0) return;
+
+        const matchingSession = data.find((s: any) => s.target_language === selectedLanguage) || data[0];
+        const sessionId = matchingSession.id;
+        const useSourceText = selectedLanguage === 'en' || selectedLanguage === matchingSession.source_language;
+
+        // Fetch historical logs
+        supabase
+          .from('translation_logs')
+          .select('id, source_text, translated_text, created_at')
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: true })
+          .then(({ data: logs }) => {
+            if (cancelled || !logs) return;
+            const mapped: TranscriptLine[] = logs.map((row: any) => ({
+              speaker: 'Speaker',
+              text: useSourceText ? row.source_text : row.translated_text,
+              timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
+            }));
+            setLines(mapped);
+          });
+
+        // Realtime insert listener
+        logChannel = supabase
+          .channel(`notes-logs-${sessionId}-${selectedLanguage}`)
+          .on('postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
+            (payload) => {
+              const row = payload.new as any;
+              const line: TranscriptLine = {
+                speaker: 'Speaker',
+                text: useSourceText ? row.source_text : row.translated_text,
+                timestamp: Math.floor((new Date(row.created_at).getTime() - (startedAtRef.current || Date.now())) / 1000),
+              };
+              setLines((prev) => [...prev, line]);
+            })
+          .subscribe();
+      });
+
+    return () => {
+      cancelled = true;
+      if (logChannel) supabase.removeChannel(logChannel);
+    };
+  }, [roomName, selectedLanguage]);
 
   // ── Realtime channel: notes-started / notes-stopped / line ────────────────
   useEffect(() => {
@@ -153,84 +204,6 @@ export function useMeetingNotes(
     };
   }, [meetingId, enabled, addLine]);
 
-  // ── Local microphone transcription, whenever notes are active ─────────────
-  useEffect(() => {
-    if (!active || !isSupported) return;
-
-    const Ctor = getRecognitionCtor();
-    if (!Ctor) return;
-
-    const recognition = new Ctor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    // NOT '' — the spec makes an empty lang mean "use the document language", and
-    // Chrome can refuse start() outright. There is no auto-detect; pick the user's.
-    recognition.lang = navigator.language || 'en-US';
-
-    recognition.onresult = (event: SpeechResultEvent) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i] as unknown as { isFinal: boolean; 0: { transcript: string } };
-        const text = result[0]?.transcript?.trim() ?? '';
-        if (!text) continue;
-
-        if (result.isFinal) {
-          const line: TranscriptLine = {
-            speaker: speakerRef.current,
-            text,
-            timestamp: elapsed(),
-          };
-          addLine(line); // self (broadcast self:false means we won't hear our own)
-          try {
-            channelRef.current?.send({ type: 'broadcast', event: 'line', payload: line });
-          } catch { /* noop */ }
-        } else {
-          interim += text + ' ';
-        }
-      }
-      setInterimText(interim.trim());
-    };
-
-    // A fatal error must stop the restart loop, or onend/start ping-pongs forever
-    // while capturing nothing — a silent failure with no way to diagnose it.
-    let fatal = false;
-
-    // The API stops on silence; restart while notes are still running.
-    recognition.onend = () => {
-      if (activeRef.current && !fatal) {
-        try { recognition.start(); } catch { /* already starting */ }
-      }
-    };
-
-    recognition.onerror = (e: Event) => {
-      const code = (e as Event & { error?: string }).error ?? 'unknown';
-      // no-speech fires constantly during silence; it is not a failure.
-      if (code === 'no-speech' || code === 'aborted') return;
-
-      console.warn('[useMeetingNotes] recognition error:', code);
-      if (FATAL_SPEECH_ERRORS.has(code)) {
-        fatal = true;
-        setError(describeSpeechError(code));
-      }
-    };
-
-    try {
-      recognition.start();
-    } catch (err) {
-      console.warn('[useMeetingNotes] recognition.start() threw:', err);
-      setError('Could not start speech recognition in this browser.');
-    }
-    recognitionRef.current = recognition;
-
-    return () => {
-      activeRef.current = false; // prevent the onend auto-restart
-      try { recognition.stop(); } catch { /* noop */ }
-      recognitionRef.current = null;
-      setInterimText('');
-    };
-  }, [active, isSupported, addLine]);
-
   const startNotes = useCallback(() => {
     const startedAt = Date.now();
     startedAtRef.current = startedAt;
@@ -246,7 +219,39 @@ export function useMeetingNotes(
         payload: { by: speakerRef.current, startedAt },
       });
     } catch { /* noop */ }
-  }, []);
+
+    // Dispatch or reuse translation/STT bot session via start_bot_session RPC
+    if (roomName && ministryId) {
+      (async () => {
+        try {
+          // Check if ANY active bot session (translation or notes) is already running for this room
+          const { data: existing } = await supabase
+            .from('translation_sessions')
+            .select('id')
+            .eq('livekit_room_name', roomName)
+            .in('status', ['initialising', 'joining', 'active', 'paused'])
+            .limit(1);
+
+          if (existing && existing.length > 0) {
+            console.log('[useMeetingNotes] Active bot session already running for room — reusing existing session');
+            return;
+          }
+
+          // No bot session is running — start an English-only STT session
+          const { error } = await supabase.rpc('start_bot_session', {
+            p_ministry_id: ministryId,
+            p_room_name: roomName,
+            p_source_language: 'en',
+            p_target_language: 'en',
+            p_speaker_identity: null,
+          });
+          if (error) console.warn('[useMeetingNotes] start_bot_session returned error:', error);
+        } catch (err) {
+          console.warn('[useMeetingNotes] start_bot_session check failed:', err);
+        }
+      })();
+    }
+  }, [roomName, ministryId]);
 
   const stopNotes = useCallback(() => {
     setActive(false);
@@ -263,5 +268,18 @@ export function useMeetingNotes(
     startedAtRef.current = null;
   }, []);
 
-  return { active, startedBy, lines, interimText, isSupported, error, startNotes, stopNotes, reset };
+  return {
+    active,
+    startedBy,
+    lines,
+    interimText,
+    isSupported,
+    error,
+    selectedLanguage,
+    setSelectedLanguage,
+    availableLanguages,
+    startNotes,
+    stopNotes,
+    reset,
+  };
 }

@@ -26,7 +26,6 @@ import {
   MeetingInsights,
   parseSlashCommand,
 } from '@rekindle/features/meetingAIEngine';
-import MeetingTranscriptionPanel from './MeetingTranscriptionPanel';
 import { useMeetingNotes } from '@rekindle/features/useMeetingNotes';
 import MeetingInsightsPanel from './MeetingInsightsPanel';
 
@@ -51,6 +50,8 @@ interface MeetingRecordingPanelProps {
   onStateChange?: (state: RecordingState) => void;
   /** Allow a non-host to take notes (e.g. ministry-tier members). */
   canTakeNotes?: boolean;
+  roomName?: string;
+  ministryId?: string;
 }
 
 // ── Format helpers ────────────────────────────────────────────────────────
@@ -76,6 +77,8 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
   inCallOverlay = false,
   onStateChange,
   canTakeNotes = false,
+  roomName,
+  ministryId,
 }) => {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
@@ -88,10 +91,8 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
   const [isSavingToDb, setIsSavingToDb] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Distributed note-taking (Option A). When anyone starts notes, EVERY participant's
-  // browser transcribes its own mic and shares the lines — SpeechRecognition can only
-  // hear the local mic, so this is the only way to capture remote speakers.
-  const notes = useMeetingNotes(meetingId, speakerName, true);
+  // Distributed note-taking + server STT bot trigger.
+  const notes = useMeetingNotes(meetingId, speakerName, true, roomName, ministryId);
   // Only the browser that started notes runs the (paid) AI pipeline + persistence.
   const isInitiatorRef = useRef(false);
   // Row created when notes stop, so the transcript survives even if the user never
@@ -400,13 +401,26 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
                   panel below). Same merged, speaker-attributed stream as there. */}
               {showTranscriptPanel && (
                 <div className="max-h-40 overflow-y-auto rounded-lg bg-black/40 p-2 text-[11px] text-gray-200 space-y-1">
-                  {!notes.isSupported && (
-                    <p className="text-amber-400">
-                      This browser can’t transcribe speech. Try Chrome.
-                    </p>
+                  {notes.availableLanguages.length > 1 && (
+                    <div className="flex items-center gap-1 mb-1.5 pb-1 border-b border-gray-700/60">
+                      <span className="text-[10px] text-gray-400">Language:</span>
+                      {notes.availableLanguages.map((lang) => (
+                        <button
+                          key={lang}
+                          type="button"
+                          onClick={() => notes.setSelectedLanguage(lang)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-medium transition-colors ${
+                            notes.selectedLanguage === lang
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+                          }`}
+                        >
+                          {lang === 'en' ? 'Original (EN)' : lang}
+                        </button>
+                      ))}
+                    </div>
                   )}
-                  {notes.error && <p className="text-red-400">{notes.error}</p>}
-                  {notes.isSupported && !notes.error && notes.lines.length === 0 && !notes.interimText && (
+                  {notes.lines.length === 0 && !notes.interimText && (
                     <p className="text-gray-500">No speech captured yet…</p>
                   )}
                   {notes.lines.map((l, i) => (
@@ -537,13 +551,26 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
           button. useMeetingNotes owns recognition now, so it must not run too.) */}
       {showTranscriptPanel && (
         <div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-gray-900/90 p-2 text-xs text-gray-200 space-y-1">
-          {!notes.isSupported && (
-            <p className="text-amber-400">
-              This browser can’t transcribe speech. Your voice won’t be captured — try Chrome.
-            </p>
+          {notes.availableLanguages.length > 1 && (
+            <div className="flex items-center gap-1.5 mb-2 pb-1 border-b border-gray-700/60">
+              <span className="text-xs text-gray-400">Language:</span>
+              {notes.availableLanguages.map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => notes.setSelectedLanguage(lang)}
+                  className={`px-2 py-0.5 rounded text-xs uppercase font-medium transition-colors ${
+                    notes.selectedLanguage === lang
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {lang === 'en' ? 'Original (EN)' : lang}
+                </button>
+              ))}
+            </div>
           )}
-          {notes.error && <p className="text-red-400">{notes.error}</p>}
-          {notes.isSupported && !notes.error && notes.lines.length === 0 && !notes.interimText && (
+          {notes.lines.length === 0 && !notes.interimText && (
             <p className="text-gray-500">No speech captured yet…</p>
           )}
           {notes.lines.map((l, i) => (
