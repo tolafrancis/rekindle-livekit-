@@ -1,6 +1,14 @@
 # RLT: Per-Language Voices, Cloning & Multi-Provider TTS — Build Plan
 
-Status: **planning only, nothing implemented yet.**
+Status (2026-08-21): **Phase 1 shipped and live** (per-language voice
+selection, real voice picker with preview — upgraded from the original
+bare-ID-field version after real feedback). **Phase 2 (cloning) shipped
+and live** — schema, Edge Functions, and UI all deployed; consent is
+handled outside this app entirely (explicit product decision), and
+support-either-voice (pastor's own or a house narrator) was chosen over
+picking one. **Phase 1b (FPT) blocked** on FPT's real-time-tier API
+reference — the user is setting this up directly in Supabase rather than
+handing it to Claude.
 
 ## First: what "Default speaker identity" actually is
 
@@ -197,42 +205,48 @@ logic runs at all for them — this only activates where configured).
 it's possible to see how often the fallback is actually triggering in a real
 service, instead of guessing.
 
-### Phase 2 — Voice cloning
+### Phase 2 — Voice cloning ✅ shipped (2026-08-21)
 
 This only adds **how a `voice_id` gets created**; everything from Phase 1 (the
 table, the picker, the bot lookup) is reused unchanged.
 
-**Whose voice gets cloned — needs a decision before building anything:**
-- The host/pastor's own real voice — most natural/resonant for the congregation,
-  but this is cloning an identifiable real person's voice, which raises real
-  consent questions (see Risks).
-- A chosen "house narrator" voice, cloned once and reused across services —
-  lower-stakes, easier to consent-cover once.
+**Decisions made:**
+- **Whose voice gets cloned:** support both — a ministry can clone the
+  host/pastor's own voice or a chosen "house narrator," decided per-ministry,
+  not fixed platform-wide.
+- **Consent:** handled outside this app entirely (explicit product decision) —
+  no in-app consent-capture flow was built. The app still enforces one boundary
+  regardless: a cloned voice is only ever visible/usable by the ministry that
+  created it (see below) — letting every tenant on the shared TTS account
+  freely use a voice cloned under a DIFFERENT ministry's external consent
+  process would undermine that consent no matter how it was obtained.
 
-Either way the mechanism is identical; only the source recording differs.
-
-**Sample capture.** Two reasonable options, not mutually exclusive:
-- Let an admin upload an existing clean recording (e.g. trim a clip from a past
-  sermon) — fastest to build, but sample quality is whatever they happen to have.
-- A short guided "read this script for ~60 seconds" in-browser recording flow
-  (plain `getUserMedia` audio capture) — guarantees a clean, single-speaker
-  sample, better clone quality, more setup work.
-  Start with upload for v1; add guided recording later if clone quality from
-  uploaded clips isn't good enough in practice.
-
-**Cloning call.** Bot-side (or a small Edge Function — doesn't need to run on
-the always-on bot process since it's a one-time action, not a live-session
-step): send the captured sample to the TTS provider's voice-cloning endpoint,
-get back a `voice_id`, write it into `translation_voices` via the same RPC as
-Phase 1, tagged `is_cloned = true`.
-
-**Consent — this is a policy/legal item, not just an engineering task.** Cloning
-someone's actual voice is closer to biometric data than a normal upload in a lot
-of jurisdictions. Before this ships, there should be an explicit, recorded
-consent step (a checkbox alone is thin — consider a short spoken/typed consent
-statement captured alongside the sample) from the person being cloned, and a
-clear deletion path (removing the voice from `translation_voices` should also
-call the provider's delete-voice endpoint, not just hide it in the UI).
+**What actually got built:**
+- `translation_custom_voices` table (migration 0282) — tracks a ministry's own
+  cloned voices independent of whatever language they're currently assigned to,
+  so they can be listed/deleted on their own.
+- `translation-voice-samples` storage bucket, private, upload scoped to
+  ministry admins via `storage.foldername(name)[1] = ministry_id` +
+  `is_group_admin`.
+- `translation-clone-voice` Edge Function — admin-authorization checked
+  *before* the costly provider call (cloning isn't free), downloads the
+  uploaded sample server-side, calls the provider's instant-voice-clone
+  endpoint, writes the result into `translation_custom_voices` via
+  `create_custom_voice`.
+- `translation-delete-custom-voice` Edge Function — deletes from the provider,
+  clears the voice from any language it's currently assigned to first (so a
+  deleted voice never leaves a language silently pointing at a voice_id that
+  no longer exists), then removes the local row and the stored sample.
+- `translation-list-voices` (from Phase 1) updated to take a `ministryId` and
+  filter the shared provider account's catalog down to stock voices + this
+  ministry's own clones — a real gap caught during Phase 2 build, not present
+  in the original Phase 1 version, which showed the whole account's catalog
+  to every ministry indiscriminately.
+- Settings UI: a "Custom Voices" panel — upload a sample + name it + clone,
+  list existing clones with delete, all reusing the Phase 1 voice picker for
+  actually assigning a clone to a language.
+- Sample capture: upload-only for v1, as planned (guided in-browser recording
+  was flagged as a later improvement, not built yet).
 
 ### Phase 3 — Voice management UI (optional, do after 1 and 2 are proven)
 

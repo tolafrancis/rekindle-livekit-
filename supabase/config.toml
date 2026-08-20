@@ -69,3 +69,15 @@ enabled = true
 # counts against our own TTS account's usage. Gateway JWT verification
 # stays on, matching every other real-auth function in this file.
 verify_jwt = true
+
+[functions.translation-clone-voice]
+enabled = true
+# Admin-only (is_group_admin, checked before the costly provider call) —
+# function does its own auth. Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.translation-delete-custom-voice]
+enabled = true
+# Admin-only (is_group_admin) — function does its own auth. Gateway JWT
+# verification stays on.
+verify_jwt = true

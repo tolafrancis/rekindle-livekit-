@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Badge } from '@rekindle/ui/badge';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown } from 'lucide-react';
+import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown, Mic, Upload, Trash2 } from 'lucide-react';
 
 interface MinistryTranslationSettingsProps {
   ministryId: string;
@@ -20,6 +20,13 @@ interface VoiceOption {
   name: string;
   preview_url: string | null;
   category: string | null;
+}
+
+interface CustomVoice {
+  id: string;
+  label: string;
+  external_voice_id: string;
+  created_at: string;
 }
 
 // Shared by both the ministry-default picker and every per-language picker
@@ -181,11 +188,12 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   // and failed/empty (pickers fall back to manual entry in that case).
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [voicesLoading, setVoicesLoading] = useState(false);
-  const loadVoicesOnce = async () => {
-    if (voices !== null || voicesLoading) return;
+  const fetchVoices = async () => {
     setVoicesLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('translation-list-voices');
+      const { data, error } = await supabase.functions.invoke('translation-list-voices', {
+        body: { ministryId },
+      });
       if (error) throw error;
       setVoices(data?.voices || []);
     } catch (err: any) {
@@ -195,9 +203,111 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
       setVoicesLoading(false);
     }
   };
+  const loadVoicesOnce = () => {
+    if (voices !== null || voicesLoading) return;
+    fetchVoices();
+  };
+
+  // RLT Phase 2 — this ministry's own cloned voices (a subset of `voices`
+  // above, tracked separately so they can be listed/deleted independent
+  // of whatever language they're currently assigned to — see
+  // translation_custom_voices, migration 0282).
+  const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
+  const [cloneLabel, setCloneLabel] = useState('');
+  const [cloneFile, setCloneFile] = useState<File | null>(null);
+  const [cloning, setCloning] = useState(false);
+  const [deletingVoiceId, setDeletingVoiceId] = useState<string | null>(null);
+
+  const loadCustomVoices = async () => {
+    const { data, error } = await supabase
+      .from('translation_custom_voices')
+      .select('id, label, external_voice_id, created_at')
+      .eq('ministry_id', ministryId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[MinistryTranslationSettings] loading custom voices failed:', error.message);
+      return;
+    }
+    setCustomVoices((data as CustomVoice[]) || []);
+  };
+
+  const cloneVoice = async () => {
+    if (!cloneFile || !cloneLabel.trim()) return;
+    setCloning(true);
+    try {
+      const ext = cloneFile.name.split('.').pop() || 'audio';
+      const samplePath = `${ministryId}/${crypto.randomUUID()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('translation-voice-samples')
+        .upload(samplePath, cloneFile);
+      if (uploadErr) throw uploadErr;
+
+      const { data, error } = await supabase.functions.invoke('translation-clone-voice', {
+        body: { ministryId, samplePath, label: cloneLabel.trim() },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({ title: 'Voice cloned', description: `"${cloneLabel.trim()}" is ready to assign to a language.` });
+      setCloneLabel('');
+      setCloneFile(null);
+      await loadCustomVoices();
+      // The new voice needs to show up in the picker's catalog too —
+      // simplest correct thing is a full refetch rather than trying to
+      // guess the provider's returned shape (name/category/preview_url
+      // timing) and splice it in by hand.
+      if (voices !== null) await fetchVoices();
+    } catch (err: any) {
+      console.error('[MinistryTranslationSettings] clone failed:', err);
+      toast({ title: 'Could not clone voice', description: err.message, variant: 'destructive' });
+    } finally {
+      setCloning(false);
+    }
+  };
+
+  const deleteCustomVoice = async (id: string) => {
+    setDeletingVoiceId(id);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-delete-custom-voice', {
+        body: { customVoiceId: id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const cleared: string[] = data?.clearedLanguages || [];
+      toast({
+        title: 'Voice deleted',
+        description: cleared.length > 0
+          ? `Also cleared from: ${cleared.map(languageLabel).join(', ')} (now using the default voice).`
+          : undefined,
+      });
+      await loadCustomVoices();
+      if (voices !== null) await fetchVoices();
+      // A cleared language's draft value needs to reflect that too, or
+      // Save would re-upsert the now-deleted voice_id right back in.
+      if (cleared.length > 0) {
+        setPerLanguageVoices(v => {
+          const next = { ...v };
+          cleared.forEach(code => delete next[code]);
+          return next;
+        });
+        setSavedPerLanguageVoices(v => {
+          const next = { ...v };
+          cleared.forEach(code => delete next[code]);
+          return next;
+        });
+      }
+    } catch (err: any) {
+      console.error('[MinistryTranslationSettings] delete voice failed:', err);
+      toast({ title: 'Could not delete voice', description: err.message, variant: 'destructive' });
+    } finally {
+      setDeletingVoiceId(null);
+    }
+  };
 
   useEffect(() => {
     load();
+    loadCustomVoices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ministryId]);
 
@@ -484,6 +594,66 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
               <p className="text-xs text-muted-foreground">Auto-starts the bot when a meeting begins (Phase 2+).</p>
             </div>
             <Switch checked={config.bot_enabled} onCheckedChange={v => setConfig(c => ({ ...c, bot_enabled: v }))} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mic className="h-5 w-5 text-rose-600" />
+            Custom Voices
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Clone a voice from an audio sample — the pastor's own voice, or a chosen narrator — then assign it to
+            any language above like any other voice. Consent from whoever is being cloned is handled outside this
+            app; make sure it's in place before uploading a sample.
+          </p>
+
+          {customVoices.length > 0 && (
+            <div className="space-y-1.5">
+              {customVoices.map(cv => (
+                <div key={cv.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span className="text-sm">{cv.label}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteCustomVoice(cv.id)}
+                    disabled={deletingVoiceId === cv.id}
+                  >
+                    {deletingVoiceId === cv.id
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Trash2 className="h-3.5 w-3.5 text-red-600" />}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <Label className="text-sm">Clone a new voice</Label>
+            <Input
+              value={cloneLabel}
+              onChange={e => setCloneLabel(e.target.value)}
+              placeholder="Name this voice, e.g. Pastor's voice"
+            />
+            <Input type="file" accept="audio/*" onChange={e => setCloneFile(e.target.files?.[0] || null)} />
+            <p className="text-xs text-muted-foreground">
+              A clean, single-speaker recording, at least ~1 minute, gives the best result.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={cloneVoice}
+              disabled={cloning || !cloneFile || !cloneLabel.trim()}
+            >
+              {cloning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+              Clone Voice
+            </Button>
           </div>
         </CardContent>
       </Card>
