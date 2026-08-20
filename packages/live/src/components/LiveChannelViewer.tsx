@@ -1024,18 +1024,14 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
               </div>
             )}
 
-            {/* Declined viewers can still change their mind — a small,
-                unobtrusive re-ask rather than no way back without a reload. */}
-            {isLive && wantsTranslation === false && (
-              <button
-                type="button"
-                onClick={() => setWantsTranslation(null)}
-                title="Need translation?"
-                className="absolute bottom-4 left-4 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white"
-              >
-                <Languages className="h-4 w-4" />
-              </button>
-            )}
+            {/* Real report (2026-08-20): a small "change your mind" icon used
+                to sit here for viewers who said no — but it occupied the
+                exact same spot the translate button itself does, so it read
+                as "the button is still there" even though it wasn't. Removed
+                entirely: a viewer who declines gets nothing displayed, full
+                stop, matching what was actually asked for. Rejoining (e.g. a
+                refresh) re-asks, since wantsTranslation resets to null on a
+                fresh mount. */}
 
             {watchViaHls ? (
               <>
