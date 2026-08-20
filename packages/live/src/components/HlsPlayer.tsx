@@ -269,7 +269,25 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
         // our `> maxLatency` check forever. Our OWN threshold doesn't need to
         // be as generous as hls.js's — a few seconds over the intended TARGET
         // is already worth actively correcting, not just worth tolerating.
-        const watchdogCeiling = target + 4;
+        //
+        // Real report, same day, on an actual production broadcast (real
+        // network jitter, not our clean test channel): tightening this to
+        // target+4 fixed the latency (confirmed — "audio latency is
+        // better"), but the forced seek this triggers is a real, visible
+        // stutter — status never left 'playing' and never showed
+        // 'waiting' (this ISN'T a stall/reconnect), yet "recoveries: 4"
+        // in the debug readout proved the watchdog itself fired 4 times,
+        // each one a hard `currentTime` jump. Correcting too eagerly
+        // trades a smooth stream for shaving off a few seconds of
+        // ordinary jitter that the passive ≤1.1x catch-up would have
+        // absorbed on its own. Loosened back toward a middle ground —
+        // meaningfully tighter than hls.js's own 14s ceiling (which is
+        // what let a stream get stuck there forever) but with enough
+        // room that everyday jitter doesn't repeatedly trigger a visible
+        // seek. Also require a longer sustained window before acting, for
+        // the same reason: a brief spike is exactly what the passive
+        // mechanism is already supposed to absorb.
+        const watchdogCeiling = target + 6;
         // setup() can re-run without the effect's own cleanup firing (tentativeEnd's
         // retryTimer, or the fatal-error reload path both call setup() directly) —
         // clear any interval from a previous run first so they don't pile up.
@@ -289,7 +307,7 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           if (lag == null) { overCeilingStreak = 0; return; }
           if (lag <= watchdogCeiling) { overCeilingStreak = 0; return; }
           overCeilingStreak += 1;
-          if (overCeilingStreak < 3) return; // ~6s sustained, not a blip
+          if (overCeilingStreak < 5) return; // ~10s sustained, not ordinary jitter
           overCeilingStreak = 0;
           const syncPos = isFinite(h.liveSyncPosition) ? h.liveSyncPosition : null;
           if (syncPos == null || syncPos <= video.currentTime) return;
