@@ -1,21 +1,27 @@
 // supabase/functions/translation-device-publish-token/index.ts
 //
 // RLT Phase 4 (docs/rlt-build-checklist.md, edge agent, 2026-08-21): mints
-// a LiveKit token for the edge agent to PUBLISH its translated audio into,
-// scoped to one specific session's room. Deliberately server-side, same
-// reasoning as translation-listener-token: the edge agent runs as
-// installed client software on a church's own PC — it must never hold raw
-// LIVEKIT_API_KEY/API_SECRET, or extracting them from the installed app
-// would let anyone mint arbitrary tokens for any room. The device's own
-// bcrypt/sha256-backed bearer token (from authenticate_device) is what's
-// actually trusted here, not a Supabase user session — there is no user.
+// a LiveKit token for the edge agent's own room join. Deliberately
+// server-side, same reasoning as translation-listener-token: the edge
+// agent runs as installed client software on a church's own PC — it must
+// never hold raw LIVEKIT_API_KEY/API_SECRET, or extracting them from the
+// installed app would let anyone mint arbitrary tokens for any room. The
+// device's own bcrypt/sha256-backed bearer token (from authenticate_device)
+// is what's actually trusted here, not a Supabase user session — there is
+// no user.
 //
-// Identity/track-name convention matches the cloud LiveKit bot EXACTLY
-// (rlt-bot-{sessionId} / rlt-translated-{lang}) so /display and every
-// existing consumer of a bot's translated track (LiveKitRoomWrapper's
-// in-meeting picker, TranslationDisplayPage.tsx) work identically whether
-// the source is the cloud bot or a physical edge agent — zero client-side
-// changes needed to support this pipeline.
+// Architecture revision (2026-08-21), decided before this shipped: the
+// edge agent does NOT run its own STT/translate/TTS pipeline (the written
+// plan's original §4.2-4.3 shape) — that would mean shipping real
+// third-party API keys inside installed client software. Instead it's a
+// thin LiveKit audio bridge: publishes the PA mixer's audio as a normal
+// participant (identity 'pa-device-{device_id}', matching
+// device_start_session's own speaker_identity for this device — migration
+// 0287 — so the CLOUD bot locks onto it specifically) and subscribes back
+// to that same cloud bot's translated track for local PA playback. All
+// translation stays server-side, unchanged, same bot/keys as meetings
+// already use today. Both canPublish and canSubscribe are true here,
+// unlike a /display listener's token (subscribe-only).
 //
 // ── Deploy (Supabase dashboard or `supabase functions deploy`) ──────────
 //   Secrets needed: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET,
@@ -25,7 +31,7 @@
 // ── Request ───────────────────────────────────────────────────────────────
 //   POST { sessionId }, Authorization: Bearer <device bearer token>
 //     (the 24h token from authenticate_device — NOT a Supabase user JWT)
-//     → 200 { url, token, roomName, trackName, botIdentity }
+//     → 200 { url, token, roomName, identity }
 //     → 401 { error: 'invalid_device_token' }
 //     → 404 { error: 'session_not_found' }
 //     → 403 { error: 'session_not_owned_by_this_device_ministry' }
@@ -100,7 +106,7 @@ serve(async (req) => {
 
     const { data: session } = await service
       .from('translation_sessions')
-      .select('id, ministry_id, livekit_room_name, target_language')
+      .select('id, ministry_id, livekit_room_name')
       .eq('id', body.sessionId)
       .maybeSingle();
     if (!session || !session.livekit_room_name) return json({ error: 'session_not_found' }, 404);
@@ -108,18 +114,20 @@ serve(async (req) => {
       return json({ error: 'session_not_owned_by_this_device_ministry' }, 403);
     }
 
-    const botIdentity = `rlt-bot-${session.id}`;
-    const trackName = `rlt-translated-${session.target_language}`;
+    // Fixed, deterministic — matches device_start_session's own
+    // speaker_identity for this device (migration 0287), known before
+    // this token is even minted.
+    const identity = `pa-device-${device.id}`;
 
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity: botIdentity,
+      identity,
       ttl: '6h',
     });
     at.addGrant({
       roomJoin: true,
       room: session.livekit_room_name,
-      canPublish: true,
-      canSubscribe: false, // the edge agent's input is local mic audio, never a room track
+      canPublish: true,   // the PA mixer's own audio, published as a normal mic-like track
+      canSubscribe: true, // needed to hear the cloud bot's translated track back, for local PA playback
       canPublishData: false,
     });
 
@@ -127,8 +135,7 @@ serve(async (req) => {
       url: LIVEKIT_URL,
       token: await at.toJwt(),
       roomName: session.livekit_room_name,
-      trackName,
-      botIdentity,
+      identity,
     });
   } catch (error) {
     console.error('translation-device-publish-token error:', error);
