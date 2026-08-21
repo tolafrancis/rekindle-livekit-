@@ -5,6 +5,7 @@ import { Button } from '@rekindle/ui/button';
 import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
+import { useDraggableOverlay } from '../useDraggableOverlay';
 
 interface CaptionLine {
   id: string;
@@ -94,6 +95,28 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Draggable overlay (2026-08-22) — default position is the existing
+  // bottom-center anchor (`left-1/2` + this hook's own translateX(-50%)),
+  // draggable anywhere afterward, viewport-clamped, and reset back to
+  // default every time captions go off → on again (resetKey: captionMode
+  // === 'off' ? 'off' : 'on' collapses every non-off mode to one reset key,
+  // so switching BETWEEN caption languages while captions stay on doesn't
+  // reset a position someone just dragged).
+  const captionOverlay = useDraggableOverlay({
+    resetKey: captionMode === 'off' ? 'off' : 'on',
+    baseTransform: 'translateX(-50%)',
+  });
+  // "Show Captions" (standalone from Live Translate, 2026-08-22) — dispatches
+  // a same-language (source==target) session on demand instead of requiring
+  // one to already exist. captionsStarting drives the overlay's loading text
+  // between "we just clicked" and "a track/session actually exists yet".
+  const [captionsStarting, setCaptionsStarting] = useState(false);
+  // Tracks whether the CURRENT captionMode has ever resolved a real session —
+  // only auto-revert-to-off when a mode HAD one and it disappeared (host
+  // stopped it), never on the very first tick right after switching modes,
+  // before a freshly-dispatched session's track has shown up yet. Keyed by
+  // mode so switching between modes doesn't leak a stale "had one" flag.
+  const hadSessionForModeRef = useRef<{ mode: CaptionMode; had: boolean }>({ mode: 'off', had: false });
 
   // Resolve which session's log feed to read: an exact language match for a
   // real target code, or — for 'original' — any currently active session,
@@ -113,12 +136,15 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     setCaptionLines([]);
 
     const sessionId = sessionIdForCaptionMode(captionMode);
+    const hadSessionForThisMode = hadSessionForModeRef.current.mode === captionMode && hadSessionForModeRef.current.had;
     if (!sessionId) {
-      // The selected language's track disappeared (host stopped it) — fall
-      // back to off instead of silently showing nothing with no explanation.
-      if (captionMode !== 'off') setCaptionMode('off');
+      // Only snap back to off if THIS mode previously had a real session and
+      // it's now gone — not on the first tick after a fresh "Show Captions"
+      // click, while the just-dispatched session's track hasn't appeared yet.
+      if (captionMode !== 'off' && hadSessionForThisMode) setCaptionMode('off');
       return;
     }
+    hadSessionForModeRef.current = { mode: captionMode, had: true };
 
     const field = captionMode === 'original' ? 'source_text' : 'translated_text';
     let cancelled = false;
@@ -180,7 +206,12 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const myLanguage = currentLanguage || (captionMode !== 'off' && captionMode !== 'original' ? captionMode : null);
 
   const askQuestion = async () => {
-    if (!myLanguage || !userId || myLanguage === sourceLanguage) return;
+    // sourceLanguage === 'auto' (2026-08-22) means the room has no single
+    // fixed language to translate a question INTO — GPT-4o/ElevenLabs both
+    // need a concrete target. "Ask a question" needs the ministry to have
+    // pinned a real language in Settings; the button below is hidden in
+    // that case, this is just the same guard defensively at the call site.
+    if (!myLanguage || !userId || myLanguage === sourceLanguage || sourceLanguage === 'auto') return;
     setAskStarting(true);
     try {
       const { data, error } = await supabase.rpc('start_bot_session', {
@@ -280,6 +311,38 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     }
   };
 
+  // "Show Captions" — standalone from Live Translate. Turns on captions
+  // immediately (optimistic — the overlay appears right away in a loading
+  // state) and, only if no session/track exists yet for the room's own
+  // language, dispatches one via start_bot_session with target==source. The
+  // bot skips translate/TTS for a same-language session (rekindle-translation-bot's
+  // AudioPipeline.ts) but still runs STT and logs source_text — the existing
+  // caption-rendering/realtime-subscription code above needs no changes at
+  // all once that session's track appears via the normal track-scan.
+  const startCaptionsSession = async () => {
+    setCaptionMode('original');
+    if (tracks.some((t) => t.language === sourceLanguage)) return; // already running
+    setCaptionsStarting(true);
+    try {
+      const { error } = await supabase.rpc('start_bot_session', {
+        p_ministry_id: ministryId,
+        p_room_name: roomName,
+        p_source_language: sourceLanguage,
+        p_target_language: sourceLanguage,
+        // Admin/host path doesn't care about this value (matches "+ Add
+        // language" passing null); a non-host participant needs their own
+        // id to qualify for the self-service path (migration 0278).
+        p_speaker_identity: isHost ? null : (userId || null),
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      toast({ title: 'Could not start captions', description: err.message, variant: 'destructive' });
+      setCaptionMode('off');
+    } finally {
+      setCaptionsStarting(false);
+    }
+  };
+
   const copyDisplayLink = (botIdentity: string) => {
     const url = `${window.location.origin}/display/${sessionIdFromBotIdentity(botIdentity)}`;
     navigator.clipboard.writeText(url).then(
@@ -306,7 +369,14 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
 
   const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors';
   const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
-  const placeholderText = captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…';
+  const placeholderText = captionsStarting
+    ? 'Starting captions…'
+    : captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…';
+  // A same-language ("Show Captions") session's track shouldn't show up as
+  // its own confusing duplicate "EN" row in either picker below — dubbing/
+  // captioning your own language back at yourself isn't a real choice, it's
+  // exactly what "Show Captions" (the row above) already is.
+  const realTranslationTracks = tracks.filter((t) => t.language !== sourceLanguage);
 
   return (
     <>
@@ -321,8 +391,21 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           too (context, like any real captions bar) instead of just the
           latest one. */}
       {captionMode !== 'off' && (
-        <div className="fixed bottom-40 sm:bottom-44 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2">
-          <div className="flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10">
+        <div
+          ref={captionOverlay.ref}
+          className="fixed bottom-40 sm:bottom-44 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          style={captionOverlay.style}
+        >
+          <div
+            onPointerDown={captionOverlay.onPointerDown}
+            onPointerMove={captionOverlay.onPointerMove}
+            onPointerUp={captionOverlay.onPointerUp}
+            onPointerCancel={captionOverlay.onPointerCancel}
+            title="Drag to move"
+            className={`flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10 select-none ${
+              captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
+          >
             <div className="flex-1 min-w-0 space-y-1">
               {captionLines.length === 0 ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
@@ -379,7 +462,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <span className="flex-1">Original</span>
               {currentLanguage === null && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
-            {tracks.map((track) => (
+            {realTranslationTracks.map((track) => (
               <div key={track.botIdentity} className="flex items-center gap-1">
                 <button
                   type="button"
@@ -413,12 +496,14 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             ))}
           </div>
 
-          {/* Captions — independent of the Audio choice above: keep the
-              real voice and still read translated captions, or mute
-              translated audio but read along, same idea as any video
-              app's separate CC menu. "Original" needs at least one active
-              session too (that's what's actually running STT), so it's
-              only offered once a track exists. */}
+          {/* Captions — standalone feature, independent of both the Audio
+              choice above AND of Live Translate: "Show Captions" works the
+              instant it's clicked, with no translation language ever having
+              been selected by anyone (see startCaptionsSession above — it
+              self-dispatches a same-language STT-only session on demand).
+              Also independent of Audio the same way it always was: keep the
+              real voice and still read captions, or mute translated audio
+              but read along, same idea as any video app's separate CC menu. */}
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Captions</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
             <button type="button" onClick={() => setCaptionMode('off')} className={`${row} ${sel(captionMode === 'off')}`}>
@@ -426,14 +511,17 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <span className="flex-1">Off</span>
               {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
-            {tracks.length > 0 && (
-              <button type="button" onClick={() => setCaptionMode('original')} className={`${row} ${sel(captionMode === 'original')}`}>
-                <Captions className="h-4 w-4" />
-                <span className="flex-1">Original</span>
-                {captionMode === 'original' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
-              </button>
-            )}
-            {tracks.map((track) => (
+            <button
+              type="button"
+              onClick={startCaptionsSession}
+              disabled={captionsStarting}
+              className={`${row} ${sel(captionMode === 'original')} disabled:opacity-50`}
+            >
+              {captionsStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Captions className="h-4 w-4" />}
+              <span className="flex-1">Show Captions</span>
+              {captionMode === 'original' && !captionsStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+            </button>
+            {realTranslationTracks.map((track) => (
               <button
                 key={`caption-${track.botIdentity}`}
                 type="button"
@@ -451,7 +539,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               sense once we know MY language (inferred from Audio/Captions
               above) and it differs from the room's own language — asking
               "in English" back to an English-speaking host is a no-op. */}
-          {userId && myLanguage && myLanguage !== sourceLanguage && (
+          {userId && myLanguage && myLanguage !== sourceLanguage && sourceLanguage !== 'auto' && (
             <div className="mt-2 border-t pt-2">
               {askingSessionId ? (
                 <button type="button" onClick={doneAsking} className={`${row} text-red-600 hover:bg-red-50`}>

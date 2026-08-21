@@ -3,10 +3,12 @@ import { Room, RoomEvent, type RemoteTrack, type RemoteTrackPublication, type Re
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Languages, Check, Volume2, Captions, X, Loader2 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
+import { useDraggableOverlay } from '../useDraggableOverlay';
 
 interface AvailableSession {
   id: string;
   target_language: string;
+  source_language: string;
 }
 
 interface CaptionLine {
@@ -71,6 +73,33 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // "Show Captions" (standalone from Live Translate, 2026-08-22) — dispatches
+  // a same-language captions-only session on demand via the new
+  // start_captions_session RPC (migration 0289), instead of requiring a real
+  // translation to already be running. Unlike FloatingTranslationButton's
+  // meeting/host case, a broadcast viewer is frequently anonymous
+  // (LiveChannelViewer.tsx passes userId: user?.id || 'anonymous'), so this
+  // can't reuse start_bot_session's authenticated-ministry-member self-service
+  // path — start_captions_session is the anon-safe equivalent, scoped to
+  // exactly this one channel and always same-language, never a real
+  // (costed) translation.
+  const [captionsStarting, setCaptionsStarting] = useState(false);
+  const [captionsError, setCaptionsError] = useState<string | null>(null);
+  // Only auto-revert-to-off when the CURRENT mode previously had a real
+  // session and it's now gone — not on the first tick right after a fresh
+  // "Show Captions" click, before the just-dispatched session's row has
+  // appeared yet. Keyed by mode so switching modes doesn't leak a stale flag.
+  const hadSessionForModeRef = useRef<{ mode: CaptionMode; had: boolean }>({ mode: 'off', had: false });
+  // Draggable overlay (2026-08-22) — same hook/behavior as
+  // FloatingTranslationButton.tsx's caption card: default bottom-center
+  // position, freely draggable afterward, viewport-clamped, reset back to
+  // default on every off → on toggle (collapsed to one 'off'/'on' key so
+  // switching between caption languages mid-session doesn't reset a
+  // position someone just dragged).
+  const captionOverlay = useDraggableOverlay({
+    resetKey: captionMode === 'off' ? 'off' : 'on',
+    baseTransform: 'translateX(-50%)',
+  });
 
   // Real regression found live (2026-08-20): this component is now mounted
   // for EVERY viewer the instant they're on the live channel (see
@@ -152,7 +181,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     const load = () => {
       supabase
         .from('translation_sessions')
-        .select('id, target_language')
+        .select('id, target_language, source_language')
         .eq('livekit_room_name', roomName)
         .in('status', ['initialising', 'joining', 'active', 'paused'])
         .then(({ data }) => {
@@ -392,6 +421,30 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     return session?.id ?? null;
   };
 
+  // "Show Captions" — turns captions on immediately (optimistic — the
+  // overlay appears right away in a loading state) and, only if no
+  // session/row exists yet for this room at all, dispatches a same-language
+  // one via the new anon-safe start_captions_session RPC. Once that
+  // session's row appears (via the existing translation_sessions realtime
+  // subscription above), sessionIdForCaptionMode resolves it exactly like
+  // any other session — zero changes needed to the caption-rendering path.
+  const startCaptionsSession = async () => {
+    setCaptionsError(null);
+    setCaptionMode('original');
+    if (sessions.length > 0) return; // some session already running — reuse it
+    setCaptionsStarting(true);
+    try {
+      const { error } = await supabase.rpc('start_captions_session', { p_channel_id: channelId });
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('[BroadcastTranslationButton] could not start captions:', err);
+      setCaptionsError(err.message || 'Could not start captions');
+      setCaptionMode('off');
+    } finally {
+      setCaptionsStarting(false);
+    }
+  };
+
   useEffect(() => {
     if (captionChannelRef.current) {
       supabase.removeChannel(captionChannelRef.current);
@@ -400,10 +453,12 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     setCaptionLines([]);
 
     const sessionId = sessionIdForCaptionMode(captionMode);
+    const hadSessionForThisMode = hadSessionForModeRef.current.mode === captionMode && hadSessionForModeRef.current.had;
     if (!sessionId) {
-      if (captionMode !== 'off') setCaptionMode('off');
+      if (captionMode !== 'off' && hadSessionForThisMode) setCaptionMode('off');
       return;
     }
+    hadSessionForModeRef.current = { mode: captionMode, had: true };
 
     const field = captionMode === 'original' ? 'source_text' : 'translated_text';
     let cancelled = false;
@@ -470,13 +525,33 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors';
   const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
-  const placeholderText = captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…';
+  const placeholderText = captionsStarting
+    ? 'Starting captions…'
+    : captionMode === 'original' ? 'Waiting for speech…' : 'Waiting for translation…';
+  // A same-language ("Show Captions") session shouldn't show up as its own
+  // confusing duplicate row in Audio/per-language Captions — captioning your
+  // own language back at yourself isn't a real choice, it's exactly what
+  // "Show Captions" already is. Real translations are always source!=target.
+  const realSessions = sessions.filter((s) => s.source_language !== s.target_language);
 
   return (
     <>
       {captionMode !== 'off' && (
-        <div className="fixed bottom-40 sm:bottom-44 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2">
-          <div className="flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10">
+        <div
+          ref={captionOverlay.ref}
+          className="fixed bottom-40 sm:bottom-44 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          style={captionOverlay.style}
+        >
+          <div
+            onPointerDown={captionOverlay.onPointerDown}
+            onPointerMove={captionOverlay.onPointerMove}
+            onPointerUp={captionOverlay.onPointerUp}
+            onPointerCancel={captionOverlay.onPointerCancel}
+            title="Drag to move"
+            className={`flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10 select-none ${
+              captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
+          >
             <div className="flex-1 min-w-0 space-y-1">
               {captionLines.length === 0 ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
@@ -540,7 +615,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-72 p-2">
-          {sessions.length === 0 && (
+          {realSessions.length === 0 && (
             <p className="text-xs text-muted-foreground px-2.5 py-2">
               No live translation running yet — once the host starts one, it'll show up here automatically.
             </p>
@@ -552,7 +627,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
               <span className="flex-1">Original</span>
               {currentLanguage === null && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
-            {sessions.map((s) => (
+            {realSessions.map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -580,12 +655,17 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
               <span className="flex-1">Off</span>
               {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
-            <button type="button" onClick={() => setCaptionMode('original')} className={`${row} ${sel(captionMode === 'original')}`}>
-              <Captions className="h-4 w-4" />
-              <span className="flex-1">Original</span>
-              {captionMode === 'original' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+            <button
+              type="button"
+              onClick={startCaptionsSession}
+              disabled={captionsStarting}
+              className={`${row} ${sel(captionMode === 'original')} disabled:opacity-50`}
+            >
+              {captionsStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Captions className="h-4 w-4" />}
+              <span className="flex-1">Show Captions</span>
+              {captionMode === 'original' && !captionsStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
-            {sessions.map((s) => (
+            {realSessions.map((s) => (
               <button
                 key={`caption-${s.id}`}
                 type="button"
@@ -598,6 +678,9 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
               </button>
             ))}
           </div>
+          {captionsError && (
+            <p className="text-xs text-red-600 px-2.5 pt-1.5">{captionsError}</p>
+          )}
 
           <p className="text-[10px] text-gray-400 px-2.5 pt-1.5">
             Translated audio is deliberately delayed ~{delaySeconds}s to line up with the video.

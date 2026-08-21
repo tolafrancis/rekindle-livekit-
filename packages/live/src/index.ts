@@ -10,3 +10,4 @@ export * from './useMeetingChat';
 export * from './useMeetingPresence';
 export * from './useMeetingReactions';
 export * from './useMeetingStage';
+export * from './useDraggableOverlay';
