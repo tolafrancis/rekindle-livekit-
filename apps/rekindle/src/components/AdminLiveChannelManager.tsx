@@ -417,7 +417,10 @@ export const AdminLiveChannelManager: React.FC = () => {
     try {
       setSaving(true);
 
-      const { error } = await supabase
+      // Same verify-the-row-actually-changed discipline as toggleActiveStatus
+      // above — a bare .update() with no .select() reports success even when
+      // RLS silently matched zero rows.
+      const { data, error } = await supabase
         .from('live_channels')
         .update({
           name: formData.name,
@@ -428,9 +431,13 @@ export const AdminLiveChannelManager: React.FC = () => {
           is_featured: formData.is_featured,
           is_active: formData.is_active
         })
-        .eq('id', selectedChannel.id);
+        .eq('id', selectedChannel.id)
+        .select('id');
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error(t('adminLiveChannelManager', 'updateBlockedError', "The update didn't apply — you may not have permission to change this channel."));
+      }
 
       toast({
         title: t('adminLiveChannelManager', 'success', 'Success'),
@@ -491,12 +498,24 @@ export const AdminLiveChannelManager: React.FC = () => {
   // Toggle channel active status
   const toggleActiveStatus = async (channel: LiveChannel) => {
     try {
-      const { error } = await supabase
+      // Real bug found live: a bare .update() with no .select() reports
+      // success (error === null) even when RLS matches ZERO rows — Postgrest
+      // doesn't treat "the row exists but you're not allowed to touch it" as
+      // an error, it just silently no-ops. This toast used to fire
+      // "successfully deactivated" regardless of whether anything actually
+      // changed, which is exactly how a genuinely-unchanged channel could
+      // look like it worked. Selecting the updated row back and checking it
+      // actually came back is the only way to tell the two cases apart.
+      const { data, error } = await supabase
         .from('live_channels')
         .update({ is_active: !channel.is_active })
-        .eq('id', channel.id);
+        .eq('id', channel.id)
+        .select('id, is_active');
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error(t('adminLiveChannelManager', 'updateBlockedError', "The update didn't apply — you may not have permission to change this channel."));
+      }
 
       toast({
         title: t('adminLiveChannelManager', 'success', 'Success'),

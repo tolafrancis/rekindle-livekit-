@@ -272,10 +272,16 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   const loadChannels = useCallback(async () => {
     setLoading(true);
     try {
-      // Load all channels
+      // Load all channels. is_active gates visibility here — real gap found
+      // live: an admin deactivating a channel (AdminLiveChannelManager.tsx)
+      // had no effect anywhere, because nothing downstream ever checked the
+      // flag it was writing. myChannels below is a separate owner-scoped
+      // query, unaffected by this filter — an owner still sees/manages their
+      // own deactivated channel, it just stops showing to everyone else.
       let query = supabase
         .from('live_channels')
         .select('*')
+        .eq('is_active', true)
         .order('is_live', { ascending: false })
         .order('total_followers', { ascending: false });
 

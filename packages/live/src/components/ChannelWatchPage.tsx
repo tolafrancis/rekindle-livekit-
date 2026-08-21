@@ -40,7 +40,13 @@ export const ChannelWatchPage: React.FC<{ context?: 'main' | 'ministry' }> = ({ 
         .eq('id', id)
         .maybeSingle();
       if (!active) return;
-      if (error || !data) {
+      // is_active gates this the same as a genuinely missing channel — real
+      // gap found live: a deactivated channel's direct watch link kept
+      // resolving and playing normally, since nothing here ever checked the
+      // flag AdminLiveChannelManager.tsx's deactivate toggle writes. The
+      // existing "channel is no longer available" copy already reads fine
+      // for this case too, so no new UI state needed.
+      if (error || !data || (data as LiveChannel).is_active === false) {
         setNotFound(true);
       } else {
         setChannel(data as LiveChannel);
