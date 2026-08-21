@@ -77,7 +77,12 @@ export interface UseDailyRoomReturn {
   localParticipant: DailyParticipantInfo | null;
   remoteParticipants: DailyParticipantInfo[];
   participantCount: number;
-  
+  /** True while a real-time translation bot is present in the room (any
+   *  session — captions-only or a real translation) — LiveKit-backed rooms
+   *  only, always false on Daily. Drives a small "Live Translation" status
+   *  indicator; the bot itself never appears in `participants`. */
+  hasTranslationBot: boolean;
+
   // Waiting room
   waitingRoomParticipants: WaitingRoomParticipant[];
   
@@ -209,6 +214,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // would otherwise tear down long-lived subscriptions like chat on every tick).
   const participantsRef = useRef(participants);
   participantsRef.current = participants;
+  // Real-time translation bot (2026-08-22): the bot is a genuine LiveKit
+  // room participant (identity "rlt-bot-{sessionId}", see rekindle-translation-bot's
+  // LiveKitAgent.ts) but it's an infrastructure detail, not a person — it
+  // never belongs in a video grid, a filmstrip, or an "All Participants"
+  // roster (it has no name, no camera, and showing it there just confuses
+  // people). `participants`/`remoteParticipants` below are already scrubbed
+  // of it (see updateParticipants), so nothing downstream needs to filter
+  // it out itself — this flag is the one place that surfaces its presence,
+  // for a small "Live Translation" indicator instead of a participant tile.
+  const [hasTranslationBot, setHasTranslationBot] = useState(false);
   
   // Media state
   const [isMicOn, setIsMicOn] = useState(false);
@@ -375,8 +390,18 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       const roles = new Map<string, ParticipantRole>();
       list.forEach((p) => { if (p.metadata?.role) roles.set(p.sessionId, p.metadata.role); });
       livekitRolesRef.current = roles;
-      participantList = list;
+      // Real-time translation bot(s) join this same LiveKit room as a genuine
+      // participant (identity "rlt-bot-{sessionId}") purely to publish its
+      // translated-audio track — see hasTranslationBot's doc comment above.
+      // Scrub it here, the single point every consumer of `participants` /
+      // `remoteParticipants` (video grid, filmstrip, waiting-room checks,
+      // participant count, the broadcast host's "All Participants" panel)
+      // reads from, so nothing downstream has to remember to filter it.
+      setHasTranslationBot(list.some((p) => p.sessionId.startsWith('rlt-bot-')));
+      participantList = list.filter((p) => !p.sessionId.startsWith('rlt-bot-'));
     } else {
+      // Daily-backed meetings never share a room with the LiveKit-only bot —
+      // it has nothing to filter and nothing to detect here.
       participantList = Object.values(raw).map((p) => convertParticipant(p as DailyParticipant));
     }
 
@@ -2395,6 +2420,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     localParticipant,
     remoteParticipants,
     participantCount,
+    hasTranslationBot,
     waitingRoomParticipants,
     meetingSettings,
     isRecording,

@@ -1059,6 +1059,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     localParticipant,
     remoteParticipants,
     participantCount,
+    hasTranslationBot,
     waitingRoomParticipants,
     meetingSettings,
     isRecording,
@@ -1873,6 +1874,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse" />
                 {t('dailyVideoCall', 'live', 'Live')}
               </Badge>
+
+              {/* Translation bot status (2026-08-22) — the bot itself never
+                  appears as a participant tile (see useDailyRoom's
+                  hasTranslationBot doc comment); this pulsing badge is the
+                  only visible sign it's running, shown to everyone in the
+                  room regardless of whether THEY personally have captions
+                  or translated audio turned on. */}
+              {hasTranslationBot && (
+                <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                  <span className="w-2 h-2 bg-indigo-400 rounded-full mr-2 animate-pulse" />
+                  <span className="hidden sm:inline">{t('dailyVideoCall', 'liveTranslationOn', 'Live Translation')}</span>
+                  <span className="sm:hidden">{t('dailyVideoCall', 'translationAbbrev', 'Translate')}</span>
+                </Badge>
+              )}
+
               <div className="flex items-center gap-2 text-white">
                 <Clock className="h-4 w-4" />
                 <span className="font-mono">{formatDuration(sessionDuration)}</span>

@@ -72,6 +72,27 @@ export function useMeetingNotes(
   const speakerRef = useRef(speakerName);
   useEffect(() => { speakerRef.current = speakerName; }, [speakerName]);
 
+  // Real bug found live (2026-08-22): startNotes() below dispatched its STT
+  // bot session with source_language HARDCODED to 'en', regardless of what
+  // the ministry actually speaks — same class of bug already fixed for Show
+  // Captions (FloatingTranslationButton.tsx). Read the ministry's own
+  // configured source_language (which may itself be 'auto' — see
+  // MinistryTranslationSettings.tsx — the bot then auto-detects) instead of
+  // assuming English. Read via ref, not state, so it doesn't force
+  // startNotes to be recreated on every render.
+  const sourceLanguageRef = useRef('auto');
+  useEffect(() => {
+    if (!ministryId) return;
+    supabase
+      .from('language_configs')
+      .select('source_language')
+      .eq('ministry_id', ministryId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.source_language) sourceLanguageRef.current = data.source_language;
+      });
+  }, [ministryId]);
+
   const elapsed = () =>
     startedAtRef.current ? Math.floor((Date.now() - startedAtRef.current) / 1000) : 0;
 
@@ -273,12 +294,15 @@ export function useMeetingNotes(
             return;
           }
 
-          // No bot session is running — start an English-only STT session
+          // No bot session is running — start a same-language (captions/
+          // notes-only, no translation) STT session in whatever language
+          // this ministry actually speaks (or 'auto' to detect it).
+          const sourceLanguage = sourceLanguageRef.current;
           const { error: rpcError } = await supabase.rpc('start_bot_session', {
             p_ministry_id: ministryId,
             p_room_name: roomName,
-            p_source_language: 'en',
-            p_target_language: 'en',
+            p_source_language: sourceLanguage,
+            p_target_language: sourceLanguage,
             p_speaker_identity: userId || null,
           });
           if (rpcError) {

@@ -1354,6 +1354,19 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                   {t('liveChannelBroadcast', 'rec', 'REC')}
                 </Badge>
               )}
+              {/* Translation bot status (2026-08-22) — same signal as the
+                  meeting UI's badge: the bot never appears in "All
+                  Participants" (see useDailyRoom's hasTranslationBot doc
+                  comment), this pulsing badge is the only visible sign it's
+                  running, shown to the host regardless of whether captions
+                  or translated audio are personally turned on. */}
+              {dailyRoom.hasTranslationBot && (
+                <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30 flex items-center gap-1 text-xs sm:text-sm">
+                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-indigo-400 rounded-full animate-pulse" />
+                  <span className="hidden sm:inline">{t('liveChannelBroadcast', 'liveTranslationOn', 'Live Translation')}</span>
+                  <span className="sm:hidden">{t('liveChannelBroadcast', 'translationAbbrev', 'Translate')}</span>
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-4 text-gray-300">
               <div className="relative" ref={viewersPopoverRef}>

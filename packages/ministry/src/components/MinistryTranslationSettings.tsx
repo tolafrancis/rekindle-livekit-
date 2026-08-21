@@ -169,8 +169,18 @@ const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
 
 const languageLabel = (code: string) => COMMON_LANGUAGES.find(l => l.code === code)?.label || code.toUpperCase();
 
+// 'auto' (2026-08-22) is a real, understood sentinel end to end — not just a
+// display string. The bot (rekindle-translation-bot's AudioPipeline.ts)
+// reads it and switches Deepgram into real-time multilingual mode instead of
+// pinning STT to one language; every other reader (session lists, the
+// FloatingTranslationButton/BroadcastTranslationButton dispatchers, the
+// start_captions_session RPC) already just forwards whatever source_language
+// says without assuming it's a 2-3 letter ISO code, so introducing this
+// value needed no schema change — source_language has always been a plain
+// `text` column. New ministries default to it; existing ones keep whatever
+// they already had (typically 'en') until an admin opts in below.
 const DEFAULT_CONFIG: LanguageConfigState = {
-  source_language: 'en',
+  source_language: 'auto',
   target_language: null,
   supported_target_languages: [],
   elevenlabs_voice_id: null,
@@ -183,6 +193,13 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<LanguageConfigState>(DEFAULT_CONFIG);
+  // Remembers the last pinned (non-'auto') source language across toggles
+  // within this render session, so flipping Auto-detect off after having
+  // just turned it on restores what was there rather than always falling
+  // back to 'en'. Not persisted — a fresh page load with a saved 'auto'
+  // config has nothing to restore to, which is fine, 'en' is a reasonable
+  // starting point for an admin who's pinning for the first time.
+  const lastPinnedSourceLanguageRef = useRef('en');
   const [newLanguageCode, setNewLanguageCode] = useState('');
   const [pin, setPin] = useState('');
   const [pinSaving, setPinSaving] = useState(false);
@@ -605,12 +622,38 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <Label>Source language (what the speaker speaks)</Label>
-            <Input
-              value={config.source_language}
-              onChange={e => setConfig(c => ({ ...c, source_language: e.target.value.toLowerCase() }))}
-              placeholder="en"
-              className="max-w-[160px]"
-            />
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={config.source_language === 'auto'}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    lastPinnedSourceLanguageRef.current = config.source_language !== 'auto' ? config.source_language : lastPinnedSourceLanguageRef.current;
+                    setConfig(c => ({ ...c, source_language: 'auto' }));
+                  } else {
+                    setConfig(c => ({ ...c, source_language: lastPinnedSourceLanguageRef.current || 'en' }));
+                  }
+                }}
+              />
+              <span className="text-sm">Auto-detect the spoken language</span>
+            </div>
+            {config.source_language === 'auto' ? (
+              <p className="text-xs text-muted-foreground max-w-md">
+                Captions and translation start the instant someone speaks — no language to
+                configure ahead of time. Covers a solid set of major world languages
+                (English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese,
+                Italian, Dutch and more). If this ministry speaks something outside that
+                set, turn this off and pin the exact language below instead — a pinned
+                language covers many more languages individually than auto-detect can
+                across a mixed stream.
+              </p>
+            ) : (
+              <Input
+                value={config.source_language}
+                onChange={e => setConfig(c => ({ ...c, source_language: e.target.value.toLowerCase() }))}
+                placeholder="en"
+                className="max-w-[160px]"
+              />
+            )}
           </div>
 
           <div className="space-y-1.5">
