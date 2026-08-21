@@ -500,7 +500,16 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     try {
       const res = await startChannelBroadcast(channel.id);
       if (res?.playbackUrl) {
-        await supabase.from('live_channels').update({ is_live: true }).eq('id', channel.id);
+        // Checked, not fire-and-forget (real bug found live: an unchecked
+        // write here that silently no-ops — RLS, a network blip, anything —
+        // left is_live stuck out of sync with reality with no UI signal at
+        // all, since a Postgrest UPDATE matching 0 rows still resolves
+        // without throwing). Now also backstopped server-side in
+        // livekit-webhook's egress_ended handler, but this should still
+        // surface a real failure to the host rather than silently claim
+        // success.
+        const { error: liveErr } = await supabase.from('live_channels').update({ is_live: true }).eq('id', channel.id);
+        if (liveErr) console.error('[ChannelStreamConfig] failed to set is_live=true:', liveErr);
         setIsObsBroadcasting(true);
         setStartedManuallyThisSession(true);
         if (prov) {
@@ -532,7 +541,21 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
     setObsBusy(true);
     try {
       await stopChannelBroadcast(channel.id);
-      await supabase.from('live_channels').update({ is_live: false }).eq('id', channel.id);
+      const { error: liveErr } = await supabase.from('live_channels').update({ is_live: false }).eq('id', channel.id);
+      if (liveErr) {
+        // Don't claim success if the one write that was actually supposed to
+        // clear is_live failed — see the matching comment in
+        // handleStartObsBroadcast above. The egress_ended webhook backstop
+        // will still correct this once LiveKit's own egress-ended event
+        // arrives, but that's not instant, so still surface the failure here.
+        console.error('[ChannelStreamConfig] failed to set is_live=false:', liveErr);
+        toast({
+          title: t('channelStreamConfig', 'couldNotStopBroadcast', 'Could not stop broadcast'),
+          description: liveErr.message,
+          variant: 'destructive',
+        });
+        return;
+      }
       setIsObsBroadcasting(false);
       setStartedManuallyThisSession(false);
       toast({

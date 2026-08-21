@@ -275,6 +275,30 @@ serve(async (req) => {
           }).eq('id', rec.meeting_id);
         }
 
+        // Real bug found live (2026-08-21): a channel broadcast's live status
+        // is otherwise cleared ONLY by the client — LiveChannelBroadcast.tsx's
+        // endBroadcast() (in-browser "Go Live") or ChannelStreamConfig.tsx's
+        // handleStopObsBroadcast() (OBS). Either one requires the client to
+        // still be connected and actually run that code. A dead track (closed
+        // tab, lost connection, crashed browser — anything short of a clean
+        // "End Broadcast" click) still makes LiveKit itself end the egress
+        // (its source disappeared) and fire this webhook server-side — but
+        // nothing was clearing live_channels.is_live/is_hls_live or
+        // channel_streams.hls_egress_id from that path, so the channel stayed
+        // stuck "live" indefinitely with nothing left actually streaming
+        // (confirmed live: a channel showing is_live=true almost 24h after
+        // its egress had genuinely EGRESS_COMPLETE'd, "Source closed"). This
+        // mirrors autoStopHlsBroadcast's own writes above (ingress_ended path)
+        // — same cleanup, reached from the egress side instead of the
+        // ingress side, and safe to run unconditionally on `ended` (not just
+        // `!failed`): a FAILED egress just as surely means nothing is live
+        // anymore. Idempotent/harmless if the client's own write already
+        // succeeded — this is a backstop, not the primary path.
+        if (ended && rec?.kind === 'channel' && rec.channel_id) {
+          await admin.from('channel_streams').update({ hls_egress_id: null, updated_at: new Date().toISOString() }).eq('channel_id', rec.channel_id);
+          await admin.from('live_channels').update({ is_hls_live: false, is_live: false }).eq('id', rec.channel_id);
+        }
+
         if (ended && !failed && rec) {
           const ministryId = await resolveMinistryId(admin, rec);
           if (ministryId) {

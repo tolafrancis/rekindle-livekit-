@@ -919,8 +919,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     );
   }
 
-  // Not live - show replay gate if available
-  if (!channel.is_live && replayAvailable && channel.replayAccessLevel && channel.replayAccessLevel !== 'none') {
+  // Not live - show replay gate if available. Reads the reactive `isLive`
+  // (realtime-derived, see its useState/useEffect above) rather than the
+  // raw `channel.is_live` prop — the rest of this component already does
+  // (lines below use `isLive`); this one check was still on the frozen
+  // prop, so a same-session live->ended transition landed on the generic
+  // "Channel Offline" branch instead of ever showing the replay gate.
+  if (!isLive && replayAvailable && channel.replayAccessLevel && channel.replayAccessLevel !== 'none') {
     return (
       <ReplayAccessGate
         channel={channel}
