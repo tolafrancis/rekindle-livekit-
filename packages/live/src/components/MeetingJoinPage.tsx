@@ -80,7 +80,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -91,6 +91,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
+import { isNativeApp, isDesktopApp } from '@rekindle/features/platform';
 import RegisterMeetingButton from './RegisterMeetingButton';
 import {
   Loader2,
@@ -160,6 +161,61 @@ const MeetingJoinPage: React.FC = () => {
   const [guestName, setGuestName] = useState('');
 
   const meetingType = channelId ? 'channel' : 'ministry';
+
+  // "Open in App" handoff (Zoom-style click-to-launch) — offers the
+  // installed desktop app as an alternative to the browser join flow below,
+  // never a replacement for it. isNativeApp()/isDesktopApp() guard against
+  // offering to open an app the visitor is already inside (a mobile-app
+  // visitor, or the desktop shell's own loaded copy of this exact page —
+  // without that second guard, clicking a meeting link *inside* the
+  // Electron shell would try to re-launch its own protocol on itself).
+  const [handoffDismissed, setHandoffDismissed] = useState(false);
+  const [handoffFailed, setHandoffFailed] = useState(false);
+  const handoffTimerRef = useRef<number | null>(null);
+
+  // Which app can actually host this meeting — a ministry meeting only ever
+  // runs inside the Ministry app's /ministries/:id/live, a channel meeting
+  // only inside ReKindle's live-channels tab — so this follows meetingType
+  // (what the meeting IS), not which web origin happens to be serving this
+  // page right now. Reuses the same custom scheme already registered
+  // (inert) for each app's mobile build, see AndroidManifest.xml in each
+  // apps/* — rekindleministry:// / rekindle://.
+  const desktopScheme = channelId ? 'rekindle' : 'rekindleministry';
+  // Fixed arbitrary host token ("app") after the scheme so this parses
+  // predictably as a WHATWG URL, then the exact same path+query as the real
+  // web route — the desktop shell just does location.pathname+search on
+  // whatever URL it receives, no translation table to keep in sync.
+  const desktopHandoffUrl = `${desktopScheme}://app${location.pathname}${location.search}`;
+
+  // Timeout-based failure detection, not the older hidden-iframe probe
+  // technique (progressively restricted by Chrome/Firefox, never reliable
+  // in Safari). A real app launch backgrounds this tab — if we see that
+  // happen before the timer fires, treat it as success and do nothing
+  // further; if the timer wins, reveal a small "didn't open?" fallback line.
+  const attemptDesktopHandoff = () => {
+    setHandoffFailed(false);
+    const cleanup = () => {
+      if (handoffTimerRef.current !== null) window.clearTimeout(handoffTimerRef.current);
+      handoffTimerRef.current = null;
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('blur', onHidden);
+    };
+    const onHidden = () => {
+      if (document.hidden) cleanup();
+    };
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('blur', onHidden);
+    handoffTimerRef.current = window.setTimeout(() => {
+      cleanup();
+      setHandoffFailed(true);
+    }, 1800);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (handoffTimerRef.current !== null) window.clearTimeout(handoffTimerRef.current);
+    };
+  }, []);
 
   // Fetch meeting data
   useEffect(() => {
@@ -459,6 +515,47 @@ const MeetingJoinPage: React.FC = () => {
     );
   }
 
+  // App-handoff banner — computed once, rendered identically in both the
+  // guest and signed-in branches below. Only offered once the meeting is
+  // actually live (nothing to hand off to before then) and never to a
+  // visitor who's already inside a native/desktop app.
+  const showAppHandoffBanner = meetingData.status === 'live' && !isNativeApp() && !isDesktopApp() && !handoffDismissed;
+  const appHandoffBanner = showAppHandoffBanner && (
+    <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3 space-y-2">
+      <p className="text-xs text-muted-foreground text-center">
+        {t('skeleton', 'haveTheAppInstalled', 'Have the ReKindle app installed?')}
+      </p>
+      <div className="flex gap-2">
+        {/* A real <a href> with a genuine click, not a scripted
+            window.location assignment — the most broadly-compatible way to
+            trigger a custom-scheme handoff across Chrome/Edge/Firefox/Safari,
+            and lets the browser's own "Open X app?" confirmation do its job. */}
+        <a
+          href={desktopHandoffUrl}
+          onClick={attemptDesktopHandoff}
+          className="flex-1 inline-flex items-center justify-center h-9 rounded-md bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors"
+        >
+          {t('skeleton', 'openInApp', 'Open in App')}
+        </a>
+        <Button type="button" variant="ghost" size="sm" className="flex-1" onClick={() => setHandoffDismissed(true)}>
+          {t('skeleton', 'continueInBrowser', 'Continue in Browser')}
+        </Button>
+      </div>
+      {handoffFailed && (
+        <p className="text-xs text-muted-foreground text-center">
+          {t('skeleton', 'didntOpen', "Didn't open?")}{' '}
+          <a href={desktopHandoffUrl} onClick={attemptDesktopHandoff} className="underline">
+            {t('skeleton', 'tryAgain', 'Try again')}
+          </a>
+          {' · '}
+          <button type="button" onClick={() => setHandoffDismissed(true)} className="underline">
+            {t('skeleton', 'continueInBrowserLower', 'continue in browser')}
+          </button>
+        </p>
+      )}
+    </div>
+  );
+
   // Not authenticated - show guest join + optional sign-in
   if (!user) {
     return (
@@ -498,6 +595,8 @@ const MeetingJoinPage: React.FC = () => {
                   </span>
                 </div>
               </div>
+
+              {appHandoffBanner}
 
               {/* Guest Join Section */}
               {meetingData.status === 'live' && (
@@ -726,6 +825,8 @@ const MeetingJoinPage: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {appHandoffBanner}
 
           {/* Action Buttons */}
           <div className="space-y-3">

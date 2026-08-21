@@ -13,6 +13,19 @@ export function isNativeApp(): boolean {
   return typeof cap.isNativePlatform === 'function' ? !!cap.isNativePlatform() : !!cap.isNative;
 }
 
+/**
+ * True only inside the desktop Electron shell (`rekindle-desktop`, sibling repo).
+ * That shell's preload script sets `window.rekindleDesktop` unconditionally — see
+ * its `electron/preload.ts`. Deliberately the same shape as isNativeApp() above
+ * (a plain runtime global check, zero build-time dependency), and checked
+ * alongside it wherever a "don't offer to open the app you're already in" guard
+ * is needed (see MeetingJoinPage.tsx's app-handoff banner).
+ */
+export function isDesktopApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window as any).rekindleDesktop?.isDesktop;
+}
+
 /** 'android' | 'ios' | 'web' */
 export function nativePlatform(): string {
   if (typeof window === 'undefined') return 'web';
