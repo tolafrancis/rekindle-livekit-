@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrCode';
-import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@rekindle/ui/alert';
+import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle } from 'lucide-react';
 import type { BadgeProps } from '@rekindle/ui/badge';
 
 interface MinistryTranslationServiceManagerProps {
@@ -20,7 +21,7 @@ interface MinistryTranslationServiceManagerProps {
 interface SessionRow {
   id: string;
   service_id: string | null;
-  source_type: 'livekit_room' | 'pa_mixer';
+  source_type: 'livekit_room' | 'pa_mixer' | 'browser_speaker';
   source_language: string;
   target_language: string;
   status: string;
@@ -57,6 +58,18 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const [serviceName, setServiceName] = useState('');
   const [roomName, setRoomName] = useState('');
   const [pairs, setPairs] = useState<string[]>(['']);
+
+  // "Speaker Link" (migration 0288) — a browser-only alternative to a full
+  // Meeting or the PA edge agent: pick one target language, get back a
+  // speaker link (opens a mic-publish page, no login) and the usual
+  // listener link. One language pair per link, by design — see that
+  // migration's header comment.
+  const [showSpeaker, setShowSpeaker] = useState(false);
+  const [speakerLanguage, setSpeakerLanguage] = useState('');
+  const [creatingSpeaker, setCreatingSpeaker] = useState(false);
+  // The raw speaker token only ever exists in the RPC's response — shown
+  // once here, same discipline as the device-registration dialog's raw key.
+  const [newSpeakerLink, setNewSpeakerLink] = useState<{ speakerLink: string; listenerLink: string } | null>(null);
 
   // Broadcast Companion Link (build plan §2.6) — "Broadcast mode" is UI-only,
   // not persisted. It doesn't change anything about the service itself; it
@@ -164,6 +177,43 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     }
   };
 
+  const openSpeakerDialog = () => {
+    setSpeakerLanguage(supportedLanguages[0] || '');
+    setNewSpeakerLink(null);
+    setShowSpeaker(true);
+  };
+
+  const createSpeakerLink = async () => {
+    if (!speakerLanguage) return;
+    setCreatingSpeaker(true);
+    try {
+      const { data, error } = await supabase.rpc('start_speaker_session', {
+        p_ministry_id: ministryId,
+        p_source_language: sourceLanguage,
+        p_target_language: speakerLanguage,
+      });
+      if (error) throw error;
+      const { session_id, speaker_token } = data as { session_id: string; speaker_token: string };
+      setNewSpeakerLink({
+        speakerLink: `${window.location.origin}/speak/${session_id}?t=${speaker_token}`,
+        listenerLink: `${window.location.origin}/display/${session_id}`,
+      });
+      load();
+    } catch (err: any) {
+      console.error('[MinistryTranslationServiceManager] speaker link creation failed:', err);
+      toast({ title: 'Could not create speaker link', description: err.message, variant: 'destructive' });
+    } finally {
+      setCreatingSpeaker(false);
+    }
+  };
+
+  const copyToClipboard = (label: string, url: string) => {
+    navigator.clipboard.writeText(url).then(
+      () => toast({ title: `${label} copied` }),
+      () => toast({ title: `Could not copy ${label.toLowerCase()}`, description: url, variant: 'destructive' }),
+    );
+  };
+
   const stopSession = async (sessionId: string) => {
     try {
       const { error } = await supabase.rpc('stop_bot_session', { p_session_id: sessionId });
@@ -251,6 +301,11 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   };
 
   const sessionsFor = (serviceId: string) => sessions.filter(s => s.service_id === serviceId);
+  // Speaker Link sessions aren't attached to a translation_services row —
+  // there's no "name this service" step, by design (see openSpeakerDialog's
+  // comment) — so they're listed on their own instead of nested under a
+  // service card.
+  const speakerSessions = sessions.filter(s => s.source_type === 'browser_speaker' && !s.service_id);
 
   if (loading) {
     return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -268,15 +323,55 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
             One or more language pairs, dispatched to the translation bot for a LiveKit room.
           </p>
         </div>
-        <Button onClick={openStartDialog} disabled={supportedLanguages.length === 0}>
-          <Play className="h-4 w-4 mr-1.5" /> Start Service
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={openSpeakerDialog} disabled={supportedLanguages.length === 0}>
+            <Mic className="h-4 w-4 mr-1.5" /> Speaker Link
+          </Button>
+          <Button onClick={openStartDialog} disabled={supportedLanguages.length === 0}>
+            <Play className="h-4 w-4 mr-1.5" /> Start Service
+          </Button>
+        </div>
       </div>
 
       {supportedLanguages.length === 0 && (
         <Card><CardContent className="py-4 text-sm text-muted-foreground">
           Add at least one supported target language in the Settings tab before starting a service.
         </CardContent></Card>
+      )}
+
+      {speakerSessions.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mic className="h-4 w-4 text-indigo-600" /> Speaker Links
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Browser-based sessions started from a speaker link instead of a Meeting or PA device.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {speakerSessions.map(session => (
+              <div key={session.id} className="flex items-center justify-between gap-2 rounded-lg border p-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Badge variant={STATUS_VARIANT[session.status] || 'secondary'}>{session.status}</Badge>
+                  <span className="text-sm font-medium truncate">
+                    {session.source_language.toUpperCase()} → {session.target_language.toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy listener link">
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  {session.status !== 'ended' && (
+                    <Button variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this speaker link">
+                      <Square className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
       {services.length === 0 && supportedLanguages.length > 0 && (
@@ -390,8 +485,9 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
             <div className="space-y-1.5">
               <Label>LiveKit room name</Label>
               <p className="text-xs text-muted-foreground">
-                The bot joins this room and subscribes to the speaker. Phase 2 auto-fills this from the actual
-                meeting — for now, enter the room name the meeting will use.
+                The bot joins this room and subscribes to the speaker. For an existing Meeting, its own in-call
+                Translations button → "+ Add language" does this automatically with no room name to type — use this
+                dialog only for a room outside that flow. Or use Speaker Link instead if there's no meeting at all.
               </p>
               <Input value={roomName} onChange={e => setRoomName(e.target.value)} placeholder="e.g. sunday-service-2026-08-16" />
             </div>
@@ -425,6 +521,74 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
               {starting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Start Service
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSpeaker} onOpenChange={(open) => { setShowSpeaker(open); if (!open) setNewSpeakerLink(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create a Speaker Link</DialogTitle>
+          </DialogHeader>
+          {!newSpeakerLink ? (
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                A link a speaker opens in any browser to publish their mic straight into a translated session — no
+                Meeting, no installed software. One target language per link; create another for a second language.
+              </p>
+              <div className="space-y-1.5">
+                <Label>Target language ({sourceLanguage.toUpperCase()} → )</Label>
+                <Select value={speakerLanguage} onValueChange={setSpeakerLanguage}>
+                  <SelectTrigger><SelectValue placeholder="Choose a language" /></SelectTrigger>
+                  <SelectContent>
+                    {supportedLanguages.map(code => (
+                      <SelectItem key={code} value={code}>{code.toUpperCase()}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  The speaker link is shown once. Copy it now and send it to whoever's speaking — it can't be
+                  retrieved again after you close this dialog (create a new speaker link instead if it's lost).
+                </AlertDescription>
+              </Alert>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Speaker link — send to whoever's speaking</Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all">{newSpeakerLink.speakerLink}</code>
+                  <Button variant="outline" size="sm" onClick={() => copyToClipboard('Speaker link', newSpeakerLink.speakerLink)}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Listener link — send to anyone following along</Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all">{newSpeakerLink.listenerLink}</code>
+                  <Button variant="outline" size="sm" onClick={() => copyToClipboard('Listener link', newSpeakerLink.listenerLink)}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            {!newSpeakerLink ? (
+              <>
+                <Button variant="outline" onClick={() => setShowSpeaker(false)}>Cancel</Button>
+                <Button onClick={createSpeakerLink} disabled={creatingSpeaker || !speakerLanguage}>
+                  {creatingSpeaker ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Create Speaker Link
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setShowSpeaker(false)}>Done</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

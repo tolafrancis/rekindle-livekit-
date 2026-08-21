@@ -105,3 +105,11 @@ enabled = true
 # reject every legitimate call before the function's own device-token
 # check ever runs.
 verify_jwt = false
+
+[functions.translation-speaker-token]
+enabled = true
+# Called by an anonymous browser holding only a per-session speaker token
+# (migration 0288) — no Supabase session, same reasoning as
+# translation-device-publish-token above. Gateway JWT verification off;
+# the function validates the speaker token itself.
+verify_jwt = false

@@ -31,6 +31,7 @@ import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
 import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDisplayPage';
 import { TranslationDisplayLanding } from '@rekindle/live/components/TranslationDisplayLanding';
+import { SpeakerPage } from '@rekindle/live/components/SpeakerPage';
 import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
 import { GlobalAudioProvider } from '@rekindle/features/GlobalAudioContext';
 import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
@@ -239,6 +240,12 @@ function AppRoutes() {
           private, not this route gate. */}
       <Route path="/display/:sessionId" element={<TranslationDisplayPage />} />
       <Route path="/display" element={<TranslationDisplayLanding />} />
+
+      {/* "Speaker Link" (migration 0288) — a browser-only alternative to
+          Meetings/the PA edge agent for starting a translation session.
+          Public/unauthenticated same as /display; the ?t= token in the URL
+          is the real credential, not this route. */}
+      <Route path="/speak/:sessionId" element={<SpeakerPage />} />
 
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>
