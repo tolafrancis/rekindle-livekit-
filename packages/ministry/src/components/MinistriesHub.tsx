@@ -115,6 +115,17 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     setInternalActiveView(view);
     onActiveViewChange?.(view);
   }, [onActiveViewChange]);
+  // Companion to activeView above, same history.state mechanism — fixes a
+  // real bug: activeView alone already survived a refresh back to
+  // 'ministry-space' correctly, but selectedMinistry (a full object, set
+  // by handleEnterMinistry below) is plain useState and reset to null on
+  // every remount, so the `activeView === 'ministry-space' && selectedMinistry`
+  // render check below silently failed and fell through to the ministries
+  // list — reads as "refresh sends me back to home" even though activeView
+  // itself was right. Only the id needs persisting (useViewHistory's T
+  // extends string) — the restoration effect below resolves it back into
+  // the real Ministry object once the lists have loaded.
+  const [selectedMinistryId, setSelectedMinistryId] = useViewHistory<string>('ministries-hub-selected-ministry', '');
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [myMinistries, setMyMinistries] = useState<Ministry[]>([]);
   const [memberships, setMemberships] = useState<Record<string, MembershipInfo>>({});
@@ -572,12 +583,33 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const handleEnterMinistry = (ministry: Ministry) => {
     setSelectedMinistry(ministry);
     setActiveView('ministry-space');
+    // replace:true merges into the history entry setActiveView just pushed
+    // above, instead of pushing a second one — one Back press should exit
+    // a ministry, not two.
+    setSelectedMinistryId(ministry.id, { replace: true });
   };
 
   const handleExitMinistry = () => {
     setSelectedMinistry(null);
     setActiveView('my-ministries');
+    setSelectedMinistryId('', { replace: true });
   };
+
+  // Runs once on a refresh that lands back on activeView === 'ministry-space'
+  // (restored from history.state, see the hook above) — resolves the
+  // persisted id into the actual Ministry object once the lists it could be
+  // in have loaded. Falls back to exiting cleanly rather than getting stuck
+  // rendering nothing if the id isn't found (ministry deleted, access lost).
+  useEffect(() => {
+    if (loading || activeView !== 'ministry-space' || selectedMinistry || !selectedMinistryId) return;
+    const found = myMinistries.find(m => m.id === selectedMinistryId) || ministries.find(m => m.id === selectedMinistryId);
+    if (found) {
+      setSelectedMinistry(found);
+    } else {
+      handleExitMinistry();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, activeView, selectedMinistry, selectedMinistryId, myMinistries, ministries]);
 
   const copyInviteLink = (code: string) => {
     const link = `${window.location.origin}/join-ministry?code=${code}`;
