@@ -148,10 +148,6 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   const roomRef = useRef<Room | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  // The currently-connected DelayNode holding translated audio back to line
-  // up with the (delayed) video — see the periodic sync effect further down
-  // for why this needs to be reachable outside playTrack() itself.
-  const delayNodeRef = useRef<DelayNode | null>(null);
   // Created synchronously inside the language button's own onClick — see
   // primeAudioContext() below — so it's reliably treated as gesture-linked
   // by the browser's autoplay policy. playTrack() consumes this instead of
@@ -225,7 +221,6 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const teardownAudio = () => {
     roomRef.current?.disconnect().catch(() => {});
     roomRef.current = null;
-    delayNodeRef.current = null; // the DelayNode dies with its AudioContext below; drop the dangling reference
     const ctx = audioCtxRef.current;
     audioCtxRef.current = null; // clear the ref BEFORE closing (async) so any
     // in-flight callback closing over the old `ctx` can tell it's stale by
@@ -344,19 +339,37 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           const audioCtx = primedCtxRef.current ?? new AudioContext();
           primedCtxRef.current = null;
           audioCtxRef.current = audioCtx;
+          const stillCurrent = () => !stale() && audioCtxRef.current === audioCtx;
           const source = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
-          // maxDelayTime headroom well above the current live-measured delay
-          // — createDelay's cap is fixed for the node's lifetime, and
-          // delaySeconds can now drift upward after connection (it's a live
-          // HLS latency measurement, not a fixed constant), so this needs
-          // real margin, not just enough for today's value.
-          const delayNode = audioCtx.createDelay(Math.max(delaySecondsRef.current + 10, 30));
+
+          // Real bug found live (2026-08-22), twice: first, continuously
+          // re-targeting ONE DelayNode's delayTime toward the latest live-
+          // measured latency made translated audio audibly speed up/slow
+          // down (a DelayNode is a real buffer audio flows through —
+          // changing its delay stretches/compresses whatever's already
+          // inside it). Replaced with a crossfade-to-a-fresh-DelayNode
+          // approach (build a brand-new node already at the correct value,
+          // fade the gain over) specifically to avoid that — but a live
+          // report showed it STILL sounded fast-forwarded: a crossfade
+          // avoids the pitch-warp/click, but changing which delay is
+          // playing at all is inherently a jump in CONTENT, not just
+          // volume — the new node starts producing audio from an earlier or
+          // later point in the source than the old one was, so the listener
+          // hears a skip forward (or a brief repeat) no matter how smoothly
+          // the gain itself is faded. There's no way to change a delay
+          // line's effective position without either warping time or
+          // skipping content — reverted to the simplest option: set once,
+          // from the live delaySecondsRef value at THIS moment, and never
+          // touched again for the rest of the session. Trade-off, explicit:
+          // on a very long broadcast where real latency keeps climbing
+          // after connecting, translated audio can drift a little stale —
+          // a far smaller problem than an audible skip or warp.
+          const delayNode = audioCtx.createDelay(Math.max(delaySecondsRef.current + 5, 15));
           delayNode.delayTime.value = delaySecondsRef.current;
-          delayNodeRef.current = delayNode;
           source.connect(delayNode);
           delayNode.connect(audioCtx.destination);
+
           setAudioStatus('live');
-          const stillCurrent = () => !stale() && audioCtxRef.current === audioCtx;
           audioCtx.resume().then(() => {
             markTiming(`audio graph running — sound reaches speakers ~${delaySeconds}s after this point`);
             // The generation check alone isn't quite enough here — a NEWER
@@ -431,33 +444,30 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   useEffect(() => () => teardownAudio(), []);
 
-  // Keep the translated-audio DelayNode's actual delay tracking live-
-  // measured latency, not just whatever it happened to be at connection
-  // time. Real report live (2026-08-22): translated audio arrived a little
-  // BEFORE the speaker's lips moved on video — the delay was set once in
-  // playTrack() and then never revisited for the rest of the session, so it
-  // couldn't follow the video's real lag drifting upward the way captions
-  // now do (see the caption-sync effect above, fixed the same day for the
-  // same underlying reason). Runs independently of any particular
-  // connection — it's a no-op via the `if (!node)` guard whenever nothing's
-  // playing — so it doesn't need to be re-armed per language selection.
+  // Real regression found live (2026-08-22), same day it shipped: a
+  // continuous live re-sync used to run here, nudging the translated-audio
+  // DelayNode's delayTime toward the latest measured latency every ~1s via
+  // setTargetAtTime (a smooth ramp, chosen specifically to avoid the click
+  // a hard .value jump causes). Turned out a smooth ramp isn't actually
+  // artifact-free either — a DelayNode is a real buffer audio is flowing
+  // through, so changing its delay time doesn't just shift when FUTURE
+  // audio arrives, it stretches or compresses whatever's already inside
+  // it: increasing delay = audio stretches (slow-motion), decreasing delay
+  // = audio compresses (fast-forward). Reported live as translated audio
+  // alternating between sounding fast-forwarded and slow-motion — that's
+  // this ramp running every second, never fully settling.
   //
-  // setTargetAtTime (an exponential ramp), not a direct .value jump: a hard
-  // reassignment of an in-use DelayNode's delay is audible as a small pitch
-  // warp/skip on whatever's mid-flight through it, which is exactly the
-  // kind of artifact worth avoiding for a routine few-hundred-ms drift
-  // correction. The larger, correct value is already in place from the
-  // moment a track connects (playTrack reads the same live ref) — this loop
-  // is only ever closing a SMALL, gradual gap after that.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const node = delayNodeRef.current;
-      if (!node) return;
-      const target = Math.min(delaySecondsRef.current, node.delayTime.maxValue);
-      node.delayTime.setTargetAtTime(target, node.context.currentTime, 1.5);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // Reverted: the delay is set ONCE, at connection (playTrack, reading the
+  // same live delaySecondsRef so it's accurate at that moment), and never
+  // touched again for the rest of that session. Trade-off, explicit: on a
+  // very long broadcast where real latency keeps climbing after you
+  // connect, translated audio can drift a little stale — a much smaller
+  // problem than audibly warped speed. The artifact-free way to actually
+  // fix staleness is crossfading to a freshly-created DelayNode at the
+  // right value while fading the old one out (professional broadcast audio
+  // gear's approach to this exact problem) — meaningfully more engineering
+  // than this revert, not built speculatively; flagged as a real option if
+  // long-broadcast drift turns out to matter enough to justify it.
 
   // Captions — independent of Audio, same translation_logs feed pattern as
   // FloatingTranslationButton.tsx's in-meeting captions.
