@@ -70,6 +70,15 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const [audioError, setAudioError] = useState<string | null>(null);
   const [needsUnlock, setNeedsUnlock] = useState(false);
 
+  // delaySeconds is measured live (LiveChannelViewer's HlsPlayer
+  // onLatencyChange, ~1/sec) rather than a fixed constant — read through a
+  // ref (not as an effect dependency) wherever it's needed mid-flight, so a
+  // fresh measurement can be USED without being a reason to tear anything
+  // down. Shared by both the caption-sync effect below and the translated-
+  // audio DelayNode (playTrack) — same underlying value, two consumers.
+  const delaySecondsRef = useRef(delaySeconds);
+  delaySecondsRef.current = delaySeconds;
+
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -139,6 +148,10 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   const roomRef = useRef<Room | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // The currently-connected DelayNode holding translated audio back to line
+  // up with the (delayed) video — see the periodic sync effect further down
+  // for why this needs to be reachable outside playTrack() itself.
+  const delayNodeRef = useRef<DelayNode | null>(null);
   // Created synchronously inside the language button's own onClick — see
   // primeAudioContext() below — so it's reliably treated as gesture-linked
   // by the browser's autoplay policy. playTrack() consumes this instead of
@@ -212,6 +225,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const teardownAudio = () => {
     roomRef.current?.disconnect().catch(() => {});
     roomRef.current = null;
+    delayNodeRef.current = null; // the DelayNode dies with its AudioContext below; drop the dangling reference
     const ctx = audioCtxRef.current;
     audioCtxRef.current = null; // clear the ref BEFORE closing (async) so any
     // in-flight callback closing over the old `ctx` can tell it's stale by
@@ -331,10 +345,14 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
           primedCtxRef.current = null;
           audioCtxRef.current = audioCtx;
           const source = audioCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
-          // maxDelayTime headroom well above delaySeconds so a later config
-          // bump doesn't need this node rebuilt.
-          const delayNode = audioCtx.createDelay(Math.max(delaySeconds + 5, 15));
-          delayNode.delayTime.value = delaySeconds;
+          // maxDelayTime headroom well above the current live-measured delay
+          // — createDelay's cap is fixed for the node's lifetime, and
+          // delaySeconds can now drift upward after connection (it's a live
+          // HLS latency measurement, not a fixed constant), so this needs
+          // real margin, not just enough for today's value.
+          const delayNode = audioCtx.createDelay(Math.max(delaySecondsRef.current + 10, 30));
+          delayNode.delayTime.value = delaySecondsRef.current;
+          delayNodeRef.current = delayNode;
           source.connect(delayNode);
           delayNode.connect(audioCtx.destination);
           setAudioStatus('live');
@@ -413,6 +431,34 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
 
   useEffect(() => () => teardownAudio(), []);
 
+  // Keep the translated-audio DelayNode's actual delay tracking live-
+  // measured latency, not just whatever it happened to be at connection
+  // time. Real report live (2026-08-22): translated audio arrived a little
+  // BEFORE the speaker's lips moved on video — the delay was set once in
+  // playTrack() and then never revisited for the rest of the session, so it
+  // couldn't follow the video's real lag drifting upward the way captions
+  // now do (see the caption-sync effect above, fixed the same day for the
+  // same underlying reason). Runs independently of any particular
+  // connection — it's a no-op via the `if (!node)` guard whenever nothing's
+  // playing — so it doesn't need to be re-armed per language selection.
+  //
+  // setTargetAtTime (an exponential ramp), not a direct .value jump: a hard
+  // reassignment of an in-use DelayNode's delay is audible as a small pitch
+  // warp/skip on whatever's mid-flight through it, which is exactly the
+  // kind of artifact worth avoiding for a routine few-hundred-ms drift
+  // correction. The larger, correct value is already in place from the
+  // moment a track connects (playTrack reads the same live ref) — this loop
+  // is only ever closing a SMALL, gradual gap after that.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const node = delayNodeRef.current;
+      if (!node) return;
+      const target = Math.min(delaySecondsRef.current, node.delayTime.maxValue);
+      node.delayTime.setTargetAtTime(target, node.context.currentTime, 1.5);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Captions — independent of Audio, same translation_logs feed pattern as
   // FloatingTranslationButton.tsx's in-meeting captions.
   const sessionIdForCaptionMode = (mode: CaptionMode): string | null => {
@@ -445,6 +491,17 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     }
   };
 
+  // Real bug found live (2026-08-22), right after delaySeconds became a
+  // live-measured value instead of a fixed constant: this effect used to
+  // have delaySeconds in its dependency array, so it tore the whole
+  // subscription down and rebuilt it (clearing captionLines, re-fetching
+  // history, dropping back to the "Waiting for speech…" placeholder) on
+  // EVERY latency sample, i.e. roughly once a second — a permanent flicker,
+  // not an occasional resync. Fixed by reading delaySeconds through the
+  // shared ref above instead: fresh values are still used for each NEW
+  // line's hold-back timer, without that being a reason to rebuild the
+  // subscription itself. The subscription only needs to change when the
+  // actual session being captioned changes.
   useEffect(() => {
     if (captionChannelRef.current) {
       supabase.removeChannel(captionChannelRef.current);
@@ -484,8 +541,10 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     // back by roughly the same lag its reference (dub audio or HLS video)
     // is under, minus a small lead so captions read a beat ahead of audio
     // (same convention broadcast subtitles use) rather than well ahead.
+    // Computed FRESH per line (not once per effect run) from the ref above,
+    // so a live latency update changes how long the NEXT line waits without
+    // tearing down anything already on screen.
     const CAPTION_LEAD_SECONDS = 0.4;
-    const captionDelayMs = Math.max((delaySeconds - CAPTION_LEAD_SECONDS) * 1000, 0);
     const pendingTimers: ReturnType<typeof setTimeout>[] = [];
 
     supabase
@@ -512,6 +571,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
             if (cancelled) return;
             setCaptionLines((prev) => [...prev, line].slice(-2));
           };
+          const captionDelayMs = Math.max((delaySecondsRef.current - CAPTION_LEAD_SECONDS) * 1000, 0);
           if (captionDelayMs > 0) pendingTimers.push(setTimeout(apply, captionDelayMs));
           else apply();
         })
@@ -524,7 +584,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [captionMode, sessions, delaySeconds]);
+  }, [captionMode, sessions]);
 
   // Real bug found live (2026-08-19), the same one already fixed once for
   // the meeting picker: hiding this entirely when there's nothing running
