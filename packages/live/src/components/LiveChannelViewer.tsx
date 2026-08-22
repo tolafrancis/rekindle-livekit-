@@ -186,26 +186,34 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // instead of by adding buffer headroom).
   const HLS_LATENCY_SECONDS = 6;
   // Translated-audio / caption sync delay — passed only to
-  // BroadcastTranslationButton's `delaySeconds`. Used to be the SAME
-  // constant as HLS_LATENCY_SECONDS above (on the theory that hls.js sitting
-  // `HLS_LATENCY_SECONDS` behind ITS OWN live edge meant the video was that
-  // far behind real spoken time too) — real report live (2026-08-22),
-  // right after the Show Captions caption-timing fix: actual observed
-  // glass-to-glass latency (spoken moment -> pixels on screen) is running
-  // ~20s, well above hls.js's 6s internal target. That target only controls
-  // how far the PLAYER sits behind the HLS PLAYLIST's live edge
-  // (HlsPlayer.tsx's own debug-readout comment: "EDGE lag only... True
-  // glass-to-glass adds the Daily->Mux encode/push pipeline on top, which
-  // the client can't see") — it was never a promise about total pipeline
-  // latency, and the two have apparently drifted apart in practice.
+  // BroadcastTranslationButton's `delaySeconds`. Used to be a flat constant
+  // (first 6, then a one-off bump to 20 after a live "latency increased"
+  // report) — reverted to a fixed number a second time: with 20, captions
+  // then displayed 5-10s AFTER their audio, live-reported right after.
+  // Two static guesses in a row landing wrong in different directions is a
+  // sign the number itself isn't stable, not that either guess was just
+  // slightly off — real HLS edge lag genuinely varies (network, buffering
+  // health, how long the stream's been running), so a fixed constant can't
+  // track it.
   //
-  // Deliberately NOT folded back into a single shared constant: bumping the
-  // value fed to HlsPlayer's targetLatencySeconds is the exact change that
-  // caused the 6->8 cold-start regression documented above (needs more
-  // already-written segments to find a valid start position) — that risk
-  // has nothing to do with this fix, which only needs to change how long
-  // audio/captions wait, not where hls.js starts playback.
-  const TRANSLATION_SYNC_DELAY_SECONDS = 20;
+  // Now measured for real: HlsPlayer's onLatencyChange reports hls.js's own
+  // actual live latency (hls.latency) ~1/sec — see that file's doc comment.
+  // That's EDGE lag only (player -> HLS playlist edge), not the full
+  // glass-to-glass path — the Daily->Mux encode/push pipeline upstream of
+  // the playlist adds more on top that the client fundamentally can't
+  // observe. UPSTREAM_PIPELINE_PADDING_SECONDS estimates just that
+  // remaining, hopefully-more-stable piece (roughly 1-2 of Egress's ~4s
+  // segments' worth of encode/write/CDN-propagation time) — a much smaller
+  // number to have to get right than trying to guess the WHOLE delay
+  // outright, since the volatile part (edge lag) is now real, live data.
+  const [measuredEdgeLatencySeconds, setMeasuredEdgeLatencySeconds] = useState<number | null>(null);
+  const UPSTREAM_PIPELINE_PADDING_SECONDS = 6;
+  // Before the first real sample arrives (just after joining), fall back to
+  // a reasonable static estimate rather than under-delaying captions to 0.
+  const FALLBACK_SYNC_DELAY_SECONDS = 12;
+  const translationSyncDelaySeconds = measuredEdgeLatencySeconds !== null
+    ? measuredEdgeLatencySeconds + UPSTREAM_PIPELINE_PADDING_SECONDS
+    : FALLBACK_SYNC_DELAY_SECONDS;
   const [translationActive, setTranslationActive] = useState(false);
   // Real correction (2026-08-20): the pre-join "do you need translation?"
   // toggle was pulled back out — the button is unconditionally available to
@@ -1025,7 +1033,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 <BroadcastTranslationButton
                   channelId={channel.id}
                   roomName={liveKitRoomName}
-                  delaySeconds={watchViaHls ? TRANSLATION_SYNC_DELAY_SECONDS : 0}
+                  delaySeconds={watchViaHls ? translationSyncDelaySeconds : 0}
                   onActiveChange={setTranslationActive}
                 />
               </div>
@@ -1043,6 +1051,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                   poster={posterUrl}
                   className="w-full h-full"
                   targetLatencySeconds={HLS_LATENCY_SECONDS}
+                  onLatencyChange={setMeasuredEdgeLatencySeconds}
                 />
               </>
             ) : channel.is_video_enabled ? (() => {

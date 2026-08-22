@@ -18,6 +18,13 @@ interface HlsPlayerProps {
   /** Show a small on-screen readout of edge-lag + recovery count for testing.
    *  Also auto-enabled by adding `?hlsdebug=1` (or `#hlsdebug`) to the URL. */
   debug?: boolean;
+  /** Fires ~1/sec with the player's real, currently-measured lag behind the
+   *  HLS live edge (hls.latency, falling back to a buffered-range estimate) —
+   *  same sampling the debug readout uses, just always on and reported to
+   *  the caller instead of only drawn on screen. NOTE: this is EDGE lag only
+   *  (player -> HLS playlist edge); it doesn't include the encode/segment-
+   *  write pipeline upstream of the playlist, which the client can't see. */
+  onLatencyChange?: (seconds: number) => void;
 }
 
 /**
@@ -31,7 +38,7 @@ interface HlsPlayerProps {
  * the DVR window matured. We no longer do that.) When the broadcast finalizes
  * (ENDLIST) it shows an "ended" state; brief startup errors recover in place.
  */
-export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, className, poster, onEnded, targetLatencySeconds = 6, debug = false }) => {
+export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, className, poster, onEnded, targetLatencySeconds = 6, debug = false, onLatencyChange }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<'loading' | 'playing' | 'waiting' | 'ended' | 'error'>('loading');
   // Real bug found live (2026-08-15), reproduced on BOTH mobile and desktop
@@ -67,6 +74,8 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
   // player effect (which would tear down + rebuild hls on every parent render).
   const onEndedRef = useRef(onEnded);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
+  const onLatencyChangeRef = useRef(onLatencyChange);
+  useEffect(() => { onLatencyChangeRef.current = onLatencyChange; }, [onLatencyChange]);
 
   // Ticks once a second for as long as we're in the initial 'loading' state
   // — resets fresh each time we (re-)enter it. Drives the graduated message
@@ -335,22 +344,25 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
 
     setup();
 
-    // Debug readout: sample the player's lag behind the HLS live edge ~1/sec.
+    // Sample the player's lag behind the HLS live edge ~1/sec. Always runs
+    // (cheap — just reads hls.js's own already-computed property) so
+    // onLatencyChange gets real data for callers like LiveChannelViewer's
+    // caption/dub-audio sync delay, not just the on-screen debug readout
+    // (that UI stays gated behind showDebug below).
     // NOTE: this is EDGE lag only (player → HLS edge). True glass-to-glass adds
     // the Daily→Mux encode/push pipeline on top, which the client can't see.
-    if (showDebug) {
-      debugTimer = setInterval(() => {
-        let lag: number | null = null;
-        const h = hls as any;
-        if (h && isFinite(h.latency) && h.latency > 0) {
-          lag = h.latency;
-        } else if (video.buffered.length) {
-          // Fallback: distance from playhead to the end of the buffered range.
-          lag = video.buffered.end(video.buffered.length - 1) - video.currentTime;
-        }
-        setDebugInfo({ lag, recoveries: recoveriesRef.current });
-      }, 1000);
-    }
+    debugTimer = setInterval(() => {
+      let lag: number | null = null;
+      const h = hls as any;
+      if (h && isFinite(h.latency) && h.latency > 0) {
+        lag = h.latency;
+      } else if (video.buffered.length) {
+        // Fallback: distance from playhead to the end of the buffered range.
+        lag = video.buffered.end(video.buffered.length - 1) - video.currentTime;
+      }
+      if (showDebug) setDebugInfo({ lag, recoveries: recoveriesRef.current });
+      if (lag !== null && isFinite(lag) && lag > 0) onLatencyChangeRef.current?.(lag);
+    }, 1000);
 
     return () => {
       cancelled = true;
