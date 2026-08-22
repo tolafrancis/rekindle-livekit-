@@ -463,19 +463,29 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     const field = captionMode === 'original' ? 'source_text' : 'translated_text';
     let cancelled = false;
 
-    // Caption/audio sync (2026-08-19) — real report: translated captions
-    // appeared well ahead of the translated audio (captions come straight off
-    // this realtime feed the instant the bot writes a row; audio can't beat
-    // its own translate+TTS pipeline plus the deliberate `delaySeconds`
-    // alignment buffer). Original-language captions have nothing to sync
-    // against but the ALREADY-real-time original audio, so those stay
-    // immediate. For a translated language, hold each new caption line back
-    // by roughly the same delay the audio is under, minus a small lead —
-    // captions arriving a beat before their audio reads naturally (same
-    // convention broadcast subtitles use), arriving well ahead of it doesn't.
-    const isTranslated = captionMode !== 'original';
+    // Caption/audio-video sync (2026-08-19, corrected 2026-08-22) — real
+    // report both times: captions appeared well ahead of what they were
+    // captioning. Captions come straight off this realtime feed the
+    // instant the bot logs a row — essentially real-time. What they're
+    // synced against is NOT always real-time, though:
+    //   - Translated mode: the translated DUB audio, deliberately delayed
+    //     by `delaySeconds` (a Web Audio DelayNode) so it lines up with the
+    //     HLS video, which is itself running `delaySeconds` behind.
+    //   - Original mode (this is what Show Captions uses): there's no dub
+    //     audio, but the HLS VIDEO carrying the original voice is still
+    //     running `delaySeconds` behind real time on the HLS path. The
+    //     original 2026-08-19 fix wrongly treated "Original" as inherently
+    //     real-time — true only on the WebRTC fallback path (delaySeconds
+    //     === 0 there already, so this collapses to the same "no delay"
+    //     behavior), false on HLS, where it caused exactly the "captions
+    //     display early" bug reported live once Show Captions made
+    //     "Original" the common case for viewers.
+    // Same delay applies to both modes now — hold each new caption line
+    // back by roughly the same lag its reference (dub audio or HLS video)
+    // is under, minus a small lead so captions read a beat ahead of audio
+    // (same convention broadcast subtitles use) rather than well ahead.
     const CAPTION_LEAD_SECONDS = 0.4;
-    const captionDelayMs = isTranslated ? Math.max((delaySeconds - CAPTION_LEAD_SECONDS) * 1000, 0) : 0;
+    const captionDelayMs = Math.max((delaySeconds - CAPTION_LEAD_SECONDS) * 1000, 0);
     const pendingTimers: ReturnType<typeof setTimeout>[] = [];
 
     supabase

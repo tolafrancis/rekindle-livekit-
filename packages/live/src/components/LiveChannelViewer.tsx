@@ -166,10 +166,8 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // join below and for BroadcastTranslationButton's own listener-token
   // connection — one source of truth so they can't drift apart.
   const liveKitRoomName = channel.daily_room_name || `channel-${channel.id}`;
-  // Passed explicitly to both HlsPlayer and BroadcastTranslationButton below
-  // (rather than relying on HlsPlayer's own default) so the translated-audio
-  // delay buffer can never silently drift out of sync with the video's
-  // actual buffer.
+  // hls.js's OWN internal live-sync target — passed only to HlsPlayer's
+  // `targetLatencySeconds`. Deliberately NOT touched by the fix below.
   //
   // Widened 6 -> 8 (2026-08-20) as a deliberate latency-for-reliability
   // trade, then REVERTED back to 6 the same day: real regression, live-
@@ -187,6 +185,27 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // hard seeks — see HlsPlayer.tsx — now fixed at the actual source
   // instead of by adding buffer headroom).
   const HLS_LATENCY_SECONDS = 6;
+  // Translated-audio / caption sync delay — passed only to
+  // BroadcastTranslationButton's `delaySeconds`. Used to be the SAME
+  // constant as HLS_LATENCY_SECONDS above (on the theory that hls.js sitting
+  // `HLS_LATENCY_SECONDS` behind ITS OWN live edge meant the video was that
+  // far behind real spoken time too) — real report live (2026-08-22),
+  // right after the Show Captions caption-timing fix: actual observed
+  // glass-to-glass latency (spoken moment -> pixels on screen) is running
+  // ~20s, well above hls.js's 6s internal target. That target only controls
+  // how far the PLAYER sits behind the HLS PLAYLIST's live edge
+  // (HlsPlayer.tsx's own debug-readout comment: "EDGE lag only... True
+  // glass-to-glass adds the Daily->Mux encode/push pipeline on top, which
+  // the client can't see") — it was never a promise about total pipeline
+  // latency, and the two have apparently drifted apart in practice.
+  //
+  // Deliberately NOT folded back into a single shared constant: bumping the
+  // value fed to HlsPlayer's targetLatencySeconds is the exact change that
+  // caused the 6->8 cold-start regression documented above (needs more
+  // already-written segments to find a valid start position) — that risk
+  // has nothing to do with this fix, which only needs to change how long
+  // audio/captions wait, not where hls.js starts playback.
+  const TRANSLATION_SYNC_DELAY_SECONDS = 20;
   const [translationActive, setTranslationActive] = useState(false);
   // Real correction (2026-08-20): the pre-join "do you need translation?"
   // toggle was pulled back out — the button is unconditionally available to
@@ -1006,7 +1025,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 <BroadcastTranslationButton
                   channelId={channel.id}
                   roomName={liveKitRoomName}
-                  delaySeconds={watchViaHls ? HLS_LATENCY_SECONDS : 0}
+                  delaySeconds={watchViaHls ? TRANSLATION_SYNC_DELAY_SECONDS : 0}
                   onActiveChange={setTranslationActive}
                 />
               </div>
