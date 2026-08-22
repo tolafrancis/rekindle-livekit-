@@ -251,16 +251,43 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // entry mid-service to hear a question. Reverts to Original once that
   // track goes away (question finished), but only if they hadn't since
   // manually switched to something else themselves.
+  //
+  // Real bug found live (2026-08-22): "Question incoming" fired — and the
+  // host's audio got auto-switched to it — the instant ANYONE (host or a
+  // participant) clicked Show Captions, not just on a genuine question.
+  // Root cause: Show Captions dispatches a same-language session
+  // (target_language === sourceLanguage, so the bot skips translation),
+  // which is EXACTLY the track shape "Ask a question" also produces
+  // (deliberately translates back to sourceLanguage for the host to hear).
+  // A LiveKit track carries no session_kind (that's DB-only), so this can't
+  // be told apart from track data alone — auto-switching the host's actual
+  // audio to a Show Captions track is especially bad since that track is
+  // pure silence by design (rekindle-translation-bot's AudioPipeline.ts
+  // skips TTS entirely for a same-language session), which reads exactly
+  // like "the audio just went off." Cross-check session_kind (migration
+  // 0291) before treating a new sourceLanguage track as a real question.
   useEffect(() => {
     const currentLangs = new Set(tracks.map((t) => t.language));
     const prevLangs = prevTrackLangsRef.current;
 
     if (isHost) {
       const newlyAppeared = [...currentLangs].filter((l) => !prevLangs.has(l));
-      const questionTrack = newlyAppeared.find((l) => l === sourceLanguage);
-      if (questionTrack) {
-        setLanguage(questionTrack);
-        toast({ title: '🎤 Question incoming', description: `Playing the translated question in ${questionTrack.toUpperCase()} now.` });
+      const questionTrackLang = newlyAppeared.find((l) => l === sourceLanguage);
+      if (questionTrackLang) {
+        const questionTrack = tracks.find((t) => t.language === questionTrackLang);
+        if (questionTrack) {
+          const sessionId = sessionIdFromBotIdentity(questionTrack.botIdentity);
+          supabase
+            .from('translation_sessions')
+            .select('session_kind')
+            .eq('id', sessionId)
+            .maybeSingle()
+            .then(({ data }) => {
+              if (data?.session_kind === 'captions') return; // Show Captions, not a real question
+              setLanguage(questionTrackLang);
+              toast({ title: '🎤 Question incoming', description: `Playing the translated question in ${questionTrackLang.toUpperCase()} now.` });
+            });
+        }
       }
       const disappeared = [...prevLangs].filter((l) => !currentLangs.has(l));
       if (disappeared.includes(sourceLanguage) && currentLanguage === sourceLanguage) {
