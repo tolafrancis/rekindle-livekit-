@@ -1,9 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Loader2, PhoneOff, Volume2, VolumeX } from 'lucide-react';
 
+/** Imperative handle for priming playback permission ahead of a real source
+ *  being attached — see prime()'s own doc comment below. */
+export interface HlsPlayerHandle {
+  /** Call synchronously inside a user gesture (a click handler, before any
+   *  `await`) to give this player's underlying <video> element gesture-
+   *  linked play permission, before it even has a real `src` yet. Safe to
+   *  call at any time — a harmless, silent no-op if the element isn't
+   *  mounted. See LiveChannelViewer.tsx's "Join Broadcast" gesture for the
+   *  call site and the full rationale. */
+  prime: () => void;
+}
+
 interface HlsPlayerProps {
-  src: string;
+  /** Undefined is a legitimate, common state — not just "not ready yet" but
+   *  "safe to mount ahead of having a confirmed-fresh URL" (see
+   *  LiveChannelViewer.tsx's mode/src split). The effect below already
+   *  no-ops cleanly on an absent src, leaving the loading UI in place. */
+  src?: string;
   muted?: boolean;
   className?: string;
   poster?: string;
@@ -38,8 +54,31 @@ interface HlsPlayerProps {
  * the DVR window matured. We no longer do that.) When the broadcast finalizes
  * (ENDLIST) it shows an "ended" state; brief startup errors recover in place.
  */
-export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, className, poster, onEnded, targetLatencySeconds = 6, debug = false, onLatencyChange }) => {
+export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function HlsPlayer(
+  { src, muted = false, className, poster, onEnded, targetLatencySeconds = 6, debug = false, onLatencyChange },
+  ref,
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // "Join Broadcast" gesture priming (2026-08-22) — see HlsPlayerHandle's
+  // doc comment. play() on an element with no src yet just rejects
+  // immediately (harmless, swallowed) — the point isn't for it to succeed,
+  // it's that the CALL itself happens synchronously inside a real user
+  // gesture, on this exact <video> node, before any network round-trip.
+  // Some browsers (Safari/WebKit specifically) stop treating a gesture as
+  // "trusted" for autoplay purposes once a network fetch sits between the
+  // click and the play() call — exactly the gap between this component's
+  // own MANIFEST_PARSED-triggered attemptPlay() and whatever click led here.
+  // pause() right after so nothing actually starts playing before there's
+  // real content — this is a permission grant, not a real play.
+  useImperativeHandle(ref, () => ({
+    prime: () => {
+      const video = videoRef.current;
+      if (!video) return;
+      video.play().catch(() => {});
+      video.pause();
+    },
+  }), []);
   const [status, setStatus] = useState<'loading' | 'playing' | 'waiting' | 'ended' | 'error'>('loading');
   // Real bug found live (2026-08-15), reproduced on BOTH mobile and desktop
   // Chrome, not just Safari: both play() calls below used to `.catch(() =>
@@ -423,13 +462,19 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
           <div>muted (actual DOM): {String(actualMuted)}</div>
         </div>
       )}
-      {/* Always-on ground-truth mute badge — not gated behind ?hlsdebug=1.
-          Reflects the video element's REAL .muted property (polled), not just
-          the prop we asked for, so a "double voices" report can be checked
-          against actual state at a glance instead of only trusting the code. */}
-      <div className="absolute top-2 right-2 z-10 rounded-full bg-black/60 p-1.5">
-        {actualMuted ? <VolumeX className="h-3.5 w-3.5 text-white/70" /> : <Volume2 className="h-3.5 w-3.5 text-white" />}
-      </div>
+      {/* Real bug found live (2026-08-22), reported as "two speaker icons":
+          this ground-truth mute badge was unconditionally rendered — a
+          debugging aid (reflects the video element's REAL .muted property,
+          polled, not just the prop we asked for, so a "double voices" report
+          can be checked against actual state at a glance) that was never
+          gated behind ?hlsdebug=1 like its sibling debug panel above, so
+          every real viewer saw it sitting right next to the app's own real,
+          interactive mute button. Gated now — one control, one icon. */}
+      {showDebug && (
+        <div className="absolute top-2 right-2 z-10 rounded-full bg-black/60 p-1.5">
+          {actualMuted ? <VolumeX className="h-3.5 w-3.5 text-white/70" /> : <Volume2 className="h-3.5 w-3.5 text-white" />}
+        </div>
+      )}
       {needsUnlock && (
         // Takes priority over the status overlay below — the stream itself
         // may be perfectly healthy (loaded, buffered, ready), just blocked
@@ -487,6 +532,6 @@ export const HlsPlayer: React.FC<HlsPlayerProps> = ({ src, muted = false, classN
       )}
     </div>
   );
-};
+});
 
 export default HlsPlayer;

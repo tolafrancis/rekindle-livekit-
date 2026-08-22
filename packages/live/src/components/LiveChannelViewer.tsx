@@ -11,7 +11,7 @@ import {
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { LiveChannelChat } from './LiveChannelChat';
-import { HlsPlayer } from './HlsPlayer';
+import { HlsPlayer, type HlsPlayerHandle } from './HlsPlayer';
 import { BroadcastTranslationButton } from './BroadcastTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
@@ -158,7 +158,17 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
-  
+  const hlsPlayerRef = useRef<HlsPlayerHandle>(null);
+  // "Join Broadcast" gesture (2026-08-22) — see HlsPlayer.tsx's
+  // HlsPlayerHandle/prime() doc comment for the full rationale. The player
+  // itself mounts and starts connecting/buffering the instant the broadcast
+  // goes live regardless of this flag (see watchViaHls above) — this only
+  // gates whether it's REVEALED, and gives the reveal tap's own onClick a
+  // chance to prime gesture-linked playback permission on the same,
+  // already-mounted <video> element before any real content is shown.
+  const [hasJoinedGesture, setHasJoinedGesture] = useState(false);
+  useEffect(() => { setHasJoinedGesture(false); }, [channel.id]);
+
   const canAccessReplays = entitlements.canAccessReplays;
   const canDownloadReplays = entitlements.canAccessReplays;
 
@@ -199,8 +209,10 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // Now measured for real: HlsPlayer's onLatencyChange reports hls.js's own
   // actual live latency (hls.latency) ~1/sec — see that file's doc comment.
   // That's EDGE lag only (player -> HLS playlist edge), not the full
-  // glass-to-glass path — the Daily->Mux encode/push pipeline upstream of
-  // the playlist adds more on top that the client fundamentally can't
+  // glass-to-glass path — the LiveKit Egress encode/write pipeline upstream
+  // of the playlist (stale "Daily->Mux" label corrected 2026-08-22 — this
+  // migrated off both long ago, see videoBackend.ts/docs/livekit-migration-plan.md)
+  // adds more on top that the client fundamentally can't
   // observe. UPSTREAM_PIPELINE_PADDING_SECONDS estimates just that
   // remaining, hopefully-more-stable piece (roughly 1-2 of Egress's ~4s
   // segments' worth of encode/write/CDN-propagation time) — a much smaller
@@ -285,14 +297,60 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // watches the HLS Egress feed instead — a few seconds of extra latency,
   // but flat/cheap CDN delivery with no per-viewer connection cost. A
   // promoted speaker (isSpeaker below) still needs the real room, since
-  // they publish. Only takes effect once HLS Egress is actually live for
-  // this channel (isHlsLive) — LiveChannelBroadcast.tsx now starts it
-  // unconditionally when going live, but falls back gracefully (this
-  // stays false, and the join effect below falls back to the room) if
-  // Egress fails to start for any reason (a ministry's broadcast-hours
-  // quota exhausted, a transient error) or just hasn't finished starting
-  // up yet.
-  const watchViaHls = isLive && isHlsLive && !!hlsPlaybackUrl && !isSpeaker;
+  // they publish.
+  //
+  // Real bug found live (2026-08-22), reported as "~2s of real audio, then
+  // a break, then Tap to enable sound": this used to ALSO require
+  // `isHlsLive` before choosing HLS mode — but `is_hls_live` is written the
+  // INSTANT Egress is requested (livekit-egress/index.ts), not once it's
+  // actually producing playable segments (no webhook confirms real
+  // readiness anywhere in this codebase). A fresh broadcast's Egress can
+  // take up to ~30s to produce its first segment. So a viewer joining
+  // around when a broadcast starts saw this flip true almost immediately,
+  // tearing down a genuinely-working WebRTC connection to mount a fresh
+  // HlsPlayer pointed at a stream with nothing to play yet.
+  //
+  // Fixed by splitting MODE from SRC: `watchViaHls` now decides only which
+  // PLAYER to show (mount HlsPlayer the instant the broadcast goes live,
+  // before Egress has even been requested — it already has its own
+  // "Connecting… / up to 30 seconds, hang tight" loading progression built
+  // in, so there's no second player to ever switch to). `hlsSrc` below
+  // decides what URL is actually safe to feed it, unchanged from before.
+  // Deliberately NOT gating mode on `hlsPlaybackUrl` presence either:
+  // livekit-egress/index.ts deliberately leaves that URL in place after a
+  // broadcast ends (it becomes the VOD link) — gating mode on it would
+  // point a freshly-mounted player at the PREVIOUS, finalized stream for a
+  // beat on every RETURNING broadcast. `isHlsLive` genuinely means "this
+  // exact URL is fresh," which is exactly what deciding the src needs.
+  const watchViaHls = isLive && !isSpeaker;
+  const hlsSrc = isHlsLive && hlsPlaybackUrl ? hlsPlaybackUrl : undefined;
+
+  // Bounded, ONE-SHOT fallback (not continuous/retried) — preserves the
+  // existing "Egress failed to start, fall back to the room" behavior
+  // (previously accidental: the old code fell back immediately whenever
+  // is_hls_live was still false, which included the normal "still
+  // starting" window too — now made explicit and correctly bounded).
+  // ~50s is comfortably above the documented ~30s cold-start ceiling.
+  // Deliberately this shape and not a continuous poll/retarget — this
+  // codebase has twice already shipped and reverted "clever" continuous
+  // resync logic after live regressions (HlsPlayer.tsx's own history).
+  const [hlsFallbackDue, setHlsFallbackDue] = useState(false);
+  useEffect(() => {
+    setHlsFallbackDue(false);
+    if (!watchViaHls) return;
+    const timer = setTimeout(() => setHlsFallbackDue(true), 50000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchViaHls, channel.id]);
+  // A fresh src arriving (even after the timeout fired) always wins back —
+  // don't strand a viewer on WebRTC once HLS genuinely becomes available.
+  useEffect(() => {
+    if (hlsSrc) setHlsFallbackDue(false);
+  }, [hlsSrc]);
+  // True whenever this viewer should actually be in the WebRTC room:
+  // speakers always, general viewers only if HLS mode's own bounded
+  // timeout expired with no fresh src to show yet.
+  const joinWebRtc = !watchViaHls || (hlsFallbackDue && !hlsSrc);
 
   // Join the channel's live presence so the host can see/count this viewer — even
   // when watching via HLS (no Daily room). Mirrors the meetings presence layer.
@@ -306,19 +364,21 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // since the transport is Supabase realtime, not the video pipeline.
   const { floating: reactions, sendReaction } = useMeetingReactions(channel.id, true);
 
-  // Join the broadcast on mount — but only when NOT watching via HLS.
+  // Join the broadcast on mount — but only when NOT watching via HLS (see
+  // joinWebRtc above: speakers always, general viewers only after the
+  // bounded HLS-unavailable timeout).
   useEffect(() => {
     if (!isLive) return;
-    if (watchViaHls) {
+    if (!joinWebRtc) {
       // Watching the HLS stream; make sure we're not also in the Daily room.
       if (dailyRoom.isConnected) dailyRoom.leaveRoom();
       return;
     }
     if (!dailyRoom.isConnected && !dailyRoom.isConnecting) {
-      console.log('[LiveChannelViewer] Joining Daily room (speaker or no HLS configured)');
+      console.log('[LiveChannelViewer] Joining Daily room (speaker or HLS unavailable)');
       dailyRoom.joinRoom();
     }
-  }, [isLive, watchViaHls]);
+  }, [isLive, joinWebRtc]);
 
   // FIXED: Track current broadcast ID for proper chat session management
   useEffect(() => {
@@ -392,17 +452,18 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // Attach remote video/audio tracks — host + all active speakers
   useEffect(() => {
     // We handle track attachment per-participant via SpeakerVideoTile below
-    // This effect only handles the legacy single-ref audio for non-video broadcasts
-    // — the WebRTC fallback path (watchViaHls false: no HLS yet, or a promoted
-    // speaker). Real report (2026-08-19): original audio audible in real time
-    // AT THE SAME TIME as the correctly-delayed translated dub, on a broadcast
-    // that WAS on the HLS path (translation only exists there). This element
-    // had no cleanup — if a viewer was briefly on this WebRTC fallback before
-    // Egress caught up (watchViaHls flips true only once isHlsLive does),
-    // nothing here ever explicitly stopped it once that happened. Not
-    // confirmed as the exact cause, but real neglect either way: an <audio>
-    // element with a live srcObject and no teardown when its own condition
-    // stops holding is exactly the shape of a leftover-audio bug.
+    // This effect only handles the legacy single-ref audio for non-video
+    // broadcasts — the WebRTC path (joinWebRtc true: a promoted speaker, or
+    // a general viewer whose HLS-unavailable bounded fallback fired — see
+    // watchViaHls/joinWebRtc above, 2026-08-22). Real report (2026-08-19):
+    // original audio audible in real time AT THE SAME TIME as the
+    // correctly-delayed translated dub, on a broadcast that WAS on the HLS
+    // path (translation only exists there). This element had no cleanup —
+    // if a viewer was briefly on WebRTC before switching to HLS, nothing
+    // here ever explicitly stopped it once that happened. Not confirmed as
+    // the exact cause, but real neglect either way: an <audio> element with
+    // a live srcObject and no teardown when its own condition stops holding
+    // is exactly the shape of a leftover-audio bug.
     const hostParticipant = dailyRoom.remoteParticipants.find(p => p.isOwner);
     if (hostParticipant?.audioTrack && remoteAudioRef.current && !channel.is_video_enabled) {
       const stream = new MediaStream([hostParticipant.audioTrack]);
@@ -423,15 +484,16 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     }
   }, [dailyRoom.remoteParticipants, isMuted, translationMuteOverride, channel.is_video_enabled]);
 
-  // Belt-and-braces for the same leak: the instant we're actually on the HLS
-  // path, this legacy element has no business playing anything, regardless
-  // of what dailyRoom.remoteParticipants happens to still report.
+  // Belt-and-braces for the same leak: the instant we're actually showing
+  // the HLS player (not just "in HLS mode" — joinWebRtc false), this legacy
+  // element has no business playing anything, regardless of what
+  // dailyRoom.remoteParticipants happens to still report.
   useEffect(() => {
-    if (watchViaHls && remoteAudioRef.current?.srcObject) {
+    if (!joinWebRtc && remoteAudioRef.current?.srcObject) {
       remoteAudioRef.current.pause();
       remoteAudioRef.current.srcObject = null;
     }
-  }, [watchViaHls]);
+  }, [joinWebRtc]);
 
   // Subscribe to channel updates
   useEffect(() => {
@@ -724,6 +786,23 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
         .update({ status: 'accepted' })
         .eq('id', pendingInvitation.id);
 
+      // Real bug found live (2026-08-22): a steady-state HLS viewer (the
+      // common case — most invitations land well into an already-running
+      // broadcast, not the early WebRTC-fallback window) has never joined
+      // the LiveKit room at all, or already left it (see watchViaHls/
+      // joinWebRtc above). enableSpeakerMedia() (useDailyRoom.ts) silently
+      // no-ops with just a console.warn when there's no active wrapper —
+      // no thrown error, no toast — so this used to proceed straight to
+      // "You can now speak!" and isSpeaker=true while the mic never
+      // actually turned on. This getUserMedia() call above already gave us
+      // a real, qualifying gesture — use it to actually join first.
+      if (!dailyRoom.isConnected) {
+        const joined = await dailyRoom.joinRoom();
+        if (!joined) {
+          throw new Error('Could not connect to the broadcast room');
+        }
+      }
+
       // FIXED: Use enableSpeakerMedia() which bypasses the permission gate and directly
       // calls setLocalAudio(true) / setLocalVideo(true) on the Daily call object.
       await dailyRoom.enableSpeakerMedia(channel.is_video_enabled);
@@ -1002,6 +1081,34 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
             ref={videoContainerRef}
             className="aspect-video bg-black relative flex items-center justify-center overflow-hidden"
           >
+            {/* "Join Broadcast" gesture (2026-08-22) — real bug fixed: zero
+                user gesture existed anywhere in this viewer's join flow, so
+                the first real play() attempt (on the player mounted below,
+                which is already connecting/buffering behind this overlay)
+                was always autoplay-blocked with no retry — "Tap to enable
+                sound" on effectively every join. This tap is the one
+                deliberate, up-front gesture: it primes gesture-linked
+                playback permission on the SAME <video> element that's about
+                to receive the real stream (see HlsPlayer's prime()), then
+                reveals it. `needsUnlock` inside HlsPlayer stays as a
+                fallback for whatever this doesn't cover (e.g. Safari's
+                gesture-linkage rules are stricter still) — this narrows how
+                often that has to fire, it isn't meant to guarantee zero. */}
+            {isLive && !isSpeaker && !hasJoinedGesture && (
+              <button
+                type="button"
+                onClick={() => { hlsPlayerRef.current?.prime(); setHasJoinedGesture(true); }}
+                className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-black/70 text-white transition-colors hover:bg-black/80"
+                style={posterUrl ? { backgroundImage: `url(${posterUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+              >
+                <div className="flex flex-col items-center gap-3 rounded-2xl bg-black/60 px-8 py-6 backdrop-blur-sm">
+                  <Radio className="h-10 w-10 text-red-500" />
+                  <p className="text-lg font-semibold">{t('liveChannelViewer', 'joinBroadcast', 'Join Broadcast')}</p>
+                  <p className="text-sm text-gray-300">{t('liveChannelViewer', 'joinBroadcastHint', 'Tap to watch with sound')}</p>
+                </div>
+              </button>
+            )}
+
             {/* Live reactions — same channel.id broadcast channel as the host */}
             <MeetingReactionsLayer reactions={reactions} />
             {isLive && (
@@ -1033,20 +1140,21 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 <BroadcastTranslationButton
                   channelId={channel.id}
                   roomName={liveKitRoomName}
-                  delaySeconds={watchViaHls ? translationSyncDelaySeconds : 0}
+                  delaySeconds={!joinWebRtc ? translationSyncDelaySeconds : 0}
                   onActiveChange={setTranslationActive}
                 />
               </div>
             )}
 
-            {watchViaHls ? (
+            {!joinWebRtc ? (
               <>
                 {/* translationActive OR-ed in, not swapped in for isMuted —
                     the viewer's own manual mute choice is preserved and
                     restored once translation is turned back off, same idea
                     as the meeting picker's mute-the-room-not-yourself fix. */}
                 <HlsPlayer
-                  src={hlsPlaybackUrl!}
+                  ref={hlsPlayerRef}
+                  src={hlsSrc}
                   muted={isMuted || translationMuteOverride}
                   poster={posterUrl}
                   className="w-full h-full"
