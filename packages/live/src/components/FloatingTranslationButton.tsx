@@ -333,6 +333,12 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         // language" passing null); a non-host participant needs their own
         // id to qualify for the self-service path (migration 0278).
         p_speaker_identity: isHost ? null : (userId || null),
+        // Real bug found live (2026-08-22): without this, useMeetingNotes.ts
+        // couldn't tell this same-language session apart from its OWN
+        // same-language dispatch and treated Show Captions as "AI Notes
+        // started" for every participant. session_kind (migration 0291) is
+        // the explicit fix.
+        p_session_kind: 'captions',
       });
       if (error) throw error;
     } catch (err: any) {

@@ -159,6 +159,16 @@ export function useMeetingNotes(
         .from('translation_sessions')
         .select('id, target_language, source_language, status')
         .eq('livekit_room_name', roomName)
+        // Real bug fixed live (2026-08-22): this used to match ANY active
+        // session for the room — including a Show Captions session someone
+        // else started, which is a same-language dispatch that looks
+        // identical to AI Notes' own without this filter. Every participant's
+        // own useMeetingNotes instance independently runs this query, so
+        // one person clicking "Show Captions" was silently turning on the
+        // "AI is taking notes, feel free to ask questions" banner for
+        // everyone in the meeting. session_kind (migration 0291) is the
+        // explicit fix — only a genuine notes dispatch sets it to 'notes'.
+        .eq('session_kind', 'notes')
         .in('status', ['initialising', 'joining', 'active', 'paused'])
         .order('created_at', { ascending: false })
         .then(({ data }) => {
@@ -279,24 +289,38 @@ export function useMeetingNotes(
     if (roomName && ministryId) {
       (async () => {
         try {
-          // Check if ANY active bot session (translation or notes) is already running for this room
+          // Check if a NOTES session specifically is already running for this
+          // room — scoped to session_kind='notes' (migration 0291). Real bug
+          // fixed live (2026-08-22): this used to match ANY active session
+          // regardless of why it existed, so a Show Captions session someone
+          // else had already started would make this silently no-op —
+          // notes never actually got tagged/started for the room, which
+          // then meant OTHER participants' syncSession() never saw a real
+          // 'notes' session to activate on, even though the person who
+          // clicked "Start AI Notes" saw it as active locally (optimistic
+          // setActive(true) above). Scoping this check the same way
+          // syncSession() is scoped keeps both sides of the flow consistent.
           const { data: existing } = await supabase
             .from('translation_sessions')
             .select('id')
             .eq('livekit_room_name', roomName)
+            .eq('session_kind', 'notes')
             .in('status', ['initialising', 'joining', 'active', 'paused'])
             .limit(1);
 
           if (existing && existing.length > 0 && existing[0]?.id) {
-            console.log('[useMeetingNotes] Active bot session already running for room — reusing existing session');
+            console.log('[useMeetingNotes] Active notes session already running for room — reusing existing session');
             if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
             setIsStarting(false);
             return;
           }
 
-          // No bot session is running — start a same-language (captions/
+          // No notes session is running — start a same-language (captions/
           // notes-only, no translation) STT session in whatever language
-          // this ministry actually speaks (or 'auto' to detect it).
+          // this ministry actually speaks (or 'auto' to detect it). Tagged
+          // session_kind: 'notes' so syncSession() below (and any other
+          // reader) can tell this apart from a Show Captions dispatch,
+          // which is otherwise byte-for-byte the same same-language shape.
           const sourceLanguage = sourceLanguageRef.current;
           const { error: rpcError } = await supabase.rpc('start_bot_session', {
             p_ministry_id: ministryId,
@@ -304,6 +328,7 @@ export function useMeetingNotes(
             p_source_language: sourceLanguage,
             p_target_language: sourceLanguage,
             p_speaker_identity: userId || null,
+            p_session_kind: 'notes',
           });
           if (rpcError) {
             console.warn('[useMeetingNotes] start_bot_session returned error:', rpcError);
