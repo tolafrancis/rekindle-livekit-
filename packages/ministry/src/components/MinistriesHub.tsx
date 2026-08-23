@@ -588,21 +588,62 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   };
 
   const handleJoinByCode = async () => {
-    if (!joinCode.trim()) {
+    const rawCode = joinCode.trim();
+    if (!rawCode) {
       toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'enterInviteCode', 'Please enter an invite code'), variant: 'destructive' });
+      return;
+    }
+
+    const extractInviteCode = (value: string): string => {
+      const trimmed = value.trim();
+      if (!trimmed) return '';
+
+      try {
+        const url = new URL(trimmed);
+        const fromQuery = url.searchParams.get('code');
+        if (fromQuery && fromQuery.trim()) return fromQuery.trim().toUpperCase();
+      } catch {
+        // not a URL, fall through to string parsing below
+      }
+
+      const queryMatch = trimmed.match(/[?&]code=([^&\s]+)/i);
+      if (queryMatch?.[1]) return decodeURIComponent(queryMatch[1]).trim().toUpperCase();
+
+      return trimmed.replace(/^https?:\/\/[^\s]+\//i, '').split(/[\s&?]+/)[0].trim().toUpperCase();
+    };
+
+    const normalizedCode = extractInviteCode(rawCode);
+    if (!normalizedCode) {
+      toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'invalidInviteCode', 'Invalid invite code'), variant: 'destructive' });
       return;
     }
 
     setJoining(true);
     try {
-      const { data: ministry, error } = await supabase
+      let ministry: any = null;
+      let lookupError: any = null;
+
+      const exact = await supabase
         .from('ministry_groups')
         .select('*')
-        .eq('invite_code', joinCode.trim().toUpperCase())
+        .eq('invite_code', normalizedCode)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error fetching ministry:', error);
+      ministry = exact.data;
+      lookupError = exact.error;
+
+      if (!ministry && !lookupError) {
+        const fallback = await supabase
+          .from('ministry_groups')
+          .select('*')
+          .ilike('invite_code', normalizedCode)
+          .maybeSingle();
+        ministry = fallback.data;
+        lookupError = fallback.error;
+      }
+
+      if (lookupError) {
+        console.error('Error fetching ministry:', lookupError);
         toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'failedValidateCode', 'Failed to validate invite code'), variant: 'destructive' });
         setJoining(false);
         return;
