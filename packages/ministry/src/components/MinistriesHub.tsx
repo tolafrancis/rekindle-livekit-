@@ -1087,7 +1087,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-700">Join code</p>
                           <p className="mt-1 text-xs text-slate-600">Tip: share this code with members so they can join from the Ministry space.</p>
                         </div>
-                        </div>
                       </Card>
                     ))}
                 </div>

@@ -12,15 +12,15 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 // Hard-verify environment at runtime
 const verifyEnvironment = (): { url: string; key: string } => {
-  const url = SUPABASE_URL;
-  const key = SUPABASE_ANON_KEY;
+  const url = SUPABASE_URL?.trim();
+  const key = SUPABASE_ANON_KEY?.trim();
 
-  if (!url || url === 'undefined' || !url.includes('supabase.co')) {
+  if (!url || !url.includes('supabase.co')) {
     console.error('[SUPABASE FATAL] Invalid or missing SUPABASE_URL');
     throw new Error('Supabase URL is not configured. Application cannot start.');
   }
 
-  if (!key || key === 'undefined' || key.length < 100) {
+  if (!key || key.length < 100) {
     console.error('[SUPABASE FATAL] Invalid or missing SUPABASE_ANON_KEY');
     throw new Error('Supabase Anon Key is not configured. Application cannot start.');
   }

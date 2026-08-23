@@ -50,7 +50,7 @@ interface LanguageContextType {
   availableLanguages: typeof SUPPORTED_LANGUAGES;
   
   // Translation functions
-  t: (namespace: keyof Translations, key: string, fallback?: string, vars?: Record<string, string | number>) => string;
+  t: (namespace: string, key: string, fallback?: string, vars?: Record<string, string | number>) => string;
   translate: (text: string, options?: TranslationOptions) => Promise<string>;
   translateBatch: (texts: string[], options?: TranslationOptions) => Promise<string[]>;
   translateContent: (content: any, fields: string[], options?: TranslationOptions) => Promise<any>;
@@ -371,7 +371,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
 
   // Get static UI translation
   const t = useCallback((
-    namespace: keyof Translations,
+    namespace: string,
     key: string,
     fallback?: string,
     vars?: Record<string, string | number>
@@ -382,12 +382,12 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
         name in vars ? String(vars[name]) : m) : str;
 
     try {
-      const namespaceTranslations = translations[namespace];
+      const namespaceTranslations = (translations as Record<string, any>)[namespace];
       if (!namespaceTranslations) {
         return interpolate(fallback || key);
       }
 
-      const translation = (namespaceTranslations as any)[key];
+      const translation = namespaceTranslations[key];
       if (!translation) {
         return interpolate(fallback || key);
       }
