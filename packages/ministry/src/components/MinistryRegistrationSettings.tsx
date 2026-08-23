@@ -134,6 +134,8 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
         slug: finalSlug,
         registration_mode: requireApproval ? 'pending_approval' : 'auto_approve',
         kiosk_enabled: kioskEnabled,
+        invite_code: inviteCode.trim().toUpperCase() || ministry.invite_code || null,
+        qr_code_version: qrVersion,
         updated_at: new Date().toISOString(),
       };
       if (kioskPin) {

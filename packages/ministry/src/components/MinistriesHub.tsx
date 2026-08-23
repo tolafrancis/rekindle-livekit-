@@ -623,23 +623,42 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
       let ministry: any = null;
       let lookupError: any = null;
 
-      const exact = await supabase
-        .from('ministry_groups')
-        .select('*')
-        .eq('invite_code', normalizedCode)
-        .maybeSingle();
+      const candidateCodes = Array.from(
+        new Set(
+          [
+            normalizedCode,
+            normalizedCode.trim(),
+            normalizedCode.toUpperCase(),
+            normalizedCode.toLowerCase(),
+            decodeURIComponent(normalizedCode),
+          ].filter(Boolean),
+        ),
+      );
 
-      ministry = exact.data;
-      lookupError = exact.error;
-
-      if (!ministry && !lookupError) {
-        const fallback = await supabase
+      for (const candidate of candidateCodes) {
+        const exact = await supabase
           .from('ministry_groups')
           .select('*')
-          .ilike('invite_code', normalizedCode)
+          .eq('invite_code', candidate)
           .maybeSingle();
-        ministry = fallback.data;
-        lookupError = fallback.error;
+
+        ministry = exact.data;
+        lookupError = exact.error;
+        if (ministry || lookupError) break;
+      }
+
+      if (!ministry && !lookupError) {
+        for (const candidate of candidateCodes) {
+          const fallback = await supabase
+            .from('ministry_groups')
+            .select('*')
+            .ilike('invite_code', candidate)
+            .maybeSingle();
+
+          ministry = fallback.data;
+          lookupError = fallback.error;
+          if (ministry || lookupError) break;
+        }
       }
 
       if (lookupError) {
