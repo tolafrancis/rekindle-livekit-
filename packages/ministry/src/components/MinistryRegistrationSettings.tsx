@@ -270,9 +270,18 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
                 </Button>
               </div>
               {inviteCode && (
-                <p className="text-xs text-gray-400 pt-1">
-                  {t('ministryRegistrationSettings', 'codeLabel', 'Code:')} <span className="font-mono">{inviteCode}</span> · v{qrVersion}
-                </p>
+                <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-700">
+                    {t('ministryRegistrationSettings', 'codeLabel', 'Join code')}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="font-mono text-lg font-bold tracking-[0.18em] text-slate-900">{inviteCode}</span>
+                    <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">v{qrVersion}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Tip: share this code with members so they can join from the Ministry space using the Join by Code option.
+                  </p>
+                </div>
               )}
             </div>
           </div>
