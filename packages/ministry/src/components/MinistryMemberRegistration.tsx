@@ -177,6 +177,32 @@ const MinistryMemberRegistration: React.FC<Props> = ({
     return data.id as string;
   };
 
+  const ensureGroupMembership = async (profileId?: string) => {
+    if (!user?.id) return;
+    const { data: existing } = await supabase
+      .from('ministry_group_members')
+      .select('id')
+      .eq('group_id', ministryId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (existing) return;
+
+    const { error } = await supabase
+      .from('ministry_group_members')
+      .insert({
+        ministry_id: ministryId,
+        group_id: ministryId,
+        user_id: user.id,
+        role: 'member',
+        is_leader: false,
+        joined_at: new Date().toISOString(),
+      });
+
+    if (error && !/duplicate|already exists|unique/i.test(error.message || '')) {
+      throw error;
+    }
+  };
+
   const validateStep = (): string | null => {
     if (step === 1) {
       if (!f.first_name.trim()) return t('ministryMemberRegistration', 'errFirstName', 'Please enter your first name.');
@@ -248,6 +274,7 @@ const MinistryMemberRegistration: React.FC<Props> = ({
       };
       if (status === 'active') payload.approved_at = new Date().toISOString();
       const id = await upsertProfile(payload);
+      if (status === 'active') await ensureGroupMembership(id);
 
       // Communication preferences (defaults on; tunable later in profile)
       await supabase.from('member_communication_preferences')

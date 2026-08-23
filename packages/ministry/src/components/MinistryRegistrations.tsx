@@ -69,6 +69,30 @@ const MinistryRegistrations: React.FC<Props> = ({ ministryId, ministryName }) =>
     }
   };
 
+  const ensureGroupMembership = async (userId: string | null, ministryIdValue: string) => {
+    if (!userId) return;
+    const { data: existing } = await supabase
+      .from('ministry_group_members')
+      .select('id')
+      .eq('group_id', ministryIdValue)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (existing) return;
+
+    const { error } = await supabase.from('ministry_group_members').insert({
+      ministry_id: ministryIdValue,
+      group_id: ministryIdValue,
+      user_id: userId,
+      role: 'member',
+      is_leader: false,
+      joined_at: new Date().toISOString(),
+    });
+
+    if (error && !/duplicate|already exists|unique/i.test(error.message || '')) {
+      throw error;
+    }
+  };
+
   useEffect(() => { loadCounts(); /* eslint-disable-next-line */ }, [ministryId]);
   useEffect(() => { loadRows(tab); /* eslint-disable-next-line */ }, [tab, ministryId]);
 
@@ -92,6 +116,7 @@ const MinistryRegistrations: React.FC<Props> = ({ ministryId, ministryName }) =>
         .update({ registration_status: 'active', approved_at: new Date().toISOString(), approved_by: user?.id })
         .eq('id', profile.id);
       if (error) throw error;
+      await ensureGroupMembership(profile.user_id, ministryId);
       await audit(profile, 'approved');
       await notifyMember(profile, t('ministryRegistrations', 'welcomeToX', 'Welcome to {name}').replace('{name}', String(ministryName)), t('ministryRegistrations', 'registrationApproved', 'Your registration has been approved.'));
       toast({ title: t('ministryRegistrations', 'approved', 'Approved'), description: t('ministryRegistrations', 'memberIsNowActive', '{name} is now active.').replace('{name}', String(profile.first_name || t('ministryRegistrations', 'member', 'Member'))) });
@@ -129,6 +154,7 @@ const MinistryRegistrations: React.FC<Props> = ({ ministryId, ministryName }) =>
         .update({ registration_status: 'active', approved_at: new Date().toISOString(), approved_by: user?.id })
         .in('id', ids);
       if (error) throw error;
+      await Promise.all(rows.filter((r) => selected.has(r.id)).map((r) => ensureGroupMembership(r.user_id, ministryId)));
       rows.filter((r) => selected.has(r.id)).forEach((r) => audit(r, 'approved'));
       toast({ title: t('ministryRegistrations', 'bulkApproved', 'Bulk approved'), description: t('ministryRegistrations', 'registrationsActivated', '{count} registrations activated.').replace('{count}', String(ids.length)) });
       await Promise.all([loadRows(tab), loadCounts()]);

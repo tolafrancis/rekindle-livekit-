@@ -211,7 +211,9 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
       if (memberError) throw memberError;
 
       const membershipMap: Record<string, MembershipInfo> = {};
+      const membershipIds = new Set<string>();
       const ministryIds = (memberData || []).map(m => {
+        membershipIds.add(String(m.group_id));
         membershipMap[m.group_id] = {
           ministry_id: m.group_id,
           role: m.role,
@@ -222,16 +224,57 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         return m.group_id;
       });
 
+      const { data: activeProfiles, error: activeProfileError } = await supabase
+        .from('ministry_member_profiles')
+        .select('ministry_id')
+        .eq('user_id', user.id)
+        .eq('registration_status', 'active');
+
+      if (activeProfileError) throw activeProfileError;
+
+      for (const profile of activeProfiles || []) {
+        const id = String(profile.ministry_id);
+        if (!membershipIds.has(id)) {
+          const { data: existing } = await supabase
+            .from('ministry_group_members')
+            .select('id')
+            .eq('group_id', id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (!existing) {
+            const { error: insertError } = await supabase.from('ministry_group_members').insert({
+              ministry_id: id,
+              group_id: id,
+              user_id: user.id,
+              role: 'member',
+              is_leader: false,
+              joined_at: new Date().toISOString(),
+            });
+            if (insertError && !/duplicate|already exists|unique/i.test(insertError.message || '')) {
+              console.warn('Unable to reconcile active ministry membership for user:', insertError.message);
+            }
+          }
+          membershipMap[id] = {
+            ministry_id: id,
+            role: 'member',
+            subscription_level: 1,
+            is_leader: false,
+            joined_at: new Date().toISOString(),
+          };
+          membershipIds.add(id);
+        }
+      }
+
       setMemberships(membershipMap);
 
       // Initialize ministryData array to collect all ministries
       let allMinistries: Ministry[] = [];
 
-      if (ministryIds.length > 0) {
+      if (membershipIds.size > 0) {
         const { data: ministryData, error: ministryError } = await supabase
           .from('ministry_groups')
           .select('*')
-          .in('id', ministryIds);
+          .in('id', Array.from(membershipIds));
 
         if (ministryError) throw ministryError;
         allMinistries = ministryData || [];
