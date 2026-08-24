@@ -20,6 +20,62 @@ interface CaptionLine {
  *  separate CC menu. */
 type CaptionMode = 'off' | 'original' | string;
 
+const liveTranslateTips = [
+  'Use a better mic',
+  'Reduce background noise',
+  'Keep the speaker close to the mic',
+  'Pause slightly between sentences',
+  'If possible, use a directional mic or clean room audio',
+];
+
+const christianSermonKeyphrases = [
+  'Praise the Lord',
+  'Praise God',
+  'Hallelujah',
+  'Thank You Jesus',
+  'Amen',
+  'Holy Spirit',
+  'Holy Ghost',
+  'The Word of God',
+  'God is good',
+  'Lord have mercy',
+  'Grace and favour',
+  'Divine favour',
+  'Anointing',
+  'Prayer point',
+  'Breakthrough',
+  'Faith',
+  'Salvation',
+  'Deliverance',
+  'Revival',
+  'Testimony',
+  'Worship',
+  'Prayer altar',
+  'God bless you',
+  'Thank God',
+  'I receive grace',
+  'By faith',
+  'Kingdom of God',
+  'The presence of the Lord',
+  'Open heaven',
+  'In Jesus name',
+  'Heavenly Father',
+  'Holy Ghost fire',
+  'Righteousness',
+  'Mercy',
+  'Glory to God',
+  'Power of God',
+  'Spiritual warfare',
+  'Evil altar',
+  'Good morning church',
+  'Father in the name of Jesus',
+  'Let the church say amen',
+  'We give You all the glory',
+  'The Lord is doing a new thing',
+  'This is the year of favour',
+  'The grace of God is sufficient',
+];
+
 export interface TranslationControls {
   tracks: Array<{ language: string; botIdentity: string }>;
   currentLanguage: string | null;
@@ -566,6 +622,29 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                 {captionMode === track.language && <Check className="h-3.5 w-3.5 text-indigo-600" />}
               </button>
             ))}
+          </div>
+
+          <div className="mt-2 border-t pt-2 px-2.5 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Best audio tips</p>
+            <ul className="space-y-1 text-[11px] text-gray-600">
+              {liveTranslateTips.map((tip) => (
+                <li key={tip} className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Common sermon / church phrases</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {christianSermonKeyphrases.map((phrase) => (
+                  <span key={phrase} className="rounded-full border border-indigo-200 bg-white px-1.5 py-0.5 text-[10px] text-indigo-700">
+                    {phrase}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Ask a question — bidirectional Q&A (build plan). Only makes

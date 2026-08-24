@@ -1,9 +1,10 @@
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Radio, HardDrive, Settings as SettingsIcon } from 'lucide-react';
+import { Radio, HardDrive, Settings as SettingsIcon, LibraryBig } from 'lucide-react';
 import { MinistryTranslationServiceManager } from './MinistryTranslationServiceManager';
 import { MinistryTranslationDeviceList } from './MinistryTranslationDeviceList';
 import { MinistryTranslationSettings } from './MinistryTranslationSettings';
+import { MinistrySermonLibrary } from './MinistrySermonLibrary';
 
 interface MinistryTranslationHubProps {
   ministryId: string;
@@ -28,7 +29,7 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
       </div>
 
       <Tabs defaultValue="service">
-        <TabsList className="w-full md:w-auto">
+        <TabsList className="w-full flex-wrap md:w-auto">
           <TabsTrigger value="service" className="gap-2">
             <Radio className="h-4 w-4" />
             Service
@@ -36,6 +37,10 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
           <TabsTrigger value="devices" className="gap-2">
             <HardDrive className="h-4 w-4" />
             Devices
+          </TabsTrigger>
+          <TabsTrigger value="sermons" className="gap-2">
+            <LibraryBig className="h-4 w-4" />
+            Sermons
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2">
             <SettingsIcon className="h-4 w-4" />
@@ -48,6 +53,9 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
         </TabsContent>
         <TabsContent value="devices" className="mt-5">
           <MinistryTranslationDeviceList ministryId={ministryId} />
+        </TabsContent>
+        <TabsContent value="sermons" className="mt-5">
+          <MinistrySermonLibrary ministryId={ministryId} />
         </TabsContent>
         <TabsContent value="settings" className="mt-5">
           <MinistryTranslationSettings ministryId={ministryId} />

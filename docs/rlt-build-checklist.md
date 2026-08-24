@@ -14,6 +14,35 @@ Source doc: `RLT-Build-Plan.pdf`, revised 12 Aug 2026, "Build Plan · Phases 1�
 
 **Status key:** `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
+## Active build checklist — Nigerian English STT optimization
+
+This is the working checklist for the live speech-quality build we are doing now in the actual runtime bot repo, before any broader Phase 2/Phase 3 work expands again.
+
+- [x] Confirm the real runtime Deepgram pipeline is in the sibling bot repo, not this monorepo
+- [x] Confirm the live source-of-truth flow: speech → Deepgram STT → English transcript → GPT-4o → ElevenLabs
+- [x] Fix English sessions to use `nova-3` and `en-US` while keeping auto-detect `multi` only for real auto-detect sessions
+- [x] Add a session-aware English Deepgram keyword vocabulary for sermon/ministry content
+- [x] Add deterministic transcript corrections for common Nigerian-English sermon misreads (for example: “press God” → “praise God”)
+- [x] Add regression tests for the hot-path transcript fixes and keyword selection
+- [x] Verify the STT optimization code passes the real TypeScript build in the translation bot
+- [ ] Run a live sermon smoke test in a real room and confirm the corrected transcript reaches the translated output without drift
+- [ ] Tune per-ministry / per-pastor vocabulary by adding known names, church phrases, and sermon vocabulary from actual live transcripts
+- [ ] Add an admin-managed vocabulary layer so ministry-specific terms can be stored and re-used without hardcoding in code
+- [ ] Measure real transcription accuracy before and after the fix on a sample sermon and log the delta for the next iteration
+
+### Live sermon smoke test checklist
+
+1. Start a clean translation session in the real meeting room with a known English sermon source language.
+2. Confirm the bot joins with the session language pinned to `en-US` and uses the `nova-3` model in the runtime logs.
+3. Speak a short sermon phrase that includes known high-risk words: "praise God", "Holy Spirit", "by God's grace", "we are trusting God".
+4. Verify the final transcript in the app shows the corrected wording and not the known misreads such as "press God" or "Holy Ghost".
+5. Verify the translated output retains the corrected wording before the TTS stage.
+6. Listen to the translated audio and confirm the phrase is spoken naturally in the target language without the semantic drift that came from the incorrect source transcript.
+7. Repeat with a second sentence including a ministry-specific phrase such as "RCCG" or "House Fellowship".
+8. Log the exact transcript before and after the fix for comparison and save it in the session notes for future tuning.
+9. If there is any drift, capture the raw transcript, the corrected version, and the final translation and convert those into new keywords or correction rules.
+10. Mark the smoke test as passed only when the transcript remains faithful in real room conditions and the output sounds semantically correct in the target language.
+
 **Migration numbering:** the doc pencils in migration **0260/0261** for "Option A" (all tables, one shot). Checked against this repo: **both are already taken** (`0260_increment_ministry_usage_fn.sql`, `0261_background_music_ministry_usage.sql`). Written as [`supabase/migrations/0273_translation_infrastructure.sql`](../supabase/migrations/0273_translation_infrastructure.sql) — next free number as of this checklist (latest was `0272`). **Not yet run** — still needs to be pasted into the Supabase SQL editor per this repo's migration workflow (see `supabase/config.toml`: `db push` isn't part of the flow here).
 
 **Beyond the doc's 10 RPCs, the migration also adds two small ones** to close a real gap: the doc never specifies how `language_configs` gets written safely. `upsert_language_config()` covers the non-PIN settings fields; `set_display_pin()` bcrypt-hashes the PIN server-side. Both are admin-only, SECURITY DEFINER. `language_configs` itself has no direct-write RLS policy — everything routes through these two, so a raw PostgREST PATCH can never set `pin_hash` to plaintext.

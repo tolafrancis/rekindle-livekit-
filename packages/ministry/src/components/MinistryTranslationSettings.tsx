@@ -157,6 +157,7 @@ interface LanguageConfigState {
 // seeds the dropdown. "Add a language" below takes any code, this isn't an
 // enforced whitelist.
 const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
+  { code: 'en', label: 'English' },
   { code: 'vi', label: 'Vietnamese' },
   { code: 'ko', label: 'Korean' },
   { code: 'zh', label: 'Chinese' },
@@ -165,6 +166,9 @@ const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
   { code: 'fr', label: 'French' },
   { code: 'es', label: 'Spanish' },
   { code: 'ja', label: 'Japanese' },
+  { code: 'yo', label: 'Yoruba' },
+  { code: 'ig', label: 'Igbo' },
+  { code: 'ha', label: 'Hausa' },
 ];
 
 const languageLabel = (code: string) => COMMON_LANGUAGES.find(l => l.code === code)?.label || code.toUpperCase();
