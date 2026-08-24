@@ -449,6 +449,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   const [confirmNew, setConfirmNew] = React.useState<string[]>([]);
   const [confirmExisting, setConfirmExisting] = React.useState<string[]>([]);
   const [selectedNew, setSelectedNew] = React.useState<string[]>([]);
+  const [selectedTerms, setSelectedTerms] = React.useState<string[]>([]);
 
   const openConfirmFor = (sermonTerms: string[]) => {
     const normalized = sermonTerms.map(t => normalizeTerm(t)).filter(Boolean);
@@ -457,7 +458,9 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     const existingOnes = normalized.filter(t => existingSet.has(t));
     setConfirmNew(newOnes);
     setConfirmExisting(existingOnes);
+    const all = [...newOnes, ...existingOnes];
     setSelectedNew(newOnes);
+    setSelectedTerms(all);
     setConfirmOpen(true);
   };
 
@@ -672,8 +675,8 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                                 <div className="mt-2 grid gap-2">
                                   {confirmNew.map((t) => (
                                     <label key={t} className="flex items-center gap-2 rounded-md border p-2">
-                                      <Checkbox checked={selectedNew.includes(t)} onCheckedChange={() => {
-                                        setSelectedNew((prev) => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+                                      <Checkbox checked={selectedTerms.includes(t)} onCheckedChange={() => {
+                                        setSelectedTerms((prev) => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
                                       }} />
                                       <span className="text-sm">{t}</span>
                                     </label>
@@ -685,9 +688,14 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                             {confirmExisting.length > 0 && (
                               <div>
                                 <div className="text-sm font-semibold">Already approved</div>
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-2 grid gap-2">
                                   {confirmExisting.map((t) => (
-                                    <Badge key={t} variant="outline" className="px-2 py-1">{t}</Badge>
+                                    <label key={t} className="flex items-center gap-2 rounded-md border p-2">
+                                      <Checkbox checked={selectedTerms.includes(t)} onCheckedChange={() => {
+                                        setSelectedTerms((prev) => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+                                      }} />
+                                      <span className="text-sm">{t}</span>
+                                    </label>
                                   ))}
                                 </div>
                               </div>
@@ -698,9 +706,10 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
                             <Button onClick={async () => {
                               setConfirmOpen(false);
-                              const all = [...new Set([...(customTerms || []), ...selectedNew])];
+                              const selectedNewOnes = selectedTerms.filter(t => confirmNew.includes(t));
+                              const all = [...new Set([...(customTerms || []), ...selectedNewOnes])];
                               await persistTerms(all);
-                              toast({ title: 'Terms added', description: `${selectedNew.length} new phrases were added.` });
+                              toast({ title: 'Terms added', description: `${selectedNewOnes.length} new phrases were added.` });
                             }}>Confirm</Button>
                           </DialogFooter>
                         </DialogContent>
