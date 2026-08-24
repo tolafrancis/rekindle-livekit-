@@ -4,10 +4,11 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Textarea } from '@rekindle/ui/textarea';
 import { Badge } from '@rekindle/ui/badge';
+import { Checkbox } from '@rekindle/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube } from 'lucide-react';
+import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube, Loader2 } from 'lucide-react';
 
 interface SermonEntry {
   id: string;
@@ -447,6 +448,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [confirmNew, setConfirmNew] = React.useState<string[]>([]);
   const [confirmExisting, setConfirmExisting] = React.useState<string[]>([]);
+  const [selectedNew, setSelectedNew] = React.useState<string[]>([]);
 
   const openConfirmFor = (sermonTerms: string[]) => {
     const normalized = sermonTerms.map(t => normalizeTerm(t)).filter(Boolean);
@@ -455,6 +457,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     const existingOnes = normalized.filter(t => existingSet.has(t));
     setConfirmNew(newOnes);
     setConfirmExisting(existingOnes);
+    setSelectedNew(newOnes);
     setConfirmOpen(true);
   };
 
@@ -666,9 +669,14 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                             {confirmNew.length > 0 && (
                               <div>
                                 <div className="text-sm font-semibold">New phrases</div>
-                                <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="mt-2 grid gap-2">
                                   {confirmNew.map((t) => (
-                                    <Badge key={t} variant="secondary" className="px-2 py-1">{t}</Badge>
+                                    <label key={t} className="flex items-center gap-2 rounded-md border p-2">
+                                      <Checkbox checked={selectedNew.includes(t)} onCheckedChange={() => {
+                                        setSelectedNew((prev) => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+                                      }} />
+                                      <span className="text-sm">{t}</span>
+                                    </label>
                                   ))}
                                 </div>
                               </div>
@@ -690,9 +698,9 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
                             <Button onClick={async () => {
                               setConfirmOpen(false);
-                              const all = [...new Set([...(customTerms || []), ...confirmNew, ...confirmExisting])];
+                              const all = [...new Set([...(customTerms || []), ...selectedNew])];
                               await persistTerms(all);
-                              toast({ title: 'Terms added', description: `${confirmNew.length} new phrases were added.` });
+                              toast({ title: 'Terms added', description: `${selectedNew.length} new phrases were added.` });
                             }}>Confirm</Button>
                           </DialogFooter>
                         </DialogContent>
