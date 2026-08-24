@@ -1,0 +1,9 @@
+name = "rekindle-sermon-transcribe"
+main = "worker.mjs"
+compatibility_date = "2026-08-24"
+
+[triggers]
+crons = ["*/5 * * * *"] # every 5 minutes; adjust as needed
+
+[vars]
+# Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DEEPGRAM in wrangler secrets instead of vars
