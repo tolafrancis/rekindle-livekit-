@@ -320,15 +320,12 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
             Live Translation Services
           </h3>
           <p className="text-sm text-muted-foreground">
-            One or more language pairs, dispatched to the translation bot for a LiveKit room.
+            Start a live translation session with a speaker link that works for sermons, meetings, classes, and community events.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={openSpeakerDialog} disabled={supportedLanguages.length === 0}>
-            <Mic className="h-4 w-4 mr-1.5" /> Speaker Link
-          </Button>
-          <Button onClick={openStartDialog} disabled={supportedLanguages.length === 0}>
-            <Play className="h-4 w-4 mr-1.5" /> Start Service
+          <Button onClick={openSpeakerDialog} disabled={supportedLanguages.length === 0}>
+            <Mic className="h-4 w-4 mr-1.5" /> Start Service
           </Button>
         </div>
       </div>
@@ -376,7 +373,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
 
       {services.length === 0 && supportedLanguages.length > 0 && (
         <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">
-          No services yet. Click "Start Service" to dispatch your first translation session.
+          No live services yet. Use Start Service to create a stream for your next meeting, class, sermon, or community event.
         </CardContent></Card>
       )}
 
@@ -475,21 +472,22 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       <Dialog open={showStart} onOpenChange={setShowStart}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Start a Translation Service</DialogTitle>
+            <DialogTitle>Start Service</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>Service name</Label>
-              <Input value={serviceName} onChange={e => setServiceName(e.target.value)} placeholder="Sunday 9am Service" />
+              <Input value={serviceName} onChange={e => setServiceName(e.target.value)} placeholder="e.g. Community Gathering, Live Talk, Sunday Talk, Conference Session" />
+              <p className="text-xs text-muted-foreground">
+                Recommended: use a general name that works across church, community, school, and public events.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>LiveKit room name</Label>
               <p className="text-xs text-muted-foreground">
-                The bot joins this room and subscribes to the speaker. For an existing Meeting, its own in-call
-                Translations button → "+ Add language" does this automatically with no room name to type — use this
-                dialog only for a room outside that flow. Or use Speaker Link instead if there's no meeting at all.
+                Use a neutral room name that is easy to share. This is only for a dedicated LiveKit room flow.
               </p>
-              <Input value={roomName} onChange={e => setRoomName(e.target.value)} placeholder="e.g. sunday-service-2026-08-16" />
+              <Input value={roomName} onChange={e => setRoomName(e.target.value)} placeholder="e.g. community-gathering-2026-08-16" />
             </div>
             <div className="space-y-2">
               <Label>Language pairs ({sourceLanguage.toUpperCase()} → target)</Label>
@@ -519,7 +517,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
             <Button variant="outline" onClick={() => setShowStart(false)}>Cancel</Button>
             <Button onClick={startService} disabled={starting}>
               {starting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Start Service
+              Create Service
             </Button>
           </DialogFooter>
         </DialogContent>
