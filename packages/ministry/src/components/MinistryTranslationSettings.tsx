@@ -219,6 +219,29 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   const [perLanguageVoices, setPerLanguageVoices] = useState<Record<string, string>>({});
   const [savedPerLanguageVoices, setSavedPerLanguageVoices] = useState<Record<string, string>>({});
 
+  // Approved ministry vocabulary (for STT tuning)
+  const [ministryTerms, setMinistryTerms] = useState<string[]>([]);
+  const [termsLoading, setTermsLoading] = useState(false);
+
+  const loadMinistryTerms = async () => {
+    setTermsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('ministry_sermon_vocabularies')
+        .select('term')
+        .eq('ministry_id', ministryId)
+        .order('term', { ascending: true });
+      if (error) throw error;
+      const terms = (data || []).map((r: any) => r.term).filter(Boolean);
+      setMinistryTerms(Array.from(new Set(terms)));
+    } catch (err) {
+      console.error('[MinistryTranslationSettings] load ministry terms failed:', err);
+      setMinistryTerms([]);
+    } finally {
+      setTermsLoading(false);
+    }
+  };
+
   // Voice catalog is shared across every picker on this page (the ministry
   // default plus one per language) — fetched once, lazily, on whichever
   // picker gets opened first. `null` = not yet requested; `[]` = requested
@@ -466,6 +489,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   useEffect(() => {
     load();
     loadCustomVoices();
+    loadMinistryTerms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ministryId]);
 
@@ -993,6 +1017,71 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
               {hasPin && <p className="text-xs text-muted-foreground">A PIN is currently set.</p>}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <LibraryBig className="h-5 w-5 text-indigo-600" />
+            Approved Vocabulary
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Phrases and key terms the ministry has approved for STT tuning and live translation. These terms are used
+            to boost recognition during services.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            {termsLoading ? (
+              <div className="text-sm text-muted-foreground">Loading…</div>
+            ) : ministryTerms.length > 0 ? (
+              ministryTerms.map(term => (
+                <Badge key={term} variant="secondary" className="flex items-center gap-2 rounded-full px-2.5 py-1">
+                  {term}
+                  <button type="button" aria-label={`Remove ${term}`} onClick={async () => {
+                    try {
+                      const next = ministryTerms.filter(t => t !== term);
+                      setMinistryTerms(next);
+                      await supabase.from('ministry_sermon_vocabularies').delete().eq('ministry_id', ministryId).eq('term', term);
+                    } catch (err) {
+                      console.error('[MinistryTranslationSettings] remove term failed:', err);
+                      toast({ title: 'Could not remove term', description: (err as any)?.message, variant: 'destructive' });
+                      await loadMinistryTerms();
+                    }
+                  }} className="text-muted-foreground hover:text-foreground">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No approved terms yet. Add terms below.</p>
+            )}
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <Input placeholder="Add a phrase (e.g. Praise God)" id="add-term-input" className="flex-1" />
+            <Button type="button" onClick={async () => {
+              const input = document.getElementById('add-term-input') as HTMLInputElement | null;
+              if (!input) return;
+              const t = (input.value || '').trim();
+              if (!t) return;
+              try {
+                const term = t.replace(/\s+/g, ' ').trim();
+                const rows = [{ ministry_id: ministryId, term }];
+                const { error } = await supabase.from('ministry_sermon_vocabularies').upsert(rows, { onConflict: 'ministry_id,term' });
+                if (error) throw error;
+                setMinistryTerms(prev => Array.from(new Set([...(prev || []), term])));
+                input.value = '';
+                toast({ title: 'Term added' });
+              } catch (err) {
+                console.error('[MinistryTranslationSettings] add term failed:', err);
+                toast({ title: 'Could not add term', description: (err as any)?.message, variant: 'destructive' });
+                await loadMinistryTerms();
+              }
+            }}>Add</Button>
+          </div>
         </CardContent>
       </Card>
 

@@ -28,54 +28,6 @@ const liveTranslateTips = [
   'If possible, use a directional mic or clean room audio',
 ];
 
-const christianSermonKeyphrases = [
-  'Praise the Lord',
-  'Praise God',
-  'Hallelujah',
-  'Thank You Jesus',
-  'Amen',
-  'Holy Spirit',
-  'Holy Ghost',
-  'The Word of God',
-  'God is good',
-  'Lord have mercy',
-  'Grace and favour',
-  'Divine favour',
-  'Anointing',
-  'Prayer point',
-  'Breakthrough',
-  'Faith',
-  'Salvation',
-  'Deliverance',
-  'Revival',
-  'Testimony',
-  'Worship',
-  'Prayer altar',
-  'God bless you',
-  'Thank God',
-  'I receive grace',
-  'By faith',
-  'Kingdom of God',
-  'The presence of the Lord',
-  'Open heaven',
-  'In Jesus name',
-  'Heavenly Father',
-  'Holy Ghost fire',
-  'Righteousness',
-  'Mercy',
-  'Glory to God',
-  'Power of God',
-  'Spiritual warfare',
-  'Evil altar',
-  'Good morning church',
-  'Father in the name of Jesus',
-  'Let the church say amen',
-  'We give You all the glory',
-  'The Lord is doing a new thing',
-  'This is the year of favour',
-  'The grace of God is sufficient',
-];
-
 export interface TranslationControls {
   tracks: Array<{ language: string; botIdentity: string }>;
   currentLanguage: string | null;
@@ -636,13 +588,14 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             </ul>
 
             <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Common sermon / church phrases</p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {christianSermonKeyphrases.map((phrase) => (
-                  <span key={phrase} className="rounded-full border border-indigo-200 bg-white px-1.5 py-0.5 text-[10px] text-indigo-700">
-                    {phrase}
-                  </span>
-                ))}
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Approved phrases</p>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Approved ministry phrases are managed in Live Translation settings.
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => window.open(`${window.location.origin}/ministries/${ministryId}/live`, '_blank')}>
+                  Edit in Settings
+                </Button>
               </div>
             </div>
           </div>
