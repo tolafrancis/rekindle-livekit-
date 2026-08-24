@@ -1,0 +1,14 @@
+{
+  "name": "r2-signer",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
+    "@aws-sdk/s3-request-presigner": "^3.500.0",
+    "express": "^4.18.2",
+    "dotenv": "^16.0.0"
+  }
+}

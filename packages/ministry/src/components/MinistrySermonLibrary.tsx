@@ -132,7 +132,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
 
         const { data: dbSermons } = await supabase
           .from('ministry_sermon_library')
-          .select('id, title, speaker, transcript, file_name, source_type, source_url, created_at, approved_terms')
+          .select('id, title, speaker, transcript, file_name, source_type, source_url, created_at, approved_terms, status, processing_error')
           .eq('ministry_id', ministryId)
           .order('created_at', { ascending: false });
 
@@ -147,6 +147,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
             sourceUrl: row.source_url || undefined,
             createdAt: row.created_at,
             approvedTerms: Array.isArray(row.approved_terms) ? row.approved_terms : [],
+            transcriptionPending: (row.status && row.status !== 'done') || false,
           }));
           setSermons(mapped);
           localStorage.setItem(STORAGE_KEY(ministryId), JSON.stringify(mapped));
@@ -331,7 +332,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     persistSermons(next);
 
     try {
-      const { data: inserted, error: sermonError } = await supabase
+        const { data: inserted, error: sermonError } = await supabase
         .from('ministry_sermon_library')
         .insert({
           ministry_id: ministryId,
@@ -341,6 +342,8 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
           file_name: entry.fileName || null,
           source_type: entry.sourceType || 'upload',
           source_url: entry.sourceUrl || null,
+            status: 'pending',
+            processing_error: null,
           approved_terms: approvedTerms,
         })
         .select('id')
@@ -410,6 +413,16 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
       await supabase.from('ministry_sermon_vocabularies').delete().eq('ministry_id', ministryId).eq('term', term);
     } catch (err) {
       console.error('[MinistrySermonLibrary] failed to remove term from Supabase:', err);
+    }
+  };
+
+  const retryTranscription = async (sermonId: string) => {
+    try {
+      await supabase.from('ministry_sermon_library').update({ status: 'pending', processing_error: null }).eq('id', sermonId);
+      toast({ title: 'Retry queued', description: 'Transcription retry queued — it will be processed shortly.' });
+    } catch (err: any) {
+      console.error('[MinistrySermonLibrary] retry failed:', err);
+      toast({ title: 'Retry failed', description: err.message, variant: 'destructive' });
     }
   };
 
@@ -565,14 +578,34 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
 
                 {sermon.fileName && <p className="mt-2 text-xs text-muted-foreground">Source file: {sermon.fileName}</p>}
 
-                <p className="mt-3 line-clamp-4 text-sm text-muted-foreground whitespace-pre-wrap">{sermon.transcript}</p>
+                <div className="mt-3">
+                  {sermon.transcript ? (
+                    <p className="line-clamp-4 text-sm text-muted-foreground whitespace-pre-wrap">{sermon.transcript}</p>
+                  ) : sermon.transcriptionPending ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                      <span>Transcription in progress…</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No transcript yet. Click Retry to queue transcription.</p>
+                  )}
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {sermon.approvedTerms.map((term) => (
-                    <Badge key={`${sermon.id}-${term}`} variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
-                      {term}
-                    </Badge>
-                  ))}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {sermon.approvedTerms.map((term) => (
+                      <Badge key={`${sermon.id}-${term}`} variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+                        {term}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  {/** Show retry when there's no transcript or when an error occurred */}
+                  {(!sermon.transcript || sermon.transcriptionPending) && (
+                    <Button size="sm" variant="outline" onClick={() => retryTranscription(sermon.id)}>
+                      Retry
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
