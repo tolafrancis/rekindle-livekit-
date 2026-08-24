@@ -4,6 +4,7 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Textarea } from '@rekindle/ui/textarea';
 import { Badge } from '@rekindle/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube } from 'lucide-react';
@@ -443,6 +444,20 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     }
   };
 
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [confirmNew, setConfirmNew] = React.useState<string[]>([]);
+  const [confirmExisting, setConfirmExisting] = React.useState<string[]>([]);
+
+  const openConfirmFor = (sermonTerms: string[]) => {
+    const normalized = sermonTerms.map(t => normalizeTerm(t)).filter(Boolean);
+    const existingSet = new Set((customTerms || []).map(t => normalizeTerm(t)));
+    const newOnes = normalized.filter(t => !existingSet.has(t));
+    const existingOnes = normalized.filter(t => existingSet.has(t));
+    setConfirmNew(newOnes);
+    setConfirmExisting(existingOnes);
+    setConfirmOpen(true);
+  };
+
   const retryTranscription = async (sermonId: string) => {
     try {
       await supabase.from('ministry_sermon_library').update({ status: 'pending', processing_error: null }).eq('id', sermonId);
@@ -635,9 +650,54 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                   )}
 
                   {sermon.approvedTerms && sermon.approvedTerms.length > 0 && (
-                    <Button size="sm" onClick={() => addSermonTerms(sermon.approvedTerms)}>
-                      Add terms
-                    </Button>
+                    <>
+                      <Button size="sm" onClick={() => openConfirmFor(sermon.approvedTerms)}>
+                        Add terms
+                      </Button>
+
+                      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Add detected phrases</DialogTitle>
+                            <DialogDescription>Review the phrases below and confirm which ones to add to the ministry's approved vocabulary.</DialogDescription>
+                          </DialogHeader>
+
+                          <div className="mt-3 space-y-3">
+                            {confirmNew.length > 0 && (
+                              <div>
+                                <div className="text-sm font-semibold">New phrases</div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {confirmNew.map((t) => (
+                                    <Badge key={t} variant="secondary" className="px-2 py-1">{t}</Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {confirmExisting.length > 0 && (
+                              <div>
+                                <div className="text-sm font-semibold">Already approved</div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {confirmExisting.map((t) => (
+                                    <Badge key={t} variant="outline" className="px-2 py-1">{t}</Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+                            <Button onClick={async () => {
+                              setConfirmOpen(false);
+                              const all = [...new Set([...(customTerms || []), ...confirmNew, ...confirmExisting])];
+                              await persistTerms(all);
+                              toast({ title: 'Terms added', description: `${confirmNew.length} new phrases were added.` });
+                            }}>Confirm</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </>
                   )}
                 </div>
               </div>
