@@ -431,6 +431,18 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     }
   };
 
+  const addSermonTerms = async (sermonTerms: string[]) => {
+    if (!sermonTerms || sermonTerms.length === 0) return;
+    const next = [...new Set([...(customTerms || []), ...sermonTerms.map(t => normalizeTerm(t))])];
+    try {
+      await persistTerms(next);
+      toast({ title: 'Terms added', description: `${sermonTerms.length} phrases added to approved vocabulary.` });
+    } catch (err: any) {
+      console.error('[MinistrySermonLibrary] addSermonTerms failed', err);
+      toast({ title: 'Could not add terms', description: err.message, variant: 'destructive' });
+    }
+  };
+
   const retryTranscription = async (sermonId: string) => {
     try {
       await supabase.from('ministry_sermon_library').update({ status: 'pending', processing_error: null }).eq('id', sermonId);
@@ -619,6 +631,12 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                   {(!sermon.transcript || sermon.transcriptionPending) && (
                     <Button size="sm" variant="outline" onClick={() => retryTranscription(sermon.id)}>
                       Retry
+                    </Button>
+                  )}
+
+                  {sermon.approvedTerms && sermon.approvedTerms.length > 0 && (
+                    <Button size="sm" onClick={() => addSermonTerms(sermon.approvedTerms)}>
+                      Add terms
                     </Button>
                   )}
                 </div>

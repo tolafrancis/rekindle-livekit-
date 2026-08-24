@@ -5,6 +5,7 @@ import { MinistryTranslationServiceManager } from './MinistryTranslationServiceM
 import { MinistryTranslationDeviceList } from './MinistryTranslationDeviceList';
 import { MinistryTranslationSettings } from './MinistryTranslationSettings';
 import { MinistrySermonLibrary } from './MinistrySermonLibrary';
+import AdminSermonQueue from './AdminSermonQueue';
 
 interface MinistryTranslationHubProps {
   ministryId: string;
@@ -42,6 +43,10 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
             <LibraryBig className="h-4 w-4" />
             Sermons
           </TabsTrigger>
+          <TabsTrigger value="queue" className="gap-2">
+            <LibraryBig className="h-4 w-4" />
+            Queue
+          </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2">
             <SettingsIcon className="h-4 w-4" />
             Settings
@@ -56,6 +61,9 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
         </TabsContent>
         <TabsContent value="sermons" className="mt-5">
           <MinistrySermonLibrary ministryId={ministryId} />
+        </TabsContent>
+        <TabsContent value="queue" className="mt-5">
+          <AdminSermonQueue ministryId={ministryId} />
         </TabsContent>
         <TabsContent value="settings" className="mt-5">
           <MinistryTranslationSettings ministryId={ministryId} />
