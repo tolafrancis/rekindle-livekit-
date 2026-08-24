@@ -242,11 +242,24 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
       // Upload audio/video to Supabase Storage and create DB record so a
       // background worker can transcribe it and update the sermon row.
       try {
-        const path = `sermon-audio/${ministryId}/${Date.now()}-${file.name}`;
-        const { error: uploadErr } = await supabase.storage.from('sermon-audio').upload(path, file, { upsert: true });
-        if (uploadErr) throw uploadErr;
-        const { data: urlData } = supabase.storage.from('sermon-audio').getPublicUrl(path);
-        const publicUrl = urlData?.publicUrl || '';
+        // Request a signed PUT URL from the signer service. The signer URL can
+        // be provided via Vite env `VITE_R2_SIGNER_URL` or defaults to
+        // `${window.location.origin}/signed-put` (adjust if you host signer
+        // separately).
+        const signerUrl = (import.meta as any).env?.VITE_R2_SIGNER_URL || `${window.location.origin}/signed-put`;
+        const key = `sermon-audio/${ministryId}/${Date.now()}-${file.name}`;
+        const resp = await fetch(signerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, contentType: file.type }),
+        });
+        if (!resp.ok) throw new Error(`Signer responded ${resp.status}`);
+        const body = await resp.json();
+        const { signedUrl, publicUrl } = body;
+
+        // Upload file directly to R2 using the presigned URL
+        const put = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        if (!put.ok) throw new Error(`Upload failed ${put.status}`);
 
         // create a DB row for this uploaded sermon (empty transcript for worker)
         const { data: inserted, error: insertErr } = await supabase
@@ -259,6 +272,8 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
             file_name: file.name,
             source_type: 'upload',
             source_url: publicUrl,
+            status: 'pending',
+            processing_error: null,
           })
           .select('id, created_at')
           .single();
