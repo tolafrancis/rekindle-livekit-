@@ -18,6 +18,7 @@ interface SermonEntry {
   sourceUrl?: string;
   createdAt: string;
   approvedTerms: string[];
+  transcriptionPending?: boolean;
 }
 
 interface MinistrySermonLibraryProps {
@@ -160,6 +161,43 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     loadSavedData();
   }, [ministryId]);
 
+  // Poll for updated transcripts (a background worker will update DB when
+  // transcription completes). Refresh sermons every 8 seconds while this
+  // component is mounted so the UI shows transcripts as soon as they're
+  // available.
+  useEffect(() => {
+    const iv = setInterval(async () => {
+      try {
+        const { data: dbSermons } = await supabase
+          .from('ministry_sermon_library')
+          .select('id, title, speaker, transcript, file_name, source_type, source_url, created_at, approved_terms')
+          .eq('ministry_id', ministryId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (dbSermons) {
+          const mapped: SermonEntry[] = dbSermons.map((row) => ({
+            id: row.id,
+            title: row.title,
+            speaker: row.speaker || 'Unknown speaker',
+            transcript: row.transcript || '',
+            fileName: row.file_name || undefined,
+            sourceType: (row.source_type as 'upload' | 'link' | 'youtube') || 'upload',
+            sourceUrl: row.source_url || undefined,
+            createdAt: row.created_at,
+            approvedTerms: Array.isArray(row.approved_terms) ? row.approved_terms : [],
+          }));
+          setSermons(mapped);
+          localStorage.setItem(STORAGE_KEY(ministryId), JSON.stringify(mapped));
+        }
+      } catch (err) {
+        // ignore polling errors — keep UI responsive
+      }
+    }, 8000);
+
+    return () => clearInterval(iv);
+  }, [ministryId]);
+
   const extractedTerms = useMemo(() => extractApprovedTerms(transcript), [transcript]);
 
   const persistSermons = (next: SermonEntry[]) => {
@@ -200,10 +238,56 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
         description: `${file.name} was imported into the transcript editor.`,
       });
     } else {
-      toast({
-        title: 'Audio/video uploaded',
-        description: `${file.name} was received. Add the transcript manually in the editor below or paste it from your notes.`,
-      });
+      // Upload audio/video to Supabase Storage and create DB record so a
+      // background worker can transcribe it and update the sermon row.
+      try {
+        const path = `sermon-audio/${ministryId}/${Date.now()}-${file.name}`;
+        const { error: uploadErr } = await supabase.storage.from('sermon-audio').upload(path, file, { upsert: true });
+        if (uploadErr) throw uploadErr;
+        const { data: urlData } = supabase.storage.from('sermon-audio').getPublicUrl(path);
+        const publicUrl = urlData?.publicUrl || '';
+
+        // create a DB row for this uploaded sermon (empty transcript for worker)
+        const { data: inserted, error: insertErr } = await supabase
+          .from('ministry_sermon_library')
+          .insert({
+            ministry_id: ministryId,
+            title: title.trim() || file.name,
+            speaker: speaker.trim() || 'Unknown speaker',
+            transcript: '',
+            file_name: file.name,
+            source_type: 'upload',
+            source_url: publicUrl,
+          })
+          .select('id, created_at')
+          .single();
+
+        if (insertErr) throw insertErr;
+
+        // Optimistically add to local list with pending state so UI shows progress
+        const entry: SermonEntry = {
+          id: inserted?.id || `${Date.now()}`,
+          title: title.trim() || file.name,
+          speaker: speaker.trim() || 'Unknown speaker',
+          transcript: '',
+          fileName: file.name,
+          sourceType: 'upload',
+          sourceUrl: publicUrl,
+          createdAt: inserted?.created_at || new Date().toISOString(),
+          approvedTerms: [],
+          transcriptionPending: true,
+        };
+
+        persistSermons([entry, ...sermons]);
+
+        toast({
+          title: 'Audio uploaded',
+          description: `${file.name} uploaded for transcription. Will appear here when ready.`,
+        });
+      } catch (err: any) {
+        console.error('[MinistrySermonLibrary] upload failed:', err);
+        toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
+      }
     }
 
     event.target.value = '';
