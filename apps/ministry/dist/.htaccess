@@ -1,0 +1,16 @@
+# SPA history-routing fallback for Apache/LiteSpeed (Hostinger shared hosting).
+# Equivalent to the Cloudflare Pages _redirects rule alongside this file:
+# serve index.html for any path that isn't a real file/directory, so
+# react-router client routes (/display/:id, /join/:slug, /auth, …) resolve
+# on direct load / refresh instead of 404ing.
+#
+# Lives in public/ (not written by hand into dist/ after every build) so
+# `vite build` copies it into dist/ automatically — no more re-creating it
+# after each fresh build wipes dist/.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
