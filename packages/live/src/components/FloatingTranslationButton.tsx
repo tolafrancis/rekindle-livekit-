@@ -631,6 +631,17 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           </button>
         )}
 
+          {!isHost && !showAddLanguage && (
+            <button
+              type="button"
+              onClick={() => toast({ title: 'Unavailable', description: 'Speech translation and caption translation are unavailable until the host adds that language.' })}
+              className={`${row} text-gray-700 hover:bg-gray-100 mt-1`}
+            >
+              <Plus className="h-4 w-4" />
+              <span className="flex-1">Add language</span>
+            </button>
+          )}
+
         {isHost && showAddLanguage && (
           <div className="mt-1.5 space-y-1.5 border-t pt-1.5">
             {supportedLanguages.length === 0 ? (
