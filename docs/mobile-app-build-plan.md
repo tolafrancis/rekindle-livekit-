@@ -42,7 +42,7 @@ Separate listings, matching the two codebases/audiences:
 | App | Source | Bundle ID (proposed) |
 | --- | --- | --- |
 | ReKindle | `apps/rekindle` | `com.rekindlebc.app` |
-| ReKindle Ministry | `apps/ministry` | `com.rekindlebc.ministry` |
+| Rekindle | `apps/ministry` | `com.rekindlebc.ministry` |
 
 ### Ship order: **Ministry first**
 Smaller surface, fewer paid features, already auto-deploys from `main` — a lower-stakes way to prove the two risky phases (LiveKit media, push rewrite) before touching the consumer app.

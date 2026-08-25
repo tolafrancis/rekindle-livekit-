@@ -1,4 +1,4 @@
-# iOS setup — ReKindle Ministry (Capacitor)
+# iOS setup — Rekindle (Capacitor)
 
 The `ios/` platform is **not scaffolded in this repo** because it can only be
 generated and built on **macOS with Xcode**. Everything below is what to do the
@@ -33,10 +33,10 @@ iOS terminates the process rather than showing a prompt. Add to
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>ReKindle Ministry uses your camera so you can appear in live broadcasts and interactive meetings.</string>
+<string>Rekindle uses your camera so you can appear in live broadcasts and interactive meetings.</string>
 
 <key>NSMicrophoneUsageDescription</key>
-<string>ReKindle Ministry uses your microphone so you can speak in live broadcasts and interactive meetings.</string>
+<string>Rekindle uses your microphone so you can speak in live broadcasts and interactive meetings.</string>
 ```
 
 Write them for a human: App Review rejects vague strings like "needs camera".

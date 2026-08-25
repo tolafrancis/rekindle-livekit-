@@ -341,8 +341,8 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
       for (const channel of enabledChannels) {
         if (channel.id === 'whatsapp') {
           // Generate WhatsApp share link
-          const message = encodeURIComponent(
-            `📖 *${selectedDevotional.title}*\n\n${selectedDevotional.content.substring(0, 200)}${selectedDevotional.content.length > 200 ? '...' : ''}\n\n🔗 Read more: ${deepLink}\n\n_Shared via ReKindle Ministry_`
+            const message = encodeURIComponent(
+            `📖 *${selectedDevotional.title}*\n\n${selectedDevotional.content.substring(0, 200)}${selectedDevotional.content.length > 200 ? '...' : ''}\n\n🔗 Read more: ${deepLink}\n\n_Shared via Rekindle_`
           );
           const whatsappUrl = `https://wa.me/?text=${message}`;
           window.open(whatsappUrl, '_blank');
