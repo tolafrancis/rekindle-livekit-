@@ -15,8 +15,8 @@ export default function AuthScreen({ onSuccess, initialView }: { onSuccess?: () 
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">ReKindle Ministry</CardTitle>
+          <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Rekindle</CardTitle>
           <p className="text-sm text-muted-foreground">
             {view === 'login' && 'Sign in to your ministry'}
             {view === 'signup' && 'Create your account'}

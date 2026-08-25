@@ -5,7 +5,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // on Cloudflare Pages is unaffected.
 const config: CapacitorConfig = {
   appId: 'com.rekindlebc.ministry',
-  appName: 'ReKindle Ministry',
+  appName: 'Rekindle',
   webDir: 'dist',
 
   // Cleartext stays OFF: every backend this app talks to is HTTPS/WSS

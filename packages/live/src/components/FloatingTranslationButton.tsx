@@ -5,6 +5,8 @@ import { Button } from '@rekindle/ui/button';
 import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
+import { notify } from '@rekindle/features/notify';
+import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
 
 interface CaptionLine {
@@ -75,6 +77,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   isHost = false,
   userId,
 }) => {
+  const { user } = useAuth();
   const { tracks, currentLanguage, setLanguage } = translation;
   const [stoppingLanguage, setStoppingLanguage] = useState<string | null>(null);
   const [showAddLanguage, setShowAddLanguage] = useState(false);
@@ -634,7 +637,22 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           {!isHost && !showAddLanguage && (
             <button
               type="button"
-              onClick={() => toast({ title: 'Unavailable', description: 'Speech translation and caption translation are unavailable until the host adds that language.' })}
+              onClick={async () => {
+                toast({ title: 'Unavailable', description: 'Speech translation and caption translation are unavailable until the host adds that language.' });
+                try {
+                  await notify({
+                    type: 'onboarding_tip',
+                    title: 'Translation requested',
+                    body: `${user?.email || 'A participant'} requested translation/captions in this meeting.`,
+                    ministryId,
+                    targetAudience: 'leaders',
+                    link: `/ministries/${ministryId}/live`,
+                  });
+                } catch (err) {
+                  // notify errors shouldn't block UX
+                  console.error('[FloatingTranslationButton] notify failed', err);
+                }
+              }}
               className={`${row} text-gray-700 hover:bg-gray-100 mt-1`}
             >
               <Plus className="h-4 w-4" />
