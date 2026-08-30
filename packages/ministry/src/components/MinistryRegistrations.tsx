@@ -9,6 +9,7 @@ import { Badge } from '@rekindle/ui/badge';
 import { Checkbox } from '@rekindle/ui/checkbox';
 import { toast } from '@rekindle/ui/use-toast';
 import MinistryDuplicates from './MinistryDuplicates';
+import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 import {
   Loader2, Check, X, Eye, FileDown, ClipboardList, CheckCircle2, Clock, XCircle, Users2, Pencil, Save, BellRing,
 } from 'lucide-react';
@@ -78,6 +79,19 @@ const MinistryRegistrations: React.FC<Props> = ({ ministryId, ministryName }) =>
       .eq('user_id', userId)
       .maybeSingle();
     if (existing) return;
+
+    // Member-count limit, resolved from the ministry's real plan (fix 2's
+    // getMinistryEntitlements) — -1 means unlimited.
+    const entitlements = await getMinistryEntitlements(ministryIdValue);
+    if (entitlements.limits.members !== -1) {
+      const { count } = await supabase
+        .from('ministry_group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('ministry_id', ministryIdValue);
+      if ((count ?? 0) >= entitlements.limits.members) {
+        throw new Error(`This ministry has reached its member limit (${entitlements.limits.members}). Ask an admin to upgrade the plan.`);
+      }
+    }
 
     const { error } = await supabase.from('ministry_group_members').insert({
       ministry_id: ministryIdValue,

@@ -785,10 +785,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'qa', label: 'Q&A', icon: HelpCircle },
       { id: 'challenges', label: 'Challenges', icon: Trophy },
     ] },
-    { id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' },
+    // Gated by the ministry's plan (ministryEntitlements.caps, fix 2) — not
+    // just role, unlike most of the 'admin' group's children below. Hidden
+    // rather than shown-disabled, matching how canManageMinistry-gated
+    // entries in this same array already work.
+    ...(ministryEntitlements.caps.liveChannels
+      ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' }]
+      : []),
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
-      ...(canManageMinistry ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
+      ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
       { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
       { id: 'testimonies', label: 'Testimonies', icon: Star },

@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@rekindle/ui/radio-group';
 import { toast } from '@rekindle/ui/use-toast';
 import { Loader2, ArrowLeft, ArrowRight, CheckCircle2, Clock, Smartphone } from 'lucide-react';
 import { generateQrPngDataUrl } from '@rekindle/features/qrCode';
+import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 
 interface Props {
   ministryId: string;
@@ -186,6 +187,19 @@ const MinistryMemberRegistration: React.FC<Props> = ({
       .eq('user_id', user.id)
       .maybeSingle();
     if (existing) return;
+
+    // Member-count limit, resolved from the ministry's real plan (fix 2's
+    // getMinistryEntitlements) — -1 means unlimited.
+    const entitlements = await getMinistryEntitlements(ministryId);
+    if (entitlements.limits.members !== -1) {
+      const { count } = await supabase
+        .from('ministry_group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('ministry_id', ministryId);
+      if ((count ?? 0) >= entitlements.limits.members) {
+        throw new Error(`This ministry has reached its member limit (${entitlements.limits.members}). Ask an admin to upgrade the plan.`);
+      }
+    }
 
     const { error } = await supabase
       .from('ministry_group_members')
