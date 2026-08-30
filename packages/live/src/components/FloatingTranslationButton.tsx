@@ -579,29 +579,31 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             ))}
           </div>
 
-          <div className="mt-2 border-t pt-2 px-2.5 space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Best audio tips</p>
-            <ul className="space-y-1 text-[11px] text-gray-600">
-              {liveTranslateTips.map((tip) => (
-                <li key={tip} className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
+          {isHost && (
+            <div className="mt-2 border-t pt-2 px-2.5 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Best audio tips</p>
+              <ul className="space-y-1 text-[11px] text-gray-600">
+                {liveTranslateTips.map((tip) => (
+                  <li key={tip} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
 
-            <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Approved phrases</p>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Approved ministry phrases are managed in Live Translation settings.
-              </div>
-              <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => window.open(`${window.location.origin}/ministries/${ministryId}/live`, '_blank')}>
-                  Edit in Settings
-                </Button>
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Approved phrases</p>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Approved ministry phrases are managed in Live Translation settings.
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => window.open(`${window.location.origin}/ministries/${ministryId}/live`, '_blank')}>
+                    Edit in Settings
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Ask a question — bidirectional Q&A (build plan). Only makes
               sense once we know MY language (inferred from Audio/Captions
