@@ -81,6 +81,25 @@ serve(async (req) => {
 
     if (!isLeader) return json({ error: 'Only ministry leaders can configure channels' }, 403);
 
+    // Ministry CRM gate (fix 6, ministry-billing-tier-enforcement-audit.md):
+    // Messenger/Instagram are Growth Partner and above — same threshold as
+    // ministryEntitlements.ts's crmChannels cap (fix 4), duplicated inline
+    // since this Deno/esm.sh edge function can't import the npm workspace.
+    // WhatsApp isn't affected — it never reaches this function at all (its
+    // own separate ministry_whatsapp_configs flow).
+    const { data: sub } = await supabase
+      .from('ministry_subscriptions')
+      .select('plan_type, status')
+      .eq('ministry_id', ministryId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const PLAN_RANK: Record<string, number> = { starter: 1, growth_partner: 2, ministry_partner: 3, ministry_plus: 4 };
+    const crmAllowed = sub?.status === 'active' && (PLAN_RANK[sub.plan_type as string] ?? 0) >= 2;
+    if (!crmAllowed) {
+      return json({ error: "This ministry's plan doesn't include Messenger/Instagram — upgrade to Growth Partner or above." }, 403);
+    }
+
     // Encrypt the access token
     const encKey = Deno.env.get('ENCRYPTION_KEY') ?? '';
     if (!encKey) return json({ error: 'ENCRYPTION_KEY not configured' }, 500);
