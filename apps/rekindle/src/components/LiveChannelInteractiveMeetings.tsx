@@ -74,6 +74,11 @@ import {
   AccessCheckResult,
   UserSubscription
 } from '@/lib/subscriptionEnforcement';
+// This component serves BOTH ministry-owned channels (ministryId set) and
+// personal/individual channels (ministryId null) — only the ministry case
+// should be gated by the ministry's own plan; the individual case keeps
+// using the subscriptionEnforcement path above unchanged.
+import { getMinistryEntitlements } from '@/lib/ministryEntitlements';
 
 /* ======================================================
    TYPES
@@ -666,11 +671,14 @@ const EnhancedVideoCallWrapper = ({
   );
 };
 
-const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: {
+const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, ministryId, meeting }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (meeting: LiveChannelVideoMeeting) => void;
   channelId: string;
+  /** Set when channelId belongs to a ministry — gates by that ministry's
+   * own plan instead of the individual subscriptionEnforcement path. */
+  ministryId?: string | null;
   /** When set, the modal edits this meeting instead of creating a new one. */
   meeting?: LiveChannelVideoMeeting | null;
 }) => {
@@ -723,20 +731,41 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: 
   }, [isOpen, meeting]);
 
   useEffect(() => {
-    const loadSubscription = async () => {
+    const loadAccess = async () => {
       if (!user?.id) return;
-      
+
       try {
+        // Ministry-owned channel: gate by the ministry's own plan.
+        if (ministryId) {
+          const entitlements = await getMinistryEntitlements(ministryId);
+          setAccessCheck({
+            allowed: entitlements.caps.interactiveMeetings,
+            reason: entitlements.caps.interactiveMeetings
+              ? undefined
+              : "This ministry's plan doesn't include interactive meetings — upgrade to enable this.",
+          });
+
+          const maxDur = await getMaxMeetingDuration(user.id);
+          setMaxDuration(maxDur);
+
+          if (formData.enable_recording && !entitlements.caps.recordMeetings) {
+            setFormData(prev => ({ ...prev, enable_recording: false }));
+            toast.warning(t('liveChannelInteractiveMeetings', 'recordingRequiresPlus', 'Recording requires Ministry Plus subscription'));
+          }
+          return;
+        }
+
+        // Personal/individual channel: unchanged, individual subscription tier.
         const userSubscription = await getUserActiveSubscription(user.id);
         setSubscription(userSubscription);
-        
+
         if (userSubscription) {
           const canHost = await canHostInteractiveMeeting(user.id);
           setAccessCheck(canHost);
-          
+
           const maxDur = await getMaxMeetingDuration(user.id);
           setMaxDuration(maxDur);
-          
+
           if (formData.enable_recording) {
             const canRecord = await canRecordMeetings(user.id);
             if (!canRecord.allowed) {
@@ -751,9 +780,9 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, meeting }: 
     };
 
     if (isOpen && user?.id) {
-      loadSubscription();
+      loadAccess();
     }
-  }, [isOpen, user?.id]);
+  }, [isOpen, user?.id, ministryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1234,15 +1263,27 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     checkOwnership();
   }, [user, channelId]);
 
-  // Load user subscription
+  // Load access: a ministry-owned channel is gated by the MINISTRY's own
+  // plan (ministry_subscriptions -> MinistryCaps.interactiveMeetings); a
+  // personal/individual channel (ministryId null) keeps the individual
+  // subscriptionEnforcement path, unchanged.
   useEffect(() => {
-    const loadSubscription = async () => {
+    const loadAccess = async () => {
       if (!user?.id) return;
-      
+
       try {
+        if (ministryId) {
+          const entitlements = await getMinistryEntitlements(ministryId);
+          setCanCreateMeeting(entitlements.caps.interactiveMeetings);
+          if (!entitlements.caps.interactiveMeetings) {
+            setSubscriptionError("This ministry's plan doesn't include interactive meetings");
+          }
+          return;
+        }
+
         const userSubscription = await getUserActiveSubscription(user.id);
         setSubscription(userSubscription);
-        
+
         if (userSubscription) {
           const canHost = await canHostInteractiveMeeting(user.id);
           setCanCreateMeeting(canHost.allowed);
@@ -1259,9 +1300,9 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     };
 
     if (user?.id) {
-      loadSubscription();
+      loadAccess();
     }
-  }, [user?.id]);
+  }, [user?.id, ministryId]);
 
   // Fetch meetings
   useEffect(() => {
@@ -1914,6 +1955,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           fetchMeetings();
         }}
         channelId={channelId}
+        ministryId={ministryId}
       />
 
       {/* Guest Name Dialog - shown when unauthenticated user tries to join */}

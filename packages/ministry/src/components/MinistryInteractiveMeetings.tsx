@@ -70,13 +70,16 @@ import { getEffectiveRecordingRetentionDays } from '@rekindle/features/ministryB
 
 // Import subscription enforcement functions
 import {
-  getUserActiveSubscription,
-  canHostInteractiveMeeting,
   getMaxMeetingDuration,
   logUsage,
-  AccessCheckResult,
-  UserSubscription
+  AccessCheckResult
 } from '@rekindle/auth/subscriptionEnforcement';
+// Interactive-meeting access is a ministry-level capability
+// (ministry_subscriptions -> MinistryCaps.interactiveMeetings/.recordMeetings),
+// not an individual user's own subscription — getUserActiveSubscription/
+// canHostInteractiveMeeting used to gate this off the wrong (legacy,
+// individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
+import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 
 /* ======================================================
    TYPES
@@ -817,7 +820,6 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
   const { t } = useLanguage();
   const isEditing = !!meeting;
   const [isLoading, setIsLoading] = useState(false);
-  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [accessCheck, setAccessCheck] = useState<AccessCheckResult | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
 
@@ -876,29 +878,33 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
   }, [formData.max_participants, modeTouched]);
 
   useEffect(() => {
-    const loadSubscription = async () => {
+    const loadAccess = async () => {
       if (!user?.id) return;
-      
+
       try {
-        const userSubscription = await getUserActiveSubscription(user.id);
-        setSubscription(userSubscription);
-        
-        if (userSubscription) {
-          const canHost = await canHostInteractiveMeeting(user.id);
-          setAccessCheck(canHost);
-          
-          const maxDur = await getMaxMeetingDuration(user.id);
-          setMaxDuration(maxDur);
-        }
+        const entitlements = await getMinistryEntitlements(ministryId);
+        setAccessCheck({
+          allowed: entitlements.caps.interactiveMeetings,
+          reason: entitlements.caps.interactiveMeetings
+            ? undefined
+            : "This ministry's plan doesn't include interactive meetings — upgrade to enable this.",
+        });
+
+        // Out of scope for the ministry-tier fix: no 1:1 field in
+        // MinistryCaps for "max minutes per single meeting" (limits are
+        // monthly budgets, not per-meeting caps) — left on the individual
+        // path for now.
+        const maxDur = await getMaxMeetingDuration(user.id);
+        setMaxDuration(maxDur);
       } catch (error) {
-        console.error('Error loading subscription:', error);
+        console.error('Error loading ministry meeting access:', error);
       }
     };
 
     if (isOpen && user?.id) {
-      loadSubscription();
+      loadAccess();
     }
-  }, [isOpen, user?.id]);
+  }, [isOpen, user?.id, ministryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1427,33 +1433,26 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     checkLeadership();
   }, [user, ministryId, meetings]);
 
-  // Load user subscription
+  // Interactive-meeting access is a ministry-level capability
+  // (ministry_subscriptions -> MinistryCaps.interactiveMeetings), not the
+  // individual user's own subscription.
   useEffect(() => {
-    const loadSubscription = async () => {
-      if (!user?.id) return;
-      
+    const loadAccess = async () => {
+      if (!user?.id || !ministryId) return;
+
       try {
-        const userSubscription = await getUserActiveSubscription(user.id);
-        
-        if (userSubscription) {
-          const canHost = await canHostInteractiveMeeting(user.id);
-          setCanCreateMeeting(canHost.allowed);
-          if (!canHost.allowed) {
-            setSubscriptionError(canHost.reason || 'Subscription required');
-          }
-        } else {
-          setCanCreateMeeting(false);
-          setSubscriptionError('No active subscription found');
+        const entitlements = await getMinistryEntitlements(ministryId);
+        setCanCreateMeeting(entitlements.caps.interactiveMeetings);
+        if (!entitlements.caps.interactiveMeetings) {
+          setSubscriptionError("This ministry's plan doesn't include interactive meetings");
         }
       } catch (error) {
-        console.error('Error loading subscription:', error);
+        console.error('Error loading ministry meeting access:', error);
       }
     };
 
-    if (user?.id) {
-      loadSubscription();
-    }
-  }, [user?.id]);
+    loadAccess();
+  }, [user?.id, ministryId]);
 
   // Fetch meetings
   useEffect(() => {

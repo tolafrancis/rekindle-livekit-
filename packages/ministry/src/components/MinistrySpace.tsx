@@ -17,6 +17,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
+import { getMinistryEntitlements, FREE_ENTITLEMENTS } from '@rekindle/auth/ministryEntitlements';
 import { VideoMessagePlayer } from '@rekindle/live/components/VideoMessagePlayer';
 import {
   ArrowLeft, Home, BookOpen, Heart, Calendar, MessageSquare,
@@ -293,41 +294,32 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const isPremiumMember = (membership?.subscription_level || 1) >= 2;
   const canManageMinistry = isLeader || isAdmin;
   
-  // Subscription-based permissions
-  const hasOwnMinistryAccess = entitlements.hasMinistryAccess;
-  const canManageTeam = entitlements.canManageTeam;
-  const canCustomizeDashboard = entitlements.can_customize_dashboard;
-  const canUseMinistryBranding = entitlements.can_use_ministry_branding;
-  const canUseWhiteLabel = entitlements.canUseWhiteLabel;
-
-  // Management access follows the MINISTRY's subscription (the owner's tier), not each
-  // individual leader's personal subscription. So a leader/admin the owner designates can
-  // manage a ministry whose owner holds a Ministry tier, without their own subscription.
-  const [ownerHasMinistryAccess, setOwnerHasMinistryAccess] = useState(false);
+  // Subscription-based permissions — resolved from the MINISTRY's own
+  // ministry_subscriptions row (real billing: Stripe/Paystack checkout ->
+  // ministry-billing-webhook), not a leader's/owner's personal
+  // user_profiles.subscription_tier. That column uses tier-slug literals
+  // ('ministry', 'ministry_plus', ...) that no real live path writes
+  // anymore (the matching subscription_tiers catalog rows were deactivated
+  // in migration 0271) — this was silently dead for every real Ministry
+  // Partner subscriber. getMinistryEntitlements is the same resolver
+  // BillingSettings.tsx/CustomDomainSettings.tsx already use correctly.
+  const [ministryEntitlements, setMinistryEntitlements] = useState(FREE_ENTITLEMENTS);
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      // If the current user already has access, or isn't a leader/admin, no owner lookup needed.
-      if (hasOwnMinistryAccess || !canManageMinistry) { setOwnerHasMinistryAccess(false); return; }
-      if (!ministry.owner_id || ministry.owner_id === user?.id) { setOwnerHasMinistryAccess(false); return; }
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('subscription_tier')
-        .eq('user_id', ministry.owner_id)
-        .maybeSingle();
-      if (error) { if (!cancelled) setOwnerHasMinistryAccess(false); return; }
-      const tier = (data as any)?.subscription_tier || '';
-      const ministryTiers = ['ministry', 'ministry_plus', 'ministry_starter', 'ministry_growth', 'ministry_enterprise'];
-      const ownerAccess = ministryTiers.includes(tier);
-      if (!cancelled) setOwnerHasMinistryAccess(ownerAccess);
-    })();
+    getMinistryEntitlements(ministry.id).then((e) => { if (!cancelled) setMinistryEntitlements(e); });
     return () => { cancelled = true; };
-  }, [ministry.owner_id, user?.id, hasOwnMinistryAccess, canManageMinistry]);
+  }, [ministry.id]);
 
-  // Effective access used to gate the Manage Ministry button + management features.
-  const hasMinistryAccess = hasOwnMinistryAccess || ownerHasMinistryAccess;
+  const canManageTeam = ministryEntitlements.caps.manageTeam;
+  const canUseMinistryBranding = ministryEntitlements.caps.branding;
+  const canUseWhiteLabel = ministryEntitlements.caps.whiteLabel;
 
-  // Block access if neither the user nor the ministry's owner has Ministry tier.
+  // Effective access used to gate the Manage Ministry button + management
+  // features: requires an ACTIVE paid plan on the ministry itself — not
+  // just any signed-in leader/admin (explicit product decision, replacing
+  // the old owner-tier lookup this block used to do).
+  const hasMinistryAccess = ministryEntitlements.status === 'active';
+
   // Hidden in native builds: no purchase/upgrade surfaces there (Phase 0 — Apple 3.1.1).
   const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess && canShowPurchaseUI();
 

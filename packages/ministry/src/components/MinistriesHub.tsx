@@ -165,7 +165,13 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     if (!slugEdited) setFormData(prev => ({ ...prev, slug: slugify(prev.name) }));
   }, [formData.name, slugEdited]);
 
-  const is_ministry_Leader = ['ministry', 'ministry_plus', 'ministry_starter', 'ministry_growth', 'ministry_enterprise'].includes(profile?.subscription_tier || '') || isPartner || authIsAdmin;
+  // Was OR'd with a check against profile.subscription_tier for a fixed
+  // list of "ministry" tier slugs — removed as dead code: none of those
+  // slugs' underlying subscription_tiers catalog rows are active anymore
+  // (deactivated in migration 0271), and no live path writes them to a
+  // profile, so that clause was unconditionally false. Zero behavior
+  // change (see docs/investigations/ministry-billing-tier-enforcement-audit.md).
+  const is_ministry_Leader = isPartner || authIsAdmin;
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
 
   useEffect(() => {
