@@ -42,6 +42,8 @@ const MINISTRY_NAV = [
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
+import { MinistryRulesManager } from './MinistryRulesManager';
+import { AcceptRulesModal } from './AcceptRulesModal';
 import MinistryBroadcast from './MinistryBroadcast';
 import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
 import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
@@ -255,6 +257,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
   const [devotionals, setDevotionals] = useState<MinistryDevotional[]>([]);
   const [videoMessages, setVideoMessages] = useState<MinistryVideoMessage[]>([]);
+  // Ministry Rules & Guidelines — rulesItems is the currently-published
+  // version's read-only content (Rules tab + the blocking modal both use
+  // it). needsRulesAcceptance drives the blocking AcceptRulesModal mount
+  // below: true when the ministry requires acceptance, has published at
+  // least one version, and this member hasn't accepted that version yet.
+  const [rulesItems, setRulesItems] = useState<{ id: string; title: string; body: string }[]>([]);
+  const [needsRulesAcceptance, setNeedsRulesAcceptance] = useState(false);
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
   const [activeVideoMessage, setActiveVideoMessage] = useState<MinistryVideoMessage | null>(null);
   const [declarations, setDeclarations] = useState<any[]>([]);
@@ -448,6 +457,54 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   useEffect(() => {
     loadMinistryData();
   }, [loadMinistryData]);
+
+  // Ministry Rules & Guidelines — independent of the big loadMinistryData
+  // batch above since it also drives the blocking gate (needs to resolve
+  // before the member does anything, not just when they open the Rules
+  // tab). Applies to everyone, admins included — an admin is still a
+  // member who should acknowledge the rules they (or another admin)
+  // published; they just also get the full editor via the Rules tab/
+  // Manage Ministry shell. Re-runs whenever the published version changes
+  // via MinistryRulesManager's Publish (ministry.settings isn't touched by
+  // that, so this deliberately keys off ministry.id/user.id and does its
+  // own fresh fetch on mount rather than trying to invalidate reactively).
+  useEffect(() => {
+    if (!ministry?.id || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: cfg } = await supabase
+          .from('ministry_rules')
+          .select('require_acceptance, current_version')
+          .eq('ministry_id', ministry.id)
+          .maybeSingle();
+        if (cancelled) return;
+        if (!cfg || cfg.current_version < 1) { setRulesItems([]); return; }
+
+        const { data: items } = await supabase
+          .from('ministry_rule_items')
+          .select('id, title, body')
+          .eq('ministry_id', ministry.id)
+          .eq('version', cfg.current_version)
+          .order('sort_order');
+        if (cancelled) return;
+        setRulesItems(items || []);
+
+        if (!cfg.require_acceptance) { setNeedsRulesAcceptance(false); return; }
+        const { data: acceptance } = await supabase
+          .from('ministry_rule_acceptances')
+          .select('accepted_version')
+          .eq('ministry_id', ministry.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        setNeedsRulesAcceptance(!acceptance || acceptance.accepted_version < cfg.current_version);
+      } catch (err) {
+        console.error('[MinistrySpace] rules load failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ministry?.id, user?.id]);
 
   // Open a Pastor's Video Message arriving from a shared/notification link
   // (/ministry-videos/:id). MinistriesHub already resolved which ministry this
@@ -740,6 +797,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
       ...(canManageMinistry ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
+      { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
@@ -994,6 +1052,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           captionsUrl={activeVideoMessage.captions_url}
           shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
           onClose={() => setShowVideoPlayer(false)}
+        />
+      )}
+
+      {/* Blocking Rules & Guidelines gate — see the rules-loading effect
+          above for when this is set. Mounted at the top of the page (same
+          overlay idiom as the video player above it) so it blocks the
+          whole ministry space, not just one tab. */}
+      {needsRulesAcceptance && rulesItems.length > 0 && (
+        <AcceptRulesModal
+          ministryId={ministry.id}
+          ministryName={ministry.name}
+          items={rulesItems}
+          onAccepted={() => setNeedsRulesAcceptance(false)}
         />
       )}
 
@@ -1999,6 +2070,42 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <Megaphone className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                     <h3 className="text-lg font-semibold text-gray-700">{t('ministrySpace', 'noAnnouncementsTitle', 'No Announcements')}</h3>
                     <p className="text-gray-500">{t('ministrySpace', 'checkBackLaterUpdates', 'Check back later for ministry updates')}</p>
+                  </Card>
+                )}
+              </div>
+            )
+        )}
+
+        {/* Rules & Guidelines Tab
+             Admins see the full MinistryRulesManager (draft CRUD, reorder,
+             require-acceptance toggle, publish, version history). Members
+             see a read-only list of the currently published version —
+             same admin/member split as Announcements above. This tab is
+             always in the nav (unconditional child, not canManageMinistry-
+             gated) since members need to read the rules any time, not just
+             when the blocking AcceptRulesModal forces it on them. */}
+        {activeTab === 'rules' && (
+          isAdmin
+            ? (
+              <MinistryRulesManager ministryId={ministry.id} />
+            )
+            : (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold">{t('ministrySpace', 'rulesGuidelines', 'Rules & Guidelines')}</h2>
+                {rulesItems.length > 0 ? (
+                  rulesItems.map((item, idx) => (
+                    <Card key={item.id}>
+                      <CardContent className="p-6">
+                        <h3 className="font-bold text-lg">{idx + 1}. {item.title}</h3>
+                        <p className="text-gray-600 mt-2 whitespace-pre-wrap">{item.body}</p>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (
+                  <Card className="p-12 text-center">
+                    <ScrollText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-700">{t('ministrySpace', 'noRulesTitle', 'No rules published yet')}</h3>
+                    <p className="text-gray-500">{t('ministrySpace', 'noRulesBody', 'This ministry hasn\'t published any rules or guidelines.')}</p>
                   </Card>
                 )}
               </div>

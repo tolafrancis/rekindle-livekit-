@@ -10,7 +10,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import {
   BookOpen, Heart, Calendar, Gift, Users, Megaphone, Star,
   Settings, BarChart3, MessageSquare, Loader2, ArrowLeft, Cake, ClipboardList, Inbox, HandCoins,
-  HeartHandshake, Video, Radio
+  HeartHandshake, Video, Radio, ScrollText
 } from 'lucide-react';
 
 // Import all manager components
@@ -32,6 +32,7 @@ import { EvangelismInbox } from './EvangelismInbox';
 import { MinistryWhatsAppHub } from './MinistryWhatsAppHub';
 import { MinistryBirthdayWishes } from './MinistryBirthdayWishes';
 import { MinistryTranslationHub } from './MinistryTranslationHub';
+import { MinistryRulesManager } from './MinistryRulesManager';
 
 interface MinistryManagementProps {
   ministryId: string;
@@ -75,6 +76,7 @@ const TABS = [
   { id: 'whatsapp',        label: 'WhatsApp',        icon: MessageSquare, color: 'text-green-600'  },
   { id: 'inbox',           label: 'Inbox',           icon: Inbox,         color: 'text-cyan-600'   },
   { id: 'birthdays',       label: 'Birthdays',       icon: Cake,          color: 'text-pink-600'   },
+  { id: 'rules',           label: 'Rules & Guidelines', icon: ScrollText, color: 'text-slate-600'  },
   { id: 'settings',        label: 'Settings',        icon: Settings,      color: 'text-gray-600'   },
 ];
 
@@ -212,6 +214,9 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
           />
         );
 
+      case 'rules':
+        return <MinistryRulesManager ministryId={ministryId} />;
+
       case 'settings':
         return <MinistrySettingsManager ministry={ministry} onUpdate={loadMinistry} />;
       
@@ -318,6 +323,7 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
                 'whatsapp': 'tabWhatsApp',
                 'inbox': 'tabInbox',
                 'birthdays': 'tabBirthdays',
+                'rules': 'tabRules',
                 'settings': 'tabSettings',
                 'gift-aid': 'tabGiftAid',
               };
