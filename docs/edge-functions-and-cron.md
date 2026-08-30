@@ -77,6 +77,40 @@ and `select * from public.daily_reminder_sends where sent_on = current_date;`.
 
 ---
 
+## ⏳ PENDING — Ministry subscription reconciliation (`reconcile_ministry_subscriptions`)
+
+Added for fix 8 of `docs/investigations/ministry-billing-tier-enforcement-audit.md`:
+a missed Stripe/Paystack webhook could otherwise leave a lapsed ministry's
+`ministry_subscriptions.status` stuck at `'active'` forever, with
+`current_period_end` stuck in the past. Unlike every other job on this page,
+this one is **pure SQL, no edge function** — it's a plain `security definer`
+Postgres function (no external I/O needed), scheduled via `pg_cron` directly.
+
+1. **Run the migration.** Paste
+   [`supabase/migrations/0298_reconcile_ministry_subscriptions.sql`](../supabase/migrations/0298_reconcile_ministry_subscriptions.sql)
+   into the SQL editor — creates `public.reconcile_ministry_subscriptions()`.
+2. **Confirm `pg_cron` is enabled.** Dashboard → Database → Extensions (same
+   caveat as `process-daily-reminders` above — not confirmed already on for
+   this project).
+3. **Test it once by hand** before scheduling:
+   `select public.reconcile_ministry_subscriptions();` — should return `0`
+   (or a small number, if a real lapse already exists) with no error.
+4. **Schedule it.** The same migration file's second half (after the `commit;`)
+   registers the `pg_cron` job — run it once it's confirmed working. Runs daily
+   at 04:00 UTC; demotes any `active` subscription whose `current_period_end`
+   is more than 3 days in the past to `past_due` (the same state a real
+   `invoice.payment_failed` webhook already sets — self-healing if a delayed
+   webhook eventually arrives and overwrites it back to `active`).
+
+**Verify:** `select * from cron.job_run_details where jobname = 'reconcile-ministry-subscriptions' order by start_time desc limit 5;`
+after the first scheduled run. To manually create a test case: pick a real
+`ministry_subscriptions` row, set `current_period_end = now() - interval '10 days'`
+with `status = 'active'`, run the function by hand, confirm it flips to
+`past_due` and a `ministry_audit_logs` row appears with
+`action = 'subscription_auto_demoted'`.
+
+---
+
 ## Reference — other cron-scheduled functions
 
 These follow the same pattern (function + a `schedule.sql`). Listed so the cron
@@ -87,6 +121,7 @@ says otherwise, or the function has its own PENDING section above.
 |---|---|---|
 | `process-daily-reminders` | every 15 min | **(pending — see above)** User daily reminders (Bible/prayer/etc.) → in-app + push |
 | `process-meeting-reminders` | every 5 min | **(this doc)** scheduled-meeting reminders → in-app + email |
+| `reconcile_ministry_subscriptions` | daily, 04:00 UTC | **(pending — see above)** Not an edge function — plain SQL, demotes a lapsed `active` subscription to `past_due` if a renewal webhook was missed |
 | `process-translation-queue` | see `cron-setup-translation-queue.sql` | UI translation queue |
 | `process-scheduled-broadcasts` | see its schedule | Scheduled ministry broadcasts |
 | `counselling-reminders` | see its schedule | Counselling session reminders |
