@@ -1,8 +1,8 @@
 # Ministry billing / tier enforcement audit
 
-**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, 3, 4, and 5
-are now implemented (see "Recommended fix order" below for exactly what shipped and
-what's still deferred within items 2 and 3). Items 6, 7, 8 remain open.
+**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, 3, 4, 5, and
+6 are now implemented (see "Recommended fix order" below for exactly what shipped
+and what's still deferred within items 2, 3, and 6). Items 7, 8 remain open.
 
 **Bottom line:** subscription-tier enforcement is almost entirely cosmetic. Payment
 collection and status tracking work end-to-end (Stripe/Paystack checkout → webhook →
@@ -181,9 +181,24 @@ check at all.
 5. ✅ **Done** (as part of #2) — `MinistrySpace.tsx`'s broken
    `entitlements.can_customize_dashboard`/`can_use_ministry_branding` property read
    removed; branding/white-label now come from `ministryEntitlements.caps` instead.
-6. Add server-side re-verification for anything gated only in the frontend today —
-   a client `disabled` attribute stops nothing against a direct Supabase call, and
-   RLS currently has no opinion on tier at all.
+6. ✅ **Done, rescoped** — everything shipped in fixes 2-4 was client-side only.
+   Narrowed to the two targets safely enforceable against a *confirmed* schema
+   (not a guess): a `before insert` trigger on `ministry_group_members`
+   (`supabase/migrations/0297_ministry_limit_enforcement.sql`) mirroring fix 3's
+   member-count check exactly, `security definer` so it reads
+   `ministry_subscriptions` regardless of the inserting user's own RLS grants; and
+   a plan check added to `evangelism-save-channel/index.ts` (the one real
+   Messenger/Instagram save path — WhatsApp and the website widget don't go
+   through it), same `rank >= 2` threshold as fix 4's `crmChannels` cap. **Still
+   deferred, each for a concrete reason**: interactive meetings/live channels
+   (Starter's own plan copy includes this, so the real gate is just "any active
+   plan," and the underlying `ministry_video_meetings` table's full schema is less
+   confirmed than `ministry_group_members`'s); `recordMeetings` (already has real
+   quota-based enforcement via `livekit-egress`/`livekit-webhook` — a separate
+   rank check would be a new, unbacked restriction); broadcast messaging (backend
+   path not yet confirmed); the website-chat inbound webhook accepting messages
+   regardless of plan (a materially bigger surface — webhook auth/validation, not
+   a check inside an existing authenticated action).
 7. Reconcile the duplicate Edge Function layout before building more on either copy.
 8. Add a periodic reconciliation job for `ministry_subscriptions.status` vs.
    `current_period_end`, so a missed webhook doesn't leave a lapsed ministry
