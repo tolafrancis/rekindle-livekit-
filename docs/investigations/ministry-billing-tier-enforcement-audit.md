@@ -1,8 +1,8 @@
 # Ministry billing / tier enforcement audit
 
-**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, and 5 are
+**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, 3, and 5 are
 now implemented (see "Recommended fix order" below for exactly what shipped and
-what's still deferred within item 2). Items 3, 4, 6, 7, 8 remain open.
+what's still deferred within items 2 and 3). Items 4, 6, 7, 8 remain open.
 
 **Bottom line:** subscription-tier enforcement is almost entirely cosmetic. Payment
 collection and status tracking work end-to-end (Stripe/Paystack checkout → webhook →
@@ -149,9 +149,24 @@ check at all.
    - `AppLayout.tsx` nav-visibility flags, `AdminMinistryGroups.tsx`/
      `MinistryGroupsManager.tsx` platform-admin filters — nav/tooling, not access
      control, lower priority.
-3. Wire the already-written-but-unused machinery: `resolveModulesForTier`/
-   `useEntitledModules` (module gating) and `checkLimit`/`enforce*Limit`
-   (member/storage/hours caps) — design and code already exist, just disconnected.
+3. ✅ **Done, rescoped** — the originally-suggested "already-written machinery"
+   (`checkLimit`/`enforce*Limit`, `resolveModulesForTier`/`useEntitledModules`)
+   turned out unsafe to reuse as-is: `checkLimit`'s `.single()` throws for any
+   ministry with no subscription row (contradicts fix 2's Free-fallback design),
+   and it depends on a `ministry_usage_metrics` table nothing populates anywhere.
+   Built fresh instead, directly on `getMinistryEntitlements()`:
+   - Member-count limit enforced at both places that create a
+     `ministry_group_members` row (`MinistryMemberRegistration.tsx`'s self-service
+     join, `MinistryRegistrations.tsx`'s admin-approval promotion).
+   - `MinistrySpace.tsx`'s Live/Broadcast nav entries now hidden unless the
+     ministry's plan grants `caps.liveChannels`/`caps.broadcastMessaging`.
+   - **Still deferred** (real, separate scope): storage/meeting-hours/
+     broadcast-hours enforcement — needs new usage-tracking wired across many
+     mutation points (file uploads, LiveKit session duration) that don't exist
+     anywhere today, not just one check. Branding/analytics nav gating — neither
+     has one confirmed, unambiguous nav entry point yet (branding lives in
+     `MinistrySettingsManager.tsx`'s fields; analytics has no confirmed UI
+     location).
 4. Add a real gate to `MinistryManagement.tsx`'s CRM-relevant tabs using #2's
    resolved plan, not just `isLeader`.
 5. ✅ **Done** (as part of #2) — `MinistrySpace.tsx`'s broken
