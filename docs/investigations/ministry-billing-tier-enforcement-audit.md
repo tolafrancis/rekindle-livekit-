@@ -1,8 +1,8 @@
 # Ministry billing / tier enforcement audit
 
-**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, 3, 4, 5, and
-6 are now implemented (see "Recommended fix order" below for exactly what shipped
-and what's still deferred within items 2, 3, and 6). Items 7, 8 remain open.
+**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1-7 are now
+implemented (see "Recommended fix order" below for exactly what shipped and what's
+still deferred within items 2, 3, and 6). Item 8 remains open.
 
 **Bottom line:** subscription-tier enforcement is almost entirely cosmetic. Payment
 collection and status tracking work end-to-end (Stripe/Paystack checkout → webhook →
@@ -199,7 +199,17 @@ check at all.
    path not yet confirmed); the website-chat inbound webhook accepting messages
    regardless of plan (a materially bigger surface — webhook auth/validation, not
    a check inside an existing authenticated action).
-7. Reconcile the duplicate Edge Function layout before building more on either copy.
+7. ✅ **Done** — cross-referenced every function name in both layouts: only 6 actually
+   collided (`livekit-egress`, `livekit-ingress`, `livekit-moderation`,
+   `livekit-token`, `livekit-webhook`, `send-email-broadcast`; everything else in
+   either tree is unique to that layout, so there was no real ambiguity there).
+   Diffed all 6 — 4 identical, 2 diverged with `supabase/functions/` clearly newer
+   in both (a dated bug fix `livekit-webhook`'s flat twin lacked; `livekit-ingress`'s
+   flat twin predates the `ingress_stream_key` column). Deleted all 6 flat-layout
+   duplicates, updated the docs that linked the old paths. **Action needed**:
+   redeploy `livekit-webhook` and `livekit-ingress` from `supabase/functions/` if
+   they haven't been recently — production may still be serving the stale code.
+   Full detail in `docs/production-secrets-and-infra-todo.md`'s "two layouts" note.
 8. Add a periodic reconciliation job for `ministry_subscriptions.status` vs.
    `current_period_end`, so a missed webhook doesn't leave a lapsed ministry
    indefinitely active.
