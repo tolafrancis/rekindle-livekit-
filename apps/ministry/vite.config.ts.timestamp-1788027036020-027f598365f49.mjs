@@ -1,0 +1,31 @@
+// vite.config.ts
+import { defineConfig } from "file:///C:/Users/DeBeator/Desktop/rekindle%20livekit/rekindle-livekit-/node_modules/vite/dist/node/index.js";
+import react from "file:///C:/Users/DeBeator/Desktop/rekindle%20livekit/rekindle-livekit-/node_modules/@vitejs/plugin-react-swc/index.js";
+import path from "path";
+var __vite_injected_original_dirname = "C:\\Users\\DeBeator\\Desktop\\rekindle livekit\\rekindle-livekit-\\apps\\ministry";
+var vite_config_default = defineConfig(() => ({
+  server: {
+    host: "::",
+    port: 8081,
+    // rekindle uses 8080
+    // Lets a Cloudflare quick tunnel (cloudflared tunnel --url http://localhost:8081)
+    // reach this dev server for real-device testing — e.g. scanning a QR code that
+    // encodes window.location.origin, which needs to actually be reachable from a
+    // phone. Vite's default host-check otherwise 403s any unrecognized Host header.
+    // Dev-only (this `server` block doesn't apply to `vite build`).
+    allowedHosts: [".trycloudflare.com"]
+  },
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__vite_injected_original_dirname, "./src")
+    }
+  },
+  optimizeDeps: {
+    exclude: ["@supabase/supabase-js"]
+  }
+}));
+export {
+  vite_config_default as default
+};
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsidml0ZS5jb25maWcudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImNvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9kaXJuYW1lID0gXCJDOlxcXFxVc2Vyc1xcXFxEZUJlYXRvclxcXFxEZXNrdG9wXFxcXHJla2luZGxlIGxpdmVraXRcXFxccmVraW5kbGUtbGl2ZWtpdC1cXFxcYXBwc1xcXFxtaW5pc3RyeVwiO2NvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9maWxlbmFtZSA9IFwiQzpcXFxcVXNlcnNcXFxcRGVCZWF0b3JcXFxcRGVza3RvcFxcXFxyZWtpbmRsZSBsaXZla2l0XFxcXHJla2luZGxlLWxpdmVraXQtXFxcXGFwcHNcXFxcbWluaXN0cnlcXFxcdml0ZS5jb25maWcudHNcIjtjb25zdCBfX3ZpdGVfaW5qZWN0ZWRfb3JpZ2luYWxfaW1wb3J0X21ldGFfdXJsID0gXCJmaWxlOi8vL0M6L1VzZXJzL0RlQmVhdG9yL0Rlc2t0b3AvcmVraW5kbGUlMjBsaXZla2l0L3Jla2luZGxlLWxpdmVraXQtL2FwcHMvbWluaXN0cnkvdml0ZS5jb25maWcudHNcIjtpbXBvcnQgeyBkZWZpbmVDb25maWcgfSBmcm9tIFwidml0ZVwiO1xuaW1wb3J0IHJlYWN0IGZyb20gXCJAdml0ZWpzL3BsdWdpbi1yZWFjdC1zd2NcIjtcbmltcG9ydCBwYXRoIGZyb20gXCJwYXRoXCI7XG5cbi8vIE1pbmlzdHJ5IGFwcCBcdTIwMTQgdGhpbiBzaGVsbCBvdmVyIHRoZSBzaGFyZWQgQHJla2luZGxlLyogd29ya3NwYWNlIHBhY2thZ2VzLlxuZXhwb3J0IGRlZmF1bHQgZGVmaW5lQ29uZmlnKCgpID0+ICh7XG4gIHNlcnZlcjoge1xuICAgIGhvc3Q6IFwiOjpcIixcbiAgICBwb3J0OiA4MDgxLCAvLyByZWtpbmRsZSB1c2VzIDgwODBcbiAgICAvLyBMZXRzIGEgQ2xvdWRmbGFyZSBxdWljayB0dW5uZWwgKGNsb3VkZmxhcmVkIHR1bm5lbCAtLXVybCBodHRwOi8vbG9jYWxob3N0OjgwODEpXG4gICAgLy8gcmVhY2ggdGhpcyBkZXYgc2VydmVyIGZvciByZWFsLWRldmljZSB0ZXN0aW5nIFx1MjAxNCBlLmcuIHNjYW5uaW5nIGEgUVIgY29kZSB0aGF0XG4gICAgLy8gZW5jb2RlcyB3aW5kb3cubG9jYXRpb24ub3JpZ2luLCB3aGljaCBuZWVkcyB0byBhY3R1YWxseSBiZSByZWFjaGFibGUgZnJvbSBhXG4gICAgLy8gcGhvbmUuIFZpdGUncyBkZWZhdWx0IGhvc3QtY2hlY2sgb3RoZXJ3aXNlIDQwM3MgYW55IHVucmVjb2duaXplZCBIb3N0IGhlYWRlci5cbiAgICAvLyBEZXYtb25seSAodGhpcyBgc2VydmVyYCBibG9jayBkb2Vzbid0IGFwcGx5IHRvIGB2aXRlIGJ1aWxkYCkuXG4gICAgYWxsb3dlZEhvc3RzOiBbXCIudHJ5Y2xvdWRmbGFyZS5jb21cIl0sXG4gIH0sXG4gIHBsdWdpbnM6IFtyZWFjdCgpXSxcbiAgcmVzb2x2ZToge1xuICAgIGFsaWFzOiB7XG4gICAgICBcIkBcIjogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgXCIuL3NyY1wiKSxcbiAgICB9LFxuICB9LFxuICBvcHRpbWl6ZURlcHM6IHtcbiAgICBleGNsdWRlOiBbJ0BzdXBhYmFzZS9zdXBhYmFzZS1qcyddLFxuICB9LFxufSkpO1xuIl0sCiAgIm1hcHBpbmdzIjogIjtBQUFrYSxTQUFTLG9CQUFvQjtBQUMvYixPQUFPLFdBQVc7QUFDbEIsT0FBTyxVQUFVO0FBRmpCLElBQU0sbUNBQW1DO0FBS3pDLElBQU8sc0JBQVEsYUFBYSxPQUFPO0FBQUEsRUFDakMsUUFBUTtBQUFBLElBQ04sTUFBTTtBQUFBLElBQ04sTUFBTTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBLElBTU4sY0FBYyxDQUFDLG9CQUFvQjtBQUFBLEVBQ3JDO0FBQUEsRUFDQSxTQUFTLENBQUMsTUFBTSxDQUFDO0FBQUEsRUFDakIsU0FBUztBQUFBLElBQ1AsT0FBTztBQUFBLE1BQ0wsS0FBSyxLQUFLLFFBQVEsa0NBQVcsT0FBTztBQUFBLElBQ3RDO0FBQUEsRUFDRjtBQUFBLEVBQ0EsY0FBYztBQUFBLElBQ1osU0FBUyxDQUFDLHVCQUF1QjtBQUFBLEVBQ25DO0FBQ0YsRUFBRTsiLAogICJuYW1lcyI6IFtdCn0K

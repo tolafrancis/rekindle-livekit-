@@ -1,0 +1,72 @@
+{
+  "name": "rekindle-translator-desktop",
+  "version": "1.0.0",
+  "description": "ReKindle Translator Windows Desktop Edge Agent",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:win": "vite build && electron-builder --win",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "livekit-client": "^2.20.1",
+    "lucide-react": "^0.446.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.5",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.11",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.1",
+    "vite-plugin-electron": "^0.28.7",
+    "vite-plugin-electron-renderer": "^0.14.5"
+  },
+  "build": {
+    "appId": "com.rekindle.translator",
+    "productName": "ReKindle Translator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist",
+      "dist-electron"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ReKindle Translator"
+    }
+  }
+}
