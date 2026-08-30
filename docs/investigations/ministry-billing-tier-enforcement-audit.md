@@ -1,8 +1,8 @@
-# Ministry billing / tier enforcement audit (findings only — no fixes applied)
+# Ministry billing / tier enforcement audit
 
-**Status:** 🔴 **DIAGNOSTIC ONLY.** Read-only audit performed 2026-08-30, nothing in
-this document has been implemented. Requested explicitly as investigate-first —
-see "Recommended fix order" at the bottom for what's still open.
+**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, and 5 are
+now implemented (see "Recommended fix order" below for exactly what shipped and
+what's still deferred within item 2). Items 3, 4, 6, 7, 8 remain open.
 
 **Bottom line:** subscription-tier enforcement is almost entirely cosmetic. Payment
 collection and status tracking work end-to-end (Stripe/Paystack checkout → webhook →
@@ -120,19 +120,43 @@ check at all.
   functions of unconfirmed live status — already flagged in
   `docs/production-secrets-and-infra-todo.md:8-13,157`, re-confirmed here.
 
-## Recommended fix order (not yet started)
+## Recommended fix order
 
-1. Fix `evangelism-send-message`'s missing auth check — security bug, independent
-   of billing, higher urgency than the tier work below.
-2. Pick the one authoritative table (`ministry_subscriptions`, per the code's own
-   stated intent) and migrate every gate off `user_profiles.subscription_tier` /
-   `ministry_group_members.subscription_level` onto it.
+1. ✅ **Done** — `evangelism-send-message` now requires `is_group_admin(ministryId)`
+   and re-derives the contact's channel/target server-side instead of trusting the
+   client body. Still needs a manual redeploy in the Supabase Dashboard (legacy flat
+   layout, not auto-deployed).
+2. ✅ **Done, with deferrals** — `MinistrySpace.tsx` (Manage Ministry access, team
+   management, branding, white-label), `MinistryInteractiveMeetings.tsx` (both call
+   sites), and `LiveChannelInteractiveMeetings.tsx` (ministry-owned-channel branch
+   only) now resolve via `getMinistryEntitlements(ministryId)` instead of the
+   individual `user_profiles.subscription_tier`/legacy `subscriptionEnforcement.ts`
+   path. `MinistriesHub.tsx`'s dead stale-slug clause removed (behavior-neutral).
+   **Explicit product decision**: baseline "Manage Ministry" access now requires an
+   *active paid* `ministry_subscriptions` row, not just any leader — real behavior
+   change, blast radius on currently-active ministries not verified from this
+   session (see the SQL query that was in this doc's risk callout, now resolved into
+   this fix's commit message). **Deferred within this item** (each has its own
+   separate pre-existing bug independent of tier gating, so bundling a swap in would
+   ship an unverified fix on top of already-broken code):
+   - `MinistryDevotionalCreator.tsx` (both copies) — no ministry-context plumbing at
+     all today.
+   - `liveChannelAnalyticsService.ts`'s `checkAnalyticsPermissions` — queries
+     deprecated `ministry_members`/`profiles` tables, not the real
+     `ministry_group_members`/`user_profiles`.
+   - `packages/ui/src/utils.ts`'s `handleSubscriptionUpgrade` — confirmed dead code,
+     zero callers anywhere.
+   - `AppLayout.tsx` nav-visibility flags, `AdminMinistryGroups.tsx`/
+     `MinistryGroupsManager.tsx` platform-admin filters — nav/tooling, not access
+     control, lower priority.
 3. Wire the already-written-but-unused machinery: `resolveModulesForTier`/
    `useEntitledModules` (module gating) and `checkLimit`/`enforce*Limit`
    (member/storage/hours caps) — design and code already exist, just disconnected.
 4. Add a real gate to `MinistryManagement.tsx`'s CRM-relevant tabs using #2's
    resolved plan, not just `isLeader`.
-5. Fix the `MinistrySpace.tsx:299-300` broken property read.
+5. ✅ **Done** (as part of #2) — `MinistrySpace.tsx`'s broken
+   `entitlements.can_customize_dashboard`/`can_use_ministry_branding` property read
+   removed; branding/white-label now come from `ministryEntitlements.caps` instead.
 6. Add server-side re-verification for anything gated only in the frontend today —
    a client `disabled` attribute stops nothing against a direct Supabase call, and
    RLS currently has no opinion on tier at all.
