@@ -61,7 +61,7 @@ custom domain, today. **`VITE_PUBLIC_APP_URL` must not be set anywhere.**
 | Hostname → ministry resolution, anon-safe | `packages/features/src/ministryHostname.ts` + `get_ministry_by_hostname` RPC | ✅ |
 | Public guest meeting-join + channel-watch routes | ministry app router | ✅ |
 | Edge functions accept any origin (CORS `*`) | `livekit-token`, `send-push-notification` | ✅ no change |
-| Guest LiveKit tokens (anon, capped to viewer/attendee) | `supabase/livekit-token/index.ts` | ✅ |
+| Guest LiveKit tokens (anon, capped to viewer/attendee) | `supabase/functions/livekit-token/index.ts` | ✅ |
 
 `domain_status` values: `none | pending | verifying | active | error`.
 Custom domain UI is gated on `entitlements.caps.customDomain`.

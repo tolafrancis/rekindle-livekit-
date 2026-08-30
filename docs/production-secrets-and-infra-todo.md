@@ -5,12 +5,36 @@ legacy flat `supabase/<name>/` edge functions, plus every `.env.example`/`vite-e
 in the repo. Nothing here is guessed — every secret below is one a real function actually
 reads today.
 
-**Note on edge functions:** the repo has two layouts — a newer `supabase/functions/<name>/`
-set and an older flat `supabase/<name>/` set with overlapping/duplicate functions (e.g.
-`livekit-token`, `send-push-notification`, `ministry-*`, `evangelism-*`). Before finalizing
-which secrets you actually need, confirm in the Supabase dashboard which copy of each
-function is the one actually deployed — this doc lists secrets for both since either could
-be live.
+**Note on edge functions (resolved 2026-08-30):** the repo has two layouts — a newer
+`supabase/functions/<name>/` set (the CLI-standard one) and an older flat
+`supabase/<name>/` set left over from a bulk "rekindle transfer" import. Cross-referenced
+every directory name in both trees: only 6 functions actually collided by name
+(`livekit-egress`, `livekit-ingress`, `livekit-moderation`, `livekit-token`,
+`livekit-webhook`, `send-email-broadcast`) — everything else in either tree is unique to
+that one layout, so there was never any real ambiguity for those. Diffed all 6: 4 were
+byte-identical (`livekit-egress`, `livekit-moderation`, `livekit-token`,
+`send-email-broadcast`); 2 had genuinely diverged, and in both cases the
+`supabase/functions/` copy was the newer one — `livekit-webhook` carries a dated,
+documented 2026-08-21 bug fix (a channel getting stuck "live" after a dead track) the flat
+copy lacked entirely, and `livekit-ingress` predates the `ingress_stream_key` column
+(migration 0272) and returns a placeholder `hasKey: false` instead of the real key. The 6
+flat-layout duplicates have been deleted from the repo; `supabase/functions/*` is now the
+single source for all of them. **If `livekit-webhook` or `livekit-ingress` haven't been
+redeployed recently, redeploy both from `supabase/functions/` now** — production may still
+be serving the stale flat-copy code for either, deployment being a manual, human-triggered
+step in this repo (no CI). A separate, oddly-named `supabase/Send push notification/`
+directory (spaces, mixed case — not a valid Supabase function slug) was also found; its
+content differs from the real `send-push-notification` but its name means it was never a
+name-collision risk to begin with — likely dead import cruft, left alone here since it's
+outside this specific "two layouts" problem.
+
+The rest of the flat `supabase/<name>/` tree (payment/donation functions like
+`stripe-webhook`, `paystack-webhook`, `create-donation`, etc., and `evangelism-*`) has no
+`supabase/functions/` counterpart at all, so — unlike the 6 above — there's no duplicate to
+reconcile; the only open question for those is whether they're deployed/live at all, not
+which of two copies wins. `evangelism-send-message` and `evangelism-save-channel`
+specifically were edited this session (security/tier-gating fixes) and **still need a
+manual redeploy** to take effect — not yet confirmed done.
 
 Check items off as each secret is set as a real Supabase secret (**Project Settings →
 Edge Functions → Secrets**, not `.env`, which is client-build-time only).

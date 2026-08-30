@@ -446,11 +446,11 @@ run the exit checks after.
 ### Step 4 — Edge functions (paste each; deploy-by-dashboard per project memory)
 | Function | JWT verify | Notes |
 |---|---|---|
-| [livekit-token](../supabase/livekit-token/index.ts) | on (default) | control plane |
-| [livekit-moderation](../supabase/livekit-moderation/index.ts) | on | host controls |
-| [livekit-egress](../supabase/livekit-egress/index.ts) | on | recording + broadcast HLS + simulcast |
-| [livekit-ingress](../supabase/livekit-ingress/index.ts) | on | OBS/encoder RTMP ingest |
-| [livekit-webhook](../supabase/livekit-webhook/index.ts) | **OFF** | LiveKit signs it, not Supabase — must disable Verify JWT |
+| [livekit-token](../supabase/functions/livekit-token/index.ts) | on (default) | control plane |
+| [livekit-moderation](../supabase/functions/livekit-moderation/index.ts) | on | host controls |
+| [livekit-egress](../supabase/functions/livekit-egress/index.ts) | on | recording + broadcast HLS + simulcast |
+| [livekit-ingress](../supabase/functions/livekit-ingress/index.ts) | on | OBS/encoder RTMP ingest |
+| [livekit-webhook](../supabase/functions/livekit-webhook/index.ts) | **OFF** | LiveKit signs it, not Supabase — must disable Verify JWT |
 
 ### Step 5 — Point the SFU at the webhook
 In [livekit.yaml](../livekit/config/livekit.yaml) set `webhook.urls: [ https://<project-ref>.supabase.co/functions/v1/livekit-webhook ]` and `webhook.api_key` = your `LIVEKIT_API_KEY`, then restart the `livekit` container.

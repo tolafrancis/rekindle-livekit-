@@ -24,7 +24,7 @@ route a carrier won't carry — the SFU has to live on a better-reachable networ
 **The client never hardcodes the LiveKit URL — it reads it from the `livekit-token`
 function's response.**
 
-- Server returns it: `supabase/livekit-token/index.ts` → `return json({ url: LIVEKIT_URL, token, role })`.
+- Server returns it: `supabase/functions/livekit-token/index.ts` → `return json({ url: LIVEKIT_URL, token, role })`.
 - Client uses it: `packages/live/src/useDailyRoom.ts` → `return { url: data.url, token: data.token }` → `wrapper.joinMeeting(roomInfo.url, …)`.
 
 So the entire platform points at whatever `LIVEKIT_URL` the edge functions use.
@@ -122,7 +122,7 @@ webhook (room/egress events land) → egress (a recording completes and its
 | **Client apps** | **None** for the URL swap — it's server-driven via the token response. |
 | **Supabase secrets** | Set 3 project secrets, shared by all `livekit-*` functions: `LIVEKIT_URL` (→ `wss://<you>.livekit.cloud`), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`. |
 | **Webhooks** | In the Cloud dashboard, register a webhook → your `livekit-webhook` function URL, signed with the same key/secret. (Self-host set this in `config.yaml`; Cloud sets it in project settings.) |
-| **Egress / Ingress** | `supabase/livekit-egress` & `supabase/livekit-ingress` use the same SDK and work against Cloud, but Cloud egress is a **separately billed** service — verify after cutover. |
+| **Egress / Ingress** | `supabase/functions/livekit-egress` & `supabase/functions/livekit-ingress` use the same SDK and work against Cloud, but Cloud egress is a **separately billed** service — verify after cutover. |
 | **Mux / Cloudflare** | Unchanged — independent of the SFU. |
 
 The five functions that read the LiveKit secrets: `livekit-token`, `livekit-moderation`,
