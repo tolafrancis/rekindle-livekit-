@@ -32,6 +32,10 @@ export interface MinistryCaps {
   rolePermissions: boolean;
   advancedAnalytics: boolean;
   prioritySupport: boolean;
+  /** Messenger/Instagram/website-chat channels in the Evangelism Inbox
+   * ("Ministry CRM" in plan marketing copy). WhatsApp is on every plan and
+   * isn't gated by this. */
+  crmChannels: boolean;
 }
 
 export interface MinistryEntitlements {
@@ -66,6 +70,7 @@ const NO_CAPS: MinistryCaps = {
   rolePermissions: false,
   advancedAnalytics: false,
   prioritySupport: false,
+  crmChannels: false,
 };
 
 export const FREE_ENTITLEMENTS: MinistryEntitlements = {
@@ -101,6 +106,10 @@ function capsFromSub(sub: any): MinistryCaps {
     recordMeetings: feat('recordMeetings', rank >= 2),
     broadcastMessaging: feat('broadcastMessaging', broadcastAllowed),
     manageTeam: feat('manageTeam', rank >= 2),
+    // "Full Ministry CRM suite on Growth Partner and above" per the plan
+    // copy (0258_ministry_tier_rebrand.sql) and the ministry_inbox_gate
+    // upgrade prompt — same rank threshold as manageTeam/recordMeetings.
+    crmChannels: feat('crmChannels', rank >= 2),
     // rank >= 4 = top tier only (ministry_plus) — was rank >= 3 back when there
     // were only 3 tiers; the 0258 rebrand added a 4th tier above ministry_partner.
     rolePermissions: feat('rolePermissions', rank >= 4),

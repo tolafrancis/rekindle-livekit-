@@ -10,6 +10,7 @@ import { Badge } from '@rekindle/ui/badge';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rekindle/ui/dialog';
 import EvangelismChannelsPanel from './EvangelismChannelsPanel';
+import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 import {
   MessageSquare, Send, Search, RefreshCw, Filter,
   Phone, Globe, Instagram, Facebook, Loader2, User,
@@ -102,6 +103,15 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
   const [searchQuery, setSearchQuery]     = useState('');
   const [channelFilter, setChannelFilter] = useState<Channel | 'all'>('all');
   const [statusFilter, setStatusFilter]   = useState<'open' | 'resolved' | 'archived' | 'all'>('open');
+  // Messenger/Instagram/website can never have messages for a ministry whose
+  // plan doesn't include them (see EvangelismChannelsPanel) — hide those
+  // filter options rather than offering a filter that's always empty.
+  const [crmChannelsAllowed, setCrmChannelsAllowed] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    getMinistryEntitlements(ministryId).then((e) => { if (!cancelled) setCrmChannelsAllowed(e.caps.crmChannels); });
+    return () => { cancelled = true; };
+  }, [ministryId]);
 
   // Thread state
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -387,7 +397,10 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
 
           {/* Channel filter */}
           <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-            {(['all', 'whatsapp', 'messenger', 'instagram', 'website'] as const).map(ch => (
+            {(crmChannelsAllowed
+              ? (['all', 'whatsapp', 'messenger', 'instagram', 'website'] as const)
+              : (['all', 'whatsapp'] as const)
+            ).map(ch => (
               <button
                 key={ch}
                 onClick={() => setChannelFilter(ch)}

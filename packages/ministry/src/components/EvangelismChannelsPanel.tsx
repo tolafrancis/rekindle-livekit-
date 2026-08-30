@@ -8,8 +8,9 @@ import { Badge } from '@rekindle/ui/badge';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
-  Plug, MessageCircle, Instagram, Globe, MessageSquare, Check, Loader2, Copy, CheckCheck, Facebook,
+  Plug, MessageCircle, Instagram, Globe, MessageSquare, Check, Loader2, Copy, CheckCheck, Facebook, Lock, Crown,
 } from 'lucide-react';
+import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 
 interface Props { ministryId: string; ministryName: string; isLeader: boolean; }
 
@@ -62,6 +63,16 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
     messenger: { pageId: '', token: '' },
     instagram: { pageId: '', token: '' },
   });
+  // Messenger/Instagram/website-chat = "Ministry CRM" in plan marketing copy,
+  // Growth Partner and above (WhatsApp above is never gated by this).
+  // Starts locked (false) until the real plan resolves, so there's no flash
+  // of unlocked UI before the check completes.
+  const [crmChannelsAllowed, setCrmChannelsAllowed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getMinistryEntitlements(ministryId).then((e) => { if (!cancelled) setCrmChannelsAllowed(e.caps.crmChannels); });
+    return () => { cancelled = true; };
+  }, [ministryId]);
 
   const loadStatus = async () => {
     setLoading(true);
@@ -260,6 +271,8 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
         <CardContent className="space-y-3">
           {!isLeader ? (
             <p className="text-sm text-gray-400">{t('evangelismChannelsPanel', 'onlyLeadersCanConnect', 'Only ministry leaders can connect channels.')}</p>
+          ) : !crmChannelsAllowed ? (
+            <CrmLockedNotice t={t} />
           ) : (
             <>
               <p className="text-sm text-gray-500">
@@ -307,7 +320,7 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
       </Card>
 
       {/* Manual fallback */}
-      {isLeader && showManual && (
+      {isLeader && crmChannelsAllowed && showManual && (
         <>
           {manualCard('messenger', 'Messenger', MessageCircle, 'text-blue-600')}
           {manualCard('instagram', 'Instagram', Instagram, 'text-pink-600')}
@@ -320,16 +333,41 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
           <CardTitle className="flex items-center gap-2 text-base"><Globe className="h-4 w-4 text-cyan-600" /> {t('evangelismChannelsPanel', 'websiteChatWidget', 'Website chat widget')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <p className="text-sm text-gray-500">{t('evangelismChannelsPanel', 'pasteWidgetBefore', 'Paste this on your site. It posts visitor messages into your inbox (call')} <code className="text-xs">rkSendMessage(text, name)</code> {t('evangelismChannelsPanel', 'pasteWidgetAfter', 'from your chat UI).')}</p>
-          <pre className="text-[11px] bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{widgetSnippet}</pre>
-          <Button size="sm" variant="outline" onClick={copyWidget}>
-            {copied ? <CheckCheck className="h-4 w-4 mr-1 text-green-600" /> : <Copy className="h-4 w-4 mr-1" />}
-            {copied ? t('evangelismChannelsPanel', 'copied', 'Copied') : t('evangelismChannelsPanel', 'copySnippet', 'Copy snippet')}
-          </Button>
+          {!crmChannelsAllowed ? (
+            <CrmLockedNotice t={t} />
+          ) : (
+            <>
+              <p className="text-sm text-gray-500">{t('evangelismChannelsPanel', 'pasteWidgetBefore', 'Paste this on your site. It posts visitor messages into your inbox (call')} <code className="text-xs">rkSendMessage(text, name)</code> {t('evangelismChannelsPanel', 'pasteWidgetAfter', 'from your chat UI).')}</p>
+              <pre className="text-[11px] bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{widgetSnippet}</pre>
+              <Button size="sm" variant="outline" onClick={copyWidget}>
+                {copied ? <CheckCheck className="h-4 w-4 mr-1 text-green-600" /> : <Copy className="h-4 w-4 mr-1" />}
+                {copied ? t('evangelismChannelsPanel', 'copied', 'Copied') : t('evangelismChannelsPanel', 'copySnippet', 'Copy snippet')}
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 };
+
+// Shown in place of the connect UI for the two "Ministry CRM" cards
+// (Messenger & Instagram, Website chat widget) when the ministry's plan
+// doesn't include crmChannels — visible-but-locked-with-CTA, not hidden,
+// matching the upgrade-prompt pattern fix 2 established elsewhere.
+const CrmLockedNotice: React.FC<{ t: (ns: string, key: string, fallback: string) => string }> = ({ t }) => (
+  <div className="flex items-start gap-3 rounded-lg border border-dashed border-purple-200 bg-purple-50/50 p-3">
+    <Lock className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />
+    <div>
+      <p className="text-sm font-medium text-purple-900 flex items-center gap-1.5">
+        <Crown className="h-3.5 w-3.5" />
+        {t('evangelismChannelsPanel', 'crmLockedTitle', 'Part of the Ministry CRM suite')}
+      </p>
+      <p className="text-xs text-purple-700 mt-0.5">
+        {t('evangelismChannelsPanel', 'crmLockedBody', 'Upgrade to Growth Partner or above to connect this channel. WhatsApp is available on every plan.')}
+      </p>
+    </div>
+  </div>
+);
 
 export default EvangelismChannelsPanel;
