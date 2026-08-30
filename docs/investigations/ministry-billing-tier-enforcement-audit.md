@@ -1,8 +1,8 @@
 # Ministry billing / tier enforcement audit
 
-**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, 3, and 5 are
-now implemented (see "Recommended fix order" below for exactly what shipped and
-what's still deferred within items 2 and 3). Items 4, 6, 7, 8 remain open.
+**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1, 2, 3, 4, and 5
+are now implemented (see "Recommended fix order" below for exactly what shipped and
+what's still deferred within items 2 and 3). Items 6, 7, 8 remain open.
 
 **Bottom line:** subscription-tier enforcement is almost entirely cosmetic. Payment
 collection and status tracking work end-to-end (Stripe/Paystack checkout → webhook →
@@ -167,8 +167,17 @@ check at all.
      has one confirmed, unambiguous nav entry point yet (branding lives in
      `MinistrySettingsManager.tsx`'s fields; analytics has no confirmed UI
      location).
-4. Add a real gate to `MinistryManagement.tsx`'s CRM-relevant tabs using #2's
-   resolved plan, not just `isLeader`.
+4. ✅ **Done, rescoped** — "Ministry CRM" turned out to have a precise spec
+   already written: `useUpgradePrompt.ts`'s `ministry_inbox_gate` copy says it's
+   specifically the Evangelism Inbox's Messenger/Instagram/website-chat channels
+   (Growth Partner+), with WhatsApp explicitly called out as available on every
+   plan. Not a whole tab to hide — a Starter ministry still needs the Inbox tab
+   for WhatsApp. New `MinistryCaps.crmChannels` cap (same `rank >= 2` threshold
+   as `manageTeam`/`recordMeetings`); `EvangelismChannelsPanel.tsx`'s Messenger &
+   Instagram and Website widget cards now show a locked/upgrade notice instead
+   of their connect UI when the plan lacks it; `EvangelismInbox.tsx`'s channel
+   filter hides those channels too. Members/Volunteers management left
+   untouched — no product-copy evidence anywhere that those are plan-gated.
 5. ✅ **Done** (as part of #2) — `MinistrySpace.tsx`'s broken
    `entitlements.can_customize_dashboard`/`can_use_ministry_branding` property read
    removed; branding/white-label now come from `ministryEntitlements.caps` instead.
