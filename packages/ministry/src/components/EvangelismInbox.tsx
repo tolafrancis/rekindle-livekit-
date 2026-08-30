@@ -240,14 +240,14 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
         .update({ last_message_at: new Date().toISOString(), last_message_preview: `You: ${body.slice(0, 60)}` })
         .eq('id', selectedContact.id);
 
-      // 3. Route to actual channel via edge function
+      // 3. Route to actual channel via edge function. channel/externalId are
+      // no longer sent — the function looks those up itself from contactId
+      // (scoped to ministryId) rather than trusting the client's copy.
       await supabase.functions.invoke('evangelism-send-message', {
         body: {
           ministryId,
-          contactId:  selectedContact.id,
-          channel:    selectedContact.channel,
-          externalId: selectedContact.external_id,
-          message:    body,
+          contactId: selectedContact.id,
+          message:   body,
         },
       });
 

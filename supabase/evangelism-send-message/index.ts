@@ -2,6 +2,12 @@
 // Routes an outbound reply from the inbox to the correct channel.
 // Deploy: supabase functions deploy evangelism-send-message
 //
+// Caller must be a leader/admin/owner of ministryId (checked via
+// is_group_admin, same gate send-ministry-sms-broadcast uses for the
+// equivalent "message on behalf of a ministry" action) — previously this
+// function trusted whatever ministryId/contactId came in the raw POST
+// body with no identity check at all.
+//
 // Required secrets:
 //   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
 //   META_PAGE_ACCESS_TOKEN    (Facebook Messenger)
@@ -46,16 +52,54 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
-    const { ministryId, contactId, channel, externalId, message } = await req.json();
-    if (!ministryId || !contactId || !channel || !externalId || !message) {
+    const { ministryId, contactId, message } = await req.json();
+    if (!ministryId || !contactId || !message) {
       return json({ error: 'Missing required fields' }, 400);
     }
 
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    // Resolve the caller's identity from the forwarded Authorization header
+    // (supabase.functions.invoke() already sends this from the client SDK —
+    // it just wasn't being checked). An anon-key client is required here;
+    // getUser() only validates a JWT against the anon/authenticated context,
+    // not the service-role one.
+    const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+    });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) return json({ error: 'Unauthorized' }, 401);
+
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
+
+    // Must be a leader/admin/owner of ministryId — not just any authenticated
+    // user — since this sends a real outbound message through the ministry's
+    // own connected WhatsApp/Messenger/Instagram channel.
+    const { data: isAdmin } = await supabase.rpc('is_group_admin', { p_ministry_id: ministryId, p_user_id: user.id });
+    if (!isAdmin) return json({ error: 'Not authorized to message on behalf of this ministry' }, 403);
+
+    // Re-derive WHO this is actually going to from the contact row itself,
+    // scoped to ministryId — never trust a client-supplied channel/externalId
+    // pair. Without this, an admin legitimately authorized for ministryId
+    // could still direct a message at an arbitrary phone number/handle (not
+    // even a real contact of theirs) or at a contactId belonging to a
+    // DIFFERENT ministry, since is_group_admin only proves they administer
+    // ministryId, not that contactId/externalId have anything to do with it.
+    const { data: contact, error: contactErr } = await supabase
+      .from('ministry_evangelism_contacts')
+      .select('channel, external_id')
+      .eq('id', contactId)
+      .eq('ministry_id', ministryId)
+      .maybeSingle();
+    if (contactErr) return json({ error: contactErr.message }, 500);
+    if (!contact) return json({ error: 'Contact not found for this ministry' }, 404);
+    const { channel, external_id: externalId } = contact;
 
     const encKey = Deno.env.get('ENCRYPTION_KEY') ?? '';
 
