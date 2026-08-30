@@ -1,8 +1,12 @@
 # Ministry billing / tier enforcement audit
 
-**Status:** Diagnostic audit performed 2026-08-30. Fix order items 1-7 are now
-implemented (see "Recommended fix order" below for exactly what shipped and what's
-still deferred within items 2, 3, and 6). Item 8 remains open.
+**Status:** Diagnostic audit performed 2026-08-30. **All 8 fix-order items are now
+implemented** (see "Recommended fix order" below for exactly what shipped and what's
+still deferred within items 2, 3, and 6 — those deferrals are real, deliberate
+scope cuts, not oversights, each with its own stated reason). Every item required
+either a manual Supabase Dashboard step (a migration paste, a redeploy, a `pg_cron`
+schedule) that this session cannot perform directly — see each item below for
+exactly which action is still outstanding on the user's side.
 
 **Bottom line:** subscription-tier enforcement is almost entirely cosmetic. Payment
 collection and status tracking work end-to-end (Stripe/Paystack checkout → webhook →
@@ -210,6 +214,32 @@ check at all.
    redeploy `livekit-webhook` and `livekit-ingress` from `supabase/functions/` if
    they haven't been recently — production may still be serving the stale code.
    Full detail in `docs/production-secrets-and-infra-todo.md`'s "two layouts" note.
-8. Add a periodic reconciliation job for `ministry_subscriptions.status` vs.
-   `current_period_end`, so a missed webhook doesn't leave a lapsed ministry
-   indefinitely active.
+8. ✅ **Done** — deliberately not calling out to Stripe/Paystack's API to verify
+   (real added complexity — per-provider credentials, rate limiting — for a
+   narrower problem than it solves). Instead a conservative, self-healing daily
+   sweep: `public.reconcile_ministry_subscriptions()`
+   (`supabase/migrations/0298_reconcile_ministry_subscriptions.sql`) demotes any
+   `active` subscription whose `current_period_end` is more than 3 days past to
+   `past_due` — the same state a real `invoice.payment_failed` webhook already
+   sets, so it's correctly excluded from `ACTIVE_STATES` but not `cancelled`;
+   fully self-healing once a delayed-but-real webhook eventually arrives and
+   overwrites it back. Every demotion gets a `ministry_audit_logs` row. No new
+   edge function needed — pure SQL, scheduled directly via `pg_cron` (unlike
+   every other job in `docs/edge-functions-and-cron.md`, none of which touch
+   external providers). **Action needed**: paste the migration, confirm
+   `pg_cron` is enabled, test the function by hand once, then run its scheduling
+   block — full step-by-step in `docs/edge-functions-and-cron.md`'s new PENDING
+   section.
+
+## Summary of what still needs manual action on your side
+
+None of this session's fixes could be applied to the live system directly (no
+working Supabase CLI/access token this whole project — migrations and Edge
+Function deploys are pasted by hand in the Dashboard, confirmed in
+`supabase/config.toml`). Outstanding:
+- Paste migrations `0295`–`0298` (translation services RLS, Ministry Rules,
+  member-limit trigger, subscription reconciliation) if not already done.
+- Redeploy `evangelism-send-message` and `evangelism-save-channel` (fixes 1 and 6).
+- Redeploy `livekit-webhook` and `livekit-ingress` if not done recently (fix 7) —
+  production may be serving stale code until this happens.
+- Confirm `pg_cron` is enabled, then run fix 8's scheduling block.
