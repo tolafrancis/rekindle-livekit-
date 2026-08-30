@@ -13,6 +13,11 @@ interface SessionInfo {
   source_language: string;
   target_language: string;
   status: string;
+  service_id: string | null;
+  // PostgREST embeds the FK target as an object (service_id -> id, a
+  // to-one relationship), not an array — see migration 0295 for why an
+  // anon /display visitor is now allowed to read this at all.
+  translation_services: { name: string } | null;
 }
 
 /** translation-listener-token's 200 response. */
@@ -112,10 +117,20 @@ export const TranslationDisplayPage: React.FC = () => {
   const fetchSession = async (): Promise<SessionInfo | null> => {
     const { data } = await supabase
       .from('translation_sessions')
-      .select('id, source_language, target_language, status')
+      .select('id, source_language, target_language, status, service_id, translation_services(name)')
       .eq('id', sessionId)
       .maybeSingle();
-    return data as SessionInfo | null;
+    if (!data) return null;
+    // The untyped generic SupabaseClient here infers every embedded
+    // to-one relation as an array (no generated Database types for this
+    // table), but PostgREST actually returns a single object at runtime
+    // for a many-to-one FK like service_id -> translation_services.id —
+    // normalize defensively rather than fighting the inferred type.
+    const raw = data as unknown as Omit<SessionInfo, 'translation_services'> & {
+      translation_services: { name: string } | { name: string }[] | null;
+    };
+    const svc = Array.isArray(raw.translation_services) ? (raw.translation_services[0] ?? null) : raw.translation_services;
+    return { ...raw, translation_services: svc };
   };
 
   useEffect(() => {
@@ -164,8 +179,11 @@ export const TranslationDisplayPage: React.FC = () => {
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
         (payload) => {
-          const row = payload.new as SessionInfo;
-          setSession(row);
+          // Realtime's payload.new is the flat table row — no
+          // translation_services join like the initial fetchSession() had,
+          // so merge onto what's already loaded rather than clobbering it.
+          const row = payload.new as Omit<SessionInfo, 'translation_services'>;
+          setSession(prev => ({ ...row, translation_services: prev?.translation_services ?? null }));
           if (row.status === 'ended') setConnStatus('ended');
         })
       .subscribe((status) => {
@@ -387,27 +405,67 @@ export const TranslationDisplayPage: React.FC = () => {
     );
   }
 
+  // Ended sessions hide immediately (explicit product decision) — a link
+  // that's over stops looking like a live page at all rather than sitting
+  // around in the "This session has ended" chrome indefinitely.
+  if (session && session.status === 'ended') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+        <Card className="max-w-sm w-full bg-white/5 border-white/10">
+          <CardContent className="py-8 text-center space-y-2">
+            <Radio className="h-8 w-8 mx-auto text-white/30" />
+            <p className="text-sm font-medium text-white">This link is no longer available</p>
+            <p className="text-sm text-white/50">
+              This translation session has ended. Ask your ministry for a new link if there's another one starting.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const statusDot = connStatus === 'live' ? 'bg-emerald-500' : connStatus === 'ended' ? 'bg-slate-500' : 'bg-amber-500';
   const visibleLines = presenterMode ? lines.slice(-1) : lines;
   const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors';
 
   return (
-    // h-screen/h-[100dvh] — a FIXED height, not min-h's minimum — so flexbox
-    // actually reserves the footer's space and it's always on-screen without
-    // scrolling. Real bug found live (round 2): min-h-[100dvh] alone fixed
-    // the *calculation* (mobile browsers' collapsing address-bar chrome
-    // otherwise makes 100vh taller than the true visible area) but a MINIMUM
-    // height still lets the div grow past one screen and push the footer
-    // below the fold — user still had to scroll to find "Listen". Fixed
-    // height + overflow-y-auto on <main> below means any content that
-    // doesn't fit scrolls internally instead, and the footer stays pinned.
-    <div className="h-screen h-[100dvh] bg-slate-950 text-white flex flex-col overflow-hidden">
+    // FIXED height, not min-h's minimum — so flexbox actually reserves the
+    // footer's space and it's always on-screen without scrolling. Real bug
+    // found live (round 2): min-h-[100dvh] alone fixed the *calculation*
+    // (mobile browsers' collapsing address-bar chrome otherwise makes 100vh
+    // taller than the true visible area) but a MINIMUM height still lets
+    // the div grow past one screen and push the footer below the fold —
+    // user still had to scroll to find "Listen". Fixed height +
+    // overflow-y-auto on <main> below means any content that doesn't fit
+    // scrolls internally instead, and the footer stays pinned.
+    //
+    // Round 3 (real bug found live again): the round-2 fix used BOTH
+    // `h-screen` (100vh) and `h-[100dvh]` as Tailwind classes and relied on
+    // dvh "winning" by cascade order — but Tailwind's compiled stylesheet
+    // doesn't order utilities by where they appear in className, and in the
+    // actual production build `.h-screen{height:100vh}` landed AFTER
+    // `.h-[100dvh]{...}` in the CSS file, so the 100vh rule silently won on
+    // every real mobile browser and this "fix" never once took effect.
+    // Inline style always outranks any class regardless of stylesheet
+    // order, so it's used here instead — dvh-supporting browsers get the
+    // correct height; a browser too old to parse the `dvh` unit just
+    // ignores that one invalid declaration and falls back to the
+    // `h-screen` class's 100vh, same graceful-degradation shape as before.
+    <div className="h-screen bg-slate-950 text-white flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {!presenterMode && (
-        <header className="flex items-center gap-1 px-4 py-3 border-b border-white/10">
+        <header className="flex items-center gap-1 px-4 py-2.5 border-b border-white/10">
           <Radio className="h-4 w-4 text-indigo-400 shrink-0" />
-          <span className="text-sm font-medium mr-auto truncate">
-            {session ? `${session.target_language.toUpperCase()} Translation` : 'Translation'}
-          </span>
+          {/* Service name (migration 0295) takes the top billing when the
+              session came from a named service — falls back to the old
+              "{lang} Translation" title for sessions with none. */}
+          <div className="mr-auto min-w-0 leading-tight">
+            <p className="text-sm font-medium truncate">
+              {session?.translation_services?.name || (session ? `${session.target_language.toUpperCase()} Translation` : 'Translation')}
+            </p>
+            {session?.translation_services?.name && (
+              <p className="text-[11px] text-white/40 truncate">{session.target_language.toUpperCase()} Translation</p>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setFontSize(prev => FONT_SIZE_CYCLE[(FONT_SIZE_CYCLE.indexOf(prev) + 1) % FONT_SIZE_CYCLE.length])}
@@ -449,9 +507,9 @@ export const TranslationDisplayPage: React.FC = () => {
 
       <main className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}>
         {visibleLines.length === 0 ? (
-          <p className="text-center text-white/50 text-lg">
-            {session?.status === 'ended' ? 'This session has ended.' : 'Translation starting…'}
-          </p>
+          // session.status === 'ended' never reaches here — the early
+          // return above swaps to the "no longer available" page first.
+          <p className="text-center text-white/50 text-lg">Translation starting…</p>
         ) : (
           visibleLines.map(line => (
             <div key={line.id} className={presenterMode ? '' : 'w-full'}>
@@ -466,7 +524,8 @@ export const TranslationDisplayPage: React.FC = () => {
         )}
       </main>
 
-      {!presenterMode && session && session.status !== 'ended' && session.status !== 'error' && (
+      {/* session.status === 'ended' never reaches here, same as above. */}
+      {!presenterMode && session && session.status !== 'error' && (
         <footer className="border-t border-white/10 px-4 py-3">
           {audioStatus === 'live' && needsUnlock && (
             <Button

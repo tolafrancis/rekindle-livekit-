@@ -36,6 +36,16 @@ interface ServiceRow {
   created_at: string;
 }
 
+// Named Speaker Links (see createSpeakerLink) now attach a service_id, so
+// their 'browser_speaker' rows can land in this same per-service list, not
+// just the standalone "Speaker Links" card below — needs its own label,
+// same as the other two source_types already had.
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  livekit_room: 'LiveKit Room',
+  pa_mixer: 'PA Mixer',
+  browser_speaker: 'Speaker Link',
+};
+
 const STATUS_VARIANT: Record<string, BadgeProps['variant']> = {
   initialising: 'secondary',
   joining: 'warning',
@@ -65,11 +75,17 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // listener link. One language pair per link, by design — see that
   // migration's header comment.
   const [showSpeaker, setShowSpeaker] = useState(false);
+  const [speakerServiceName, setSpeakerServiceName] = useState('');
   const [speakerLanguage, setSpeakerLanguage] = useState('');
   const [creatingSpeaker, setCreatingSpeaker] = useState(false);
   // The raw speaker token only ever exists in the RPC's response — shown
   // once here, same discipline as the device-registration dialog's raw key.
   const [newSpeakerLink, setNewSpeakerLink] = useState<{ speakerLink: string; listenerLink: string } | null>(null);
+  // The translation_services row created alongside the speaker session —
+  // gives this flow a name and, via landingUrlFor below, the same Broadcast
+  // mode (QR overlay / copy / share) the multi-language "Start Service"
+  // cards already have.
+  const [newSpeakerService, setNewSpeakerService] = useState<{ id: string; name: string } | null>(null);
 
   // Broadcast Companion Link (build plan §2.6) — "Broadcast mode" is UI-only,
   // not persisted. It doesn't change anything about the service itself; it
@@ -178,19 +194,33 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   };
 
   const openSpeakerDialog = () => {
+    setSpeakerServiceName('');
     setSpeakerLanguage(supportedLanguages[0] || '');
     setNewSpeakerLink(null);
+    setNewSpeakerService(null);
     setShowSpeaker(true);
   };
 
   const createSpeakerLink = async () => {
-    if (!speakerLanguage) return;
+    if (!speakerLanguage || !speakerServiceName.trim()) return;
     setCreatingSpeaker(true);
     try {
+      // A named translation_services row, same as multi-language "Start
+      // Service" — unlocks Broadcast mode (QR/copy/share, via
+      // landingUrlFor) for this speaker link too, and gives /display
+      // something to show at the top besides the bare target language.
+      const { data: service, error: svcErr } = await supabase
+        .from('translation_services')
+        .insert({ ministry_id: ministryId, name: speakerServiceName.trim(), started_at: new Date().toISOString() })
+        .select('id, name')
+        .single();
+      if (svcErr) throw svcErr;
+
       const { data, error } = await supabase.rpc('start_speaker_session', {
         p_ministry_id: ministryId,
         p_source_language: sourceLanguage,
         p_target_language: speakerLanguage,
+        p_service_id: service.id,
       });
       if (error) throw error;
       const { session_id, speaker_token } = data as { session_id: string; speaker_token: string };
@@ -198,6 +228,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         speakerLink: `${window.location.origin}/speak/${session_id}?t=${speaker_token}`,
         listenerLink: `${window.location.origin}/display/${session_id}`,
       });
+      setNewSpeakerService({ id: service.id, name: service.name });
       load();
     } catch (err: any) {
       console.error('[MinistryTranslationServiceManager] speaker link creation failed:', err);
@@ -255,9 +286,12 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // Landing page (not a single language's /display link) — viewers self-select
   // their language after scanning, same URL the service-level QR always uses.
   // Shared by the QR/copy/share actions below so all three always agree.
-  const landingUrlFor = (service: ServiceRow) => `${window.location.origin}/display?service_id=${service.id}`;
+  // Takes {id, name} rather than the full ServiceRow so the Speaker Link
+  // flow's result screen (which only ever has those two fields) can reuse
+  // these too, not just the multi-language "Start Service" cards.
+  const landingUrlFor = (service: { id: string; name: string }) => `${window.location.origin}/display?service_id=${service.id}`;
 
-  const downloadQrOverlay = async (service: ServiceRow) => {
+  const downloadQrOverlay = async (service: { id: string; name: string }) => {
     setGeneratingQrFor(service.id);
     try {
       const pngDataUrl = await generateBroadcastOverlayPng(landingUrlFor(service));
@@ -273,7 +307,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     }
   };
 
-  const copyBroadcastLink = (service: ServiceRow) => {
+  const copyBroadcastLink = (service: { id: string; name: string }) => {
     const url = landingUrlFor(service);
     navigator.clipboard.writeText(url).then(
       () => toast({ title: 'Broadcast link copied' }),
@@ -285,7 +319,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // social-network integration. Falls back to copy on desktop browsers that
   // don't implement it (Firefox/most desktop Chrome) rather than showing a
   // dead button.
-  const shareBroadcastLink = async (service: ServiceRow) => {
+  const shareBroadcastLink = async (service: { id: string; name: string }) => {
     const url = landingUrlFor(service);
     if (navigator.share) {
       try {
@@ -448,7 +482,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                       {session.source_language.toUpperCase()} → {session.target_language.toUpperCase()}
                     </span>
                     <Badge variant="outline" className="hidden sm:inline-flex">
-                      {session.source_type === 'livekit_room' ? 'LiveKit Room' : 'PA Mixer'}
+                      {SOURCE_TYPE_LABEL[session.source_type] || session.source_type}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -523,7 +557,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSpeaker} onOpenChange={(open) => { setShowSpeaker(open); if (!open) setNewSpeakerLink(null); }}>
+      <Dialog open={showSpeaker} onOpenChange={(open) => { setShowSpeaker(open); if (!open) { setNewSpeakerLink(null); setNewSpeakerService(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Create a Speaker Link</DialogTitle>
@@ -534,6 +568,17 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                 A link a speaker opens in any browser to publish their mic straight into a translated session — no
                 Meeting, no installed software. One target language per link; create another for a second language.
               </p>
+              <div className="space-y-1.5">
+                <Label>Service name</Label>
+                <Input
+                  value={speakerServiceName}
+                  onChange={e => setSpeakerServiceName(e.target.value)}
+                  placeholder="e.g. Sunday Service, Community Talk, Bible Study"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shown at the top of the listener page, and used for the Broadcast mode QR/link below.
+                </p>
+              </div>
               <div className="space-y-1.5">
                 <Label>Target language ({sourceLanguage.toUpperCase()} → )</Label>
                 <Select value={speakerLanguage} onValueChange={setSpeakerLanguage}>
@@ -573,13 +618,45 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                   </Button>
                 </div>
               </div>
+              {newSpeakerService && (
+                <div className="flex items-start gap-3 rounded-lg border border-dashed p-3 bg-muted/30">
+                  {qrPreview[newSpeakerService.id] && (
+                    <img
+                      src={qrPreview[newSpeakerService.id]}
+                      alt="Broadcast QR overlay preview"
+                      className="h-16 rounded border shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 space-y-1.5 min-w-0">
+                    <p className="text-xs font-medium flex items-center gap-1.5"><Cast className="h-3.5 w-3.5" /> Broadcast mode</p>
+                    <p className="text-xs text-muted-foreground">
+                      For projecting or printing a QR code, or sharing a link so anyone can open the listener page
+                      on their own phone.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => downloadQrOverlay(newSpeakerService)} disabled={generatingQrFor === newSpeakerService.id}>
+                        {generatingQrFor === newSpeakerService.id ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5 mr-1.5" />}
+                        Download QR overlay
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => copyBroadcastLink(newSpeakerService)}>
+                        <Copy className="h-3.5 w-3.5 mr-1.5" />
+                        Copy link
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => shareBroadcastLink(newSpeakerService)}>
+                        <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                        Share
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
             {!newSpeakerLink ? (
               <>
                 <Button variant="outline" onClick={() => setShowSpeaker(false)}>Cancel</Button>
-                <Button onClick={createSpeakerLink} disabled={creatingSpeaker || !speakerLanguage}>
+                <Button onClick={createSpeakerLink} disabled={creatingSpeaker || !speakerLanguage || !speakerServiceName.trim()}>
                   {creatingSpeaker ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                   Create Speaker Link
                 </Button>
