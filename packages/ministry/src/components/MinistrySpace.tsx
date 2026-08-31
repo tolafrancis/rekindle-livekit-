@@ -24,7 +24,7 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -52,6 +52,8 @@ import { MLiveChannel } from './MLiveChannel';
 import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
+import { DiscoverSmallGroups } from './DiscoverSmallGroups';
+import { MySmallGroups } from './MySmallGroups';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
@@ -762,6 +764,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const navLabel = (tab: { id: string; label: string }) =>
     t('ministrySpace', `nav_${tab.id}`, tab.label);
 
+  // Per-ministry module toggle (ministry_groups.settings.modules); unknown keys default on.
+  // (Moved above GROUPS, which references it, from its previous spot further down.)
+  const moduleOn = (key: string): boolean => {
+    const m = (ministry.settings as any)?.modules;
+    return m && typeof m === 'object' && key in m ? !!m[key] : true;
+  };
+
   // ── Two-level grouped navigation (mirrors the consumer app) ──
   type NavChild = { id: string; label: string; icon: any };
   type NavGroup = { id: string; label: string; icon: any; gradient: string; children?: NavChild[] };
@@ -785,6 +794,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'qa', label: 'Q&A', icon: HelpCircle },
       { id: 'challenges', label: 'Challenges', icon: Trophy },
     ] },
+    ...(moduleOn('smallGroups') ? [{ id: 'groups', label: 'Small Groups', icon: Users, gradient: 'from-cyan-500 to-blue-600', children: [
+      { id: 'discover-groups', label: 'Discover', icon: Search },
+      { id: 'my-groups', label: 'My Groups', icon: Users },
+    ] }] : []),
     // Gated by the ministry's plan (ministryEntitlements.caps, fix 2) — not
     // just role, unlike most of the 'admin' group's children below. Hidden
     // rather than shown-disabled, matching how canManageMinistry-gated
@@ -823,12 +836,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const isChildActive = (g: NavGroup, childId: string) =>
     ownsSubtab(g.id) ? activeTab === g.id && SUBTAB[g.id].value === childId : activeTab === childId;
   const isGroupActive = (g: NavGroup) => activeGroup.id === g.id;
-
-  // Per-ministry module toggle (ministry_groups.settings.modules); unknown keys default on.
-  const moduleOn = (key: string): boolean => {
-    const m = (ministry.settings as any)?.modules;
-    return m && typeof m === 'object' && key in m ? !!m[key] : true;
-  };
 
   // Deterministic daily pick: prefer is_daily rows, rotate by day so it varies.
   const pickDaily = (list: any[]): any | null => {
@@ -2439,6 +2446,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             isLeader={membership?.is_leader || false}
             themeColor={themeColor}
           />
+        )}
+
+        {/* Small Groups — Discover Tab */}
+        {activeTab === 'discover-groups' && (
+          <DiscoverSmallGroups ministryId={ministry.id} />
+        )}
+
+        {/* Small Groups — My Groups Tab */}
+        {activeTab === 'my-groups' && (
+          <MySmallGroups ministryId={ministry.id} />
         )}
 
         {/* Prayer Library Tab */}
