@@ -1,9 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import electron from "vite-plugin-electron";
+import renderer from "vite-plugin-electron-renderer";
 
 // Ministry app — thin shell over the shared @rekindle/* workspace packages.
-export default defineConfig(() => ({
+//
+// The `electron` plugins below are gated behind `mode === 'electron'` (only
+// `vite build --mode electron`, used by the `build:electron`/`dist:win`
+// scripts) — the plain web build and the Capacitor Android build both call
+// `vite build` with no mode flag and are unaffected.
+export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8081, // rekindle uses 8080
@@ -14,7 +21,23 @@ export default defineConfig(() => ({
     // Dev-only (this `server` block doesn't apply to `vite build`).
     allowedHosts: [".trycloudflare.com"],
   },
-  plugins: [react()],
+  plugins: [
+    react(),
+    ...(mode === 'electron' ? [
+      electron([
+        {
+          entry: 'electron/main.ts',
+          vite: { build: { outDir: 'dist-electron', rollupOptions: { external: ['electron'] } } },
+        },
+        {
+          entry: 'electron/preload.ts',
+          onstart(options) { options.reload(); },
+          vite: { build: { outDir: 'dist-electron', rollupOptions: { external: ['electron'] } } },
+        },
+      ]),
+      renderer(),
+    ] : []),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

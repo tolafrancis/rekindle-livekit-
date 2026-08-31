@@ -10,10 +10,18 @@ import { Label } from '@rekindle/ui/label';
 import { Switch } from '@rekindle/ui/switch';
 import { Progress } from '@rekindle/ui/progress';
 import { Badge } from '@rekindle/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { toast } from '@rekindle/ui/use-toast';
 import {
   Loader2, Save, Plus, Trash2, User, Users, Phone, Heart, Bell, ShieldCheck, Baby,
+  LogOut, AlertTriangle,
 } from 'lucide-react';
+
+// Same address PrivacyPolicy.tsx's §7 "Your Rights" points members to for
+// requests this self-service flow deliberately doesn't cover (financial/Gift
+// Aid records — see delete_my_ministry_data in
+// 0333_leave_ministry_delete_data.sql for why).
+const PRIVACY_EMAIL = 'privacy@rekindlebc.com';
 
 const DECLARATION_VERSION = '1.0';
 const CONSENT_LABEL: Record<string, string> = {
@@ -37,6 +45,18 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
   const [interests, setInterests] = useState<any[]>([]);
   const [prefs, setPrefs] = useState<any>(null);
   const [consents, setConsents] = useState<any[]>([]);
+  const [isOwner, setIsOwner] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [deletingData, setDeletingData] = useState(false);
+  // Delete My Data now schedules a 30-day grace period instead of deleting
+  // instantly (0334_deletion_grace_period_admin_notify.sql) — this tracks
+  // whether the member already has one in flight, so the Danger Zone can
+  // show a "scheduled for <date>, cancel anytime" banner instead of the
+  // delete button.
+  const [pendingDeletion, setPendingDeletion] = useState<{ scheduledFor: string } | null>(null);
+  const [cancelingDeletion, setCancelingDeletion] = useState(false);
 
   const load = async () => {
     if (!user || !slug) { setLoading(false); return; }
@@ -46,6 +66,17 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
       const m = Array.isArray(mv) ? mv[0] : mv;
       setMinistry(m);
       if (!m || m.code_status === 'not_found') { setLoading(false); return; }
+
+      // validate_join's return shape doesn't include owner_id — fetched
+      // separately just to hide the Leave/Delete actions for the ministry's
+      // owner client-side. The real enforcement is server-side in
+      // leave_ministry()/delete_my_ministry_data() regardless.
+      supabase.from('ministry_groups').select('owner_id').eq('id', m.ministry_id).maybeSingle()
+        .then(({ data }) => setIsOwner(!!data?.owner_id && data.owner_id === user.id));
+
+      supabase.from('member_deletion_requests').select('scheduled_for')
+        .eq('ministry_id', m.ministry_id).eq('user_id', user.id).eq('status', 'pending').maybeSingle()
+        .then(({ data }) => setPendingDeletion(data ? { scheduledFor: data.scheduled_for } : null));
 
       const { data: prof } = await supabase
         .from('ministry_member_profiles').select('*')
@@ -137,6 +168,65 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
     await supabase.from('member_registration_audit').insert({ ministry_id: ministry.ministry_id, user_id: user?.id, profile_id: pid, event_type: 'consent_withdrawn', metadata: { consent_type: type } }).then(() => {}, () => {});
     toast({ title: t('memberMinistryProfile', 'consentWithdrawn', 'Consent withdrawn'), description: CONSENT_LABEL[type] || type });
     load();
+  };
+
+  // Danger Zone — leaving keeps your history (donations, past prayer
+  // requests/testimonies) intact; deleting your data removes/anonymizes it.
+  // Both are RPCs (leave_ministry / delete_my_ministry_data,
+  // 0333_leave_ministry_delete_data.sql) so the actual cross-table cleanup
+  // happens server-side, auth.uid()-scoped, not trusted to the client.
+  const handleLeave = async () => {
+    if (!ministry) return;
+    setLeaving(true);
+    try {
+      const { error } = await supabase.rpc('leave_ministry', { p_ministry_id: ministry.ministry_id });
+      if (error) throw error;
+      toast({ title: t('memberMinistryProfile', 'leftMinistry', 'You\'ve left {name}').replace('{name}', String(ministry.name)) });
+      window.location.href = '/';
+    } catch (e: any) {
+      toast({ title: t('memberMinistryProfile', 'error', 'Error'), description: e.message, variant: 'destructive' });
+      setLeaving(false);
+      setShowLeaveConfirm(false);
+    }
+  };
+
+  // Schedules deletion (30-day grace period) rather than deleting instantly
+  // — see request_data_deletion() in 0334_deletion_grace_period_admin_notify.sql.
+  // Stays on the page afterward (no redirect) so the member sees the
+  // scheduled date and the option to cancel.
+  const handleDeleteData = async () => {
+    if (!ministry) return;
+    setDeletingData(true);
+    try {
+      const { data, error } = await supabase.rpc('request_data_deletion', { p_ministry_id: ministry.ministry_id });
+      if (error) throw error;
+      setPendingDeletion({ scheduledFor: data as string });
+      setShowDeleteConfirm(false);
+      toast({
+        title: t('memberMinistryProfile', 'deletionRequested', 'Deletion scheduled'),
+        description: t('memberMinistryProfile', 'deletionRequestedDesc', 'Your data will be deleted on {date}. You can cancel anytime before then.')
+          .replace('{date}', new Date(data as string).toLocaleDateString()),
+      });
+    } catch (e: any) {
+      toast({ title: t('memberMinistryProfile', 'error', 'Error'), description: e.message, variant: 'destructive' });
+    } finally {
+      setDeletingData(false);
+    }
+  };
+
+  const handleCancelDeletion = async () => {
+    if (!ministry) return;
+    setCancelingDeletion(true);
+    try {
+      const { error } = await supabase.rpc('cancel_data_deletion_request', { p_ministry_id: ministry.ministry_id });
+      if (error) throw error;
+      setPendingDeletion(null);
+      toast({ title: t('memberMinistryProfile', 'deletionCancelled', 'Deletion request cancelled') });
+    } catch (e: any) {
+      toast({ title: t('memberMinistryProfile', 'error', 'Error'), description: e.message, variant: 'destructive' });
+    } finally {
+      setCancelingDeletion(false);
+    }
   };
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-purple-600" /></div>;
@@ -334,6 +424,108 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
           {consents.length === 0 && <p className="text-sm text-gray-400">{t('memberMinistryProfile', 'noConsentRecords', 'No consent records.')}</p>}
         </CardContent>
       </Card>
+
+      {/* Danger Zone */}
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base text-destructive">
+            <AlertTriangle className="h-4 w-4" /> {t('memberMinistryProfile', 'dangerZone', 'Danger Zone')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isOwner ? (
+            <p className="text-sm text-gray-500">
+              {t('memberMinistryProfile', 'ownerCannotLeave', 'You\'re the owner of {name} — transfer ownership to another leader before you can leave or delete your data.').replace('{name}', String(ministry.name))}
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-3 border rounded-lg p-3">
+                <div>
+                  <p className="text-sm font-medium">{t('memberMinistryProfile', 'leaveMinistry', 'Leave {name}').replace('{name}', String(ministry.name))}</p>
+                  <p className="text-xs text-gray-400">{t('memberMinistryProfile', 'leaveMinistryDesc', 'You\'ll lose access, but your history (donations, prayer requests, testimonies) stays as-is.')}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setShowLeaveConfirm(true)}>
+                  <LogOut className="h-4 w-4 mr-1" /> {t('memberMinistryProfile', 'leave', 'Leave')}
+                </Button>
+              </div>
+              {pendingDeletion ? (
+                <div className="flex items-center justify-between gap-3 border border-amber-300 bg-amber-50 rounded-lg p-3">
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">
+                      {t('memberMinistryProfile', 'deletionScheduledBanner', 'Deletion scheduled for {date}').replace('{date}', new Date(pendingDeletion.scheduledFor).toLocaleDateString())}
+                    </p>
+                    <p className="text-xs text-amber-700">{t('memberMinistryProfile', 'deletionScheduledDesc', 'You can cancel anytime before then.')}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleCancelDeletion} disabled={cancelingDeletion}>
+                    {cancelingDeletion ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                    {t('memberMinistryProfile', 'cancelDeletionRequest', 'Cancel request')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 border rounded-lg p-3">
+                  <div>
+                    <p className="text-sm font-medium">{t('memberMinistryProfile', 'deleteMyData', 'Delete my data')}</p>
+                    <p className="text-xs text-gray-400">{t('memberMinistryProfile', 'deleteMyDataDesc', 'Removes your profile and personal details; your own posts stay but are no longer linked to you.')}</p>
+                  </div>
+                  <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+                    <Trash2 className="h-4 w-4 mr-1" /> {t('memberMinistryProfile', 'deleteData', 'Delete Data')}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Leave confirmation */}
+      <Dialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('memberMinistryProfile', 'leaveConfirmTitle', 'Leave {name}?').replace('{name}', String(ministry?.name))}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {t('memberMinistryProfile', 'leaveConfirmBody', 'You\'ll be removed from the member list and any small groups here, and lose access to leader/admin tools if you had any. Your donation history, past prayer requests, and testimonies are kept exactly as they are — this only removes your membership.')}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLeaveConfirm(false)} disabled={leaving}>
+              {t('memberMinistryProfile', 'cancel', 'Cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleLeave} disabled={leaving}>
+              {leaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {t('memberMinistryProfile', 'leaveMinistryConfirmBtn', 'Yes, leave')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete-my-data confirmation */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('memberMinistryProfile', 'deleteConfirmTitle', 'Delete your data at {name}?').replace('{name}', String(ministry?.name))}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-gray-600">
+            <p>{t('memberMinistryProfile', 'deleteConfirmIntro', 'This schedules your data for deletion in 30 days — you can cancel anytime before then from this page. Once the 30 days pass, it can\'t be undone. It will:')}</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>{t('memberMinistryProfile', 'deleteConfirmBullet1', 'Remove your membership, profile, children/emergency-contact details, and communication preferences')}</li>
+              <li>{t('memberMinistryProfile', 'deleteConfirmBullet2', 'Anonymize your name/email on any testimony or prayer request you posted — the content itself stays')}</li>
+            </ul>
+            <p className="pt-1">
+              {t('memberMinistryProfile', 'deleteConfirmFinancialNote', 'Donation and Gift Aid records are kept for UK tax compliance and aren\'t affected by this. To request their deletion separately, email')}{' '}
+              <a href={`mailto:${PRIVACY_EMAIL}`} className="text-purple-600 underline">{PRIVACY_EMAIL}</a>.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} disabled={deletingData}>
+              {t('memberMinistryProfile', 'cancel', 'Cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteData} disabled={deletingData}>
+              {deletingData ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {t('memberMinistryProfile', 'deleteDataConfirmBtn', 'Yes, schedule deletion')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

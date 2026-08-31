@@ -16,8 +16,14 @@ export const slugify = (name: string): string => {
 
 /**
  * The join URL encoded in the QR / invite link.
- * The app uses react-router BrowserRouter. NOTE: /join/:param is taken by the legacy
- * room-join route, so the ministry registration path is /register/:slug.
+ * The app uses react-router BrowserRouter. Both apps/ministry and apps/rekindle
+ * register /join/:slug AND /register/:slug pointing at the same
+ * MinistryJoinLanding component (the older comment here about /join/:param
+ * being taken by a legacy room-join route no longer applies — that route was
+ * since removed). /join/ is the canonical form shown in the UI
+ * (MinistryRegistrationSettings' "Join link address" field); /register/
+ * is kept live so links/QR codes already printed or shared before this
+ * change keep working.
  * (Static hosting needs an index.html rewrite for deep links — see DEPLOYMENT note.)
  */
 export const buildJoinUrl = (
@@ -31,7 +37,7 @@ export const buildJoinUrl = (
   if (code) params.set('code', code);
   if (version) params.set('v', String(version));
   const qs = params.toString();
-  return `${base}/register/${slug}${qs ? `?${qs}` : ''}`;
+  return `${base}/join/${slug}${qs ? `?${qs}` : ''}`;
 };
 
 /** PNG data URL — for on-screen preview and standard mobile-camera scanning. */

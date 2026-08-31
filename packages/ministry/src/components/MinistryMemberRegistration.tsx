@@ -465,16 +465,32 @@ const MinistryMemberRegistration: React.FC<Props> = ({
             ['consent_photo_media', 'photo_media', false],
             ...(showGiftAid ? [['consent_gift_aid', 'gift_aid', false]] : []),
           ] as [string, string, boolean][]).map(([field, type, required]) => (
-            <label key={field} className="flex items-start gap-3 border rounded-lg p-3 cursor-pointer">
-              <Checkbox
-                checked={(f as any)[field]}
-                onCheckedChange={(v) => set({ [field]: v === true } as any)}
-                className="mt-0.5"
-              />
-              <span className="text-sm text-gray-700">
-                {CONSENT_TEXTS[type]} {required && <span className="text-red-500">*</span>}
-              </span>
-            </label>
+            // Wrapper is a div, not a label, so the "Read Privacy Policy" link
+            // below (a sibling of the label, not a descendant of it) doesn't
+            // also toggle the checkbox when clicked — a <label> auto-forwards
+            // clicks anywhere inside it to its associated control.
+            <div key={field} className="border rounded-lg p-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <Checkbox
+                  checked={(f as any)[field]}
+                  onCheckedChange={(v) => set({ [field]: v === true } as any)}
+                  className="mt-0.5"
+                />
+                <span className="text-sm text-gray-700">
+                  {CONSENT_TEXTS[type]} {required && <span className="text-red-500">*</span>}
+                </span>
+              </label>
+              {type === 'privacy_policy' && (
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-7 mt-1 inline-block text-xs text-purple-600 underline hover:text-purple-700"
+                >
+                  {t('ministryMemberRegistration', 'readPrivacyPolicy', 'Read the Privacy Policy')}
+                </a>
+              )}
+            </div>
           ))}
         </div>
       )}

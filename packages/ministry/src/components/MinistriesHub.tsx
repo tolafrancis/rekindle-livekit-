@@ -17,7 +17,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
   Search, Plus, Users, Crown, Shield, Settings,
-  Globe, Lock, Link, Copy, Check, QrCode, Loader2,
+  Globe, Lock, Copy, Check, QrCode, Loader2,
   ChevronRight, Building2, MapPin, Heart, X, ArrowLeft,
   BookOpen, LayoutDashboard, Upload, Image as ImageIcon,
   Sparkles, Compass, ArrowRight
@@ -137,7 +137,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
   const [managingMinistry, setManagingMinistry] = useState<Ministry | null>(null);
-  const [joinCode, setJoinCode] = useState('');
   const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -593,102 +592,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     }
   };
 
-  const handleJoinByCode = async () => {
-    const rawCode = joinCode.trim();
-    if (!rawCode) {
-      toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'enterInviteCode', 'Please enter an invite code'), variant: 'destructive' });
-      return;
-    }
-
-    const extractInviteCode = (value: string): string => {
-      const trimmed = value.trim();
-      if (!trimmed) return '';
-
-      try {
-        const url = new URL(trimmed);
-        const fromQuery = url.searchParams.get('code');
-        if (fromQuery && fromQuery.trim()) return fromQuery.trim().toUpperCase();
-      } catch {
-        // not a URL, fall through to string parsing below
-      }
-
-      const queryMatch = trimmed.match(/[?&]code=([^&\s]+)/i);
-      if (queryMatch?.[1]) return decodeURIComponent(queryMatch[1]).trim().toUpperCase();
-
-      return trimmed.replace(/^https?:\/\/[^\s]+\//i, '').split(/[\s&?]+/)[0].trim().toUpperCase();
-    };
-
-    const normalizedCode = extractInviteCode(rawCode);
-    if (!normalizedCode) {
-      toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'invalidInviteCode', 'Invalid invite code'), variant: 'destructive' });
-      return;
-    }
-
-    setJoining(true);
-    try {
-      let ministry: any = null;
-      let lookupError: any = null;
-
-      const candidateCodes = Array.from(
-        new Set(
-          [
-            normalizedCode,
-            normalizedCode.trim(),
-            normalizedCode.toUpperCase(),
-            normalizedCode.toLowerCase(),
-            decodeURIComponent(normalizedCode),
-          ].filter(Boolean),
-        ),
-      );
-
-      for (const candidate of candidateCodes) {
-        const exact = await supabase
-          .from('ministry_groups')
-          .select('*')
-          .eq('invite_code', candidate)
-          .maybeSingle();
-
-        ministry = exact.data;
-        lookupError = exact.error;
-        if (ministry || lookupError) break;
-      }
-
-      if (!ministry && !lookupError) {
-        for (const candidate of candidateCodes) {
-          const fallback = await supabase
-            .from('ministry_groups')
-            .select('*')
-            .ilike('invite_code', candidate)
-            .maybeSingle();
-
-          ministry = fallback.data;
-          lookupError = fallback.error;
-          if (ministry || lookupError) break;
-        }
-      }
-
-      if (lookupError) {
-        console.error('Error fetching ministry:', lookupError);
-        toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'failedValidateCode', 'Failed to validate invite code'), variant: 'destructive' });
-        setJoining(false);
-        return;
-      }
-
-      if (!ministry) {
-        toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'invalidInviteCode', 'Invalid invite code'), variant: 'destructive' });
-        setJoining(false);
-        return;
-      }
-
-      await handleJoinMinistry(ministry);
-      setJoinCode('');
-    } catch (err: any) {
-      toast({ title: t('ministriesHub', 'error', 'Error'), description: err.message, variant: 'destructive' });
-    } finally {
-      setJoining(false);
-    }
-  };
-
   const handleEnterMinistry = (ministry: Ministry) => {
     setSelectedMinistry(ministry);
     setActiveView('ministry-space');
@@ -788,12 +691,10 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             <p className="text-sm italic text-white/90">{welcomeVerse}</p>
           </div>
 
-          {/* Primary actions */}
+          {/* Primary actions — joining happens via a shared invite link/QR
+              code (see MinistryRegistrationSettings), not by typing a code
+              here, so there is deliberately no "Join by Code" entry point. */}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
-            <Button className="bg-white text-indigo-700 shadow-sm hover:bg-white/90" onClick={() => setShowJoinModal(true)}>
-              <Link className="h-4 w-4 mr-2" />
-              {t('ministriesHub', 'joinByCode', 'Join by Code')}
-            </Button>
             {(is_ministry_Leader || isAdmin) && (
               <Button
                 variant="outline"
@@ -866,12 +767,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                     <Compass className="h-8 w-8 text-indigo-500" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-800">{t('ministriesHub', 'noMinistriesFound', 'No ministries found')}</h3>
-                  <p className="mt-1 text-sm text-gray-500">{t('ministriesHub', 'noMinistriesHint', 'Try a different search, or join a community with an invite code.')}</p>
+                  <p className="mt-1 text-sm text-gray-500">{t('ministriesHub', 'noMinistriesHint', 'Try a different search, or ask your ministry for their invite link.')}</p>
                   <div className="mt-5 flex justify-center gap-2">
-                    <Button variant="outline" onClick={() => setShowJoinModal(true)}>
-                      <Link className="h-4 w-4 mr-2" />
-                      {t('ministriesHub', 'joinByCode', 'Join by Code')}
-                    </Button>
                     {(is_ministry_Leader || isAdmin) && (
                       <Button onClick={() => setShowCreateModal(true)}>
                         <Plus className="h-4 w-4 mr-2" />
@@ -1320,18 +1217,20 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         </DialogContent>
       </Dialog>
 
-      {/* Join Ministry Modal */}
-      <Dialog open={showJoinModal} onOpenChange={setShowJoinModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedMinistry ? t('ministriesHub', 'joinX', 'Join {name}').replace('{name}', selectedMinistry.name) : t('ministriesHub', 'joinMinistry', 'Join Ministry')}
-            </DialogTitle>
-          </DialogHeader>
-          
-          {selectedMinistry ? (
+      {/* Join Ministry Modal — confirmation step after tapping "Join" on a
+          ministry card in Discover. Joining-by-typed-code was removed;
+          members join via a shared invite link/QR code instead. */}
+      {selectedMinistry && (
+        <Dialog open={showJoinModal} onOpenChange={setShowJoinModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {t('ministriesHub', 'joinX', 'Join {name}').replace('{name}', selectedMinistry.name)}
+              </DialogTitle>
+            </DialogHeader>
+
             <div className="space-y-4">
-              <div 
+              <div
                 className="h-24 rounded-lg"
                 style={{ backgroundColor: selectedMinistry.theme_color || '#7c3aed' }}
               />
@@ -1361,29 +1260,9 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                 </Button>
               </DialogFooter>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-gray-600">{t('ministriesHub', 'enterCodeToJoin', 'Enter an invite code to join a ministry')}</p>
-              <div>
-                <Label>{t('ministriesHub', 'inviteCodeLabel', 'Invite Code')}</Label>
-                <Input
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  placeholder={t('ministriesHub', 'inviteCodePlaceholder', 'Enter code (e.g., ABC123XY)')}
-                  className="font-mono"
-                />
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowJoinModal(false)}>{t('ministriesHub', 'cancel', 'Cancel')}</Button>
-                <Button onClick={handleJoinByCode} disabled={joining || !joinCode.trim()}>
-                  {joining ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  {t('ministriesHub', 'join', 'Join')}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
