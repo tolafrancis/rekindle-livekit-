@@ -19,6 +19,17 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.generate-devotional-series]
+enabled = true
+# Admin/super_admin only (checked via user_profiles.role inside the function,
+# same pattern as generate-prayer-content). Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.generate-devotional-day]
+enabled = true
+# Admin/super_admin only, same pattern as generate-devotional-series.
+verify_jwt = true
+
 [functions.livekit-egress]
 enabled = true
 # start/stop-recording call supabase.auth.getUser() on the forwarded Bearer

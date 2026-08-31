@@ -18,8 +18,12 @@ import { TranslateNowButton } from '@/components/TranslateNowButton';
 import {
   BookOpen, Plus, Edit, Trash2, Search, Calendar, Clock, Upload,
   Save, X, AlertCircle, CheckCircle, Star, Eye, EyeOff, Loader2,
-  List, Grid, Filter, SortAsc, RefreshCw, Copy, FileText, Download, Link, Image as ImageIcon
+  List, Grid, Filter, SortAsc, RefreshCw, Copy, FileText, Download, Link, Image as ImageIcon, Sparkles
 } from 'lucide-react';
+import {
+  generateDevotionalOutline, regenerateSeriesField, generateDevotionalDay, rewriteDevotionalDay,
+  type DevotionalOutlineDay,
+} from '@/lib/generateDevotionalContent';
 
 // Inline cover-image field: paste a URL or upload a file
 const CoverImageField: React.FC<{
@@ -126,12 +130,16 @@ interface Series {
   total_days: number;
   difficulty_level?: 'beginner' | 'intermediate' | 'advanced';
   target_audience?: string;
-  ministry_id?: string;
+  ministry_id?: string | null;
   tags?: string[];
   keywords?: string[];
   is_featured: boolean;
   is_published: boolean;
   published_at?: string;
+  start_behavior?: string;
+  fixed_start_date?: string | null;
+  language?: string;
+  translations?: Record<string, any>;
   created_at: string;
 }
 
@@ -161,6 +169,7 @@ interface Entry {
   estimated_reading_time: number;
   themes?: string[];
   is_published: boolean;
+  scheduled_date?: string | null;
 }
 
 export const AdminDevotionalLibraryManager: React.FC = () => {
@@ -345,6 +354,29 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
     } catch (err: any) {
       console.error('Error saving series:', err);
       toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    }
+  };
+
+  // Inserts a brand-new series row and returns it (including its id), without
+  // closing the modal or otherwise disturbing its state. Used by the AI
+  // "Save & Generate All Days" flow, which needs a real series_id before it
+  // can insert devotional_entries rows, but must keep the modal open so the
+  // admin can watch each day populate.
+  const saveSeriesDraft = async (seriesData: Partial<Series>): Promise<Series | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('devotional_series')
+        .insert(seriesData)
+        .select()
+        .single();
+
+      if (error) throw error;
+      loadSeries();
+      return data as Series;
+    } catch (err: any) {
+      console.error('Error creating AI draft series:', err);
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+      return null;
     }
   };
 
@@ -752,6 +784,14 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
           setEditingSeries(null);
         }}
         onSave={handleSaveSeries}
+        onSaveDraft={saveSeriesDraft}
+        onEditEntry={(entry) => {
+          setEditingEntry(entry);
+          setShowEntryModal(true);
+        }}
+        onEntriesChanged={() => {
+          if (selectedSeries) loadEntries(selectedSeries.id);
+        }}
       />
 
       {/* Entry Modal */}
@@ -858,15 +898,31 @@ const CategoryModal: React.FC<{
 };
 
 // Series Modal Component
+const DURATION_PRESETS = [1, 3, 5, 7, 14, 21, 30];
+const TARGET_AUDIENCES = ['New Believers', 'Mature Christians', 'Youth', 'Young Adults', 'Leaders', 'Families', 'General Audience'];
+
 const SeriesModal: React.FC<{
   show: boolean;
   series: Series | null;
   categories: Category[];
   onClose: () => void;
   onSave: (data: Partial<Series>) => void;
-}> = ({ show, series, categories, onClose, onSave }) => {
+  onSaveDraft: (data: Partial<Series>) => Promise<Series | null>;
+  onEditEntry: (entry: Entry) => void;
+  onEntriesChanged: () => void;
+}> = ({ show, series, categories, onClose, onSave, onSaveDraft, onEditEntry, onEntriesChanged }) => {
   const { t } = useLanguage();
   const [formData, setFormData] = useState<Partial<Series>>({});
+
+  // AI generation state
+  const [savedId, setSavedId] = useState<string | undefined>(series?.id);
+  const [outline, setOutline] = useState<DevotionalOutlineDay[] | null>(null);
+  const [dayEntries, setDayEntries] = useState<Record<number, Entry>>({});
+  const [generatingOutline, setGeneratingOutline] = useState(false);
+  const [generatingDays, setGeneratingDays] = useState(false);
+  const [dayProgress, setDayProgress] = useState<{ done: number; total: number } | null>(null);
+  const [regeneratingDay, setRegeneratingDay] = useState<number | null>(null);
+  const [regenField, setRegenField] = useState<string | null>(null);
 
   useEffect(() => {
     if (series) {
@@ -880,8 +936,32 @@ const SeriesModal: React.FC<{
         is_featured: false,
         is_published: false,
         tags: [],
-        keywords: []
+        keywords: [],
+        language: 'en',
+        translations: {},
+        ministry_id: null,
+        start_behavior: 'user_based',
+        fixed_start_date: null,
       });
+    }
+    setOutline(null);
+    setSavedId(series?.id);
+    setDayProgress(null);
+
+    if (series?.id) {
+      supabase
+        .from('devotional_entries')
+        .select('*')
+        .eq('series_id', series.id)
+        .order('day_number')
+        .then(({ data, error }) => {
+          if (error) { console.error('Error loading entries for AI status:', error); return; }
+          const map: Record<number, Entry> = {};
+          (data || []).forEach((e: any) => { map[e.day_number] = e; });
+          setDayEntries(map);
+        });
+    } else {
+      setDayEntries({});
     }
   }, [series]);
 
@@ -891,6 +971,186 @@ const SeriesModal: React.FC<{
       return;
     }
     onSave(formData);
+  };
+
+  const isCustomDays = !DURATION_PRESETS.includes(formData.total_days ?? 7);
+
+  const handleGenerateWithAI = async () => {
+    if (!formData.title) return;
+    setGeneratingOutline(true);
+    try {
+      const result = await generateDevotionalOutline({
+        title: formData.title,
+        total_days: formData.total_days || 7,
+        categories: categories.filter(c => c.is_active).map(c => ({ id: c.id, name: c.name })),
+        language: formData.language || 'en',
+        existing_description: formData.description,
+        regenerate: !!series,
+      });
+      setFormData(prev => ({
+        ...prev,
+        subtitle: result.subtitle,
+        description: result.description,
+        category_id: result.category_id || prev.category_id,
+        difficulty_level: result.difficulty_level,
+        target_audience: result.target_audience,
+        tags: result.tags,
+        keywords: result.keywords,
+        is_published: false,
+        language: prev.language || 'en',
+        translations: prev.translations || {},
+        ministry_id: prev.ministry_id ?? null,
+        start_behavior: prev.start_behavior || 'user_based',
+        fixed_start_date: prev.fixed_start_date ?? null,
+      }));
+      setOutline(result.days);
+      toast({
+        title: t('adminDevotionalLibraryManager', 'aiOutlineReady', 'AI draft ready'),
+        description: t('adminDevotionalLibraryManager', 'aiOutlineReadyDesc', 'Review the generated details below, then generate each day.'),
+      });
+    } catch (err: any) {
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setGeneratingOutline(false);
+    }
+  };
+
+  const handleRegenerateField = async (field: 'description' | 'tags') => {
+    if (!formData.title) return;
+    setRegenField(field);
+    try {
+      const result = await regenerateSeriesField({
+        field,
+        title: formData.title,
+        subtitle: formData.subtitle,
+        description: formData.description,
+      });
+      setFormData(prev => ({ ...prev, [field]: result.value as any }));
+    } catch (err: any) {
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setRegenField(null);
+    }
+  };
+
+  const saveGeneratedDay = async (dayOutline: DevotionalOutlineDay, seriesId: string, previousTitle?: string, previousTakeaway?: string) => {
+    const generated = await generateDevotionalDay({
+      series_title: formData.title || '',
+      series_description: formData.description || '',
+      day_number: dayOutline.day_number,
+      total_days: outline?.length || formData.total_days || 1,
+      day_outline: { title: dayOutline.title, focus: dayOutline.focus },
+      previous_day_title: previousTitle,
+      previous_day_takeaway: previousTakeaway,
+      target_audience: formData.target_audience,
+      difficulty_level: formData.difficulty_level,
+      language: formData.language || 'en',
+    });
+
+    const payload: any = {
+      series_id: seriesId,
+      day_number: dayOutline.day_number,
+      title: generated.title,
+      subtitle: generated.subtitle,
+      scripture_references: generated.scripture_references,
+      introduction: generated.introduction,
+      main_content: generated.main_content,
+      content: generated.main_content,
+      reflection_questions: generated.reflection_questions,
+      guided_prayer: generated.guided_prayer,
+      action_steps: generated.action_steps,
+      additional_thoughts: generated.additional_thoughts,
+      estimated_reading_time: generated.estimated_reading_time,
+      is_published: false,
+    };
+
+    const existing = dayEntries[dayOutline.day_number];
+    const query = existing
+      ? supabase.from('devotional_entries').update(payload).eq('id', existing.id)
+      : supabase.from('devotional_entries').insert(payload);
+    const { data, error } = await query.select().single();
+    if (error) throw error;
+
+    setDayEntries(prev => ({ ...prev, [dayOutline.day_number]: data as Entry }));
+    onEntriesChanged();
+    return data as Entry;
+  };
+
+  const handleGenerateAllDays = async (seriesId: string) => {
+    if (!outline) return;
+    setGeneratingDays(true);
+    try {
+      let previousTitle: string | undefined;
+      let previousTakeaway: string | undefined;
+      for (let i = 0; i < outline.length; i++) {
+        const dayOutline = outline[i];
+        setDayProgress({ done: i, total: outline.length });
+        const already = dayEntries[dayOutline.day_number];
+        if (already) {
+          previousTitle = already.title;
+          previousTakeaway = already.additional_thoughts;
+          continue;
+        }
+        const saved = await saveGeneratedDay(dayOutline, seriesId, previousTitle, previousTakeaway);
+        previousTitle = saved.title;
+        previousTakeaway = saved.additional_thoughts;
+      }
+      toast({
+        title: t('adminDevotionalLibraryManager', 'success', 'Success'),
+        description: t('adminDevotionalLibraryManager', 'allDaysGenerated', 'All days generated as drafts — review and publish when ready.'),
+      });
+    } catch (err: any) {
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setGeneratingDays(false);
+      setDayProgress(null);
+    }
+  };
+
+  const handleSaveAndGenerateDays = async () => {
+    if (!formData.title || !formData.category_id) {
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: t('adminDevotionalLibraryManager', 'titleCategoryRequired', 'Title and category are required'), variant: 'destructive' });
+      return;
+    }
+    setGeneratingDays(true);
+    try {
+      const draftPayload: Partial<Series> = {
+        ...formData,
+        is_featured: formData.is_featured ?? false,
+        is_published: false,
+        language: formData.language || 'en',
+        translations: formData.translations || {},
+        ministry_id: formData.ministry_id ?? null,
+        start_behavior: formData.start_behavior || 'user_based',
+        fixed_start_date: formData.fixed_start_date ?? null,
+      };
+      const saved = await onSaveDraft(draftPayload);
+      if (!saved) return;
+      setSavedId(saved.id);
+      setFormData(prev => ({ ...prev, id: saved.id }));
+      await handleGenerateAllDays(saved.id);
+    } finally {
+      setGeneratingDays(false);
+    }
+  };
+
+  const handleRegenerateDay = async (dayOutline: DevotionalOutlineDay) => {
+    if (!savedId || !outline) return;
+    setRegeneratingDay(dayOutline.day_number);
+    try {
+      const idx = outline.findIndex(d => d.day_number === dayOutline.day_number);
+      const prevOutline = idx > 0 ? outline[idx - 1] : null;
+      const prevEntry = prevOutline ? dayEntries[prevOutline.day_number] : undefined;
+      await saveGeneratedDay(dayOutline, savedId, prevEntry?.title, prevEntry?.additional_thoughts);
+      toast({
+        title: t('adminDevotionalLibraryManager', 'success', 'Success'),
+        description: t('adminDevotionalLibraryManager', 'dayRegenerated', 'Day {number} regenerated').replace('{number}', String(dayOutline.day_number)),
+      });
+    } catch (err: any) {
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setRegeneratingDay(null);
+    }
   };
 
   return (
@@ -925,6 +1185,58 @@ const SeriesModal: React.FC<{
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               placeholder={t('adminDevotionalLibraryManager', 'seriesTitlePlaceholder', 'e.g., 30 Days of Faith')}
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+              disabled={!formData.title || generatingOutline}
+              onClick={handleGenerateWithAI}
+            >
+              {generatingOutline ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+              {series
+                ? t('adminDevotionalLibraryManager', 'regenerateWithAi', '✨ Regenerate with AI')
+                : t('adminDevotionalLibraryManager', 'generateWithAi', '✨ Generate with AI')}
+            </Button>
+            {!formData.title && (
+              <p className="text-xs text-muted-foreground mt-1">{t('adminDevotionalLibraryManager', 'aiNeedsTitle', 'Enter a title first.')}</p>
+            )}
+          </div>
+          <div>
+            <Label>{t('adminDevotionalLibraryManager', 'seriesDurationLabel', 'Series Duration / Number of Days *')}</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {DURATION_PRESETS.map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                    formData.total_days === n ? 'bg-purple-600 text-white border-purple-600' : 'bg-background hover:bg-muted'
+                  }`}
+                  onClick={() => setFormData({ ...formData, total_days: n })}
+                >
+                  {t('adminDevotionalLibraryManager', 'daysCount', '{count} days').replace('{count}', String(n))}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                  isCustomDays ? 'bg-purple-600 text-white border-purple-600' : 'bg-background hover:bg-muted'
+                }`}
+                onClick={() => setFormData({ ...formData, total_days: isCustomDays ? formData.total_days : 10 })}
+              >
+                {t('adminDevotionalLibraryManager', 'customDays', 'Custom')}
+              </button>
+            </div>
+            {isCustomDays && (
+              <Input
+                type="number"
+                className="mt-2 w-32"
+                value={formData.total_days || 7}
+                onChange={(e) => setFormData({ ...formData, total_days: parseInt(e.target.value) || 1 })}
+                min={1}
+                max={365}
+              />
+            )}
           </div>
           <div>
             <Label>{t('adminDevotionalLibraryManager', 'subtitle', 'Subtitle')}</Label>
@@ -932,10 +1244,24 @@ const SeriesModal: React.FC<{
               value={formData.subtitle || ''}
               onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
               placeholder={t('adminDevotionalLibraryManager', 'optionalSubtitle', 'Optional subtitle')}
+              maxLength={200}
             />
           </div>
           <div>
-            <Label>{t('adminDevotionalLibraryManager', 'description', 'Description')}</Label>
+            <div className="flex items-center justify-between">
+              <Label>{t('adminDevotionalLibraryManager', 'description', 'Description')}</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-purple-600"
+                disabled={!formData.title || regenField === 'description'}
+                onClick={() => handleRegenerateField('description')}
+              >
+                {regenField === 'description' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                {t('adminDevotionalLibraryManager', 'regenerate', 'Regenerate')}
+              </Button>
+            </div>
             <Textarea
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -950,15 +1276,6 @@ const SeriesModal: React.FC<{
             promptSubject={formData.title || ''}
           />
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>{t('adminDevotionalLibraryManager', 'totalDaysRequiredLabel', 'Total Days *')}</Label>
-              <Input
-                type="number"
-                value={formData.total_days || 7}
-                onChange={(e) => setFormData({ ...formData, total_days: parseInt(e.target.value) })}
-                min={1}
-              />
-            </div>
             <div>
               <Label>{t('adminDevotionalLibraryManager', 'difficultyLevel', 'Difficulty Level')}</Label>
               <Select
@@ -975,9 +1292,64 @@ const SeriesModal: React.FC<{
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>{t('adminDevotionalLibraryManager', 'targetAudience', 'Target Audience')}</Label>
+              <Select
+                value={formData.target_audience || ''}
+                onValueChange={(value) => setFormData({ ...formData, target_audience: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('adminDevotionalLibraryManager', 'selectAudience', 'Select audience')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {TARGET_AUDIENCES.map(a => (
+                    <SelectItem key={a} value={a}>{a}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>{t('adminDevotionalLibraryManager', 'author', 'Author')}</Label>
+              <Input
+                value={formData.author || ''}
+                onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+                placeholder={t('adminDevotionalLibraryManager', 'authorPlaceholder', 'e.g., Rekindle Ministry Team')}
+              />
+            </div>
+            <div>
+              <Label>{t('adminDevotionalLibraryManager', 'authorSocialUrl', 'Author Link (optional)')}</Label>
+              <Input
+                value={formData.author_social_url || ''}
+                onChange={(e) => setFormData({ ...formData, author_social_url: e.target.value })}
+                placeholder="https://..."
+              />
+            </div>
           </div>
           <div>
-            <Label>{t('adminDevotionalLibraryManager', 'tags', 'Tags')}</Label>
+            <Label>{t('adminDevotionalLibraryManager', 'keywordsLabel', 'Keywords (comma-separated)')}</Label>
+            <Input
+              value={(formData.keywords || []).join(', ')}
+              onChange={(e) => setFormData({ ...formData, keywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+              placeholder={t('adminDevotionalLibraryManager', 'keywordsPlaceholder', 'faith, trust, obedience')}
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>{t('adminDevotionalLibraryManager', 'tags', 'Tags')}</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-purple-600"
+                disabled={!formData.title || regenField === 'tags'}
+                onClick={() => handleRegenerateField('tags')}
+              >
+                {regenField === 'tags' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                {t('adminDevotionalLibraryManager', 'regenerate', 'Regenerate')}
+              </Button>
+            </div>
             {(() => {
               const tags: string[] = formData.tags || [];
               return (
@@ -1053,6 +1425,79 @@ const SeriesModal: React.FC<{
               <Label>{t('adminDevotionalLibraryManager', 'published', 'Published')}</Label>
             </div>
           </div>
+
+          {outline && (
+            <div className="rounded-lg border p-4 space-y-3 bg-purple-50/40">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-semibold flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-purple-600" />
+                    {t('adminDevotionalLibraryManager', 'aiGeneratedDays', 'AI-Generated Days')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t('adminDevotionalLibraryManager', 'aiDaysHelper', 'Every day is saved as an unpublished draft for your review.')}
+                  </p>
+                </div>
+                {!savedId ? (
+                  <Button type="button" size="sm" disabled={generatingDays || !formData.title || !formData.category_id} onClick={handleSaveAndGenerateDays}>
+                    {generatingDays ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+                    {t('adminDevotionalLibraryManager', 'saveAndGenerateDays', 'Save & Generate All Days')}
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" disabled={generatingDays} onClick={() => handleGenerateAllDays(savedId)}>
+                    {generatingDays ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+                    {t('adminDevotionalLibraryManager', 'generateAllDays', 'Generate All Days')}
+                  </Button>
+                )}
+              </div>
+              {dayProgress && (
+                <p className="text-xs text-muted-foreground">
+                  {t('adminDevotionalLibraryManager', 'generatingDayProgress', 'Generating day {done} of {total}…').replace('{done}', String(dayProgress.done + 1)).replace('{total}', String(dayProgress.total))}
+                </p>
+              )}
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {outline.map(d => {
+                  const savedEntry = dayEntries[d.day_number];
+                  return (
+                    <div key={d.day_number} className="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <span className="font-medium">{t('adminDevotionalLibraryManager', 'dayLabel', 'Day {number}').replace('{number}', String(d.day_number))}: </span>
+                        <span className="text-muted-foreground">{savedEntry?.title || d.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {savedEntry ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-gray-300" />}
+                        {savedEntry && (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              disabled={regeneratingDay === d.day_number}
+                              title={t('adminDevotionalLibraryManager', 'regenerateDay', 'Regenerate this day')}
+                              onClick={() => handleRegenerateDay(d)}
+                            >
+                              {regeneratingDay === d.day_number ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              title={t('adminDevotionalLibraryManager', 'editEntry', 'Edit Entry')}
+                              onClick={() => onEditEntry(savedEntry)}
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>{t('adminDevotionalLibraryManager', 'cancel', 'Cancel')}</Button>
@@ -1079,6 +1524,7 @@ const EntryModal: React.FC<{
   const [scriptureInput, setScriptureInput] = useState('');
   const [scriptureVersion, setScriptureVersion] = useState('kjv');
   const [loadingScripture, setLoadingScripture] = useState(false);
+  const [rewriting, setRewriting] = useState<'improve' | 'shorter' | 'more_practical' | 'more_bible_study' | null>(null);
 
   useEffect(() => {
     if (entry) {
@@ -1132,6 +1578,45 @@ const EntryModal: React.FC<{
       toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: t('adminDevotionalLibraryManager', 'failedLoadScripture', 'Failed to load scripture'), variant: 'destructive' });
     } finally {
       setLoadingScripture(false);
+    }
+  };
+
+  const handleRewrite = async (instruction: 'improve' | 'shorter' | 'more_practical' | 'more_bible_study') => {
+    setRewriting(instruction);
+    try {
+      const result = await rewriteDevotionalDay({
+        instruction,
+        day: {
+          title: formData.title || '',
+          subtitle: formData.subtitle,
+          introduction: formData.introduction,
+          main_content: formData.main_content || '',
+          reflection_questions: formData.reflection_questions || [],
+          guided_prayer: formData.guided_prayer,
+          action_steps: formData.action_steps || [],
+          additional_thoughts: formData.additional_thoughts,
+          scripture_references: formData.scripture_references || [],
+          estimated_reading_time: formData.estimated_reading_time,
+        },
+      });
+      setFormData(prev => ({
+        ...prev,
+        title: result.title || prev.title,
+        subtitle: result.subtitle || prev.subtitle,
+        introduction: result.introduction || prev.introduction,
+        main_content: result.main_content || prev.main_content,
+        reflection_questions: result.reflection_questions?.length ? result.reflection_questions : prev.reflection_questions,
+        guided_prayer: result.guided_prayer || prev.guided_prayer,
+        action_steps: result.action_steps?.length ? result.action_steps : prev.action_steps,
+        additional_thoughts: result.additional_thoughts || prev.additional_thoughts,
+        estimated_reading_time: result.estimated_reading_time || prev.estimated_reading_time,
+        // Scripture is intentionally left untouched — rewrites never alter it.
+      }));
+      toast({ title: t('adminDevotionalLibraryManager', 'success', 'Success'), description: t('adminDevotionalLibraryManager', 'contentRewritten', 'Content updated — review and save.') });
+    } catch (err: any) {
+      toast({ title: t('adminDevotionalLibraryManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setRewriting(null);
     }
   };
 
@@ -1354,6 +1839,32 @@ const EntryModal: React.FC<{
           </TabsContent>
 
           <TabsContent value="content" className="space-y-4">
+            {entry && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-purple-50/40 p-3">
+                <span className="text-xs font-semibold text-purple-700 flex items-center gap-1 mr-1">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {t('adminDevotionalLibraryManager', 'aiRewriteTools', 'AI Rewrite Tools')}
+                </span>
+                {([
+                  ['improve', t('adminDevotionalLibraryManager', 'rewriteImprove', 'Improve Writing')],
+                  ['shorter', t('adminDevotionalLibraryManager', 'rewriteShorter', 'Make Shorter')],
+                  ['more_practical', t('adminDevotionalLibraryManager', 'rewritePractical', 'Make More Practical')],
+                  ['more_bible_study', t('adminDevotionalLibraryManager', 'rewriteBibleStudy', 'Make More Bible Study Focused')],
+                ] as const).map(([action, label]) => (
+                  <Button
+                    key={action}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!!rewriting}
+                    onClick={() => handleRewrite(action)}
+                  >
+                    {rewriting === action ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            )}
             <div>
               <Label>{t('adminDevotionalLibraryManager', 'introduction', 'Introduction')}</Label>
               <Textarea
