@@ -423,6 +423,33 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     });
   };
 
+  const [manualTermInput, setManualTermInput] = useState('');
+  const [addingManualTerm, setAddingManualTerm] = useState(false);
+
+  // Auto-detection (extractApprovedTerms) only surfaces a phrase if it
+  // matches a hardcoded pattern or sits in a sentence with a religious
+  // trigger word (God/Spirit/church/praise/worship/prayer/...). An ordinary
+  // word or a name that got mis-transcribed for accent reasons won't show up
+  // as a suggested chip — this lets an admin add any exact word/phrase
+  // directly, no transcript or auto-detection needed.
+  const handleAddManualTerm = async () => {
+    const term = normalizeTerm(manualTermInput);
+    if (!term) return;
+    if (customTerms.some((t) => t.toLowerCase() === term.toLowerCase())) {
+      toast({ title: 'Already added', description: `"${term}" is already in the approved vocabulary.` });
+      setManualTermInput('');
+      return;
+    }
+    setAddingManualTerm(true);
+    try {
+      await persistTerms([...customTerms, term]);
+      setManualTermInput('');
+      toast({ title: 'Term added', description: `"${term}" will be used to tune STT accuracy on this ministry's next live session.` });
+    } finally {
+      setAddingManualTerm(false);
+    }
+  };
+
   const removeTerm = async (term: string) => {
     const next = customTerms.filter((item) => item !== term);
     await persistTerms(next);
@@ -591,6 +618,24 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Manual add — for a word/phrase that transcript auto-detection
+              won't catch (ordinary words, names, anything not near a
+              religious trigger word). Saves straight to
+              ministry_sermon_vocabularies, same as an approved extracted
+              term — no transcript needed. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={manualTermInput}
+              onChange={(e) => setManualTermInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddManualTerm(); } }}
+              placeholder="Add a word or phrase the app got wrong, e.g. a name"
+              className="max-w-xs"
+            />
+            <Button type="button" size="sm" variant="outline" onClick={handleAddManualTerm} disabled={addingManualTerm || !manualTermInput.trim()}>
+              {addingManualTerm ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Add term
+            </Button>
+          </div>
           <div className="flex flex-wrap gap-2">
             {customTerms.length > 0 ? (
               customTerms.map((term) => (
@@ -602,7 +647,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                 </Badge>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">No custom sermon terms yet. Save a sermon transcript and approve the phrases.</p>
+              <p className="text-sm text-muted-foreground">No custom sermon terms yet. Save a sermon transcript and approve the phrases, or add one manually above.</p>
             )}
           </div>
         </CardContent>
