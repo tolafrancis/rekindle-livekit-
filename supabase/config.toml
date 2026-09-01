@@ -30,6 +30,13 @@ enabled = true
 # Admin/super_admin only, same pattern as generate-devotional-series.
 verify_jwt = true
 
+[functions.detect-transcript-corrections]
+enabled = true
+# Ministry admin only (is_group_admin, checked inside the function) —
+# per-ministry Sermon Library tool, not platform admin like the
+# generate-devotional-* functions above.
+verify_jwt = true
+
 [functions.livekit-egress]
 enabled = true
 # start/stop-recording call supabase.auth.getUser() on the forwarded Bearer

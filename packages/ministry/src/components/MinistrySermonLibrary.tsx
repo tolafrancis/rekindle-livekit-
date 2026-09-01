@@ -8,7 +8,7 @@ import { Checkbox } from '@rekindle/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube, Loader2, ArrowRight, AlertTriangle } from 'lucide-react';
+import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube, Loader2, AlertTriangle } from 'lucide-react';
 
 interface SermonEntry {
   id: string;
@@ -93,64 +93,26 @@ const KNOWN_CONFUSIONS: Array<{ wrong: string; right: string }> = [
   { wrong: 'prey', right: 'pray' },
 ];
 
-interface ConfusionMatch {
+interface Correction {
   wrong: string;
   right: string;
-  count: number;
-  /** Exact original substring (untrimmed) — used as the search key when
-   *  applying a fix back into the transcript, so the replace can't drift
-   *  from what was actually shown. */
-  rawSentence: string;
-  /** Trimmed, for display. */
-  sentence: string;
-  /** rawSentence with every occurrence of `wrong` swapped for `right`. */
-  suggestedSentence: string;
+  source: 'pattern' | 'ai';
 }
 
-// Finds the full sentence (bounded by . ! ? or a newline) surrounding a
-// match, not just a fixed character window — so a garbled sentence can be
-// read and corrected in full, not guessed at from a 40-char fragment.
-function sentenceAround(transcript: string, matchIndex: number, matchLength: number): string {
-  const before = transcript.slice(0, matchIndex);
-  const startBoundary = Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n'));
-  const start = startBoundary === -1 ? 0 : startBoundary + 1;
-
-  const afterIdx = matchIndex + matchLength;
-  const after = transcript.slice(afterIdx);
-  const terminatorOffsets = [after.indexOf('.'), after.indexOf('!'), after.indexOf('?'), after.indexOf('\n')].filter((n) => n !== -1);
-  const relEnd = terminatorOffsets.length ? Math.min(...terminatorOffsets) + 1 : after.length;
-  const end = afterIdx + relEnd;
-
-  return transcript.slice(start, end);
-}
-
-// Scans for likely-misheard words/phrases AND the full sentences they sit
-// in, pairing each with its likely intended word — so the admin can add
-// the CORRECT form to vocabulary (never the wrong one that was actually
-// heard) or apply a corrected version of the whole sentence back into the
-// transcript, not just swap an isolated word out of context.
-function detectConfusions(transcript: string): ConfusionMatch[] {
+// Instant, free, zero-latency baseline — only the fixed KNOWN_CONFUSIONS
+// pairs above. Real contextual errors (a garbled clause with no fixed
+// pattern to match, e.g. "the water is not and the ground bearing" ->
+// "the water is naught, and the ground barren") need actual reading
+// comprehension, not a dictionary — that's what "Analyze with AI" below
+// (detect-transcript-corrections edge function) is for.
+function detectPatternCorrections(transcript: string): Correction[] {
   if (!transcript) return [];
-  const results: ConfusionMatch[] = [];
+  const results: Correction[] = [];
   for (const { wrong, right } of KNOWN_CONFUSIONS) {
     const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
-    const matches = [...transcript.matchAll(re)];
-    if (matches.length === 0) continue;
-
-    const first = matches[0];
-    const idx = first.index ?? 0;
-    const rawSentence = sentenceAround(transcript, idx, wrong.length);
-    const suggestedSentence = rawSentence.replace(re, right);
-
-    results.push({
-      wrong,
-      right,
-      count: matches.length,
-      rawSentence,
-      sentence: normalizeTerm(rawSentence),
-      suggestedSentence: normalizeTerm(suggestedSentence),
-    });
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(transcript)) {
+      results.push({ wrong, right, source: 'pattern' });
+    }
   }
   return results;
 }
@@ -294,7 +256,38 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   }, [ministryId]);
 
   const extractedTerms = useMemo(() => extractApprovedTerms(transcript), [transcript]);
-  const confusions = useMemo(() => detectConfusions(transcript), [transcript]);
+  const patternCorrections = useMemo(() => detectPatternCorrections(transcript), [transcript]);
+  const [aiCorrections, setAiCorrections] = useState<Correction[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [selectedCorrections, setSelectedCorrections] = useState<Set<string>>(new Set());
+
+  // Instant pattern matches + whatever the last "Analyze with AI" run
+  // found, deduped (pattern wins on overlap — it's free, so no reason to
+  // prefer an AI-guessed duplicate).
+  const allCorrections = useMemo<Correction[]>(() => {
+    const merged = [...patternCorrections];
+    const seen = new Set(merged.map((c) => c.wrong.toLowerCase()));
+    for (const c of aiCorrections) {
+      if (!seen.has(c.wrong.toLowerCase())) {
+        merged.push(c);
+        seen.add(c.wrong.toLowerCase());
+      }
+    }
+    return merged;
+  }, [patternCorrections, aiCorrections]);
+
+  // Default selection: everything not already in the approved vocabulary
+  // — re-derived whenever the correction list itself changes (new AI
+  // results, or the transcript changed enough to alter pattern matches),
+  // not on every customTerms tweak (which would keep resetting mid-review).
+  useEffect(() => {
+    setSelectedCorrections(new Set(
+      allCorrections
+        .filter((c) => !customTerms.some((t) => t.toLowerCase() === c.right.toLowerCase()))
+        .map((c) => c.wrong)
+    ));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCorrections]);
 
   const persistSermons = (next: SermonEntry[]) => {
     if (typeof window === 'undefined') return;
@@ -533,6 +526,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     setSourceUrl('');
     setSourceType('upload');
     setEditingId(null);
+    setAiCorrections([]);
     setSaving(false);
 
     toast({
@@ -551,6 +545,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     setFileName(sermon.fileName || '');
     setSourceType(sermon.sourceType || 'upload');
     setSourceUrl(sermon.sourceUrl || '');
+    setAiCorrections([]); // stale results from a previously-opened sermon
     formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
@@ -562,6 +557,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     setFileName('');
     setSourceUrl('');
     setSourceType('upload');
+    setAiCorrections([]);
   };
 
   const handleAddExtractedTerms = async () => {
@@ -582,48 +578,71 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     });
   };
 
-  // Adds the CORRECT word (right side of the pair) to vocabulary — never
-  // the misheard one. One term at a time (per-row button) or all at once.
-  const addConfusionCorrection = async (right: string) => {
-    if (customTerms.some((t) => t.toLowerCase() === right.toLowerCase())) return;
-    await persistTerms([...customTerms, right]);
-    toast({ title: 'Correction added', description: `"${right}" added to the approved vocabulary.` });
+  const toggleCorrection = (wrong: string) => {
+    setSelectedCorrections((prev) => {
+      const next = new Set(prev);
+      if (next.has(wrong)) next.delete(wrong); else next.add(wrong);
+      return next;
+    });
   };
 
-  const addAllConfusionCorrections = async () => {
-    if (!confusions.length) return;
-    const rights = confusions.map((c) => c.right);
+  // Adds every CHECKED row's corrected word/phrase to vocabulary — never
+  // the misheard one that was actually heard.
+  const addSelectedCorrections = async () => {
+    const chosen = allCorrections.filter((c) => selectedCorrections.has(c.wrong));
+    if (!chosen.length) return;
+    const rights = chosen.map((c) => c.right);
     const next = [...new Set([...customTerms, ...rights])];
     await persistTerms(next);
-    toast({ title: 'Corrections added', description: `${rights.length} likely-intended word(s) added to vocabulary.` });
+    toast({ title: 'Corrections added', description: `${rights.length} likely-intended word(s)/phrase(s) added to vocabulary.` });
   };
 
-  // Admin-editable draft of each suggested corrected sentence, keyed by
-  // the confusion's `wrong` term (stable — KNOWN_CONFUSIONS is a fixed
-  // list) — defaults to the auto-generated suggestedSentence until edited.
-  const [sentenceEdits, setSentenceEdits] = useState<Record<string, string>>({});
-
-  // Replaces the ORIGINAL sentence in the live transcript with the
-  // (possibly hand-edited) corrected one — fixes the whole sentence in
-  // place, not just the one flagged word, in case the rest of it was also
-  // garbled by the same mis-hearing.
-  const applySentenceFix = (c: ConfusionMatch) => {
-    if (!transcript.includes(c.rawSentence)) {
-      toast({
-        title: 'Could not apply',
-        description: 'The transcript changed since this suggestion was generated — re-check the text below and try again.',
-        variant: 'destructive',
-      });
+  // Quick per-row action: replaces the exact flagged span with its
+  // correction directly in the live transcript (both pattern and AI
+  // "wrong" values are guaranteed exact substrings — the edge function
+  // discards anything that isn't).
+  const applyCorrectionToTranscript = (c: Correction) => {
+    if (!transcript.includes(c.wrong)) {
+      toast({ title: 'Could not apply', description: 'That text is no longer in the transcript (already edited?).', variant: 'destructive' });
       return;
     }
-    // The admin edits the trimmed, human-readable sentence — reapply the
-    // original's exact leading/trailing whitespace so the replace doesn't
-    // run words from adjacent sentences together.
-    const leadingWs = c.rawSentence.match(/^\s*/)?.[0] ?? '';
-    const trailingWs = c.rawSentence.match(/\s*$/)?.[0] ?? '';
-    const edited = sentenceEdits[c.wrong] ?? c.suggestedSentence;
-    setTranscript(transcript.replace(c.rawSentence, leadingWs + edited + trailingWs));
-    toast({ title: 'Sentence corrected', description: 'Updated in the transcript above — remember to save/update the sermon.' });
+    setTranscript(transcript.replace(c.wrong, c.right));
+    toast({ title: 'Applied', description: 'Updated in the transcript above — remember to save/update the sermon.' });
+  };
+
+  // Deeper contextual pass (detect-transcript-corrections edge function,
+  // GPT-4o-mini) — catches errors no fixed dictionary could, e.g. a
+  // garbled clause like "the water is not and the ground bearing" ->
+  // "the water is naught, and the ground barren" (2 Kings 2:19). Explicit
+  // button, not automatic on every keystroke — an LLM call per transcript
+  // edit would be wasteful and slow.
+  const analyzeWithAI = async () => {
+    if (!transcript.trim()) {
+      toast({ title: 'Nothing to analyze', description: 'Paste or load a transcript first.', variant: 'destructive' });
+      return;
+    }
+    setAnalyzing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('detect-transcript-corrections', {
+        body: { ministry_id: ministryId, transcript },
+      });
+      if (error) throw error;
+      const found: Correction[] = Array.isArray(data?.corrections)
+        ? data.corrections.map((c: any) => ({ wrong: c.wrong, right: c.right, source: 'ai' as const }))
+        : [];
+      setAiCorrections(found);
+      toast({
+        title: data?.truncated ? 'Analysis complete (transcript truncated)' : 'Analysis complete',
+        description: found.length
+          ? `Found ${found.length} likely correction(s).${data?.truncated ? ' Only the first part of this very long transcript was scanned.' : ''}`
+          : 'No likely errors found.',
+      });
+    } catch (err: any) {
+      console.error('[MinistrySermonLibrary] analyzeWithAI failed:', err);
+      toast({ title: 'Analysis failed', description: err.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const [manualTermInput, setManualTermInput] = useState('');
@@ -836,77 +855,74 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
             </div>
           </div>
 
-          {/* Frequently misheard words AND the full sentences they sit in
-              (KNOWN_CONFUSIONS above) — distinct from "Detected sermon
-              phrases": that section extracts phrases that ARE probably
-              correct; this one flags words/sentences that are probably
-              WRONG, showing the whole sentence (not just the flagged word)
-              so a garbled sentence can be corrected in full, not guessed
-              at from a fragment. Two independent actions per match: add
-              just the corrected word to vocabulary, and/or apply the full
-              corrected sentence back into the transcript above. */}
+          {/* Frequently misheard / incorrect words. Two sources merged into
+              one table: the free, instant KNOWN_CONFUSIONS pattern list
+              above, and (on demand — "Analyze with AI") a real contextual
+              read of the whole transcript via detect-transcript-corrections,
+              which catches errors no fixed dictionary could (a garbled
+              clause like "the water is not and the ground bearing" ->
+              "the water is naught, and the ground barren", 2 Kings 2:19).
+              Checkbox-select which corrected words to add to vocabulary;
+              "Fix in transcript" per row applies that one directly. */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-1.5 text-sm font-semibold">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                Possibly misheard sentences
+                Frequently misheard / incorrect words
               </h3>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{confusions.length} found</Badge>
-                {confusions.length > 0 && (
-                  <Button type="button" size="sm" variant="outline" onClick={addAllConfusionCorrections}>
-                    Add all word corrections
-                  </Button>
-                )}
-              </div>
+              <Button type="button" size="sm" variant="outline" onClick={analyzeWithAI} disabled={analyzing || !transcript.trim()}>
+                {analyzing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+                {analyzing ? 'Analyzing…' : 'Analyze with AI'}
+              </Button>
             </div>
-            {confusions.length > 0 ? (
-              <div className="space-y-3">
-                {confusions.map((c) => {
-                  const alreadyAdded = customTerms.some((t) => t.toLowerCase() === c.right.toLowerCase());
-                  const editedSentence = sentenceEdits[c.wrong] ?? c.suggestedSentence;
-                  return (
-                    <div key={c.wrong} className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <span className="text-amber-700 line-through decoration-amber-400">{c.wrong}</span>
-                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                        <span className="text-emerald-700">{c.right}</span>
-                        {c.count > 1 && <span className="text-xs font-normal text-muted-foreground">found {c.count}× in this transcript</span>}
-                      </div>
 
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">As heard:</p>
-                        <p className="rounded-md bg-white/60 px-2 py-1.5 text-sm text-gray-600">{c.sentence}</p>
-                      </div>
-
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Suggested correction — edit if needed:</p>
-                        <Textarea
-                          value={editedSentence}
-                          onChange={(e) => setSentenceEdits((prev) => ({ ...prev, [c.wrong]: e.target.value }))}
-                          rows={2}
-                          className="bg-white text-sm"
-                        />
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Button type="button" size="sm" onClick={() => applySentenceFix(c)}>
-                          Apply corrected sentence to transcript
-                        </Button>
-                        <Button
-                          type="button" size="sm" variant={alreadyAdded ? 'ghost' : 'outline'}
-                          disabled={alreadyAdded}
-                          onClick={() => addConfusionCorrection(c.right)}
-                        >
-                          {alreadyAdded ? 'Word added' : `Add just "${c.right}" to vocabulary`}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {allCorrections.length > 0 ? (
+              <>
+                <div className="overflow-x-auto rounded-lg border border-amber-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-amber-50 text-left text-xs font-semibold text-amber-800">
+                      <tr>
+                        <th className="w-8 px-3 py-2"><span className="sr-only">Select</span></th>
+                        <th className="px-3 py-2">Transcript says</th>
+                        <th className="px-3 py-2">Likely intended word(s)</th>
+                        <th className="w-px px-3 py-2"><span className="sr-only">Actions</span></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-100">
+                      {allCorrections.map((c) => (
+                        <tr key={c.wrong}>
+                          <td className="px-3 py-2 align-top">
+                            <Checkbox
+                              checked={selectedCorrections.has(c.wrong)}
+                              onCheckedChange={() => toggleCorrection(c.wrong)}
+                              aria-label={`Select correction for "${c.wrong}"`}
+                            />
+                          </td>
+                          <td className="px-3 py-2 align-top text-gray-600">
+                            "{c.wrong}"
+                            {c.source === 'ai' && <Badge variant="outline" className="ml-2 border-indigo-200 bg-indigo-50 text-indigo-700">AI</Badge>}
+                          </td>
+                          <td className="px-3 py-2 align-top font-medium text-emerald-700">{c.right}</td>
+                          <td className="px-3 py-2 align-top">
+                            <Button type="button" size="sm" variant="ghost" onClick={() => applyCorrectionToTranscript(c)}>
+                              Fix in transcript
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Button type="button" size="sm" onClick={addSelectedCorrections} disabled={selectedCorrections.size === 0}>
+                  Add selected ({selectedCorrections.size}) to vocabulary
+                </Button>
+              </>
             ) : (
-              <p className="text-sm text-muted-foreground">No known misheard words spotted in this transcript.</p>
+              <p className="text-sm text-muted-foreground">
+                {transcript.trim()
+                  ? 'No known misheard words spotted yet — try "Analyze with AI" for a deeper contextual check.'
+                  : 'Type or paste a transcript, then Analyze with AI to check for likely misheard words.'}
+              </p>
             )}
           </div>
         </CardContent>
