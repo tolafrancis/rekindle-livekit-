@@ -24,7 +24,8 @@ import {
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
-  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search
+  HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
+  User,
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -308,6 +309,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   useEffect(() => {
     let cancelled = false;
     getMinistryEntitlements(ministry.id).then((e) => { if (!cancelled) setMinistryEntitlements(e); });
+    return () => { cancelled = true; };
+  }, [ministry.id]);
+
+  // The `ministry` prop doesn't carry `slug` (see the Ministry interface
+  // above), but /my-membership/:slug (MemberMinistryProfile.tsx — profile,
+  // Leave/Delete Danger Zone) is keyed on it. Fetched once per ministry for
+  // the "My Profile" header button below.
+  const [mySlug, setMySlug] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('ministry_groups').select('slug').eq('id', ministry.id).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setMySlug((data as any)?.slug ?? null); });
     return () => { cancelled = true; };
   }, [ministry.id]);
 
@@ -1107,6 +1120,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   always visible on both web and mobile. */}
               <div className="flex flex-col items-end gap-2 shrink-0">
                 <div className="flex items-center gap-2">
+                  {/* My Profile — the member's own registration details plus the
+                      Leave Ministry / Delete My Data Danger Zone
+                      (MemberMinistryProfile.tsx). Previously only reachable by
+                      typing /my-membership/:slug directly. */}
+                  <button
+                    onClick={() => mySlug && navigate(`/my-membership/${mySlug}`)}
+                    disabled={!mySlug}
+                    title={t('ministrySpace', 'myProfile', 'My Profile')}
+                    aria-label={t('ministrySpace', 'myProfile', 'My Profile')}
+                    className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors disabled:opacity-50"
+                  >
+                    <User className="h-4 w-4" />
+                  </button>
                   {/* Role Badge */}
                   <Badge className="bg-white/20 text-white border-0">
                     {isLeader ? (
@@ -1217,8 +1243,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         </div>
                       );
                     })}
-                    {/* Back to Rekindle — exit the ministry space (return to the hub) */}
+                    {/* My Profile + Back to Rekindle */}
                     <div className="my-1 border-t border-gray-100" />
+                    <button
+                      onClick={() => { setNavMenuOpen(false); if (mySlug) navigate(`/my-membership/${mySlug}`); }}
+                      disabled={!mySlug}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <User className="h-4 w-4 shrink-0" />
+                      {t('ministrySpace', 'myProfile', 'My Profile')}
+                    </button>
                     <button
                       onClick={() => { setNavMenuOpen(false); onExit(); }}
                       className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"

@@ -3874,6 +3874,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "ministryTierRequired": "Ministry Tier Required",
     "upgradeManagementFeatures": "Upgrade to Ministry tier to access management features",
     "manageMinistry": "Manage Ministry",
+    "myProfile": "My Profile",
     "backToRekindle": "Back to Rekindle",
     "ministryNavigation": "{name} navigation",
     "unlockFullFeatures": "Unlock Full Ministry Features",
