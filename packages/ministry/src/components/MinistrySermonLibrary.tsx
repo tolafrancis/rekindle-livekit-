@@ -8,7 +8,7 @@ import { Checkbox } from '@rekindle/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube, Loader2 } from 'lucide-react';
+import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube, Loader2, ArrowRight, AlertTriangle } from 'lucide-react';
 
 interface SermonEntry {
   id: string;
@@ -64,6 +64,60 @@ const phrasePatterns = [
 
 function normalizeTerm(term: string): string {
   return term.replace(/\s+/g, ' ').trim();
+}
+
+// Known STT confusion pairs — same ones already vetted and used by the
+// live translation bot's deterministic correction layer
+// (rekindle-translation-bot/src/sttVocabulary.ts's applyConservativeTranscriptFixes
+// + docs/nigerian-english-stt-optimization-plan.md's PASTORAL_CONTEXT_CORRECTIONS).
+// Deliberately phrase-level where the bare word alone is too ambiguous to
+// flag safely (e.g. never "press" -> "praise" on its own — "press the
+// button" is legitimate speech; only "press God"/"press the Lord" is
+// flagged). This only ever SUGGESTS — nothing is auto-replaced in the
+// transcript, the admin reviews context and opts in per match.
+const KNOWN_CONFUSIONS: Array<{ wrong: string; right: string }> = [
+  { wrong: 'press God', right: 'praise God' },
+  { wrong: 'press the Lord', right: 'praise the Lord' },
+  { wrong: 'press him', right: 'praise Him' },
+  { wrong: 'Holy Ghost', right: 'Holy Spirit' },
+  { wrong: 'holy speed', right: 'Holy Spirit' },
+  { wrong: 'annoying', right: 'anointing' },
+  { wrong: 'faster', right: 'pastor' },
+  { wrong: 'player', right: 'prayer' },
+  { wrong: 'prey', right: 'pray' },
+];
+
+interface ConfusionMatch {
+  wrong: string;
+  right: string;
+  count: number;
+  context: string;
+}
+
+// Scans for likely-misheard words/phrases and pairs each with its likely
+// intended word — so the admin can add the CORRECT form to vocabulary,
+// not the wrong one that was actually heard.
+function detectConfusions(transcript: string): ConfusionMatch[] {
+  if (!transcript) return [];
+  const results: ConfusionMatch[] = [];
+  for (const { wrong, right } of KNOWN_CONFUSIONS) {
+    const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+    const matches = [...transcript.matchAll(re)];
+    if (matches.length === 0) continue;
+
+    const first = matches[0];
+    const idx = first.index ?? 0;
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(transcript.length, idx + wrong.length + 40);
+    const context =
+      (start > 0 ? '…' : '') +
+      normalizeTerm(transcript.slice(start, end)) +
+      (end < transcript.length ? '…' : '');
+
+    results.push({ wrong, right, count: matches.length, context });
+  }
+  return results;
 }
 
 function extractApprovedTerms(transcript: string): string[] {
@@ -205,6 +259,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   }, [ministryId]);
 
   const extractedTerms = useMemo(() => extractApprovedTerms(transcript), [transcript]);
+  const confusions = useMemo(() => detectConfusions(transcript), [transcript]);
 
   const persistSermons = (next: SermonEntry[]) => {
     if (typeof window === 'undefined') return;
@@ -477,6 +532,22 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     });
   };
 
+  // Adds the CORRECT word (right side of the pair) to vocabulary — never
+  // the misheard one. One term at a time (per-row button) or all at once.
+  const addConfusionCorrection = async (right: string) => {
+    if (customTerms.some((t) => t.toLowerCase() === right.toLowerCase())) return;
+    await persistTerms([...customTerms, right]);
+    toast({ title: 'Correction added', description: `"${right}" added to the approved vocabulary.` });
+  };
+
+  const addAllConfusionCorrections = async () => {
+    if (!confusions.length) return;
+    const rights = confusions.map((c) => c.right);
+    const next = [...new Set([...customTerms, ...rights])];
+    await persistTerms(next);
+    toast({ title: 'Corrections added', description: `${rights.length} likely-intended word(s) added to vocabulary.` });
+  };
+
   const [manualTermInput, setManualTermInput] = useState('');
   const [addingManualTerm, setAddingManualTerm] = useState(false);
 
@@ -666,6 +737,58 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                 <p className="text-sm text-muted-foreground">Type or paste a transcript to suggest custom sermon phrases.</p>
               )}
             </div>
+          </div>
+
+          {/* Frequently misheard words paired with their likely-intended word
+              (KNOWN_CONFUSIONS above) — distinct from "Detected sermon
+              phrases": that section extracts phrases that ARE probably
+              correct; this one flags words that are probably WRONG, so the
+              admin adds the corrected form, never the misheard one. */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                Possibly misheard words
+              </h3>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{confusions.length} found</Badge>
+                {confusions.length > 0 && (
+                  <Button type="button" size="sm" variant="outline" onClick={addAllConfusionCorrections}>
+                    Add all corrections
+                  </Button>
+                )}
+              </div>
+            </div>
+            {confusions.length > 0 ? (
+              <div className="space-y-2">
+                {confusions.map((c) => {
+                  const alreadyAdded = customTerms.some((t) => t.toLowerCase() === c.right.toLowerCase());
+                  return (
+                    <div key={c.wrong} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <span className="text-amber-700 line-through decoration-amber-400">{c.wrong}</span>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                          <span className="text-emerald-700">{c.right}</span>
+                          {c.count > 1 && <span className="text-xs font-normal text-muted-foreground">×{c.count}</span>}
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={c.context}>"{c.context}"</p>
+                      </div>
+                      <Button
+                        type="button" size="sm" variant={alreadyAdded ? 'ghost' : 'outline'}
+                        disabled={alreadyAdded}
+                        onClick={() => addConfusionCorrection(c.right)}
+                        className="shrink-0"
+                      >
+                        {alreadyAdded ? 'Added' : `Add "${c.right}"`}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No known misheard words spotted in this transcript.</p>
+            )}
           </div>
         </CardContent>
       </Card>
