@@ -638,8 +638,20 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
           : 'No likely errors found.',
       });
     } catch (err: any) {
-      console.error('[MinistrySermonLibrary] analyzeWithAI failed:', err);
-      toast({ title: 'Analysis failed', description: err.message || 'Please try again.', variant: 'destructive' });
+      // supabase-js's FunctionsHttpError only says "non-2xx status code" by
+      // default — the function's own { error: "..." } body (the actually
+      // useful part) is sitting unread on err.context (a Response). Surface
+      // that instead so a real failure reason shows up in the toast, not a
+      // dead end.
+      let detail = err?.message || 'Please try again.';
+      try {
+        if (err?.context?.json) {
+          const body = await err.context.json();
+          if (body?.error) detail = body.error;
+        }
+      } catch { /* context wasn't JSON — fall back to err.message above */ }
+      console.error('[MinistrySermonLibrary] analyzeWithAI failed:', detail, err);
+      toast({ title: 'Analysis failed', description: detail, variant: 'destructive' });
     } finally {
       setAnalyzing(false);
     }
