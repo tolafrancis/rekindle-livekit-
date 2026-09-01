@@ -19,6 +19,14 @@
 // to presign a PUT URL, same signing approach already used server-side in
 // supabase/functions/ministry-retention-sweep for S3-compatible requests.
 //
+// `publicUrl` is ALSO presigned (a GET, aws4fetch's fixed 24h S3 expiry —
+// not configurable, checked node_modules/aws4fetch source), not the bare
+// object URL — the ministry-video-messages bucket is private, so a bare
+// URL 400s for anyone without credentials, including Deepgram's own
+// servers when cf-transcribe hands it `source_url` to fetch by URL
+// (confirmed via a real REMOTE_CONTENT_ERROR from a live upload). 24h
+// comfortably outlives the 5-minute transcription cron.
+//
 // Secrets (wrangler secret put): reuse the SAME R2 credentials already
 // configured for pastor video messages (VIDEO_R2_* — see
 // ministry-retention-sweep's own header comment):
@@ -104,13 +112,17 @@ export default {
 
     try {
       const client = new AwsClient({ accessKeyId, secretAccessKey, region, service: 's3' });
-      const signedRequest = await client.sign(objectUrl, {
+      const signedPut = await client.sign(objectUrl, {
         method: 'PUT',
         headers: { 'Content-Type': contentType },
         aws: { signQuery: true },
       });
+      const signedGet = await client.sign(objectUrl, {
+        method: 'GET',
+        aws: { signQuery: true },
+      });
 
-      return json({ signedUrl: signedRequest.url, publicUrl: objectUrl });
+      return json({ signedUrl: signedPut.url, publicUrl: signedGet.url });
     } catch (err) {
       console.error('[r2-signer] signing failed:', err?.message || err);
       return json({ error: 'signing failed' }, 500);

@@ -21,6 +21,7 @@ interface SermonEntry {
   createdAt: string;
   approvedTerms: string[];
   transcriptionPending?: boolean;
+  processingError?: string;
 }
 
 interface MinistrySermonLibraryProps {
@@ -98,6 +99,29 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   const [sourceUrl, setSourceUrl] = useState('');
   const [loadingSavedData, setLoadingSavedData] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Set while reviewing/correcting an already-saved sermon (Edit button
+  // below) — Save then UPDATEs this row instead of inserting a new one.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const formTopRef = React.useRef<HTMLDivElement>(null);
+
+  // Shared row -> SermonEntry mapping (was duplicated, slightly
+  // differently, between the initial load and the poll below — the poll's
+  // copy never set transcriptionPending, so a still-processing sermon's
+  // spinner silently reverted to "No transcript yet" after the first poll
+  // tick even though it wasn't actually stuck).
+  const mapRow = (row: any): SermonEntry => ({
+    id: row.id,
+    title: row.title,
+    speaker: row.speaker || 'Unknown speaker',
+    transcript: row.transcript || '',
+    fileName: row.file_name || undefined,
+    sourceType: (row.source_type as 'upload' | 'link' | 'youtube') || 'upload',
+    sourceUrl: row.source_url || undefined,
+    createdAt: row.created_at,
+    approvedTerms: Array.isArray(row.approved_terms) ? row.approved_terms : [],
+    transcriptionPending: (row.status && row.status !== 'done') || false,
+    processingError: row.processing_error || undefined,
+  });
 
   useEffect(() => {
     const loadSavedData = async () => {
@@ -139,18 +163,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
           .order('created_at', { ascending: false });
 
         if (dbSermons && dbSermons.length > 0) {
-          const mapped: SermonEntry[] = dbSermons.map((row) => ({
-            id: row.id,
-            title: row.title,
-            speaker: row.speaker || 'Unknown speaker',
-            transcript: row.transcript || '',
-            fileName: row.file_name || undefined,
-            sourceType: (row.source_type as 'upload' | 'link' | 'youtube') || 'upload',
-            sourceUrl: row.source_url || undefined,
-            createdAt: row.created_at,
-            approvedTerms: Array.isArray(row.approved_terms) ? row.approved_terms : [],
-            transcriptionPending: (row.status && row.status !== 'done') || false,
-          }));
+          const mapped: SermonEntry[] = dbSermons.map(mapRow);
           setSermons(mapped);
           localStorage.setItem(STORAGE_KEY(ministryId), JSON.stringify(mapped));
         }
@@ -173,23 +186,13 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
       try {
         const { data: dbSermons } = await supabase
           .from('ministry_sermon_library')
-          .select('id, title, speaker, transcript, file_name, source_type, source_url, created_at, approved_terms')
+          .select('id, title, speaker, transcript, file_name, source_type, source_url, created_at, approved_terms, status, processing_error')
           .eq('ministry_id', ministryId)
           .order('created_at', { ascending: false })
           .limit(20);
 
         if (dbSermons) {
-          const mapped: SermonEntry[] = dbSermons.map((row) => ({
-            id: row.id,
-            title: row.title,
-            speaker: row.speaker || 'Unknown speaker',
-            transcript: row.transcript || '',
-            fileName: row.file_name || undefined,
-            sourceType: (row.source_type as 'upload' | 'link' | 'youtube') || 'upload',
-            sourceUrl: row.source_url || undefined,
-            createdAt: row.created_at,
-            approvedTerms: Array.isArray(row.approved_terms) ? row.approved_terms : [],
-          }));
+          const mapped: SermonEntry[] = dbSermons.map(mapRow);
           setSermons(mapped);
           localStorage.setItem(STORAGE_KEY(ministryId), JSON.stringify(mapped));
         }
@@ -333,49 +336,76 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     setSaving(true);
 
     const approvedTerms = extractApprovedTerms(transcript || sourceUrl || title);
+    const isEditing = !!editingId;
     const entry: SermonEntry = {
-      id: `${Date.now()}`,
+      id: editingId || `${Date.now()}`,
       title: title.trim(),
       speaker: speaker.trim() || 'Unknown speaker',
       transcript: transcript.trim(),
       fileName: fileName || undefined,
       sourceType,
       sourceUrl: sourceUrl.trim() || undefined,
-      createdAt: new Date().toISOString(),
+      createdAt: isEditing
+        ? (sermons.find((s) => s.id === editingId)?.createdAt ?? new Date().toISOString())
+        : new Date().toISOString(),
       approvedTerms,
     };
 
-    const next = [entry, ...sermons];
+    const next = isEditing
+      ? sermons.map((s) => (s.id === editingId ? entry : s))
+      : [entry, ...sermons];
     persistSermons(next);
 
     try {
+      let sermonId: string | undefined = isEditing ? editingId! : undefined;
+
+      if (isEditing) {
+        // A correction to an existing transcript — clear any prior
+        // transcription-worker status/error, since the admin's manual edit
+        // is now the source of truth (Retry no longer applies to it).
+        const { error: updateErr } = await supabase
+          .from('ministry_sermon_library')
+          .update({
+            title: entry.title,
+            speaker: entry.speaker,
+            transcript: entry.transcript,
+            source_type: entry.sourceType || 'upload',
+            source_url: entry.sourceUrl || null,
+            status: 'done',
+            processing_error: null,
+            approved_terms: approvedTerms,
+          })
+          .eq('id', editingId);
+        if (updateErr) throw updateErr;
+      } else {
         const { data: inserted, error: sermonError } = await supabase
-        .from('ministry_sermon_library')
-        .insert({
-          ministry_id: ministryId,
-          title: entry.title,
-          speaker: entry.speaker,
-          transcript: entry.transcript,
-          file_name: entry.fileName || null,
-          source_type: entry.sourceType || 'upload',
-          source_url: entry.sourceUrl || null,
+          .from('ministry_sermon_library')
+          .insert({
+            ministry_id: ministryId,
+            title: entry.title,
+            speaker: entry.speaker,
+            transcript: entry.transcript,
+            file_name: entry.fileName || null,
+            source_type: entry.sourceType || 'upload',
+            source_url: entry.sourceUrl || null,
             status: 'pending',
             processing_error: null,
-          approved_terms: approvedTerms,
-        })
-        .select('id')
-        .single();
-
-      if (sermonError) throw sermonError;
+            approved_terms: approvedTerms,
+          })
+          .select('id')
+          .single();
+        if (sermonError) throw sermonError;
+        sermonId = inserted?.id;
+      }
 
       const nextTerms = [...new Set([...customTerms, ...approvedTerms])];
       await persistTerms(nextTerms);
 
-      if (inserted?.id) {
+      if (sermonId) {
         const termRows = nextTerms.map((term) => ({
           ministry_id: ministryId,
           term,
-          source_sermon_id: inserted.id,
+          source_sermon_id: sermonId,
         }));
         const { error: termUpsertError } = await supabase
           .from('ministry_sermon_vocabularies')
@@ -397,12 +427,36 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     setFileName('');
     setSourceUrl('');
     setSourceType('upload');
+    setEditingId(null);
     setSaving(false);
 
     toast({
-      title: 'Sermon saved',
-      description: 'The draft sermon and its approved sermon terms are ready for future STT tuning.',
+      title: isEditing ? 'Sermon updated' : 'Sermon saved',
+      description: isEditing
+        ? 'Your corrections were saved and the approved vocabulary was updated.'
+        : 'The draft sermon and its approved sermon terms are ready for future STT tuning.',
     });
+  };
+
+  const loadSermonForEdit = (sermon: SermonEntry) => {
+    setEditingId(sermon.id);
+    setTitle(sermon.title);
+    setSpeaker(sermon.speaker);
+    setTranscript(sermon.transcript);
+    setFileName(sermon.fileName || '');
+    setSourceType(sermon.sourceType || 'upload');
+    setSourceUrl(sermon.sourceUrl || '');
+    formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setTitle('');
+    setSpeaker('');
+    setTranscript('');
+    setFileName('');
+    setSourceUrl('');
+    setSourceType('upload');
   };
 
   const handleAddExtractedTerms = async () => {
@@ -503,14 +557,20 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
 
   return (
     <div className="space-y-5">
-      <Card>
+      <Card ref={formTopRef}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <FileText className="h-4 w-4 text-indigo-600" />
-            Sermon Upload & Transcript
+            {editingId ? 'Editing Sermon' : 'Sermon Upload & Transcript'}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
+          {editingId && (
+            <div className="flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+              <span>Reviewing a saved sermon — fix any wrong words below, then save to update it in place.</span>
+              <Button type="button" size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Sermon title</label>
@@ -582,7 +642,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
 
           <div className="flex flex-wrap items-center gap-3">
             <Button type="button" onClick={handleSaveSermon} disabled={saving || loadingSavedData}>
-              {saving ? 'Saving...' : 'Save sermon'}
+              {saving ? 'Saving...' : editingId ? 'Update sermon' : 'Save sermon'}
             </Button>
             <Button type="button" variant="outline" onClick={handleAddExtractedTerms}>
               <Sparkles className="mr-2 h-4 w-4" />
@@ -674,6 +734,8 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                 <div className="mt-3">
                   {sermon.transcript ? (
                     <p className="line-clamp-4 text-sm text-muted-foreground whitespace-pre-wrap">{sermon.transcript}</p>
+                  ) : sermon.processingError ? (
+                    <p className="text-sm text-red-600">Transcription failed: {sermon.processingError}</p>
                   ) : sermon.transcriptionPending ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
@@ -693,6 +755,10 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                 </div>
 
                 <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => loadSermonForEdit(sermon)}>
+                    {sermon.transcript ? 'Review / Edit' : 'Open'}
+                  </Button>
+
                   {/** Show retry when there's no transcript or when an error occurred */}
                   {(!sermon.transcript || sermon.transcriptionPending) && (
                     <Button size="sm" variant="outline" onClick={() => retryTranscription(sermon.id)}>
