@@ -31,6 +31,12 @@ interface MinistrySermonLibraryProps {
 const STORAGE_KEY = (ministryId: string) => `rekindle:sermon-library:${ministryId}`;
 const TERMS_KEY = (ministryId: string) => `rekindle:sermon-vocabulary:${ministryId}`;
 
+// Cap on saved sermons per ministry — keeps the library and the STT
+// vocabulary review workflow to a manageable, actually-reviewed set
+// instead of growing unbounded. Only gates NEW sermons (uploads/saves);
+// editing an existing one is always allowed regardless of count.
+const MAX_SERMONS = 5;
+
 const defaultTerms = [
   'praise God',
   'Holy Spirit',
@@ -91,12 +97,38 @@ interface ConfusionMatch {
   wrong: string;
   right: string;
   count: number;
-  context: string;
+  /** Exact original substring (untrimmed) — used as the search key when
+   *  applying a fix back into the transcript, so the replace can't drift
+   *  from what was actually shown. */
+  rawSentence: string;
+  /** Trimmed, for display. */
+  sentence: string;
+  /** rawSentence with every occurrence of `wrong` swapped for `right`. */
+  suggestedSentence: string;
 }
 
-// Scans for likely-misheard words/phrases and pairs each with its likely
-// intended word — so the admin can add the CORRECT form to vocabulary,
-// not the wrong one that was actually heard.
+// Finds the full sentence (bounded by . ! ? or a newline) surrounding a
+// match, not just a fixed character window — so a garbled sentence can be
+// read and corrected in full, not guessed at from a 40-char fragment.
+function sentenceAround(transcript: string, matchIndex: number, matchLength: number): string {
+  const before = transcript.slice(0, matchIndex);
+  const startBoundary = Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n'));
+  const start = startBoundary === -1 ? 0 : startBoundary + 1;
+
+  const afterIdx = matchIndex + matchLength;
+  const after = transcript.slice(afterIdx);
+  const terminatorOffsets = [after.indexOf('.'), after.indexOf('!'), after.indexOf('?'), after.indexOf('\n')].filter((n) => n !== -1);
+  const relEnd = terminatorOffsets.length ? Math.min(...terminatorOffsets) + 1 : after.length;
+  const end = afterIdx + relEnd;
+
+  return transcript.slice(start, end);
+}
+
+// Scans for likely-misheard words/phrases AND the full sentences they sit
+// in, pairing each with its likely intended word — so the admin can add
+// the CORRECT form to vocabulary (never the wrong one that was actually
+// heard) or apply a corrected version of the whole sentence back into the
+// transcript, not just swap an isolated word out of context.
 function detectConfusions(transcript: string): ConfusionMatch[] {
   if (!transcript) return [];
   const results: ConfusionMatch[] = [];
@@ -108,14 +140,17 @@ function detectConfusions(transcript: string): ConfusionMatch[] {
 
     const first = matches[0];
     const idx = first.index ?? 0;
-    const start = Math.max(0, idx - 40);
-    const end = Math.min(transcript.length, idx + wrong.length + 40);
-    const context =
-      (start > 0 ? '…' : '') +
-      normalizeTerm(transcript.slice(start, end)) +
-      (end < transcript.length ? '…' : '');
+    const rawSentence = sentenceAround(transcript, idx, wrong.length);
+    const suggestedSentence = rawSentence.replace(re, right);
 
-    results.push({ wrong, right, count: matches.length, context });
+    results.push({
+      wrong,
+      right,
+      count: matches.length,
+      rawSentence,
+      sentence: normalizeTerm(rawSentence),
+      suggestedSentence: normalizeTerm(suggestedSentence),
+    });
   }
   return results;
 }
@@ -298,6 +333,12 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
         title: 'Transcript loaded',
         description: `${file.name} was imported into the transcript editor.`,
       });
+    } else if (sermons.length >= MAX_SERMONS) {
+      toast({
+        title: 'Sermon limit reached',
+        description: `You can keep up to ${MAX_SERMONS} saved sermons. Delete one below before uploading another.`,
+        variant: 'destructive',
+      });
     } else {
       // Upload audio/video to Supabase Storage and create DB record so a
       // background worker can transcribe it and update the sermon row.
@@ -374,6 +415,15 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
       toast({
         title: 'Missing sermon data',
         description: 'Add a sermon title before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!editingId && sermons.length >= MAX_SERMONS) {
+      toast({
+        title: 'Sermon limit reached',
+        description: `You can keep up to ${MAX_SERMONS} saved sermons. Delete one below to save a new one.`,
         variant: 'destructive',
       });
       return;
@@ -548,6 +598,34 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     toast({ title: 'Corrections added', description: `${rights.length} likely-intended word(s) added to vocabulary.` });
   };
 
+  // Admin-editable draft of each suggested corrected sentence, keyed by
+  // the confusion's `wrong` term (stable — KNOWN_CONFUSIONS is a fixed
+  // list) — defaults to the auto-generated suggestedSentence until edited.
+  const [sentenceEdits, setSentenceEdits] = useState<Record<string, string>>({});
+
+  // Replaces the ORIGINAL sentence in the live transcript with the
+  // (possibly hand-edited) corrected one — fixes the whole sentence in
+  // place, not just the one flagged word, in case the rest of it was also
+  // garbled by the same mis-hearing.
+  const applySentenceFix = (c: ConfusionMatch) => {
+    if (!transcript.includes(c.rawSentence)) {
+      toast({
+        title: 'Could not apply',
+        description: 'The transcript changed since this suggestion was generated — re-check the text below and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    // The admin edits the trimmed, human-readable sentence — reapply the
+    // original's exact leading/trailing whitespace so the replace doesn't
+    // run words from adjacent sentences together.
+    const leadingWs = c.rawSentence.match(/^\s*/)?.[0] ?? '';
+    const trailingWs = c.rawSentence.match(/\s*$/)?.[0] ?? '';
+    const edited = sentenceEdits[c.wrong] ?? c.suggestedSentence;
+    setTranscript(transcript.replace(c.rawSentence, leadingWs + edited + trailingWs));
+    toast({ title: 'Sentence corrected', description: 'Updated in the transcript above — remember to save/update the sermon.' });
+  };
+
   const [manualTermInput, setManualTermInput] = useState('');
   const [addingManualTerm, setAddingManualTerm] = useState(false);
 
@@ -623,6 +701,25 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
     } catch (err: any) {
       console.error('[MinistrySermonLibrary] retry failed:', err);
       toast({ title: 'Retry failed', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteSermon = async (sermon: SermonEntry) => {
+    if (!window.confirm(`Delete "${sermon.title}"? This can't be undone.`)) return;
+    setDeletingId(sermon.id);
+    try {
+      const { error } = await supabase.from('ministry_sermon_library').delete().eq('id', sermon.id);
+      if (error) throw error;
+      persistSermons(sermons.filter((s) => s.id !== sermon.id));
+      if (editingId === sermon.id) cancelEdit();
+      toast({ title: 'Sermon deleted' });
+    } catch (err: any) {
+      console.error('[MinistrySermonLibrary] delete failed:', err);
+      toast({ title: 'Delete failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -739,49 +836,71 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
             </div>
           </div>
 
-          {/* Frequently misheard words paired with their likely-intended word
+          {/* Frequently misheard words AND the full sentences they sit in
               (KNOWN_CONFUSIONS above) — distinct from "Detected sermon
               phrases": that section extracts phrases that ARE probably
-              correct; this one flags words that are probably WRONG, so the
-              admin adds the corrected form, never the misheard one. */}
+              correct; this one flags words/sentences that are probably
+              WRONG, showing the whole sentence (not just the flagged word)
+              so a garbled sentence can be corrected in full, not guessed
+              at from a fragment. Two independent actions per match: add
+              just the corrected word to vocabulary, and/or apply the full
+              corrected sentence back into the transcript above. */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 text-sm font-semibold">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                Possibly misheard words
+                Possibly misheard sentences
               </h3>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">{confusions.length} found</Badge>
                 {confusions.length > 0 && (
                   <Button type="button" size="sm" variant="outline" onClick={addAllConfusionCorrections}>
-                    Add all corrections
+                    Add all word corrections
                   </Button>
                 )}
               </div>
             </div>
             {confusions.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {confusions.map((c) => {
                   const alreadyAdded = customTerms.some((t) => t.toLowerCase() === c.right.toLowerCase());
+                  const editedSentence = sentenceEdits[c.wrong] ?? c.suggestedSentence;
                   return (
-                    <div key={c.wrong} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <span className="text-amber-700 line-through decoration-amber-400">{c.wrong}</span>
-                          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                          <span className="text-emerald-700">{c.right}</span>
-                          {c.count > 1 && <span className="text-xs font-normal text-muted-foreground">×{c.count}</span>}
-                        </div>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={c.context}>"{c.context}"</p>
+                    <div key={c.wrong} className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <span className="text-amber-700 line-through decoration-amber-400">{c.wrong}</span>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                        <span className="text-emerald-700">{c.right}</span>
+                        {c.count > 1 && <span className="text-xs font-normal text-muted-foreground">found {c.count}× in this transcript</span>}
                       </div>
-                      <Button
-                        type="button" size="sm" variant={alreadyAdded ? 'ghost' : 'outline'}
-                        disabled={alreadyAdded}
-                        onClick={() => addConfusionCorrection(c.right)}
-                        className="shrink-0"
-                      >
-                        {alreadyAdded ? 'Added' : `Add "${c.right}"`}
-                      </Button>
+
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">As heard:</p>
+                        <p className="rounded-md bg-white/60 px-2 py-1.5 text-sm text-gray-600">{c.sentence}</p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Suggested correction — edit if needed:</p>
+                        <Textarea
+                          value={editedSentence}
+                          onChange={(e) => setSentenceEdits((prev) => ({ ...prev, [c.wrong]: e.target.value }))}
+                          rows={2}
+                          className="bg-white text-sm"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button type="button" size="sm" onClick={() => applySentenceFix(c)}>
+                          Apply corrected sentence to transcript
+                        </Button>
+                        <Button
+                          type="button" size="sm" variant={alreadyAdded ? 'ghost' : 'outline'}
+                          disabled={alreadyAdded}
+                          onClick={() => addConfusionCorrection(c.right)}
+                        >
+                          {alreadyAdded ? 'Word added' : `Add just "${c.right}" to vocabulary`}
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -839,7 +958,12 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
       {sermons.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Saved sermons</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Saved sermons</CardTitle>
+              <Badge variant={sermons.length >= MAX_SERMONS ? 'destructive' : 'secondary'}>
+                {sermons.length} / {MAX_SERMONS}
+              </Badge>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             {sermons.map((sermon) => (
@@ -849,7 +973,18 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
                     <h4 className="font-semibold">{sermon.title}</h4>
                     <p className="text-sm text-muted-foreground">{sermon.speaker}</p>
                   </div>
-                  <span className="text-xs text-muted-foreground">{new Date(sermon.createdAt).toLocaleDateString()}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-muted-foreground">{new Date(sermon.createdAt).toLocaleDateString()}</span>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${sermon.title}`}
+                      onClick={() => deleteSermon(sermon)}
+                      disabled={deletingId === sermon.id}
+                      className="text-muted-foreground hover:text-red-600 disabled:opacity-50"
+                    >
+                      {deletingId === sermon.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {sermon.fileName && <p className="mt-2 text-xs text-muted-foreground">Source file: {sermon.fileName}</p>}
