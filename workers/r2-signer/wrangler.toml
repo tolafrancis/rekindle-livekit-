@@ -1,0 +1,20 @@
+name = "rekindle-r2-signer"
+main = "worker.mjs"
+compatibility_date = "2026-08-24"
+
+# More specific than the existing tenant-router Worker's "*.rekindlebc.com/*"
+# route, so this one wins for this exact path on both the apex and every
+# tenant subdomain without touching tenant-router at all.
+routes = [
+  { pattern = "rekindlebc.com/signed-put", zone_name = "rekindlebc.com" },
+  { pattern = "*.rekindlebc.com/signed-put", zone_name = "rekindlebc.com" },
+]
+
+# Set via `wrangler secret put <NAME>` (not [vars] — these are credentials):
+#   VIDEO_R2_ACCESS_KEY
+#   VIDEO_R2_SECRET_KEY
+#   VIDEO_R2_BUCKET
+#   VIDEO_R2_ENDPOINT
+# Reuse the same values already configured for the video-transcode worker /
+# ministry-retention-sweep edge function (pastor video messages bucket) —
+# no need to provision a second set of R2 credentials.
