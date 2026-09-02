@@ -12,7 +12,7 @@ import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { PrayerPointsEditor } from './PrayerPointsEditor';
-import { DEFAULT_PRAYER_WATCH_TOPICS } from '@rekindle/features/components/PrayerLibrary';
+import { DEFAULT_PRAYER_WATCH_TOPICS, type PrayerWatchTopic } from '@rekindle/features/components/PrayerLibrary';
 import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -193,23 +193,30 @@ export const AdminPrayerLibrary: React.FC = () => {
   const [prayerTopics, setPrayerTopics] = useState<PrayerTopic[]>([]);
   const [prayerSeries, setPrayerSeries] = useState<PrayerSeries[]>([]);
   const [prayerWatchEntries, setPrayerWatchEntries] = useState<PrayerWatchEntry[]>([]);
+  // Real, admin-manageable topics (public.prayer_watch_topics — 0335). Falls
+  // back to the hardcoded DEFAULT_PRAYER_WATCH_TOPICS only if that table's
+  // query errors, mirroring PrayerLibrary.tsx's own fallback so the admin
+  // and consumer views never disagree about what topics exist.
+  const [watchTopics, setWatchTopics] = useState<PrayerWatchTopic[]>(DEFAULT_PRAYER_WATCH_TOPICS);
   // Which topic's schedule this list is currently showing — the list below
   // must filter by topic too, not just time slot, since up to one entry can
   // exist per (time slot, topic) pair, matching how members actually browse
   // Prayer Watch (PrayerLibrary.tsx: pick a topic, then see its 7 time slots).
-  const [watchTopicFilter, setWatchTopicFilter] = useState<string>(DEFAULT_PRAYER_WATCH_TOPICS[0].id);
+  const [watchTopicFilter, setWatchTopicFilter] = useState<string>('');
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
-  
+
   // Modal states
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [showSeriesModal, setShowSeriesModal] = useState(false);
   const [showDaysModal, setShowDaysModal] = useState(false);
   const [showPrayerWatchModal, setShowPrayerWatchModal] = useState(false);
-  
+  const [showTopicManageModal, setShowTopicManageModal] = useState(false);
+
   // Editing states
   const [editingTopic, setEditingTopic] = useState<PrayerTopic | null>(null);
   const [editingSeries, setEditingSeries] = useState<PrayerSeries | null>(null);
   const [editingPrayerWatch, setEditingPrayerWatch] = useState<PrayerWatchEntry | null>(null);
+  const [editingWatchTopic, setEditingWatchTopic] = useState<PrayerWatchTopic | null>(null);
   const [selectedSeriesForDays, setSelectedSeriesForDays] = useState<PrayerSeries | null>(null);
   const [seriesDays, setSeriesDays] = useState<PrayerDay[]>([]);
   const [savingDays, setSavingDays] = useState(false);
@@ -232,10 +239,24 @@ export const AdminPrayerLibrary: React.FC = () => {
     prayer_watch_time: '06:00:00', prayer_watch_topic: '', is_active: true
   });
 
+  const [watchTopicForm, setWatchTopicForm] = useState<PrayerWatchTopic>({
+    id: '', name: '', description: '', icon: 'Heart', color: 'purple', is_active: true
+  });
+  const [savingWatchTopic, setSavingWatchTopic] = useState(false);
+
   // ===== EFFECTS =====
   useEffect(() => {
     loadData();
   }, []);
+
+  // Default the schedule-list filter to the first active topic once real
+  // topics have loaded (empty until then — DEFAULT_PRAYER_WATCH_TOPICS is
+  // only a fallback for watchTopics itself, not a stand-in for "loaded").
+  useEffect(() => {
+    if (!watchTopicFilter && watchTopics.length > 0) {
+      setWatchTopicFilter((watchTopics.find(t => t.is_active) || watchTopics[0]).id);
+    }
+  }, [watchTopics]);
 
   // ===== DATA LOADING =====
   const loadData = async () => {
@@ -245,6 +266,7 @@ export const AdminPrayerLibrary: React.FC = () => {
         loadPrayerTopics(),
         loadPrayerSeries(),
         loadPrayerWatch(),
+        loadPrayerWatchTopics(),
         loadUsageStats()
       ]);
     } catch (err) {
@@ -280,6 +302,114 @@ export const AdminPrayerLibrary: React.FC = () => {
     
     if (error) throw error;
     setPrayerSeries(data || []);
+  };
+
+  // Loads ALL topics, active and retired — unlike PrayerLibrary.tsx's
+  // consumer query (which filters is_active=true), the admin needs to see
+  // retired topics too so old entries assigned to one stay reachable/
+  // editable, and so a retired topic can be reactivated.
+  const loadPrayerWatchTopics = async () => {
+    const { data, error } = await supabase
+      .from('prayer_watch_topics')
+      .select('*')
+      .order('name');
+
+    if (error) {
+      console.log('No prayer_watch_topics table yet, using defaults:', error.message);
+      setWatchTopics(DEFAULT_PRAYER_WATCH_TOPICS);
+      return;
+    }
+    setWatchTopics(data && data.length > 0 ? data : DEFAULT_PRAYER_WATCH_TOPICS);
+  };
+
+  const resetWatchTopicForm = () => {
+    setWatchTopicForm({ id: '', name: '', description: '', icon: 'Heart', color: 'purple', is_active: true });
+    setEditingWatchTopic(null);
+  };
+
+  const openEditWatchTopic = (topic: PrayerWatchTopic) => {
+    setEditingWatchTopic(topic);
+    setWatchTopicForm({ ...topic });
+  };
+
+  // New topics get an id slugified from the name (readable, matches the
+  // existing 'breakthrough'/'healing'/... style, and is what shows up in
+  // share URLs — /prayer-watch/:id). A random suffix is appended only if
+  // that slug is already taken.
+  const slugifyTopicName = (name: string) => {
+    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'topic';
+    if (!watchTopics.some(t => t.id === base)) return base;
+    let n = 2;
+    while (watchTopics.some(t => t.id === `${base}-${n}`)) n++;
+    return `${base}-${n}`;
+  };
+
+  const saveWatchTopic = async () => {
+    if (!watchTopicForm.name.trim()) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'topicNameRequired', 'Name is required'), variant: 'destructive' });
+      return;
+    }
+    setSavingWatchTopic(true);
+    try {
+      if (editingWatchTopic) {
+        const { error } = await supabase
+          .from('prayer_watch_topics')
+          .update({
+            name: watchTopicForm.name.trim(),
+            description: watchTopicForm.description.trim(),
+            icon: watchTopicForm.icon,
+            color: watchTopicForm.color,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editingWatchTopic.id);
+        if (error) throw error;
+        toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'topicUpdated', 'Topic updated') });
+      } else {
+        const id = slugifyTopicName(watchTopicForm.name);
+        const { error } = await supabase
+          .from('prayer_watch_topics')
+          .insert({
+            id,
+            name: watchTopicForm.name.trim(),
+            description: watchTopicForm.description.trim(),
+            icon: watchTopicForm.icon,
+            color: watchTopicForm.color,
+            is_active: true,
+          });
+        if (error) throw error;
+        toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'topicCreated', 'Topic created') });
+      }
+      resetWatchTopicForm();
+      loadPrayerWatchTopics();
+    } catch (err: any) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingWatchTopic(false);
+    }
+  };
+
+  // Retire, never delete — prayer_library.prayer_watch_topic is a plain
+  // text reference (not a DB foreign key), so existing entries assigned to
+  // this topic would be orphaned by a hard delete. Retiring just hides it
+  // from members browsing Prayer Watch (consumer query filters
+  // is_active=true) while keeping past entries intact and reachable here.
+  const toggleWatchTopicActive = async (topic: PrayerWatchTopic) => {
+    try {
+      const { error } = await supabase
+        .from('prayer_watch_topics')
+        .update({ is_active: !topic.is_active, updated_at: new Date().toISOString() })
+        .eq('id', topic.id);
+      if (error) throw error;
+      toast({
+        title: t('adminPrayerLibrary', 'success', 'Success'),
+        description: topic.is_active
+          ? t('adminPrayerLibrary', 'topicRetired', 'Topic retired — hidden from members, existing entries kept')
+          : t('adminPrayerLibrary', 'topicReactivated', 'Topic reactivated'),
+      });
+      loadPrayerWatchTopics();
+    } catch (err: any) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    }
   };
 
   const loadPrayerWatch = async () => {
@@ -1384,16 +1514,17 @@ export const AdminPrayerLibrary: React.FC = () => {
           {/* Topic filter — each topic has its own set of up to 7 time slots.
               Without this, the list below can only ever show one entry per
               time slot regardless of topic, silently hiding any others. */}
-          <div className="flex flex-wrap gap-2">
-            {DEFAULT_PRAYER_WATCH_TOPICS.map(topic => (
+          <div className="flex flex-wrap items-center gap-2">
+            {watchTopics.map(topic => (
               <Button
                 key={topic.id}
                 type="button"
                 size="sm"
                 variant={watchTopicFilter === topic.id ? 'default' : 'outline'}
+                className={!topic.is_active && watchTopicFilter !== topic.id ? 'text-gray-400 border-gray-300' : ''}
                 onClick={() => setWatchTopicFilter(topic.id)}
               >
-                {topic.name}
+                {topic.name}{!topic.is_active && ` (${t('adminPrayerLibrary', 'retired', 'retired')})`}
               </Button>
             ))}
             {/* Entries created before this field existed have no topic set —
@@ -1408,6 +1539,10 @@ export const AdminPrayerLibrary: React.FC = () => {
             >
               <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
               {t('adminPrayerLibrary', 'untaggedTopic', 'Untagged (needs a topic)')}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { resetWatchTopicForm(); setShowTopicManageModal(true); }}>
+              <Edit className="h-3.5 w-3.5 mr-1.5" />
+              {t('adminPrayerLibrary', 'manageTopics', 'Manage Topics')}
             </Button>
           </div>
 
@@ -2212,8 +2347,10 @@ export const AdminPrayerLibrary: React.FC = () => {
               >
                 <SelectTrigger><SelectValue placeholder={t('adminPrayerLibrary', 'selectTopic', 'Select a topic')} /></SelectTrigger>
                 <SelectContent>
-                  {DEFAULT_PRAYER_WATCH_TOPICS.map(topic => (
-                    <SelectItem key={topic.id} value={topic.id}>{topic.name}</SelectItem>
+                  {watchTopics.map(topic => (
+                    <SelectItem key={topic.id} value={topic.id}>
+                      {topic.name}{!topic.is_active && ` (${t('adminPrayerLibrary', 'retired', 'retired')})`}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -2406,6 +2543,112 @@ export const AdminPrayerLibrary: React.FC = () => {
               <Save className="h-4 w-4 mr-2" />
               {editingPrayerWatch ? t('adminPrayerLibrary', 'updatePrayerWatch', 'Update Prayer Watch') : t('adminPrayerLibrary', 'createPrayerWatch', 'Create Prayer Watch')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== MANAGE PRAYER WATCH TOPICS MODAL ===== */}
+      <Dialog open={showTopicManageModal} onOpenChange={setShowTopicManageModal}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('adminPrayerLibrary', 'manageTopics', 'Manage Topics')}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            {watchTopics.map(topic => (
+              <div key={topic.id} className="flex items-center justify-between gap-2 border rounded-lg p-3">
+                <div className="min-w-0">
+                  <p className={`font-medium truncate ${!topic.is_active ? 'text-gray-400' : ''}`}>
+                    {topic.name}
+                    {!topic.is_active && (
+                      <Badge variant="outline" className="ml-2 text-gray-500 border-gray-300">
+                        {t('adminPrayerLibrary', 'retired', 'retired')}
+                      </Badge>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{topic.description}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button variant="outline" size="sm" onClick={() => openEditWatchTopic(topic)}>
+                    <Edit className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={topic.is_active ? 'text-orange-600' : 'text-green-600'}
+                    onClick={() => toggleWatchTopicActive(topic)}
+                  >
+                    {topic.is_active
+                      ? t('adminPrayerLibrary', 'retire', 'Retire')
+                      : t('adminPrayerLibrary', 'reactivate', 'Reactivate')}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t pt-4 space-y-3">
+            <p className="font-medium text-sm">
+              {editingWatchTopic
+                ? t('adminPrayerLibrary', 'editTopic', 'Edit topic')
+                : t('adminPrayerLibrary', 'addNewTopic', 'Add a new topic')}
+            </p>
+            <div>
+              <Label>{t('adminPrayerLibrary', 'topicNameRequiredLabel', 'Name *')}</Label>
+              <Input
+                value={watchTopicForm.name}
+                onChange={(e) => setWatchTopicForm({ ...watchTopicForm, name: e.target.value })}
+                placeholder={t('adminPrayerLibrary', 'topicNamePlaceholder', 'e.g., Prayer for Provision')}
+              />
+            </div>
+            <div>
+              <Label>{t('adminPrayerLibrary', 'descriptionLabel', 'Description')}</Label>
+              <Textarea
+                value={watchTopicForm.description}
+                onChange={(e) => setWatchTopicForm({ ...watchTopicForm, description: e.target.value })}
+                rows={2}
+                placeholder={t('adminPrayerLibrary', 'topicDescPlaceholder', 'What members are praying for under this topic...')}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{t('adminPrayerLibrary', 'iconLabel', 'Icon')}</Label>
+                <Select value={watchTopicForm.icon} onValueChange={(v) => setWatchTopicForm({ ...watchTopicForm, icon: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Heart', 'Shield', 'Stethoscope', 'Users', 'Flag', 'Compass', 'ShieldCheck', 'Clock', 'BookOpen'].map(icon => (
+                      <SelectItem key={icon} value={icon}>{icon}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('adminPrayerLibrary', 'colorLabel', 'Color')}</Label>
+                <Select value={watchTopicForm.color} onValueChange={(v) => setWatchTopicForm({ ...watchTopicForm, color: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['purple', 'pink', 'blue', 'red', 'indigo', 'green'].map(color => (
+                      <SelectItem key={color} value={color}>{color}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {editingWatchTopic && (
+                <Button variant="outline" onClick={resetWatchTopicForm}>
+                  {t('adminPrayerLibrary', 'cancel', 'Cancel')}
+                </Button>
+              )}
+              <Button onClick={saveWatchTopic} disabled={savingWatchTopic} className="flex-1">
+                {savingWatchTopic ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                {editingWatchTopic ? t('adminPrayerLibrary', 'updateTopic', 'Update Topic') : t('adminPrayerLibrary', 'createTopic', 'Create Topic')}
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTopicManageModal(false)}>{t('adminPrayerLibrary', 'close', 'Close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
