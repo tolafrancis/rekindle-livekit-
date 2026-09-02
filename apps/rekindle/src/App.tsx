@@ -20,6 +20,7 @@ import AdminPage from "./pages/AdminPage";
 import LandingPage from "./pages/LandingPage";
 import PrivacyPolicyPage from "@rekindle/features/components/PrivacyPolicyPage";
 import TermsOfServicePage from "@rekindle/features/components/TermsOfServicePage";
+import RekindleGuidePage from "@rekindle/features/components/RekindleGuidePage";
 import UnsubscribePage from "@rekindle/features/components/UnsubscribePage";
 import Skeleton from "./components/Skeleton";
 import NotFound from "./pages/NotFound";
@@ -145,6 +146,7 @@ const App = () => {
                   <Route path="/unsubscribe" element={<UnsubscribePage />} />
                   <Route path="/privacy" element={<PrivacyPolicyPage />} />
                   <Route path="/terms" element={<TermsOfServicePage />} />
+                  <Route path="/guide" element={<RekindleGuidePage />} />
                   <Route path="/landing" element={
                     <LandingPage
                       onSignIn={() => window.location.href = '/'}

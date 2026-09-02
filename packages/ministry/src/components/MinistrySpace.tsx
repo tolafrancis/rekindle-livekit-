@@ -1454,6 +1454,21 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               })}
             </div>
 
+            {/* Rekindle Guide — full walkthrough of every feature, incl. Small Groups */}
+            <button
+              onClick={() => navigate('/guide')}
+              className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+                <ScrollText className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-900">{t('ministrySpace', 'guideTitle', 'The Rekindle Guide')}</span>
+                <span className="block text-xs text-gray-500 truncate">{t('ministrySpace', 'guideDesc', 'A full walkthrough of everything Rekindle can do for your ministry')}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+            </button>
+
             {/* ReKindle Tip — nudge to set up daily reminders (self-hides once set) */}
             <ReminderSetupTip onSetup={() => navigate('/settings/account')} />
 

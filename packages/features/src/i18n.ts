@@ -3875,6 +3875,8 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "upgradeManagementFeatures": "Upgrade to Ministry tier to access management features",
     "manageMinistry": "Manage Ministry",
     "myProfile": "My Profile",
+    "guideTitle": "The Rekindle Guide",
+    "guideDesc": "A full walkthrough of everything Rekindle can do for your ministry",
     "backToRekindle": "Back to Rekindle",
     "ministryNavigation": "{name} navigation",
     "unlockFullFeatures": "Unlock Full Ministry Features",
