@@ -12,6 +12,7 @@ import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { PrayerPointsEditor } from './PrayerPointsEditor';
+import { DEFAULT_PRAYER_WATCH_TOPICS } from '@rekindle/features/components/PrayerLibrary';
 import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -146,6 +147,13 @@ interface PrayerWatchEntry {
   duration_minutes: number;
   is_prayer_watch: boolean;
   prayer_watch_time: string;
+  // Which of DEFAULT_PRAYER_WATCH_TOPICS this entry belongs to (e.g.
+  // 'breakthrough'). Without this set, the entry is invisible to every
+  // member browsing Prayer Watch by topic — PrayerLibrary.tsx filters
+  // strictly on prayer_watch_time AND prayer_watch_topic together. This
+  // field was missing from this form entirely until now, which is why
+  // entries created here never showed up once a member picked a topic.
+  prayer_watch_topic: string;
   is_active: boolean;
 }
 
@@ -159,6 +167,10 @@ interface UsageStats {
   most_popular_topic: string;
   most_popular_series: string;
 }
+
+// Sentinel for the "Untagged" filter pill — never a real prayer_watch_topic
+// value, just a UI marker for entries created before that field existed.
+const UNTAGGED_TOPIC = '__untagged__';
 
 const PRAYER_WATCH_TIME_SLOTS = [
   { value: '06:00:00', label: '6:00 AM' },
@@ -181,6 +193,11 @@ export const AdminPrayerLibrary: React.FC = () => {
   const [prayerTopics, setPrayerTopics] = useState<PrayerTopic[]>([]);
   const [prayerSeries, setPrayerSeries] = useState<PrayerSeries[]>([]);
   const [prayerWatchEntries, setPrayerWatchEntries] = useState<PrayerWatchEntry[]>([]);
+  // Which topic's schedule this list is currently showing — the list below
+  // must filter by topic too, not just time slot, since up to one entry can
+  // exist per (time slot, topic) pair, matching how members actually browse
+  // Prayer Watch (PrayerLibrary.tsx: pick a topic, then see its 7 time slots).
+  const [watchTopicFilter, setWatchTopicFilter] = useState<string>(DEFAULT_PRAYER_WATCH_TOPICS[0].id);
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
   
   // Modal states
@@ -212,7 +229,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   const [prayerWatchForm, setPrayerWatchForm] = useState<PrayerWatchEntry>({
     title: '', content: '', scripture_reference: '', scripture_text: '',
     scriptures: [], prayer_points: [], duration_minutes: 10, is_prayer_watch: true,
-    prayer_watch_time: '06:00:00', is_active: true
+    prayer_watch_time: '06:00:00', prayer_watch_topic: '', is_active: true
   });
 
   // ===== EFFECTS =====
@@ -979,6 +996,10 @@ export const AdminPrayerLibrary: React.FC = () => {
       toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'titleRequired', 'Title is required'), variant: 'destructive' });
       return;
     }
+    if (!prayerWatchForm.prayer_watch_topic) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'topicRequired', 'Choose a topic — without one, members can never find this entry when browsing Prayer Watch by topic.'), variant: 'destructive' });
+      return;
+    }
 
     try {
       if (editingPrayerWatch?.id) {
@@ -1020,7 +1041,7 @@ export const AdminPrayerLibrary: React.FC = () => {
     setPrayerWatchForm({
       title: '', content: '', scripture_reference: '', scripture_text: '',
       scriptures: [], prayer_points: [], duration_minutes: 10, is_prayer_watch: true,
-      prayer_watch_time: '06:00:00', is_active: true
+      prayer_watch_time: '06:00:00', prayer_watch_topic: '', is_active: true
     });
   };
 
@@ -1036,6 +1057,7 @@ export const AdminPrayerLibrary: React.FC = () => {
       duration_minutes: entry.duration_minutes,
       is_prayer_watch: true,
       prayer_watch_time: entry.prayer_watch_time || '06:00:00',
+      prayer_watch_topic: entry.prayer_watch_topic || '',
       is_active: entry.is_active
     });
     setShowPrayerWatchModal(true);
@@ -1359,11 +1381,44 @@ export const AdminPrayerLibrary: React.FC = () => {
             </CardContent>
           </Card>
 
+          {/* Topic filter — each topic has its own set of up to 7 time slots.
+              Without this, the list below can only ever show one entry per
+              time slot regardless of topic, silently hiding any others. */}
+          <div className="flex flex-wrap gap-2">
+            {DEFAULT_PRAYER_WATCH_TOPICS.map(topic => (
+              <Button
+                key={topic.id}
+                type="button"
+                size="sm"
+                variant={watchTopicFilter === topic.id ? 'default' : 'outline'}
+                onClick={() => setWatchTopicFilter(topic.id)}
+              >
+                {topic.name}
+              </Button>
+            ))}
+            {/* Entries created before this field existed have no topic set —
+                without this, they'd be invisible under every filter above
+                and unreachable to fix. */}
+            <Button
+              type="button"
+              size="sm"
+              variant={watchTopicFilter === UNTAGGED_TOPIC ? 'default' : 'outline'}
+              className={watchTopicFilter === UNTAGGED_TOPIC ? '' : 'text-orange-600 border-orange-300'}
+              onClick={() => setWatchTopicFilter(UNTAGGED_TOPIC)}
+            >
+              <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
+              {t('adminPrayerLibrary', 'untaggedTopic', 'Untagged (needs a topic)')}
+            </Button>
+          </div>
+
           <div className="flex justify-end">
-            <Button onClick={() => { 
+            <Button onClick={() => {
               resetPrayerWatchForm();
-              setEditingPrayerWatch(null); 
-              setShowPrayerWatchModal(true); 
+              if (watchTopicFilter !== UNTAGGED_TOPIC) {
+                setPrayerWatchForm(f => ({ ...f, prayer_watch_topic: watchTopicFilter }));
+              }
+              setEditingPrayerWatch(null);
+              setShowPrayerWatchModal(true);
             }}>
               <Plus className="h-4 w-4 mr-2" />
               {t('adminPrayerLibrary', 'addPrayerWatchEntry', 'Add Prayer Watch Entry')}
@@ -1372,8 +1427,11 @@ export const AdminPrayerLibrary: React.FC = () => {
 
           <div className="space-y-3">
             {PRAYER_WATCH_TIME_SLOTS.map(timeSlot => {
-              const prayer = prayerWatchEntries.find(p => p.prayer_watch_time === timeSlot.value);
-              
+              const prayer = prayerWatchEntries.find(p =>
+                p.prayer_watch_time === timeSlot.value &&
+                (watchTopicFilter === UNTAGGED_TOPIC ? !p.prayer_watch_topic : p.prayer_watch_topic === watchTopicFilter)
+              );
+
               return (
                 <Card 
                   key={timeSlot.value}
@@ -2144,6 +2202,24 @@ export const AdminPrayerLibrary: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div>
+              <Label>{t('adminPrayerLibrary', 'prayerWatchTopic', 'Prayer Watch Topic *')}</Label>
+              <Select
+                value={prayerWatchForm.prayer_watch_topic}
+                onValueChange={(value) => setPrayerWatchForm({ ...prayerWatchForm, prayer_watch_topic: value })}
+              >
+                <SelectTrigger><SelectValue placeholder={t('adminPrayerLibrary', 'selectTopic', 'Select a topic')} /></SelectTrigger>
+                <SelectContent>
+                  {DEFAULT_PRAYER_WATCH_TOPICS.map(topic => (
+                    <SelectItem key={topic.id} value={topic.id}>{topic.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                {t('adminPrayerLibrary', 'prayerWatchTopicHint', 'Members find this entry by browsing to this topic, then this time slot — required, or the entry stays invisible.')}
+              </p>
             </div>
 
             <div>

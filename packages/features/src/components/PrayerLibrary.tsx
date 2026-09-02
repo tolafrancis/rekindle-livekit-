@@ -200,7 +200,7 @@ interface PrayerWatchEntry {
   is_active: boolean;
 }
 
-interface PrayerWatchTopic {
+export interface PrayerWatchTopic {
   id: string;
   name: string;
   description: string;
@@ -245,7 +245,13 @@ const PRAYER_WATCH_TIMES = [
 ];
 
 // Default Prayer Watch Topics
-const DEFAULT_PRAYER_WATCH_TOPICS: PrayerWatchTopic[] = [
+// Exported so AdminPrayerLibrary.tsx's Prayer Watch entry form can offer the
+// exact same topic IDs this consumer view filters by (prayer_watch_topic) —
+// a mismatch here is exactly what left admin-created entries invisible to
+// every topic-scoped view (see the prayer_watch_topic field added to
+// PrayerWatchEntry there). One source of truth until prayer_watch_topics
+// becomes a real, admin-editable table.
+export const DEFAULT_PRAYER_WATCH_TOPICS: PrayerWatchTopic[] = [
   {
     id: 'breakthrough',
     name: 'Prayer for Breakthrough',
