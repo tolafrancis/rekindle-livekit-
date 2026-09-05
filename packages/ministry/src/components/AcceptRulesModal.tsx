@@ -29,7 +29,10 @@ interface AcceptRulesModalProps {
  * making that a no-op blocks every one of them at once. DialogContent's
  * baked-in close button is hidden separately since onOpenChange alone
  * would leave a visible-but-inert X, which reads as a bug rather than an
- * intentional gate.
+ * intentional gate — hidden via the `[data-dialog-close-x]` hook
+ * (dialog.tsx), NOT a blanket `[&>button]:hidden`, which would (and once
+ * did) also hide the "I Agree" button below, since it's a direct child of
+ * DialogContent too.
  */
 export const AcceptRulesModal: React.FC<AcceptRulesModalProps> = ({ ministryId, ministryName, items, onAccepted }) => {
   const [accepting, setAccepting] = useState(false);
@@ -51,7 +54,7 @@ export const AcceptRulesModal: React.FC<AcceptRulesModalProps> = ({ ministryId, 
   return (
     <Dialog open onOpenChange={() => {}}>
       <DialogContent
-        className="[&>button]:hidden"
+        className="[&_[data-dialog-close-x]]:hidden"
         onEscapeKeyDown={e => e.preventDefault()}
         onPointerDownOutside={e => e.preventDefault()}
         onInteractOutside={e => e.preventDefault()}

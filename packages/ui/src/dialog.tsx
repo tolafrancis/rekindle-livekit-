@@ -91,7 +91,14 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+      {/* data-dialog-close-x: a stable hook for a non-dismissible dialog to
+          hide JUST this built-in X (e.g. `[&_[data-dialog-close-x]]:hidden`
+          on DialogContent) without also catching an action button the
+          consumer places as a direct child of DialogContent instead of
+          inside DialogFooter — a blanket `[&>button]:hidden` selector hides
+          both indiscriminately, which is exactly what silently broke
+          AcceptRulesModal's own "I Agree" button. */}
+      <DialogPrimitive.Close data-dialog-close-x className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
