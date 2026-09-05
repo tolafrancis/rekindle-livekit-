@@ -547,7 +547,11 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
       };
 
       if (!editingSeries) {
-        dataToSave.creator_id = user.id;
+        // ministry_devotional_series only has created_by, unlike
+        // ministry_devotionals below which genuinely has both creator_id
+        // (required) and created_by — confirmed against the live schema.
+        // Setting both here (copied from that other handler) made every
+        // insert fail with "Could not find the 'creator_id' column".
         dataToSave.created_by = user.id;
       }
 
