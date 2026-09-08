@@ -40,10 +40,24 @@ const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 // action here requires the authenticated caller to own the channel — mirrors
 // the channel branch of livekit-egress's isDbHost, just channel-only (ingress
 // has no meeting-kind variant).
-async function isChannelOwner(admin: ReturnType<typeof createClient>, userId: string, channelId: string | undefined): Promise<boolean> {
-  if (!channelId) return false;
-  const { data } = await admin.from('live_channels').select('owner_id').eq('id', channelId).maybeSingle();
-  return !!data && (data as { owner_id?: string }).owner_id === userId;
+const HOST_TABLE: Record<string, string> = {
+  meeting: 'meetings',
+  ministry_meeting: 'ministry_video_meetings',
+  channel_meeting: 'live_channel_video_meetings',
+};
+
+async function isHost(admin: ReturnType<typeof createClient>, userId: string, ctx: any): Promise<boolean> {
+  const c = ctx ?? {};
+  const table = HOST_TABLE[c.kind ?? 'meeting'];
+  if (c.meetingId && table) {
+    const { data } = await admin.from(table).select('host_id').eq('id', c.meetingId).maybeSingle();
+    if (data && (data as { host_id?: string }).host_id === userId) return true;
+  }
+  if (c.channelId) {
+    const { data } = await admin.from('live_channels').select('owner_id').eq('id', c.channelId).maybeSingle();
+    if (data && (data as { owner_id?: string }).owner_id === userId) return true;
+  }
+  return false;
 }
 
 serve(async (req) => {
@@ -61,8 +75,14 @@ serve(async (req) => {
 
     const body = await req.json();
     const action = body.action as string;
-    const channelId = body.channelId as string | undefined;
-    if (!channelId) return json({ error: 'channelId required' }, 400);
+
+    const ctxKind = body.context?.kind ?? (body.meetingId ? 'meeting' : 'channel');
+    const targetId = (body.meetingId ?? body.channelId ?? body.context?.id ?? body.context?.meetingId ?? body.context?.channelId) as string | undefined;
+    if (!targetId) return json({ error: 'targetId (channelId or meetingId) required' }, 400);
+
+    const isMeeting = ctxKind !== 'channel';
+    const streamsTable = isMeeting ? 'meeting_streams' : 'channel_streams';
+    const idColumn = isMeeting ? 'meeting_id' : 'channel_id';
 
     const admin = createClient(SB_URL!, SB_SERVICE!);
 
@@ -72,15 +92,17 @@ serve(async (req) => {
     });
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: 'Unauthorized' }, 401);
-    if (!(await isChannelOwner(admin, user.id, channelId))) return json({ error: 'Only the channel owner can manage ingest' }, 403);
+
+    const authCtx = isMeeting ? { kind: ctxKind, meetingId: targetId } : { channelId: targetId };
+    if (!(await isHost(admin, user.id, authCtx))) return json({ error: 'Only the host can manage ingest' }, 403);
 
     const ingressClient = new IngressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
 
     if (action === 'get') {
       const { data } = await admin
-        .from('channel_streams')
+        .from(streamsTable)
         .select('ingress_id, ingress_url, ingress_stream_key')
-        .eq('channel_id', channelId)
+        .eq(idColumn, targetId)
         .maybeSingle();
       const row = data as { ingress_id?: string | null; ingress_url?: string | null; ingress_stream_key?: string | null } | null;
       if (!row?.ingress_id) return json({ ingressId: null });
@@ -94,9 +116,9 @@ serve(async (req) => {
       // first), so a channel that already has an ingress must hand back the
       // existing one rather than creating a duplicate.
       const { data: existing } = await admin
-        .from('channel_streams')
+        .from(streamsTable)
         .select('ingress_id, ingress_url, ingress_stream_key')
-        .eq('channel_id', channelId)
+        .eq(idColumn, targetId)
         .maybeSingle();
       const existingRow = existing as { ingress_id?: string | null; ingress_url?: string | null; ingress_stream_key?: string | null } | null;
       if (existingRow?.ingress_id) {
@@ -108,48 +130,49 @@ serve(async (req) => {
       // call in this environment — verify against the actual response before
       // relying on this in production, same caveat as egress's bytes_used note.
       const info = await ingressClient.createIngress(IngressInput.RTMP_INPUT, {
-        name: `channel-${channelId}`,
+        name: `${isMeeting ? 'meeting' : 'channel'}-${targetId}`,
         roomName: body.roomName,
-        participantIdentity: `host-${channelId}`,
+        participantIdentity: `host-${targetId}`,
         participantName: 'Host',
       });
 
-      const { error: upsertError } = await admin.from('channel_streams').upsert(
+      const { error: upsertError } = await admin.from(streamsTable).upsert(
         {
-          channel_id: channelId,
+          [idColumn]: targetId,
+          ...(isMeeting ? { meeting_kind: ctxKind } : {}),
           ingress_id: info.ingressId,
           ingress_url: info.url,
           ingress_stream_key: info.streamKey,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'channel_id' },
+        { onConflict: idColumn },
       );
       // The Ingress already exists on LiveKit's side even if this write fails —
       // surface it loudly rather than silently losing the mapping (see
       // livekit-egress's insertError handling for why this matters).
-      if (upsertError) console.error('[livekit-ingress] failed to persist channel_streams row:', upsertError);
+      if (upsertError) console.error('[livekit-ingress] failed to persist streams row:', upsertError);
 
       return json({ ingressId: info.ingressId, serverUrl: info.url, streamKey: info.streamKey });
     }
 
     if (action === 'delete') {
       const { data } = await admin
-        .from('channel_streams')
+        .from(streamsTable)
         .select('ingress_id')
-        .eq('channel_id', channelId)
+        .eq(idColumn, targetId)
         .maybeSingle();
       const ingressId = (data as { ingress_id?: string } | null)?.ingress_id;
 
       if (ingressId) await ingressClient.deleteIngress(ingressId).catch(() => {});
 
       // Null out the ingress columns only — this row also carries hls_egress_id
-      // for the same channel, so it must not be deleted wholesale.
-      await admin.from('channel_streams').update({
+      // for the same channel/meeting, so it must not be deleted wholesale.
+      await admin.from(streamsTable).update({
         ingress_id: null,
         ingress_url: null,
         ingress_stream_key: null,
         updated_at: new Date().toISOString(),
-      }).eq('channel_id', channelId);
+      }).eq(idColumn, targetId);
 
       return json({ success: true });
     }
