@@ -1,16 +1,16 @@
-import { contextBridge, ipcRenderer } from "electron";
-const api = {
+import { contextBridge as n, ipcRenderer as e } from "electron";
+const t = {
   secureStore: {
-    get: (key) => ipcRenderer.invoke("store:get", key),
-    set: (key, value) => ipcRenderer.invoke("store:set", key, value),
-    delete: (key) => ipcRenderer.invoke("store:delete", key)
+    get: (i) => e.invoke("store:get", i),
+    set: (i, o) => e.invoke("store:set", i, o),
+    delete: (i) => e.invoke("store:delete", i)
   },
   windowControls: {
-    minimize: () => ipcRenderer.send("window:minimize"),
-    maximize: () => ipcRenderer.send("window:maximize"),
-    close: () => ipcRenderer.send("window:close"),
-    quit: () => ipcRenderer.send("app:quit")
+    minimize: () => e.send("window:minimize"),
+    maximize: () => e.send("window:maximize"),
+    close: () => e.send("window:close"),
+    quit: () => e.send("app:quit")
   },
-  isElectron: true
+  isElectron: !0
 };
-contextBridge.exposeInMainWorld("electronAPI", api);
+n.exposeInMainWorld("electronAPI", t);
