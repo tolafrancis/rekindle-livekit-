@@ -26,6 +26,8 @@ import { LiveChannelChat } from './LiveChannelChat';
 import { FloatingTranslationButton } from './FloatingTranslationButton';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import SavedMeetingInsights from './SavedMeetingInsights';
+import MeetingInsightsPanel from './MeetingInsightsPanel';
+import { CleanedTranscript } from '@rekindle/features/meetingAIEngine';
 // REMOVED: import { LiveChannelParticipantManager } from './LiveChannelParticipantManager';
 import {
   Radio,
@@ -162,6 +164,70 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   // True while the AI notes recogniser is running — makes the AI button flicker.
   const [notesActive, setNotesActive] = useState(false);
   const [showInsightsDialog, setShowInsightsDialog] = useState(false);
+  const [summarizeCleaned, setSummarizeCleaned] = useState<CleanedTranscript | null>(null);
+  const [showSummarizeDialog, setShowSummarizeDialog] = useState(false);
+
+  const handleSummarize = async () => {
+    try {
+      const roomName = `channel-${channel.id}`;
+      const { data: sessions, error: sessErr } = await supabase
+        .from('translation_sessions')
+        .select('id')
+        .eq('livekit_room_name', roomName)
+        .in('status', ['initialising', 'joining', 'active'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (sessErr) throw sessErr;
+
+      const activeSession = sessions?.[0];
+      if (!activeSession) {
+        toast({
+          title: t('liveChannelBroadcast', 'noActiveTranslation', 'No Active Translation Session'),
+          description: t('liveChannelBroadcast', 'noActiveTranslationDesc', 'Live translation must be active to generate a summary. Start translation first.'),
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const { data: logs, error: logsErr } = await supabase
+        .from('translation_logs')
+        .select('source_text, created_at')
+        .eq('session_id', activeSession.id)
+        .order('created_at', { ascending: true });
+
+      if (logsErr) throw logsErr;
+
+      if (!logs || logs.length === 0) {
+        toast({
+          title: t('liveChannelBroadcast', 'emptyTranscript', 'Empty Transcript'),
+          description: t('liveChannelBroadcast', 'emptyTranscriptDesc', 'No speech logs have been recorded yet in this broadcast session.'),
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const cleaned: CleanedTranscript = {
+        lines: logs.map((l, idx) => ({
+          speaker: 'Speaker',
+          text: l.source_text,
+          timestamp: idx * 5,
+        })),
+        dominantLanguage: 'en',
+        isMixedLanguage: false,
+      };
+
+      setSummarizeCleaned(cleaned);
+      setShowSummarizeDialog(true);
+    } catch (err: any) {
+      console.error('[LiveChannelBroadcast] Summarize error:', err);
+      toast({
+        title: t('liveChannelBroadcast', 'summarizeFailed', 'Summarization Failed'),
+        description: err?.message || t('liveChannelBroadcast', 'summarizeFailedDesc', 'Could not generate summary.'),
+        variant: 'destructive',
+      });
+    }
+  };
 
   // ADDED: Participant management state
   const [raisedHands, setRaisedHands] = useState<RaisedHandRequest[]>([]);
@@ -1729,7 +1795,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         {/* Side Panel - Chat and Participants */}
         <div className="hidden lg:flex w-80 border-l border-gray-700 flex-col">
           <div className="flex-1 overflow-auto">
-            <LiveChannelChat channelId={channel.id} isHost={true} broadcastId={broadcastId || undefined} />
+            <LiveChannelChat channelId={channel.id} isHost={true} broadcastId={broadcastId || undefined} onSummarize={handleSummarize} />
           </div>
 
           {/* AI Insights quick-access button in side panel */}
@@ -1924,6 +1990,23 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               meetingId={broadcastId}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Live Summarize Insights Dialog */}
+      <Dialog open={showSummarizeDialog} onOpenChange={setShowSummarizeDialog}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-500" />
+              {t('liveChannelBroadcast', 'liveBroadcastSummary', 'Live Broadcast Summary — {name}').replace('{name}', String(channel.name))}
+            </DialogTitle>
+          </DialogHeader>
+          <MeetingInsightsPanel
+            meetingTitle={`${channel.name} — Live Broadcast`}
+            meetingId={channel.id}
+            cleaned={summarizeCleaned}
+          />
         </DialogContent>
       </Dialog>
     </div>
