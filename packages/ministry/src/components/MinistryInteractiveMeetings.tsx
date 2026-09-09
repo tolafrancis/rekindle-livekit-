@@ -579,7 +579,7 @@ const EnhancedVideoCallWrapper = ({
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
-        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2">
           {callBackground && (
             <FloatingBackgroundButton
               isNative={callBackground.isNative}
@@ -587,7 +587,14 @@ const EnhancedVideoCallWrapper = ({
               onChange={callBackground.setVideoBackground}
             />
           )}
-          {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
+          {callBackground && !callBackground.isNative ? (
+            <div className="relative flex flex-col items-center gap-2">
+              <ReactionButton onReact={sendReaction} />
+              <FloatingSpeakerButton />
+            </div>
+          ) : (
+            <ReactionButton onReact={sendReaction} />
+          )}
           {callTranslation && (
             <FloatingTranslationButton
               translation={callTranslation}
@@ -597,7 +604,6 @@ const EnhancedVideoCallWrapper = ({
               userId={userId}
             />
           )}
-          <ReactionButton onReact={sendReaction} />
           {callHandRaise && (
             <button
               type="button"
