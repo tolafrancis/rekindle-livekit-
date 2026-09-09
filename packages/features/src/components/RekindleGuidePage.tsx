@@ -66,6 +66,7 @@ const TOC_ITEMS: Array<[string, string]> = [
   ['notifications', 'Notifications & Consent'],
   ['discipleship', 'Discipleship Tools'],
   ['small-groups', 'Small Groups'],
+  ['whatsapp-setup', 'Connect WhatsApp — Step by Step'],
   ['pastoral', 'Pastoral Messages'],
   ['translation', 'Live Translation'],
   ['where', 'Where to use Rekindle'],
@@ -352,6 +353,25 @@ const RekindleGuidePage: React.FC = () => {
               'Inviting an existing WhatsApp group chat into the app without asking everyone to abandon WhatsApp — the app becomes the source of truth for scheduling, while WhatsApp stays the place people already check.',
             ]}
             note="Because small groups sit inside your ministry’s own membership, a leader always has one clear view of who is connected where — a member’s small group is just as visible as their attendance or their role. WhatsApp reminders are opt-in per member and sent from the ministry’s own verified WhatsApp Business number, once connected — never a shared or unverified number."
+          />
+
+          <FeatureSection
+            id="whatsapp-setup" eyebrow="Setup Guide" title="Connect WhatsApp — Step by Step"
+            what="Connecting a ministry's own WhatsApp Business Account (WABA) means every broadcast and Small Group reminder arrives from the ministry's own verified name and number, not a shared one. Setup happens in two places — Meta's own Business Manager, then Rekindle's Connect WhatsApp screen — and takes about 20 minutes, plus a few days waiting on Meta's business verification review before full sending unlocks."
+            how={[
+              'Create or open a Meta Business Manager account at business.facebook.com, and set up a Business Portfolio for the ministry if one doesn’t exist yet.',
+              'At developers.facebook.com/apps, create a new app of type Business linked to that Business Portfolio, then add the WhatsApp product to it.',
+              'On the app’s WhatsApp → API Setup page, note the test Phone Number ID and WhatsApp Business Account ID shown there. There’s also a temporary access token — good for trying the connection once, but it expires in 24 hours, so it isn’t the one to use for real.',
+              'Register the ministry’s real phone number under WhatsApp → API Setup → Add phone number. It can’t already be active on regular WhatsApp or WhatsApp Business — Meta verifies it by SMS or a voice call. The Business Display Name entered here is permanent: it’s exactly what every recipient sees as the sender, so use the ministry’s real name.',
+              'Generate a permanent access token: in Business Settings → Users → System Users, add a system user with Admin access to the WhatsApp Business Account, then generate a token for it with the whatsapp_business_messaging and whatsapp_business_management permissions and no expiry. Copy it immediately — Meta only shows it once.',
+              'Start Business Verification under Business Settings → Security Center. This is a manual review by Meta that can take a few days, and is required before the account can message beyond a handful of test numbers.',
+              'Add a payment method to the WABA itself, separate from Rekindle’s own billing — Meta charges the ministry directly for conversation costs once its free tier is used up. The “Configure Webhooks” step in Meta’s checklist can be skipped entirely; Rekindle’s broadcast tool is send-only and doesn’t need it.',
+              'Back in Rekindle, open Connect WhatsApp and choose a plan to unlock the connection screen.',
+              'On the Connection tab, choose Enter Credentials Manually and paste in the WABA ID, Phone Number ID, the verified phone number, the Business Display Name, and the permanent access token gathered above.',
+              'Save Credentials, then click Verify — Rekindle confirms the phone number and token directly with Meta and marks the connection Connected once it succeeds.',
+              'Once connected, pick an approved message template under Settings → Small Group Notifications (WhatsApp requires one for any message a business sends first), and members can subscribe to ministry-wide WhatsApp updates from their own ministry space.',
+            ]}
+            note="Two separate bills exist here, and both need to stay funded: Meta charges the ministry directly for WhatsApp conversation costs once its free tier runs out (the payment method added in step 7), while Rekindle separately bills for the platform plan and any broadcast overage beyond what the plan includes. One doesn’t cover the other."
           />
 
           <FeatureSection
