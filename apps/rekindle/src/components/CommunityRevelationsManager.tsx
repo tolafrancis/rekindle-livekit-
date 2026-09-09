@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -355,7 +356,23 @@ export const CommunityRevelationsManager: React.FC<CommunityRevelationsManagerPr
 
           {/* Revelations list */}
           {revLoading ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-purple-600" /></div>
+            <div className="space-y-4">
+              {[1, 2, 3].map(i => (
+                <Card key={i}><CardContent className="p-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3 w-20" />
+                      </div>
+                    </div>
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                </CardContent></Card>
+              ))}
+            </div>
           ) : filteredRevelations.length === 0 ? (
             <Card><CardContent className="p-12 text-center">
               <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />

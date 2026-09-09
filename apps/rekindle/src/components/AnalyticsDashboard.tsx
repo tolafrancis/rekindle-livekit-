@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
+import { Skeleton } from './ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
@@ -342,11 +343,17 @@ export const AnalyticsDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-purple-500 mx-auto mb-4" />
-          <p className="text-gray-600 text-sm">{t('analyticsDashboard', 'loadingAnalytics', 'Loading analytics...')}</p>
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <Card key={i}><CardContent className="p-4 space-y-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-8 w-24" />
+            </CardContent></Card>
+          ))}
         </div>
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
       </div>
     );
   }

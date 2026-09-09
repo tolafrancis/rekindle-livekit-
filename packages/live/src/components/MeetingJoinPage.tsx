@@ -503,7 +503,7 @@ const MeetingJoinPage: React.FC = () => {
             <div className="flex flex-col gap-2">
               <Button 
                 onClick={() => navigate('/')}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
               >
                 <Home className="h-4 w-4 mr-2" />
                 {t('skeleton', 'goToHome', 'Go to Home')}
@@ -615,7 +615,7 @@ const MeetingJoinPage: React.FC = () => {
                   />
                   <Button
                     onClick={() => handleJoinMeeting()}
-                    className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                    className="w-full h-12 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                     disabled={joining || !guestName.trim()}
                   >
                     {joining ? (
@@ -713,7 +713,7 @@ const MeetingJoinPage: React.FC = () => {
                     </div>
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                      className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                       disabled={authLoading2}
                     >
                       {authLoading2 ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowRight className="h-4 w-4 mr-2" />}
@@ -759,7 +759,7 @@ const MeetingJoinPage: React.FC = () => {
                     </div>
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                      className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                       disabled={authLoading2}
                     >
                       {authLoading2 ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}
@@ -833,7 +833,7 @@ const MeetingJoinPage: React.FC = () => {
             {meetingData.status === 'live' && (
               <Button
                 onClick={handleJoinMeeting}
-                className="w-full h-14 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                className="w-full h-14 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                 disabled={joining}
               >
                 {joining ? (

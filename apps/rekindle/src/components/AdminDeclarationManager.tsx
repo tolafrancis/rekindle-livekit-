@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -181,7 +182,23 @@ export const AdminDeclarationManager: React.FC = () => {
   // Split text into paragraphs for preview
   const previewParagraphs = (formData.text || '').split('\n').filter(p => p.trim());
 
-  if (loading) return <div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>;
+  if (loading) return (
+    <div className="space-y-6 p-8">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-10 w-36 rounded-lg" />
+      </div>
+      <div className="space-y-3">
+        {[1, 2, 3].map(i => (
+          <Card key={i}><CardContent className="p-4 space-y-2">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-1/2" />
+          </CardContent></Card>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">

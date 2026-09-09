@@ -2047,7 +2047,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
                   setShowScripturePreview(false);
                   openInteractiveMode('standard');
                 }}
-                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                className="bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
               >
                 <Flame className="h-4 w-4 mr-2" />
                 {t('prayerSeriesViewer', 'beginPrayer', 'Begin Prayer')}

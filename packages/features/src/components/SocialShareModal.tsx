@@ -132,7 +132,7 @@ export const SocialShareModal: React.FC<Props> = ({
           {hasNativeShare && (
             <Button
               onClick={nativeShare}
-              className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white flex items-center justify-center gap-2 py-6"
+              className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl flex items-center justify-center gap-2 py-6"
             >
               <Share2 className="h-5 w-5" />
               <span>{t('socialShareModal', 'shareVia', 'Share via…')}</span>

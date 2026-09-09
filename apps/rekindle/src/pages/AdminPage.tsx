@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Shield, AlertCircle, CheckCircle, Settings, Lock, Loader2, RefreshCw, Crown, UserCog } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -136,10 +137,15 @@ const AdminPage: React.FC = () => {
   if (loading && !forceShowContent) {
     return (
       <AppProvider>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-600 mx-auto mb-4" />
-            <p className="text-gray-600 text-sm">Loading admin panel...</p>
+        <div className="min-h-screen bg-gray-50 p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <Skeleton className="h-10 w-48" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Skeleton className="h-28 rounded-xl" />
+              <Skeleton className="h-28 rounded-xl" />
+              <Skeleton className="h-28 rounded-xl" />
+            </div>
+            <Skeleton className="h-64 rounded-xl" />
           </div>
         </div>
       </AppProvider>

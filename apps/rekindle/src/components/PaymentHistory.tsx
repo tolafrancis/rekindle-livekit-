@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Receipt, 
   Download, 
@@ -254,8 +255,20 @@ For questions, contact support@rekindle.app
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+      <div className="space-y-6">
+        <Skeleton className="h-32 rounded-xl" />
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="flex items-center gap-4 p-4 border rounded-lg">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-6 w-16 rounded-full" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

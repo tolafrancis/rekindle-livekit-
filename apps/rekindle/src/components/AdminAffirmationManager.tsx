@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -275,9 +276,17 @@ export const AdminAffirmationManager: React.FC<AdminAffirmationManagerProps> = (
     return (
       <Card>
         <CardContent className="p-6">
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-            <span className="ml-2 text-gray-600">{t('adminAffirmationManager', 'loadingAffirmations', 'Loading affirmations...')}</span>
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-48" />
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="space-y-2 border-b pb-3">
+                  <Skeleton className="h-5 w-2/3" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>

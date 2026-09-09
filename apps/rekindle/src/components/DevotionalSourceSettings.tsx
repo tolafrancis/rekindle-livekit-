@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
 import { BookOpen, Check, Loader2, ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { listPublicStreams, type DevotionalStream } from '@/lib/devotionalStreams';
@@ -70,7 +71,11 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
     onSaved?.('platform', null, streamId);
   };
 
-  if (loading) return null;
+  if (loading) return (
+    <div className="mb-2 space-y-2">
+      <Skeleton className="h-4 w-40" />
+    </div>
+  );
 
   return (
     <div className="mb-2">
