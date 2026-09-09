@@ -165,3 +165,12 @@ enabled = true
 # meeting/post creation: returns ok:true with a skipped reason instead of an
 # error whenever WhatsApp isn't configured for the ministry.
 verify_jwt = true
+
+[functions.ministry-whatsapp-broadcast]
+enabled = true
+# Previously deployed outside this repo's tracked supabase/functions/ layout
+# with no authorization check at all (userId trusted straight from the
+# request body). Mirrored here when small-group targeting was added, along
+# with a real check: a full ministry admin can broadcast any way; a
+# small-group leader can only target their own group.
+verify_jwt = true

@@ -74,8 +74,9 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
   const [message, setMessage]         = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<WABATemplate | null>(null);
   const [templateParams, setTemplateParams]       = useState<string[]>([]);
-  const [targetType, setTargetType]   = useState<'all' | 'group' | 'custom'>('all');
+  const [targetType, setTargetType]   = useState<'all' | 'group' | 'small_group' | 'custom'>('all');
   const [groupId, setGroupId]         = useState('');
+  const [smallGroupId, setSmallGroupId] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
@@ -83,6 +84,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
   // Data state
   const [templates, setTemplates]           = useState<WABATemplate[]>([]);
   const [groups, setGroups]                 = useState<{ id: string; name: string; member_count: number }[]>([]);
+  const [smallGroups, setSmallGroups]       = useState<{ id: string; name: string; member_count: number }[]>([]);
   const [recipientCount, setRecipientCount] = useState<number>(0);
   const [walletBalance, setWalletBalance]   = useState<number>(0);
   const [monthlyUsed, setMonthlyUsed]       = useState<number>(0);
@@ -112,6 +114,15 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
       .select('id, name, member_count')
       .eq('ministry_id', ministryId);
     setGroups(data ?? []);
+  }, [ministryId]);
+
+  const loadSmallGroups = useCallback(async () => {
+    const { data } = await supabase
+      .from('small_groups')
+      .select('id, name, member_count')
+      .eq('ministry_id', ministryId)
+      .eq('status', 'active');
+    setSmallGroups(data ?? []);
   }, [ministryId]);
 
   const loadWallet = useCallback(async () => {
@@ -164,20 +175,31 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
           .select('*', { count: 'exact', head: true })
           .eq('group_id', groupId);
         setRecipientCount(count ?? 0);
+      } else if (targetType === 'small_group' && smallGroupId) {
+        // Matches the edge function's filter exactly — only members opted
+        // in to WhatsApp reminders for this group, not every member.
+        const { count } = await supabase
+          .from('small_group_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('group_id', smallGroupId)
+          .eq('status', 'active')
+          .eq('whatsapp_notify', true);
+        setRecipientCount(count ?? 0);
       }
     } catch (err) {
       console.error('Count error:', err);
     } finally {
       setLoadingCount(false);
     }
-  }, [ministryId, targetType, groupId]);
+  }, [ministryId, targetType, groupId, smallGroupId]);
 
   useEffect(() => {
     loadTemplates();
     loadGroups();
+    loadSmallGroups();
     loadWallet();
     loadMonthlyUsage();
-  }, [loadTemplates, loadGroups, loadWallet, loadMonthlyUsage]);
+  }, [loadTemplates, loadGroups, loadSmallGroups, loadWallet, loadMonthlyUsage]);
 
   useEffect(() => { countRecipients(); }, [countRecipients]);
   useEffect(() => { if (showHistory) loadHistory(); }, [showHistory, loadHistory]);
@@ -237,6 +259,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
           language:        messageType === 'template' ? selectedTemplate?.language : undefined,
           targetType,
           groupId:         targetType === 'group' ? groupId : undefined,
+          smallGroupId:    targetType === 'small_group' ? smallGroupId : undefined,
           scheduledAt:     isScheduled ? scheduledAt : undefined,
         },
       });
@@ -438,6 +461,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
               <SelectContent>
                 <SelectItem value="all">{t('ministryWhatsAppBroadcast', 'allOptedInSubscribers', 'All opted-in subscribers')}</SelectItem>
                 <SelectItem value="group">{t('ministryWhatsAppBroadcast', 'specificGroup', 'Specific group')}</SelectItem>
+                <SelectItem value="small_group">{t('ministryWhatsAppBroadcast', 'specificSmallGroup', 'Specific small group')}</SelectItem>
               </SelectContent>
             </Select>
             {targetType === 'group' && (
@@ -453,6 +477,27 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {targetType === 'small_group' && (
+              <>
+                <Select value={smallGroupId} onValueChange={setSmallGroupId}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder={t('ministryWhatsAppBroadcast', 'chooseASmallGroup', 'Choose a small group…')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {smallGroups.length === 0 ? (
+                      <SelectItem value="_none" disabled>{t('ministryWhatsAppBroadcast', 'noSmallGroups', 'No small groups yet')}</SelectItem>
+                    ) : smallGroups.map(g => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name} {t('ministryWhatsAppBroadcast', 'xMembers', '({count} members)').replace('{count}', String(g.member_count))}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('ministryWhatsAppBroadcast', 'smallGroupOptInNote', 'Only members who opted in to WhatsApp reminders for this group (Small Groups settings) receive it.')}
+                </p>
+              </>
             )}
           </div>
 
