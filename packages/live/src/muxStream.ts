@@ -17,17 +17,39 @@ export interface MuxProvision {
 
 const channelRoom = (channelId: string) => `channel-${channelId}`;
 
+export interface StreamContext {
+  kind: 'channel' | 'meeting' | 'ministry_meeting' | 'channel_meeting';
+  id: string;
+  roomName?: string;
+}
+
+function resolveStreamContext(idOrContext: string | StreamContext): StreamContext {
+  if (typeof idOrContext === 'string') {
+    return { kind: 'channel', id: idOrContext, roomName: `channel-${idOrContext}` };
+  }
+  return {
+    ...idOrContext,
+    roomName: idOrContext.roomName ?? (idOrContext.kind === 'channel' ? `channel-${idOrContext.id}` : idOrContext.id),
+  };
+}
+
 /** OBS/encoder ingest creds via a LiveKit Ingress (serverUrl + streamKey). */
-async function ingress(action: 'create' | 'get' | 'delete', channelId: string): Promise<MuxProvision | null> {
-  const { data, error } = await supabase.functions.invoke('livekit-ingress', {
-    body: { action, channelId, roomName: channelRoom(channelId) },
-  });
+async function ingress(action: 'create' | 'get' | 'delete', ctxInput: string | StreamContext): Promise<MuxProvision | null> {
+  const ctx = resolveStreamContext(ctxInput);
+  const isMeeting = ctx.kind !== 'channel'; // covers meeting / ministry_meeting / channel_meeting
+  const body: any = {
+    action,
+    context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
+    [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
+    roomName: ctx.roomName,
+  };
+  const { data, error } = await supabase.functions.invoke('livekit-ingress', { body });
   if (error || !data) return null;
   if (action === 'delete') return data as MuxProvision;
   const serverUrl = data.serverUrl ?? '';
   const streamKey = data.streamKey ?? '';
   return {
-    uid: data.ingressId ?? channelId,
+    uid: data.ingressId ?? ctx.id,
     streamKey,
     serverUrl,
     rtmpUrl: streamKey ? `${serverUrl}/${streamKey}` : serverUrl,
@@ -37,12 +59,12 @@ async function ingress(action: 'create' | 'get' | 'delete', channelId: string): 
   };
 }
 
-/** Create (or reuse) the channel's LiveKit Ingress. */
-export const provisionChannelStream = (channelId: string, _record = true) => ingress('create', channelId);
-/** Re-fetch current ingest credentials for the channel. */
-export const getChannelStreamCreds = (channelId: string) => ingress('get', channelId);
-/** Tear down the channel's ingest. */
-export const deleteChannelStream = (channelId: string) => ingress('delete', channelId);
+/** Create (or reuse) the channel or meeting's LiveKit Ingress. */
+export const provisionChannelStream = (ctxInput: string | StreamContext, _record = true) => ingress('create', ctxInput);
+/** Re-fetch current ingest credentials for the channel or meeting. */
+export const getChannelStreamCreds = (ctxInput: string | StreamContext) => ingress('get', ctxInput);
+/** Tear down the channel or meeting's ingest. */
+export const deleteChannelStream = (ctxInput: string | StreamContext) => ingress('delete', ctxInput);
 
 /** §6A — start the channel's live broadcast: composite the room → HLS via Egress
  *  and publish the playback URL. `expectVideo` tells the server whether this is
@@ -159,14 +181,35 @@ async function callSimulcast<T>(action: string, payload: Record<string, unknown>
 }
 
 /** Attach (or replace) a simulcast target for a platform (RTMP Egress destination). */
-export const addSimulcastTarget = (channelId: string, platform: SimulcastPlatform, serverUrl: string, streamKey: string) =>
-  callSimulcast<{ success: true; target: SimulcastTarget }>('add-simulcast',
-    { channelId, platform, roomName: channelRoom(channelId), rtmpUrl: `${serverUrl}/${streamKey}` });
+export const addSimulcastTarget = (ctxInput: string | StreamContext, platform: SimulcastPlatform, serverUrl: string, streamKey: string) => {
+  const ctx = resolveStreamContext(ctxInput);
+  const isMeeting = ctx.kind === 'meeting';
+  return callSimulcast<{ success: true; target: SimulcastTarget }>('add-simulcast', {
+    context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
+    [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
+    platform,
+    roomName: ctx.roomName,
+    rtmpUrl: `${serverUrl}/${streamKey}`,
+  });
+};
 
 /** Detach a platform's simulcast target and delete its row. */
-export const removeSimulcastTarget = (channelId: string, platform: SimulcastPlatform) =>
-  callSimulcast<{ success: true; platform: SimulcastPlatform }>('remove-simulcast', { channelId, platform });
+export const removeSimulcastTarget = (ctxInput: string | StreamContext, platform: SimulcastPlatform) => {
+  const ctx = resolveStreamContext(ctxInput);
+  const isMeeting = ctx.kind === 'meeting';
+  return callSimulcast<{ success: true; platform: SimulcastPlatform }>('remove-simulcast', {
+    context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
+    [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
+    platform,
+  });
+};
 
-/** List a channel's simulcast targets (stream keys omitted; `hasKey` instead). */
-export const listSimulcastTargets = (channelId: string) =>
-  callSimulcast<{ success: true; targets: SimulcastTarget[] }>('list-simulcast', { channelId });
+/** List a channel or meeting's simulcast targets (stream keys omitted; `hasKey` instead). */
+export const listSimulcastTargets = (ctxInput: string | StreamContext) => {
+  const ctx = resolveStreamContext(ctxInput);
+  const isMeeting = ctx.kind === 'meeting';
+  return callSimulcast<{ success: true; targets: SimulcastTarget[] }>('list-simulcast', {
+    context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
+    [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
+  });
+};

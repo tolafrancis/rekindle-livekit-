@@ -1184,20 +1184,23 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         </>
       )}
 
-      {!ministryWorkspaceActive && !isViewerActive && <header className={`bg-white shadow-sm z-50 ${
-        Capacitor.isNativePlatform() ? 'fixed top-0 left-0 right-0' : 'sticky top-0'
-      }`}>
+      {!ministryWorkspaceActive && !isViewerActive && <header
+        style={Capacitor.isNativePlatform() ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
+        className={`bg-white shadow-sm z-50 ${
+          Capacitor.isNativePlatform() ? 'fixed top-0 left-0 right-0' : 'sticky top-0'
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl md:text-2xl font-serif font-bold text-purple-700 flex-shrink-0 md:hidden">Rekindle</h1>
           <div className="hidden md:block" />
-          <div className="flex items-center gap-1 sm:gap-2 overflow-x-hidden min-w-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => { setSearchOpen(true); setShowNotifications(false); }}
               title={t('common', 'search', 'Search')}
               aria-label={t('common', 'search', 'Search')}
-              className="rounded-xl bg-gradient-to-br from-slate-500 to-gray-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+              className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-slate-500 to-gray-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
             >
               <Search className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
@@ -1261,7 +1264,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   size="icon"
                   onClick={() => { setShowNotifications((v) => !v); setSearchOpen(false); }}
                   aria-label={t('profile', 'notifications', 'Notifications')}
-                  className="rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                  className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
                 >
                   <Bell className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
@@ -1311,7 +1314,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     variant="ghost"
                     size="icon"
                     aria-label="Account menu"
-                    className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white"
+                    className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
                   >
                     <User className="h-4 w-4 md:h-5 md:w-5" />
                   </Button>

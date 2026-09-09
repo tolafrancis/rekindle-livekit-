@@ -16,6 +16,7 @@ import { BroadcastTranslationButton } from './BroadcastTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import ReplayAccessGate from '@rekindle/features/components/ReplayAccessGate';
 import {
   Radio,
@@ -990,11 +991,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // Loading state
   if (dailyRoom.isConnecting || dailyRoom.isJoining) {
     return (
-      <div className="min-h-[400px] sm:min-h-[500px] lg:min-h-[600px] bg-gray-900 rounded-xl flex items-center justify-center">
-        <div className="text-center text-white">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-purple-500" />
-          <p className="text-lg">{t('liveChannelViewer', 'joiningBroadcast', 'Joining broadcast...')}</p>
-          <p className="text-gray-400 text-sm mt-2">{channel.name}</p>
+      <div className="min-h-[400px] sm:min-h-[500px] lg:min-h-[600px] bg-gray-900 rounded-xl overflow-hidden">
+        <div className="w-full h-full flex flex-col">
+          <Skeleton className="aspect-video w-full rounded-none bg-gray-800" />
+          <div className="p-4 space-y-2">
+            <Skeleton className="h-5 w-48 bg-gray-700" />
+            <Skeleton className="h-4 w-32 bg-gray-800" />
+          </div>
         </div>
       </div>
     );

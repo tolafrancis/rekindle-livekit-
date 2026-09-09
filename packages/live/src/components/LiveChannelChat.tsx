@@ -15,6 +15,7 @@ interface LiveChannelChatProps {
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
   broadcastId?: string; // FIXED: Add broadcastId to track session
+  onSummarize?: () => Promise<void>;
 }
 
 export const LiveChannelChat: React.FC<LiveChannelChatProps> = ({
@@ -22,13 +23,15 @@ export const LiveChannelChat: React.FC<LiveChannelChatProps> = ({
   isHost = false,
   isMinimized = false,
   onToggleMinimize,
-  broadcastId
+  broadcastId,
+  onSummarize
 }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const [messages, setMessages] = useState<ChannelChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [pinnedMessage, setPinnedMessage] = useState<ChannelChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -208,9 +211,47 @@ export const LiveChannelChat: React.FC<LiveChannelChatProps> = ({
   // FIXED: Send message with retry logic
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user || sending) return;
+    if (!newMessage.trim() || !user || sending || isSummarizing) return;
 
     const messageContent = newMessage.trim();
+
+    // Intercept /summarize command
+    if (messageContent.toLowerCase() === '/summarize') {
+      setNewMessage('');
+      if (!onSummarize) {
+        toast({
+          title: t('liveChannelChat', 'summarizeNotAvailable', 'Summarize not available'),
+          description: t('liveChannelChat', 'summarizeNotAvailableDesc', 'AI Summarization is not configured for this view.'),
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setIsSummarizing(true);
+      const localLoadingId = `temp-summarize-${Date.now()}`;
+      const tempMsg: ChannelChatMessage = {
+        id: localLoadingId,
+        channel_id: channelId,
+        user_id: user.id,
+        user_name: 'AI System',
+        message: 'Generating summary…',
+        message_type: 'system',
+        created_at: new Date().toISOString(),
+        is_pinned: false,
+      };
+      setMessages((prev) => [...prev, tempMsg]);
+
+      try {
+        await onSummarize();
+      } catch (err: any) {
+        console.error('[LiveChannelChat] /summarize execution error:', err);
+      } finally {
+        setIsSummarizing(false);
+        setMessages((prev) => prev.filter((m) => m.id !== localLoadingId));
+      }
+      return;
+    }
+
     setSending(true);
     
     try {

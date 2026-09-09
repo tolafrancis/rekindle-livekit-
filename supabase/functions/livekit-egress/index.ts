@@ -209,10 +209,14 @@ serve(async (req) => {
     }
 
     if (action === 'list-simulcast') {
+      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
+      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
+      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
+      const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
       const { data } = await admin
-        .from('live_channel_simulcast_targets')
+        .from(table)
         .select('*')
-        .eq('channel_id', body.channelId);
+        .eq(idCol, targetId);
       // Same shape as channel-simulcast (stream keys omitted; hasKey substitute).
       return json({
         success: true,
@@ -429,29 +433,37 @@ serve(async (req) => {
 
     // ── 6C · Simulcast-out → one RTMP Egress per destination ──────────────────
     if (action === 'add-simulcast') {
-      if (!body.roomName || !body.channelId || !body.rtmpUrl || !body.platform) {
-        return json({ error: 'roomName, channelId, platform, rtmpUrl required' }, 400);
+      const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
+      if (!body.roomName || !targetId || !body.rtmpUrl || !body.platform) {
+        return json({ error: 'roomName, targetId (channelId/meetingId), platform, rtmpUrl required' }, 400);
       }
+      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
+      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
+      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
       const stream = new StreamOutput({ protocol: StreamProtocol.RTMP, urls: [body.rtmpUrl] });
       const info = await egressClient.startRoomCompositeEgress(body.roomName, { stream }, { layout: 'grid' });
-      await admin.from('live_channel_simulcast_targets').upsert(
-        { channel_id: body.channelId, platform: body.platform, enabled: true, egress_id: info.egressId },
-        { onConflict: 'channel_id,platform' },
+      await admin.from(table).upsert(
+        { [idCol]: targetId, platform: body.platform, enabled: true, egress_id: info.egressId },
+        { onConflict: `${idCol},platform` },
       );
       return json({ success: true, egressId: info.egressId });
     }
 
     if (action === 'remove-simulcast') {
-      if (!body.channelId || !body.platform) return json({ error: 'channelId + platform required' }, 400);
+      const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
+      if (!targetId || !body.platform) return json({ error: 'targetId + platform required' }, 400);
+      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
+      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
+      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
       const { data: tgt } = await admin
-        .from('live_channel_simulcast_targets')
+        .from(table)
         .select('egress_id')
-        .eq('channel_id', body.channelId).eq('platform', body.platform).maybeSingle();
+        .eq(idCol, targetId).eq('platform', body.platform).maybeSingle();
       const egressId = (tgt as { egress_id?: string } | null)?.egress_id;
       if (egressId) await egressClient.stopEgress(egressId).catch(() => {});
-      await admin.from('live_channel_simulcast_targets')
+      await admin.from(table)
         .update({ enabled: false, egress_id: null })
-        .eq('channel_id', body.channelId).eq('platform', body.platform);
+        .eq(idCol, targetId).eq('platform', body.platform);
       return json({ success: true });
     }
 

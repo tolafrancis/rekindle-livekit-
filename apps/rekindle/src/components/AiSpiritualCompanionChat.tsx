@@ -405,7 +405,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
               setConnectionError(null);
               initializeCompanion();
             }}
-            className="w-full bg-gradient-to-r from-purple-600 to-blue-600"
+            className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             {t('aiSpiritualCompanionChat', 'retryConnection', 'Retry Connection')}
@@ -430,7 +430,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
         <div className="p-4">
           <Button
             onClick={createNewSession}
-            className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+            className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
           >
             <Plus className="w-4 h-4 mr-2" />
             {t('aiSpiritualCompanionChat', 'newConversation', 'New Conversation')}
@@ -604,7 +604,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
             <Button
               onClick={handleSendMessage}
               disabled={isLoading || !input.trim() || !currentSession || !spiritualCompanion || (limitStatus ? !limitStatus.allowed : false)}
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              className="bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
             >
               {isLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />

@@ -7,6 +7,7 @@ import { LiveChannel } from '@rekindle/types/liveChannelTypes';
 import { LiveChannelViewer } from './LiveChannelViewer';
 import { Loader2, Radio } from 'lucide-react';
 import { Button } from '@rekindle/ui/button';
+import { Skeleton } from '@rekindle/ui/skeleton';
 
 /**
  * Public channel-watch page for shared `/channels/:id` links.
@@ -82,9 +83,12 @@ export const ChannelWatchPage: React.FC<{ context?: 'main' | 'ministry' }> = ({ 
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black text-white">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" />
-        {t('liveChannelViewer', 'loading', 'Loading…')}
+      <div className="min-h-screen bg-black p-4 flex flex-col">
+        <Skeleton className="flex-1 w-full rounded-xl bg-gray-800" />
+        <div className="mt-4 space-y-2">
+          <Skeleton className="h-6 w-56 bg-gray-800" />
+          <Skeleton className="h-4 w-36 bg-gray-800" />
+        </div>
       </div>
     );
   }

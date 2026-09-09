@@ -6,18 +6,21 @@ import { Label } from '@rekindle/ui/label';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { Switch } from '@rekindle/ui/switch';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import { Loader2, Copy, Check, Radio, Eye, EyeOff, ExternalLink, ChevronDown, AlertTriangle } from 'lucide-react';
 import {
   provisionChannelStream, getChannelStreamCreds, deleteChannelStream, reprovisionChannelStream, type MuxProvision,
   addSimulcastTarget, removeSimulcastTarget, listSimulcastTargets,
   startChannelBroadcast, stopChannelBroadcast,
-  type SimulcastPlatform, type SimulcastTarget,
+  type SimulcastPlatform, type SimulcastTarget, type StreamContext,
 } from '../muxStream';
 import { SIMULCAST_DESTINATIONS, SIMULCAST_PLATFORMS } from '../simulcastDestinations';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 
-interface ChannelStreamConfigProps {
-  channel: any;
+export interface ChannelStreamConfigProps {
+  channel?: any;
+  meeting?: any;
+  contextKind?: 'channel' | 'meeting' | 'ministry_meeting' | 'channel_meeting';
   open: boolean;
   onClose: () => void;
 }
@@ -35,18 +38,20 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 }
 
 // ── RestreamSection ───────────────────────────────────────────────────────────
-// "Restream to YouTube & Facebook" — manage Mux simulcast targets per channel.
+// "Restream to YouTube & Facebook" — manage simulcast targets per channel/meeting.
 // Stream keys are write-only: existing keys are never rendered back (the server
 // returns only `hasKey`). Targets can only change while the stream is idle, so
-// the controls are disabled while the channel is live.
+// the controls are disabled while the channel/meeting is live.
 const STATUS_DOT: Record<SimulcastTarget['status'], string> = {
   idle: 'bg-gray-400',
   active: 'bg-green-500',
   error: 'bg-red-500',
 };
 
-const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ channelId, isLive }) => {
+const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contextKind?: StreamContext['kind']; isLive: boolean }> = ({ channelId, meetingId, contextKind = 'channel', isLive }) => {
   const { t } = useLanguage();
+  const targetId = meetingId ?? channelId ?? '';
+  const streamCtx: StreamContext = { kind: contextKind, id: targetId };
   const blank = <T,>(v: T) => ({ youtube: v, facebook: v } as Record<SimulcastPlatform, T>);
 
   const [loading, setLoading] = useState(true);
@@ -63,7 +68,7 @@ const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ cha
   const [busy, setBusy] = useState<SimulcastPlatform | null>(null);
 
   const load = async () => {
-    const res = await listSimulcastTargets(channelId);
+    const res = await listSimulcastTargets(streamCtx);
     if (res.ok && res.data) {
       const byPlatform = blank<SimulcastTarget | undefined>(undefined);
       const su = { ...serverUrls };
@@ -83,7 +88,7 @@ const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ cha
   useEffect(() => {
     let active = true;
     setLoading(true);
-    listSimulcastTargets(channelId).then((res) => {
+    listSimulcastTargets(streamCtx).then((res) => {
       if (!active) return;
       if (res.ok && res.data) {
         const byPlatform = { youtube: undefined, facebook: undefined } as Record<SimulcastPlatform, SimulcastTarget | undefined>;
@@ -105,7 +110,7 @@ const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ cha
     });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channelId]);
+  }, [targetId, contextKind]);
 
   const save = async (platform: SimulcastPlatform) => {
     const key = keys[platform].trim();
@@ -120,7 +125,7 @@ const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ cha
     }
     setBusy(platform);
     try {
-      const res = await addSimulcastTarget(channelId, platform, url, key);
+      const res = await addSimulcastTarget(streamCtx, platform, url, key);
       if (!res.ok) {
         toast({
           title: t('channelStreamConfig', 'couldNotConnectRestream', 'Could not connect restream'),
@@ -144,7 +149,7 @@ const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ cha
   const remove = async (platform: SimulcastPlatform) => {
     setBusy(platform);
     try {
-      const res = await removeSimulcastTarget(channelId, platform);
+      const res = await removeSimulcastTarget(streamCtx, platform);
       if (!res.ok) {
         toast({
           title: t('channelStreamConfig', 'couldNotRemoveRestream', 'Could not remove restream'),
@@ -328,66 +333,75 @@ const RestreamSection: React.FC<{ channelId: string; isLive: boolean }> = ({ cha
  *     used automatically.
  * Either way, viewers watch the channel via the Mux HLS playback URL.
  */
-export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channel, open, onClose }) => {
+export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channel, meeting, contextKind, open, onClose }) => {
   const { t } = useLanguage();
+  const resolvedKind = contextKind ?? (meeting ? 'meeting' : 'channel');
+  const isMeeting = resolvedKind !== 'channel';
+  const entity = meeting ?? channel;
+  const targetId = entity?.id ?? '';
+  const streamCtx: StreamContext = {
+    kind: resolvedKind,
+    id: targetId,
+    roomName: isMeeting ? (entity?.room_name ?? targetId) : `channel-${targetId}`,
+  };
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prov, setProv] = useState<MuxProvision | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [recordEnabled, setRecordEnabled] = useState<boolean>(channel?.enable_recording !== false);
+  const [recordEnabled, setRecordEnabled] = useState<boolean>(entity?.enable_recording !== false);
   const [recBusy, setRecBusy] = useState(false);
   const [errDetail, setErrDetail] = useState<string | null>(null);
   const [showEncoder, setShowEncoder] = useState(false);
   const [obsBusy, setObsBusy] = useState(false);
-  const [isObsBroadcasting, setIsObsBroadcasting] = useState<boolean>(!!channel?.is_live);
-  const [isVideoEnabled, setIsVideoEnabled] = useState<boolean>(!!channel?.is_video_enabled);
+  const [isObsBroadcasting, setIsObsBroadcasting] = useState<boolean>(!!entity?.is_live);
+  const [isVideoEnabled, setIsVideoEnabled] = useState<boolean>(!!entity?.is_video_enabled);
   const [videoBusy, setVideoBusy] = useState(false);
   const [startedManuallyThisSession, setStartedManuallyThisSession] = useState(false);
 
   useEffect(() => {
-    if (!open || !channel?.id) return;
+    if (!open || !targetId) return;
     let active = true;
     setLoading(true);
     setErrDetail(null);
-    setRecordEnabled(channel.enable_recording !== false);
-    setIsVideoEnabled(!!channel.is_video_enabled);
+    setRecordEnabled(entity.enable_recording !== false);
+    if (!isMeeting) setIsVideoEnabled(!!entity.is_video_enabled); // meetings have no is_video_enabled field
     (async () => {
-      // Reuse the channel's existing live stream if it already has one (exactly
-      // what "Go Live" does), and only create a new one when there isn't one yet.
-      // Calling create on a channel that already has a stream can fail — that was
-      // the cause of "Streaming temporarily unavailable" here while Go Live worked.
-      let p = await withTimeout(getChannelStreamCreds(channel.id), 20000);
+      let p = await withTimeout(getChannelStreamCreds(streamCtx), 20000);
       if (!active) return;
       if (!p?.rtmpUrl) {
-        p = await withTimeout(provisionChannelStream(channel.id, channel.enable_recording !== false), 20000);
+        p = await withTimeout(provisionChannelStream(streamCtx, entity.enable_recording !== false), 20000);
       }
       if (!active) return;
       if (p) {
         setProv(p);
-        try {
-          await supabase.from('live_channel_broadcast_config').upsert({
-            channel_id: channel.id,
-            owner_id: channel.owner_id,
-            rtmps_url: p.serverUrl,
-            stream_key: p.streamKey,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'channel_id' });
-          await supabase.from('live_channels')
-            .update({ hls_playback_url: p.playbackUrl || null })
-            .eq('id', channel.id);
-        } catch { /* surfaced on Save if it matters */ }
+        if (!isMeeting && channel) {
+          try {
+            await supabase.from('live_channel_broadcast_config').upsert({
+              channel_id: channel.id,
+              owner_id: channel.owner_id,
+              rtmps_url: p.serverUrl,
+              stream_key: p.streamKey,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'channel_id' });
+            await supabase.from('live_channels')
+              .update({ hls_playback_url: p.playbackUrl || null })
+              .eq('id', channel.id);
+          } catch { /* surfaced on Save if it matters */ }
+        }
       } else {
-        // Provisioning failed. The call() helper swallows the underlying reason,
-        // so make ONE direct call to surface exactly what the backend said — this
-        // is what we need to see in the console to know why streaming won't set up.
         let reason = t('channelStreamConfig', 'noResponseFromService', 'No response from the streaming service.');
         try {
           const { data: raw, error: rawErr } = await supabase.functions.invoke('livekit-ingress', {
-            body: { action: 'create', channelId: channel.id, roomName: `channel-${channel.id}` },
+            body: {
+              action: 'create',
+              context: { kind: streamCtx.kind, [isMeeting ? 'meetingId' : 'channelId']: targetId },
+              [isMeeting ? 'meetingId' : 'channelId']: targetId,
+              roomName: streamCtx.roomName,
+            },
           });
           if (rawErr) {
             reason = rawErr.message || reason;
-            // FunctionsHttpError carries the JSON body on .context (a Response).
             const ctx = (rawErr as any).context;
             if (ctx?.json) { try { const b = await ctx.json(); reason = b?.error || b?.message || reason; } catch { /* not json */ } }
           } else if (raw && !raw.rtmpUrl) {
@@ -409,7 +423,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
       setLoading(false);
     })();
     return () => { active = false; };
-  }, [open, channel?.id]);
+  }, [open, targetId, contextKind]);
 
   const copy = async (label: string, value: string) => {
     try {
@@ -581,13 +595,27 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
             {t('channelStreamConfig', 'broadcastSetup', 'Broadcast setup')}{channel?.name ? ` — ${channel.name}` : ''}
           </DialogTitle>
           <p className="text-sm text-gray-500 mt-1">
-            {t('channelStreamConfig', 'broadcastSetupDesc', 'Your channel is ready to stream. To go live straight from the browser, just press “Go Live” — no setup needed. Below you can also mirror your broadcast to YouTube & Facebook, turn recording on/off, or (under Advanced) use external software like OBS.')}
+            {isMeeting
+              ? t('channelStreamConfig', 'broadcastSetupDescMeeting', 'Connect OBS or another encoder to publish a professional camera or switcher feed into this meeting. You can also restream to YouTube & Facebook, or grab the RTMP server URL and stream key (under Advanced) for your encoder.')
+              : t('channelStreamConfig', 'broadcastSetupDesc', 'Your channel is ready to stream. To go live straight from the browser, just press "Go Live" — no setup needed. Below you can also mirror your broadcast to YouTube & Facebook, turn recording on/off, or (under Advanced) use external software like OBS.')}
           </p>
         </DialogHeader>
 
         {loading ? (
-          <div className="py-8 flex justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+          <div className="py-4 space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-1 flex-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+              <Skeleton className="h-6 w-10 rounded-full" />
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
           </div>
         ) : prov ? (
           <div className="space-y-4 py-2">
@@ -604,7 +632,12 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
               </div>
             </div>
 
-            <RestreamSection channelId={channel.id} isLive={!!channel?.is_live} />
+            <RestreamSection
+              channelId={!isMeeting ? channel?.id : undefined}
+              meetingId={isMeeting ? targetId : undefined}
+              contextKind={resolvedKind}
+              isLive={isMeeting ? false : !!channel?.is_live}
+            />
 
             {/* Advanced — external encoder details. Collapsed by default so the
                 technical ingest URLs aren't shown unless someone actually uses OBS. */}
@@ -622,6 +655,9 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
               </button>
               {showEncoder && (
                 <div className="px-3 pb-3 space-y-3 border-t pt-3">
+                  {/* Video-mode toggle — channel-only concept (live_channels.is_video_enabled).
+                      Hidden for meetings: no equivalent field and toggleVideoMode writes to live_channels. */}
+                  {!isMeeting && (
                   <div className="flex items-center justify-between rounded-lg border p-3 bg-gray-50/50">
                     <div>
                       <Label className="text-xs font-semibold">{t('channelStreamConfig', 'thisIsVideoBroadcast', 'This is a video broadcast')}</Label>
@@ -636,12 +672,18 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
                       <Switch checked={isVideoEnabled} disabled={videoBusy} onCheckedChange={toggleVideoMode} />
                     </div>
                   </div>
+                  )}
                   <Field label={t('channelStreamConfig', 'serverUrl', 'Server URL')} value={prov.serverUrl} />
                   <Field label={t('channelStreamConfig', 'streamKeySecret', 'Stream Key (secret)')} value={prov.streamKey} secret />
                   <Field label={t('channelStreamConfig', 'playbackUrl', 'Playback URL')} value={prov.playbackUrl} />
                   <p className="text-xs text-gray-400">
                     {t('channelStreamConfig', 'obsInstructions', 'In OBS: Settings → Stream → Service "Custom", paste the Server URL and Stream Key. Keep the Stream Key private. Low-latency mode (~5s).')}
                   </p>
+                  {/* Start/Stop Broadcast buttons — channel-only: handlers call
+                      startChannelBroadcast/stopChannelBroadcast which reference channel.id
+                      and write to live_channels. Meetings use startMeetingBroadcast which
+                      auto-fires on component mount — no manual trigger needed here. */}
+                  {!isMeeting && (
                   <div className="pt-2 border-t flex items-center justify-between">
                     <div className="text-xs text-gray-500">
                       {isObsBroadcasting
@@ -672,6 +714,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
                       </Button>
                     )}
                   </div>
+                  )}
                 </div>
               )}
             </div>

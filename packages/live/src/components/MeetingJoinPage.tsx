@@ -86,6 +86,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -477,8 +478,10 @@ const MeetingJoinPage: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
-            <Loader2 className="h-12 w-12 animate-spin text-purple-600 mx-auto mb-4" />
-            <p className="text-muted-foreground">{t('skeleton', 'loadingMeeting', 'Loading meeting...')}</p>
+            <Skeleton className="h-16 w-16 rounded-full mx-auto mb-4" />
+            <Skeleton className="h-6 w-48 mx-auto mb-2" />
+            <Skeleton className="h-4 w-32 mx-auto mb-6" />
+            <Skeleton className="h-12 w-full rounded-xl" />
           </CardContent>
         </Card>
       </div>
@@ -503,7 +506,7 @@ const MeetingJoinPage: React.FC = () => {
             <div className="flex flex-col gap-2">
               <Button 
                 onClick={() => navigate('/')}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
               >
                 <Home className="h-4 w-4 mr-2" />
                 {t('skeleton', 'goToHome', 'Go to Home')}
@@ -615,7 +618,7 @@ const MeetingJoinPage: React.FC = () => {
                   />
                   <Button
                     onClick={() => handleJoinMeeting()}
-                    className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                    className="w-full h-12 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                     disabled={joining || !guestName.trim()}
                   >
                     {joining ? (
@@ -713,7 +716,7 @@ const MeetingJoinPage: React.FC = () => {
                     </div>
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                      className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                       disabled={authLoading2}
                     >
                       {authLoading2 ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowRight className="h-4 w-4 mr-2" />}
@@ -759,7 +762,7 @@ const MeetingJoinPage: React.FC = () => {
                     </div>
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                      className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                       disabled={authLoading2}
                     >
                       {authLoading2 ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}
@@ -833,7 +836,7 @@ const MeetingJoinPage: React.FC = () => {
             {meetingData.status === 'live' && (
               <Button
                 onClick={handleJoinMeeting}
-                className="w-full h-14 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                className="w-full h-14 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"
                 disabled={joining}
               >
                 {joining ? (

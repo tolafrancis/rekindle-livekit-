@@ -1,4 +1,5 @@
 import { useReadingPlan } from "@/hooks/useReadingPlan";
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Props {
   planId: string;
@@ -7,7 +8,16 @@ interface Props {
 export default function BibleReadingTracker({ planId, totalDays }: Props) {
   const { completedDays, completeDay, loading } = useReadingPlan(planId);
 
-  if (loading) return <p>Loading reading progress...</p>;
+  if (loading) return (
+    <div className="space-y-3">
+      {[1, 2, 3].map(i => (
+        <div key={i} className="flex items-center justify-between border p-3 rounded">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-8 w-28 rounded" />
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-3">

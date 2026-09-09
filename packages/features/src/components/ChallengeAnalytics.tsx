@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '@rekindle/ui/card';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import { supabase } from '@rekindle/supabase';
 import { PrayerChallenge } from '@rekindle/types/prayerTypes';
 import { Users, CheckCircle, Flame, Trophy, TrendingUp } from 'lucide-react';
@@ -48,7 +49,20 @@ export const ChallengeAnalytics: React.FC<Props> = ({ challenge }) => {
     }
   };
 
-  if (loading) return <div className="text-center py-4">Loading analytics...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <Skeleton className="h-6 w-40" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <Card key={i} className="p-4 text-center space-y-2">
+            <Skeleton className="h-6 w-6 rounded mx-auto" />
+            <Skeleton className="h-8 w-12 mx-auto" />
+            <Skeleton className="h-3 w-16 mx-auto" />
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
   if (!analytics) return null;
 
   return (

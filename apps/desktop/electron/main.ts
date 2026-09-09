@@ -1,6 +1,10 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, safeStorage } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;

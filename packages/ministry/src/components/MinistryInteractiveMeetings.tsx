@@ -28,7 +28,7 @@ import {
   Copy, AlertCircle, Loader2,
   Lock, Globe,
   PhoneOff,
-  MonitorUp, MessageSquare, Trash2,
+  MonitorUp, MessageSquare, Trash2, Radio,
   Crown, Zap, Sparkles, FileText,
   Hand, X, GripVertical
 } from 'lucide-react';
@@ -49,6 +49,7 @@ import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButt
 import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
 import SavedMeetingInsights from '@rekindle/live/components/SavedMeetingInsights';
+import { ChannelStreamConfig } from '@rekindle/live/components/ChannelStreamConfig';
 
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from '@rekindle/live/components/DailyVideoCall';
@@ -189,6 +190,7 @@ const EnhancedVideoCallWrapper = ({
   // Guests (not signed in) can watch + read chat, but must sign in to interact.
   const isGuest = !userId || userId.startsWith('guest-');
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [streamConfigOpen, setStreamConfigOpen] = useState(false);
   // Live audience roster (everyone announces presence; host invites people up).
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
   const [meetingEnded, setMeetingEnded] = useState(false);
@@ -631,6 +633,22 @@ const EnhancedVideoCallWrapper = ({
           <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
         </Button>
 
+        {/* Host: OBS / Restream config — all meeting modes. OBS ingest publishes a
+            professional camera feed into the room; restream sends the composite to
+            YouTube & Facebook. No isWebinar gate — both use cases apply to all meetings. */}
+        {isHost && (
+          <Button
+            onClick={() => setStreamConfigOpen(true)}
+            variant="secondary"
+            size="sm"
+            className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
+            title={t('ministryInteractiveMeetings', 'streamSetupAria', 'OBS / restream setup')}
+          >
+            <Radio className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'streamSetup', 'Stream')}</span>
+          </Button>
+        )}
+
         {/* Host End Meeting Button */}
         {isHost && onEndMeeting && (
           <Button
@@ -801,6 +819,16 @@ const EnhancedVideoCallWrapper = ({
           <MeetingChatPanel meetingId={meeting.id} userId={userId} userName={userName} isGuest={isGuest} />
         </div>
       )}
+
+      {/* OBS / Restream config dialog — contextKind='ministry_meeting' routes the
+          edge function to ministry_video_meetings for auth checks and meeting_streams
+          for credential storage. Rendered for all meeting modes (see button above). */}
+      <ChannelStreamConfig
+        meeting={meeting}
+        contextKind="ministry_meeting"
+        open={streamConfigOpen}
+        onClose={() => setStreamConfigOpen(false)}
+      />
     </div>
   );
 };

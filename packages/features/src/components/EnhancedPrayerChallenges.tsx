@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@rekindle/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@rekindle/ui/dialog';
+import { Skeleton } from '@rekindle/ui/skeleton';
+import { Card } from '@rekindle/ui/card';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
@@ -266,7 +268,25 @@ export const EnhancedPrayerChallenges: React.FC = () => {
   const canCreate = userSubscriptionPlan === 'premium' || userSubscriptionPlan === 'ministry';
   const filtered = categoryFilter === 'all' ? challenges : challenges.filter(c => c.category === categoryFilter);
 
-  if (loading) return <div className="text-center py-8">{t('enhancedPrayerChallenges', 'loadingChallenges', 'Loading challenges...')}</div>;
+  if (loading) return (
+    <div className="space-y-4 py-4">
+      {[1, 2, 3].map(i => (
+        <Card key={i} className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+          <Skeleton className="h-2 w-full rounded-full" />
+        </Card>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-6">

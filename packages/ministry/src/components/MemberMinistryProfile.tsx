@@ -10,6 +10,7 @@ import { Label } from '@rekindle/ui/label';
 import { Switch } from '@rekindle/ui/switch';
 import { Progress } from '@rekindle/ui/progress';
 import { Badge } from '@rekindle/ui/badge';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { toast } from '@rekindle/ui/use-toast';
 import {
@@ -229,7 +230,33 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
     }
   };
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-purple-600" /></div>;
+  if (loading) return (
+    <div className="max-w-2xl mx-auto p-4 space-y-5">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-32" />
+      </div>
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-16 w-16 rounded-full" />
+            <div className="space-y-2 flex-1">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="space-y-1.5">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
   if (!user) return <div className="text-center py-16 text-gray-500">{t('memberMinistryProfile', 'signInPrompt', 'Please sign in to view your membership profile.')}</div>;
   if (!ministry || ministry.code_status === 'not_found') return <div className="text-center py-16 text-gray-500">{t('memberMinistryProfile', 'ministryNotFound', 'Ministry not found.')}</div>;
   if (!pid) return (

@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
+import { Skeleton } from './ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -324,8 +325,15 @@ export const PaymentSettingsDialog: React.FC<PaymentSettingsDialogProps> = ({
         </DialogHeader>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+          <div className="space-y-6 py-4">
+            <Skeleton className="h-20 rounded-xl" />
+            <div className="space-y-4">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
           </div>
         ) : (
           <div className="space-y-6">

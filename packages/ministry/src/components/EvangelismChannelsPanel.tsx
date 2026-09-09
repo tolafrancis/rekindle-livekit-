@@ -6,6 +6,7 @@ import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Badge } from '@rekindle/ui/badge';
 import { toast } from '@rekindle/ui/use-toast';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
   Plug, MessageCircle, Instagram, Globe, MessageSquare, Check, Loader2, Copy, CheckCheck, Facebook, Lock, Crown,
@@ -201,7 +202,30 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
     on ? <Badge className="bg-green-100 text-green-700"><Check className="h-3 w-3 mr-1" /> {t('evangelismChannelsPanel', 'connected', 'Connected')}</Badge>
        : <Badge variant="outline" className="text-gray-500">{t('evangelismChannelsPanel', 'notConnected', 'Not connected')}</Badge>;
 
-  if (loading) return <div className="flex justify-center py-10"><Loader2 className="h-7 w-7 animate-spin text-purple-600" /></div>;
+  if (loading) return (
+    <div className="space-y-4 py-4">
+      {[1, 2, 3].map(i => (
+        <Card key={i}>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="h-5 w-36" />
+              </div>
+              <Skeleton className="h-5 w-24 rounded-full" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+            <Skeleton className="h-9 w-24 rounded-lg" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
 
   const manualCard = (channel: 'messenger' | 'instagram', label: string, Icon: any, color: string) => (
     <Card>

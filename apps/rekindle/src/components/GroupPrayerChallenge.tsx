@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { Trophy, Users, Calendar, Flame, CheckCircle } from 'lucide-react';
 
@@ -80,7 +81,27 @@ export function GroupPrayerChallenge() {
     gratitude: 'from-amber-500 to-orange-600'
   };
 
-  if (loading) return <div className="text-center py-8">Loading challenges...</div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-6 w-40" />
+      </div>
+      {[1, 2].map(i => (
+        <Card key={i} className="overflow-hidden">
+          <Skeleton className="h-2 w-full" />
+          <div className="p-4 space-y-3">
+            <div className="flex justify-between">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-2 w-full rounded-full" />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-4">
