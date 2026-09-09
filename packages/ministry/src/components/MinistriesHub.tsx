@@ -817,7 +817,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
                       {isMember ? (
                         <Button 
-                          className="w-full" 
+                          className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl" 
                           onClick={() => handleEnterMinistry(ministry)}
                         >
                           {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
@@ -913,7 +913,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                           {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
                         </p>
 
-                        <Button className="w-full mt-4" size="sm">
+                        <Button className="w-full mt-4 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl" size="sm">
                           {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
                           <ChevronRight className="h-4 w-4 ml-2" />
                         </Button>

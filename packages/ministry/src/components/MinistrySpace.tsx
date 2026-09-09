@@ -1457,14 +1457,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             })()}
 
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
               {GROUPS.filter(g => g.id !== 'home').map(g => {
                 const GIcon = g.icon;
                 return (
                   <button
                     key={g.id}
                     onClick={() => goToGroup(g)}
-                    className={`flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br ${g.gradient} p-4 text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md`}
+                    className={`flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br ${g.gradient} p-4 text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md flex-shrink-0 min-w-[80px]`}
                   >
                     <GIcon className="h-6 w-6" />
                     <span className="text-xs font-semibold text-center leading-tight">{navLabel(g)}</span>
@@ -1749,7 +1749,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {/* Today's Declaration & Affirmation — consumer card design (Save/Share/Audio),
                 ministry-scoped via the per-feature content source, module-gated. */}
             {(moduleOn('declarations') || moduleOn('affirmations')) && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {moduleOn('declarations') && (
                   <div id="daily-declaration">
                     <DeclarationCard ministryId={ministry.id} source={getFeatureSource(ministry.settings, 'declarations')} brandName={ministry.name} />
