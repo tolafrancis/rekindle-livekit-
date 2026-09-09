@@ -224,6 +224,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Main ministry tab. Back steps through tabs; the hook's state-merge composes
   // with nested children (MLiveChannel, GiftAid, etc.) and the parent hub.
   const [activeTab, setActiveTab] = useViewHistory<string>('ministry-space-tab', 'home');
+  // Set by the small-group deep-link effect below; passed to DiscoverSmallGroups
+  // so it auto-opens the shared group instead of just landing on Discover.
+  const [deepLinkGroupId, setDeepLinkGroupId] = useState<string | null>(null);
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
@@ -546,6 +549,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     const dlPrayer = consumeDeepLink('ministry-prayer');
     if (dlPrayer?.id) {
       setActiveTab('requests');
+    }
+
+    // "Share to WhatsApp" small-group invite. MinistrySpace consumes (and
+    // clears) it just like the deep links above rather than handing off to
+    // DiscoverSmallGroups to consume it again — a value can only be
+    // consumeDeepLink()'d once. The actual group id is passed down as a
+    // prop instead (see deepLinkGroupId below).
+    const dlGroup = consumeDeepLink('small-group');
+    if (dlGroup?.id) {
+      setActiveTab('discover-groups');
+      setDeepLinkGroupId(dlGroup.id);
     }
   }, [ministry.id]);
 
@@ -2496,7 +2510,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Small Groups — Discover Tab */}
         {activeTab === 'discover-groups' && (
-          <DiscoverSmallGroups ministryId={ministry.id} />
+          <DiscoverSmallGroups ministryId={ministry.id} autoOpenGroupId={deepLinkGroupId} />
         )}
 
         {/* Small Groups — My Groups Tab */}

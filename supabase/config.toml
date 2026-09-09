@@ -131,3 +131,37 @@ enabled = true
 # translation-device-publish-token above. Gateway JWT verification off;
 # the function validates the speaker token itself.
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# WhatsApp Business connection (MinistryWhatsAppConnect.tsx). Split out of a
+# combined router file that was only ever partially deployed — see each
+# function's own header comment. All four require a real signed-in ministry
+# admin (checked via is_group_admin inside the function, same pattern as
+# ministry-checkout), so gateway JWT verification stays on, unlike the older
+# sibling whatsapp-save-credentials (deployed outside this config, found with
+# verify_jwt off and no in-function authorization check at all — a known gap,
+# not fixed here since it's out of scope for this deploy).
+# ---------------------------------------------------------------------------
+[functions.create-whatsapp-subscription]
+enabled = true
+verify_jwt = true
+
+[functions.whatsapp-embedded-signup-complete]
+enabled = true
+verify_jwt = true
+
+[functions.whatsapp-verify-connection]
+enabled = true
+verify_jwt = true
+
+[functions.whatsapp-get-templates]
+enabled = true
+verify_jwt = true
+
+[functions.send-small-group-whatsapp-notify]
+enabled = true
+# Requires a real signed-in small-group leader/ministry admin — checked via
+# is_small_group_leader inside the function. Never blocks the caller's
+# meeting/post creation: returns ok:true with a skipped reason instead of an
+# error whenever WhatsApp isn't configured for the ministry.
+verify_jwt = true

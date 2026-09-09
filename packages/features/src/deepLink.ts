@@ -24,6 +24,7 @@ export const DEEP_LINK_TAB: Record<string, string> = {
   'ministry-prayer': 'ministries',
   'ministry-videos': 'ministries',
   'books': 'books',
+  'small-group': 'ministries',
 };
 
 export function setDeepLink(dl: DeepLink): void {

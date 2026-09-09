@@ -6,6 +6,7 @@ import { LoginForm } from '@rekindle/features/components/LoginForm';
 import { SignupForm } from '@rekindle/features/components/SignupForm';
 import { Button } from '@rekindle/ui/button';
 import { sha256Hex } from '@rekindle/features/qrCode';
+import { setDeepLink } from '@rekindle/features/deepLink';
 import MinistryMemberRegistration from './MinistryMemberRegistration';
 import {
   Loader2, AlertTriangle, CheckCircle2, UserCheck, ArrowRight, Building2, Monitor, RefreshCcw,
@@ -37,7 +38,19 @@ const MinistryJoinLanding: React.FC = () => {
   const [sp] = useSearchParams();
   const code = sp.get('code') || '';
   const version = sp.get('v') ? parseInt(sp.get('v') as string, 10) : null;
+  const groupId = sp.get('group') || '';
   const { user } = useAuth();
+
+  // "Share to WhatsApp" small-group invite (SmallGroupPage.tsx) carries a
+  // ?group= param through the ministry join flow. Stash it as a deep link
+  // as soon as it's known — it needs to survive the eventual
+  // window.location.href = '/' navigation below (via MinistryMemberRegistration
+  // or the "already a member" button), and sessionStorage does that for free.
+  // MinistriesHub resolves it to a ministry_id and MinistrySpace opens the
+  // specific group once mounted (same pattern as ministry-videos/-prayer).
+  useEffect(() => {
+    if (groupId) setDeepLink({ type: 'small-group', id: groupId });
+  }, [groupId]);
 
   const [stage, setStage] = useState<'loading' | 'error' | 'branding'>('loading');
   const [ministry, setMinistry] = useState<MinistryBranding | null>(null);

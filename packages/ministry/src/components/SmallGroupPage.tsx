@@ -7,8 +7,9 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { buildJoinUrl } from '@rekindle/features/qrCode';
 import {
-  ArrowLeft, Users, MapPin, Clock, Video, Loader2, Pin, Crown, Shield, Send,
+  ArrowLeft, Users, MapPin, Clock, Video, Loader2, Pin, Crown, Shield, Send, Share2,
 } from 'lucide-react';
 
 interface SmallGroupPageProps {
@@ -21,6 +22,9 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
   const { t } = useLanguage();
 
   const [group, setGroup] = useState<any>(null);
+  const [ministryInfo, setMinistryInfo] = useState<{ name: string; slug: string; invite_code: string | null; qr_code_version: number | null } | null>(null);
+  const [whatsappNotifyAvailable, setWhatsappNotifyAvailable] = useState(false);
+  const [savingNotifyPref, setSavingNotifyPref] = useState(false);
   const [myMembership, setMyMembership] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [meetings, setMeetings] = useState<any[]>([]);
@@ -40,6 +44,31 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
       const { data: g, error } = await supabase.from('small_groups').select('*').eq('id', groupId).maybeSingle();
       if (error) throw error;
       setGroup(g);
+
+      if (g?.ministry_id) {
+        // Needed to build the "Share to WhatsApp" join link — the same
+        // slug/code/version MinistryRegistrationSettings uses for the
+        // ministry-wide QR/invite link (buildJoinUrl, packages/features/src/qrCode.ts).
+        supabase
+          .from('ministry_groups')
+          .select('name, slug, invite_code, qr_code_version')
+          .eq('id', g.ministry_id)
+          .maybeSingle()
+          .then(({ data: m }) => { if (m) setMinistryInfo(m as any); });
+
+        // Only offer the opt-in toggle when the ministry has actually set up
+        // WhatsApp notifications (connected WABA + a chosen template) — see
+        // migrations/0336_small_group_whatsapp_notify.sql. Toggling it on
+        // with nothing configured would silently do nothing.
+        supabase
+          .from('ministry_whatsapp_configs')
+          .select('connection_status, notify_template_name')
+          .eq('ministry_id', g.ministry_id)
+          .maybeSingle()
+          .then(({ data: cfg }) => {
+            setWhatsappNotifyAvailable(!!cfg && cfg.connection_status === 'connected' && !!cfg.notify_template_name);
+          });
+      }
 
       if (user?.id) {
         const { data: mine } = await supabase
@@ -87,6 +116,44 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
     }
   };
 
+  // "Share to WhatsApp" invite — a leader pastes this straight into the
+  // WhatsApp group chat they already use. No WhatsApp Business connection
+  // needed: this just reuses the existing ministry join-link mechanism
+  // (buildJoinUrl) with a ?group= param so a brand-new invitee lands on
+  // this exact group once they've joined the ministry (see
+  // MinistryJoinLanding.tsx + MinistriesHub.tsx's small-group deep link).
+  const shareToWhatsApp = () => {
+    if (!group || !ministryInfo?.slug) return;
+    const joinUrl = buildJoinUrl(
+      ministryInfo.slug,
+      ministryInfo.invite_code || '',
+      ministryInfo.qr_code_version || 0,
+      undefined,
+      { group: group.id },
+    );
+    const text = t('smallGroupsMember', 'whatsappInviteText',
+      'Join our "{group}" small group at {ministry} on Rekindle! 🙏\n\n{link}\n\nOnce you\'re in, you\'ll find "{group}" waiting for you under Small Groups.')
+      .replace('{group}', group.name)
+      .replace('{ministry}', ministryInfo.name)
+      .replace('{link}', joinUrl);
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const toggleWhatsappNotify = async () => {
+    if (!myMembership) return;
+    setSavingNotifyPref(true);
+    const next = !myMembership.whatsapp_notify;
+    try {
+      const { error } = await supabase.from('small_group_members').update({ whatsapp_notify: next }).eq('id', myMembership.id);
+      if (error) throw error;
+      setMyMembership({ ...myMembership, whatsapp_notify: next });
+    } catch (e: any) {
+      toast({ title: t('smallGroupsMember', 'error', 'Error'), description: e.message, variant: 'destructive' });
+    } finally {
+      setSavingNotifyPref(false);
+    }
+  };
+
   const postPrayerRequest = async () => {
     if (!newPrayer.trim() || !user?.id) return;
     setPostingPrayer(true);
@@ -130,9 +197,22 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
       {group.cover_image_url && <img src={group.cover_image_url} alt="" className="w-full h-48 object-cover rounded-lg" />}
 
       <div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-2xl font-bold">{group.name}</h1>
-          {group.category && <Badge variant="outline">{group.category}</Badge>}
+        <div className="flex items-center gap-2 flex-wrap justify-between">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold">{group.name}</h1>
+            {group.category && <Badge variant="outline">{group.category}</Badge>}
+          </div>
+          {isMember && ministryInfo?.slug && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={shareToWhatsApp}
+              className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              {t('smallGroupsMember', 'shareToWhatsApp', 'Share to WhatsApp')}
+            </Button>
+          )}
         </div>
         {group.description && <p className="text-muted-foreground mt-2">{group.description}</p>}
         <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
@@ -159,6 +239,28 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
                 {group.privacy === 'public' ? t('smallGroupsMember', 'join', 'Join') : t('smallGroupsMember', 'requestToJoin', 'Request to Join')}
               </Button>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isMember && whatsappNotifyAvailable && (
+        <Card>
+          <CardContent className="pt-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{t('smallGroupsMember', 'whatsappRemindersTitle', 'Get WhatsApp reminders for this group')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t('smallGroupsMember', 'whatsappRemindersDesc', "New meetings and announcements will also be sent to your WhatsApp number from {ministry}'s verified account.").replace('{ministry}', ministryInfo?.name || '')}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant={myMembership?.whatsapp_notify ? 'default' : 'outline'}
+              onClick={toggleWhatsappNotify}
+              disabled={savingNotifyPref}
+              className="shrink-0"
+            >
+              {savingNotifyPref ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (myMembership?.whatsapp_notify ? t('smallGroupsMember', 'notifyOn', 'On') : t('smallGroupsMember', 'notifyOff', 'Off'))}
+            </Button>
           </CardContent>
         </Card>
       )}

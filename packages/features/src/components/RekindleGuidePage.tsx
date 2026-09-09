@@ -341,14 +341,17 @@ const RekindleGuidePage: React.FC = () => {
               'Members browse and discover the small groups open to them, and request to join the one that fits.',
               'Group leaders review and approve join requests; the member is notified the moment they’re in.',
               'Inside the group, leaders schedule meetings and post updates, and members discuss together — everyone active in the group is notified whenever a new meeting is set.',
+              'A “Share to WhatsApp” button lets a member paste a ready-made invite straight into a WhatsApp group chat the ministry already uses — anyone who taps it joins the ministry (if they’re new) and lands directly inside that small group, no separate signup step.',
+              'Members can also opt in to WhatsApp reminders for a group: once a ministry connects its own WhatsApp Business number, new meetings and announcements are sent individually to each opted-in member’s own WhatsApp — never a shared broadcast number — alongside the in-app notification.',
             ]}
             cases={[
               'Home groups and cell groups meeting midweek in members’ houses or online.',
               'Bible-study circles working through a book or a devotional series together.',
               'New-members’ groups walking newcomers through their first months.',
               'Giving every member a smaller, closer community inside a larger ministry.',
+              'Inviting an existing WhatsApp group chat into the app without asking everyone to abandon WhatsApp — the app becomes the source of truth for scheduling, while WhatsApp stays the place people already check.',
             ]}
-            note="Because small groups sit inside your ministry’s own membership, a leader always has one clear view of who is connected where — a member’s small group is just as visible as their attendance or their role."
+            note="Because small groups sit inside your ministry’s own membership, a leader always has one clear view of who is connected where — a member’s small group is just as visible as their attendance or their role. WhatsApp reminders are opt-in per member and sent from the ministry’s own verified WhatsApp Business number, once connected — never a shared or unverified number."
           />
 
           <FeatureSection
@@ -379,6 +382,8 @@ const RekindleGuidePage: React.FC = () => {
             <p>As your pastor or speaker preaches live, Rekindle transcribes the audio in real time and displays a rolling translated subtitle at the bottom of the viewer’s screen. Viewers choose their preferred language from a list before or during the stream. Translations are powered by AI and rendered instantly — no human interpreter required.</p>
             <p className="kicker">Meeting Translation</p>
             <p>During video conferencing and webinars, each participant can enable live captions in their chosen language. When someone speaks, their words appear as translated captions for every other participant who has enabled a different language — enabling truly multilingual leadership meetings, Bible studies, Bible College School of Disciples and prayer sessions.</p>
+            <p className="kicker">Edge Agent (in-venue hardware, premium add-on)</p>
+            <p>An <strong>edge agent</strong> is a small piece of software installed on a dedicated computer at your venue and wired directly into your sound mixer. It runs the same live transcription and translation as Broadcast and Meeting Translation, but delivers the translated audio as its own feed through your venue's sound system — a dedicated language channel a congregant can listen to on the spot — alongside the same translated text everyone can follow on their own phone. It's the physical, in-room counterpart to Rekindle's cloud-based translation: built for ministries that want translated audio available through their existing PA setup, not only on-screen.</p>
           </section>
 
           <section id="where" className="guide-section">

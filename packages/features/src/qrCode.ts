@@ -31,11 +31,19 @@ export const buildJoinUrl = (
   code: string,
   version: number,
   origin?: string,
+  extraParams?: Record<string, string>,
 ): string => {
   const base = origin || (typeof window !== 'undefined' ? window.location.origin : '');
   const params = new URLSearchParams();
   if (code) params.set('code', code);
   if (version) params.set('v', String(version));
+  // e.g. { group: smallGroupId } — carried through MinistryJoinLanding so a
+  // "Share to WhatsApp" small-group invite can land a brand-new member on
+  // that specific group once they've joined the ministry (see
+  // SmallGroupPage.tsx's shareToWhatsApp and MinistryJoinLanding.tsx).
+  if (extraParams) {
+    for (const [k, v] of Object.entries(extraParams)) if (v) params.set(k, v);
+  }
   const qs = params.toString();
   return `${base}/join/${slug}${qs ? `?${qs}` : ''}`;
 };

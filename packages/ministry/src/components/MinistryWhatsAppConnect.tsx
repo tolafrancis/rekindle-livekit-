@@ -7,6 +7,7 @@ import { Label } from '@rekindle/ui/label';
 import { Badge } from '@rekindle/ui/badge';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
@@ -36,6 +37,9 @@ export interface MinistryWABAConfig {
   whatsapp_plan: 'none' | 'basic' | 'growth' | 'premium';
   plan_status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'none';
   setup_fee_paid: boolean;
+  // Small Group notifications (0336_small_group_whatsapp_notify.sql)
+  notify_template_name?: string | null;
+  notify_template_language?: string | null;
   // Meta
   created_at: string;
   updated_at: string;
@@ -142,6 +146,15 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     business_display_name: '',
   });
 
+  // Small Group WhatsApp notifications (0336_small_group_whatsapp_notify.sql)
+  // — one ministry-wide template, reused for every small group's meeting/
+  // announcement notifications. Must already be APPROVED in Meta (fixed
+  // 2-variable contract: {{1}}=title, {{2}}=details — see
+  // send-small-group-whatsapp-notify's own header comment).
+  const [notifyTemplateName, setNotifyTemplateName] = useState('');
+  const [notifyTemplateLanguage, setNotifyTemplateLanguage] = useState('en_US');
+  const [savingNotifyTemplate, setSavingNotifyTemplate] = useState(false);
+
   const fbWindowRef = useRef<Window | null>(null);
 
   // ── Load existing WABA config ───────────────────────────────────────────
@@ -155,7 +168,11 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
         .maybeSingle();
 
       setConfig(data ?? null);
-      if (data) onStatusChange?.(data.connection_status);
+      if (data) {
+        onStatusChange?.(data.connection_status);
+        setNotifyTemplateName(data.notify_template_name || '');
+        setNotifyTemplateLanguage(data.notify_template_language || 'en_US');
+      }
     } catch (err) {
       console.error('WABA config load error:', err);
     } finally {
@@ -177,8 +194,27 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => {
-    if (activeTab === 'templates') loadTemplates();
+    // Settings needs the template list too, to populate the Small Group
+    // Notifications picker below.
+    if (activeTab === 'templates' || activeTab === 'settings') loadTemplates();
   }, [activeTab, loadTemplates]);
+
+  const saveNotifyTemplate = async () => {
+    setSavingNotifyTemplate(true);
+    try {
+      const { error } = await supabase
+        .from('ministry_whatsapp_configs')
+        .update({ notify_template_name: notifyTemplateName || null, notify_template_language: notifyTemplateLanguage })
+        .eq('ministry_id', ministryId);
+      if (error) throw error;
+      toast({ title: t('ministryWhatsAppConnect', 'notifyTemplateSaved', 'Notification template saved') });
+      loadConfig();
+    } catch (err: any) {
+      toast({ title: t('ministryWhatsAppConnect', 'saveFailed', 'Save failed'), description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingNotifyTemplate(false);
+    }
+  };
 
   // ── Meta Embedded Signup ────────────────────────────────────────────────
   const launchEmbeddedSignup = () => {
@@ -794,6 +830,57 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                 <Zap className="h-3.5 w-3.5" />
                 {t('ministryWhatsAppConnect', 'upgradePlan', 'Upgrade Plan')}
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-purple-600" />
+                {t('ministryWhatsAppConnect', 'smallGroupNotifications', 'Small Group Notifications')}
+              </CardTitle>
+              <CardDescription>
+                {t('ministryWhatsAppConnect', 'smallGroupNotificationsDesc', "When a leader schedules a meeting or posts an announcement, members who've opted in get it on their own WhatsApp too — sent from this ministry's verified number using the template below.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Alert className="border-amber-200 bg-amber-50 py-2">
+                <Info className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-amber-800 text-xs">
+                  {t('ministryWhatsAppConnect', 'notifyTemplateRequirement', 'WhatsApp requires an APPROVED template for any message a business sends first — pick one from the Templates tab that takes exactly 2 body variables: {{1}} = a short title, {{2}} = the details.')}
+                </AlertDescription>
+              </Alert>
+              {config.connection_status !== 'connected' ? (
+                <p className="text-sm text-muted-foreground">{t('ministryWhatsAppConnect', 'connectFirstForNotify', 'Connect a WhatsApp Business Account above first.')}</p>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">{t('ministryWhatsAppConnect', 'notificationTemplate', 'Notification template')}</Label>
+                    {templates.filter(tp => tp.status === 'APPROVED').length > 0 ? (
+                      <Select value={notifyTemplateName} onValueChange={(v) => {
+                        setNotifyTemplateName(v);
+                        const tpl = templates.find(tp => tp.name === v);
+                        if (tpl?.language) setNotifyTemplateLanguage(tpl.language);
+                      }}>
+                        <SelectTrigger><SelectValue placeholder={t('ministryWhatsAppConnect', 'chooseATemplate', 'Choose a template')} /></SelectTrigger>
+                        <SelectContent>
+                          {templates.filter(tp => tp.status === 'APPROVED').map(tp => (
+                            <SelectItem key={tp.id} value={tp.name}>{tp.name} ({tp.language})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {t('ministryWhatsAppConnect', 'noApprovedTemplatesYet', 'No approved templates yet — create one in the Templates tab or Meta Business Manager first.')}
+                      </p>
+                    )}
+                  </div>
+                  <Button size="sm" onClick={saveNotifyTemplate} disabled={savingNotifyTemplate} className="gap-2">
+                    {savingNotifyTemplate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    {t('ministryWhatsAppConnect', 'saveTemplate', 'Save')}
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
 
