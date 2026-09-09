@@ -6,6 +6,7 @@ import { Label } from '@rekindle/ui/label';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { Switch } from '@rekindle/ui/switch';
+import { Skeleton } from '@rekindle/ui/skeleton';
 import { Loader2, Copy, Check, Radio, Eye, EyeOff, ExternalLink, ChevronDown, AlertTriangle } from 'lucide-react';
 import {
   provisionChannelStream, getChannelStreamCreds, deleteChannelStream, reprovisionChannelStream, type MuxProvision,
@@ -601,8 +602,20 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
         </DialogHeader>
 
         {loading ? (
-          <div className="py-8 flex justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+          <div className="py-4 space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-1 flex-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+              <Skeleton className="h-6 w-10 rounded-full" />
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
           </div>
         ) : prov ? (
           <div className="space-y-4 py-2">
