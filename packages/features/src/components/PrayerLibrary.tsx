@@ -2029,19 +2029,6 @@ export function PrayerLibrary() {
               additional={selectedTopic?.scriptures || []}
             />
 
-            {/* Prayer Duration Info */}
-            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-              <div className="flex items-center gap-3">
-                <Clock className="h-5 w-5 text-amber-600" />
-                <div>
-                  <p className="font-semibold text-amber-900">{t('prayerLibrary', 'prayerDuration', 'Prayer Duration')}</p>
-                  <p className="text-sm text-amber-700">
-                    {t('prayerLibrary', 'minutesFocusedPrayer', '{n} minutes of focused prayer time').replace('{n}', String(selectedDuration))}
-                  </p>
-                </div>
-              </div>
-            </div>
-
             {/* Prayer Points Preview */}
             {selectedTopic?.prayer_points && selectedTopic.prayer_points.length > 0 && (
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
