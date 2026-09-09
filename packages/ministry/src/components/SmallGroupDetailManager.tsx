@@ -6,6 +6,7 @@ import { Textarea } from '@rekindle/ui/textarea';
 import { Badge } from '@rekindle/ui/badge';
 import { Label } from '@rekindle/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
+import { Checkbox } from '@rekindle/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { supabase } from '@rekindle/supabase';
@@ -48,8 +49,13 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   const [meetingForm, setMeetingForm] = useState({
     title: '', description: '', meeting_date: '', start_time: '', end_time: '',
     location_type: 'physical' as 'physical' | 'online', location_address: '', meeting_link: '',
+    notifyWhatsapp: false,
   });
   const [savingMeeting, setSavingMeeting] = useState(false);
+  // Only offer the "notify via WhatsApp" checkbox when the ministry has a
+  // connected WABA + a chosen notification template (0336_small_group_whatsapp_notify.sql)
+  // — otherwise the checkbox would do nothing.
+  const [whatsappNotifyAvailable, setWhatsappNotifyAvailable] = useState(false);
 
   const [attendanceMeeting, setAttendanceMeeting] = useState<any | null>(null);
   const [attendanceRows, setAttendanceRows] = useState<Record<string, string>>({});
@@ -57,7 +63,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   const [savingAttendance, setSavingAttendance] = useState(false);
 
   const [showPostModal, setShowPostModal] = useState(false);
-  const [postForm, setPostForm] = useState({ post_type: 'announcement', title: '', content: '', resource_type: 'link', resource_url: '' });
+  const [postForm, setPostForm] = useState({ post_type: 'announcement', title: '', content: '', resource_type: 'link', resource_url: '', notifyWhatsapp: false });
   const [postFilter, setPostFilter] = useState<'all' | 'announcement' | 'discussion' | 'prayer_request' | 'resource'>('all');
   const [savingPost, setSavingPost] = useState(false);
 
@@ -93,6 +99,13 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
       setMembers(membersRes.data || []);
       setMeetings(meetingsRes.data || []);
       setPosts(postsRes.data || []);
+
+      const { data: waCfg } = await supabase
+        .from('ministry_whatsapp_configs')
+        .select('connection_status, notify_template_name')
+        .eq('ministry_id', ministryId)
+        .maybeSingle();
+      setWhatsappNotifyAvailable(!!waCfg && waCfg.connection_status === 'connected' && !!waCfg.notify_template_name);
     } catch (e: any) {
       toast({ title: t('smallGroupDetailManager', 'error', 'Error'), description: e.message, variant: 'destructive' });
     } finally {
@@ -174,6 +187,19 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
     }
   };
 
+  // ── WhatsApp notify (0336_small_group_whatsapp_notify.sql) ──
+  // Fire-and-forget by design: a failed/unconfigured notification must never
+  // block the meeting/post that was just successfully created. Errors are
+  // logged, not surfaced as a toast on top of the "Saved" one.
+  const notifyWhatsApp = (args: { kind: 'meeting' | 'post'; title: string; body: string; meetingId?: string; postId?: string }) => {
+    supabase.functions.invoke('send-small-group-whatsapp-notify', {
+      body: { ministryId, groupId, ...args },
+    }).then(({ data, error }) => {
+      if (error) { console.error('[SmallGroupDetailManager] WhatsApp notify failed:', error); return; }
+      if (data?.skipped) console.warn('[SmallGroupDetailManager] WhatsApp notify skipped:', data.skipped);
+    }).catch((err) => console.error('[SmallGroupDetailManager] WhatsApp notify threw:', err));
+  };
+
   // ── Meetings ──
   const handleCreateMeeting = async () => {
     if (!meetingForm.title.trim() || !meetingForm.meeting_date) {
@@ -182,7 +208,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
     }
     setSavingMeeting(true);
     try {
-      const { error } = await supabase.from('small_group_meetings').insert({
+      const { data: created, error } = await supabase.from('small_group_meetings').insert({
         group_id: groupId,
         title: meetingForm.title.trim(),
         description: meetingForm.description || null,
@@ -193,10 +219,18 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
         location_address: meetingForm.location_address || null,
         meeting_link: meetingForm.meeting_link || null,
         created_by: user?.id,
-      });
+      }).select('id').single();
       if (error) throw error;
+      if (meetingForm.notifyWhatsapp) {
+        const when = `${meetingForm.meeting_date}${meetingForm.start_time ? ` · ${meetingForm.start_time}` : ''}`;
+        notifyWhatsApp({
+          kind: 'meeting', meetingId: created?.id,
+          title: meetingForm.title.trim(),
+          body: [when, meetingForm.description].filter(Boolean).join(' — '),
+        });
+      }
       setShowMeetingModal(false);
-      setMeetingForm({ title: '', description: '', meeting_date: '', start_time: '', end_time: '', location_type: 'physical', location_address: '', meeting_link: '' });
+      setMeetingForm({ title: '', description: '', meeting_date: '', start_time: '', end_time: '', location_type: 'physical', location_address: '', meeting_link: '', notifyWhatsapp: false });
       toast({ title: t('smallGroupDetailManager', 'saved', 'Saved'), description: t('smallGroupDetailManager', 'meetingCreated', 'Meeting created') });
       await loadAll();
     } catch (e: any) {
@@ -254,7 +288,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
 
   // ── Posts ──
   const openPostModal = (postType: string) => {
-    setPostForm({ post_type: postType, title: '', content: '', resource_type: 'link', resource_url: '' });
+    setPostForm({ post_type: postType, title: '', content: '', resource_type: 'link', resource_url: '', notifyWhatsapp: false });
     setShowPostModal(true);
   };
 
@@ -265,7 +299,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
     }
     setSavingPost(true);
     try {
-      const { error } = await supabase.from('small_group_posts').insert({
+      const { data: created, error } = await supabase.from('small_group_posts').insert({
         group_id: groupId,
         author_id: user?.id,
         post_type: postForm.post_type,
@@ -273,8 +307,18 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
         content: postForm.content || null,
         resource_type: postForm.post_type === 'resource' ? postForm.resource_type : null,
         resource_url: postForm.post_type === 'resource' ? (postForm.resource_url || null) : null,
-      });
+      }).select('id').single();
       if (error) throw error;
+      // Only announcements page members via WhatsApp — discussion/prayer-request/
+      // resource posts stay in-app-only (matches who can even post them: only
+      // canPostAnnouncement-gated post types show the notify checkbox below).
+      if (postForm.post_type === 'announcement' && postForm.notifyWhatsapp) {
+        notifyWhatsApp({
+          kind: 'post', postId: created?.id,
+          title: postForm.title?.trim() || t('smallGroupDetailManager', 'newUpdate', 'New update'),
+          body: postForm.content || '',
+        });
+      }
       setShowPostModal(false);
       await loadAll();
     } catch (e: any) {
@@ -552,6 +596,12 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
             ) : (
               <div><Label>{t('smallGroupDetailManager', 'labelMeetingLink', 'Meeting Link')}</Label><Input value={meetingForm.meeting_link} onChange={(e) => setMeetingForm({ ...meetingForm, meeting_link: e.target.value })} /></div>
             )}
+            {whatsappNotifyAvailable && (
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox id="meeting-notify-whatsapp" checked={meetingForm.notifyWhatsapp} onCheckedChange={(c) => setMeetingForm({ ...meetingForm, notifyWhatsapp: !!c })} />
+                <Label htmlFor="meeting-notify-whatsapp" className="text-sm font-normal cursor-pointer">{t('smallGroupDetailManager', 'alsoNotifyWhatsapp', 'Also notify members via WhatsApp')}</Label>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowMeetingModal(false)}>{t('smallGroupDetailManager', 'cancel', 'Cancel')}</Button>
@@ -621,6 +671,12 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                 </div>
                 <div><Label>{t('smallGroupDetailManager', 'labelResourceUrl', 'URL')}</Label><Input value={postForm.resource_url} onChange={(e) => setPostForm({ ...postForm, resource_url: e.target.value })} placeholder="https://..." /></div>
               </>
+            )}
+            {postForm.post_type === 'announcement' && whatsappNotifyAvailable && (
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox id="post-notify-whatsapp" checked={postForm.notifyWhatsapp} onCheckedChange={(c) => setPostForm({ ...postForm, notifyWhatsapp: !!c })} />
+                <Label htmlFor="post-notify-whatsapp" className="text-sm font-normal cursor-pointer">{t('smallGroupDetailManager', 'alsoNotifyWhatsapp', 'Also notify members via WhatsApp')}</Label>
+              </div>
             )}
           </div>
           <DialogFooter>

@@ -16,6 +16,10 @@ import { SmallGroupPage } from './SmallGroupPage';
 
 interface DiscoverSmallGroupsProps {
   ministryId: string;
+  /** Set by MinistrySpace when arriving via a "Share to WhatsApp" small-group
+   *  invite link — auto-opens that group's detail page instead of the plain
+   *  Discover list. */
+  autoOpenGroupId?: string | null;
 }
 
 const CATEGORY_OPTIONS = [
@@ -23,7 +27,7 @@ const CATEGORY_OPTIONS = [
   'Discipleship', 'Outreach', 'Worship', 'Other',
 ];
 
-export const DiscoverSmallGroups: React.FC<DiscoverSmallGroupsProps> = ({ ministryId }) => {
+export const DiscoverSmallGroups: React.FC<DiscoverSmallGroupsProps> = ({ ministryId, autoOpenGroupId }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
 
@@ -40,6 +44,10 @@ export const DiscoverSmallGroups: React.FC<DiscoverSmallGroupsProps> = ({ minist
   useEffect(() => {
     loadGroups();
   }, [ministryId]);
+
+  useEffect(() => {
+    if (autoOpenGroupId) setSelectedGroupId(autoOpenGroupId);
+  }, [autoOpenGroupId]);
 
   const loadGroups = async () => {
     setLoading(true);

@@ -29,7 +29,7 @@ import { InteractivePrayerSession } from './InteractivePrayerSession';
 import { PrayerPoint, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
 import { instrumentalTracks } from '../data/instrumentals';
 import {
-  BookOpen, Calendar, Clock, Star, Play, 
+  BookOpen, Calendar, Star, Play,
   CheckCircle, ChevronRight, ChevronLeft, Lock,
   Award, Loader2, Volume2, ArrowLeft, Flame,
   Timer, Pause, RotateCcw, Presentation, Crown,
@@ -2004,19 +2004,6 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
                   ))}
                 </div>
               )}
-
-              {/* Prayer Duration Info */}
-              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                <div className="flex items-center gap-3">
-                  <Clock className="h-5 w-5 text-amber-600" />
-                  <div>
-                    <p className="font-semibold text-amber-900">{t('prayerSeriesViewer', 'prayerDuration', 'Prayer Duration')}</p>
-                    <p className="text-sm text-amber-700">
-                      {t('prayerSeriesViewer', 'nMinutesFocused', '{n} minutes of focused prayer time').replace('{n}', String(selectedDuration))}
-                    </p>
-                  </div>
-                </div>
-              </div>
 
               {/* Prayer Points Preview */}
               {generatedPrayerPoints.length > 0 && (

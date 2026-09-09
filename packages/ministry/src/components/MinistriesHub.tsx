@@ -363,6 +363,18 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             .eq('id', dl.id)
             .maybeSingle();
           targetMinistryId = prayer?.ministry_id || null;
+        } else if (dl.type === 'small-group') {
+          // "Share to WhatsApp" invite (SmallGroupPage.tsx) — arrives either
+          // as a direct /small-group/:id link (already a ministry member) or
+          // via /join/:slug?group=:id (MinistryJoinLanding stashes the same
+          // deep link for a brand-new member, consumed here once they land
+          // back on '/' after registering).
+          const { data: sg } = await supabase
+            .from('small_groups')
+            .select('ministry_id')
+            .eq('id', dl.id)
+            .maybeSingle();
+          targetMinistryId = sg?.ministry_id || null;
         }
 
         if (!targetMinistryId) return;

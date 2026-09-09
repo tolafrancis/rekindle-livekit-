@@ -66,6 +66,7 @@ const TOC_ITEMS: Array<[string, string]> = [
   ['notifications', 'Notifications & Consent'],
   ['discipleship', 'Discipleship Tools'],
   ['small-groups', 'Small Groups'],
+  ['whatsapp-setup', 'Connect WhatsApp — Step by Step'],
   ['pastoral', 'Pastoral Messages'],
   ['translation', 'Live Translation'],
   ['where', 'Where to use Rekindle'],
@@ -341,14 +342,36 @@ const RekindleGuidePage: React.FC = () => {
               'Members browse and discover the small groups open to them, and request to join the one that fits.',
               'Group leaders review and approve join requests; the member is notified the moment they’re in.',
               'Inside the group, leaders schedule meetings and post updates, and members discuss together — everyone active in the group is notified whenever a new meeting is set.',
+              'A “Share to WhatsApp” button lets a member paste a ready-made invite straight into a WhatsApp group chat the ministry already uses — anyone who taps it joins the ministry (if they’re new) and lands directly inside that small group, no separate signup step.',
+              'Members can also opt in to WhatsApp reminders for a group: once a ministry connects its own WhatsApp Business number, new meetings and announcements are sent individually to each opted-in member’s own WhatsApp — never a shared broadcast number — alongside the in-app notification.',
             ]}
             cases={[
               'Home groups and cell groups meeting midweek in members’ houses or online.',
               'Bible-study circles working through a book or a devotional series together.',
               'New-members’ groups walking newcomers through their first months.',
               'Giving every member a smaller, closer community inside a larger ministry.',
+              'Inviting an existing WhatsApp group chat into the app without asking everyone to abandon WhatsApp — the app becomes the source of truth for scheduling, while WhatsApp stays the place people already check.',
             ]}
-            note="Because small groups sit inside your ministry’s own membership, a leader always has one clear view of who is connected where — a member’s small group is just as visible as their attendance or their role."
+            note="Because small groups sit inside your ministry’s own membership, a leader always has one clear view of who is connected where — a member’s small group is just as visible as their attendance or their role. WhatsApp reminders are opt-in per member and sent from the ministry’s own verified WhatsApp Business number, once connected — never a shared or unverified number."
+          />
+
+          <FeatureSection
+            id="whatsapp-setup" eyebrow="Setup Guide" title="Connect WhatsApp — Step by Step"
+            what="Connecting a ministry's own WhatsApp Business Account (WABA) means every broadcast and Small Group reminder arrives from the ministry's own verified name and number, not a shared one. Setup happens in two places — Meta's own Business Manager, then Rekindle's Connect WhatsApp screen — and takes about 20 minutes, plus a few days waiting on Meta's business verification review before full sending unlocks."
+            how={[
+              'Create or open a Meta Business Manager account at business.facebook.com, and set up a Business Portfolio for the ministry if one doesn’t exist yet.',
+              'At developers.facebook.com/apps, create a new app of type Business linked to that Business Portfolio, then add the WhatsApp product to it.',
+              'On the app’s WhatsApp → API Setup page, note the test Phone Number ID and WhatsApp Business Account ID shown there. There’s also a temporary access token — good for trying the connection once, but it expires in 24 hours, so it isn’t the one to use for real.',
+              'Register the ministry’s real phone number under WhatsApp → API Setup → Add phone number. It can’t already be active on regular WhatsApp or WhatsApp Business — Meta verifies it by SMS or a voice call. The Business Display Name entered here is permanent: it’s exactly what every recipient sees as the sender, so use the ministry’s real name.',
+              'Generate a permanent access token: in Business Settings → Users → System Users, add a system user with Admin access to the WhatsApp Business Account, then generate a token for it with the whatsapp_business_messaging and whatsapp_business_management permissions and no expiry. Copy it immediately — Meta only shows it once.',
+              'Start Business Verification under Business Settings → Security Center. This is a manual review by Meta that can take a few days, and is required before the account can message beyond a handful of test numbers.',
+              'Add a payment method to the WABA itself, separate from Rekindle’s own billing — Meta charges the ministry directly for conversation costs once its free tier is used up. The “Configure Webhooks” step in Meta’s checklist can be skipped entirely; Rekindle’s broadcast tool is send-only and doesn’t need it.',
+              'Back in Rekindle, open Connect WhatsApp and choose a plan to unlock the connection screen.',
+              'On the Connection tab, choose Enter Credentials Manually and paste in the WABA ID, Phone Number ID, the verified phone number, the Business Display Name, and the permanent access token gathered above.',
+              'Save Credentials, then click Verify — Rekindle confirms the phone number and token directly with Meta and marks the connection Connected once it succeeds.',
+              'Once connected, pick an approved message template under Settings → Small Group Notifications (WhatsApp requires one for any message a business sends first), and members can subscribe to ministry-wide WhatsApp updates from their own ministry space.',
+            ]}
+            note="Two separate bills exist here, and both need to stay funded: Meta charges the ministry directly for WhatsApp conversation costs once its free tier runs out (the payment method added in step 7), while Rekindle separately bills for the platform plan and any broadcast overage beyond what the plan includes. One doesn’t cover the other."
           />
 
           <FeatureSection
@@ -379,6 +402,8 @@ const RekindleGuidePage: React.FC = () => {
             <p>As your pastor or speaker preaches live, Rekindle transcribes the audio in real time and displays a rolling translated subtitle at the bottom of the viewer’s screen. Viewers choose their preferred language from a list before or during the stream. Translations are powered by AI and rendered instantly — no human interpreter required.</p>
             <p className="kicker">Meeting Translation</p>
             <p>During video conferencing and webinars, each participant can enable live captions in their chosen language. When someone speaks, their words appear as translated captions for every other participant who has enabled a different language — enabling truly multilingual leadership meetings, Bible studies, Bible College School of Disciples and prayer sessions.</p>
+            <p className="kicker">Edge Agent (in-venue hardware, premium add-on)</p>
+            <p>An <strong>edge agent</strong> is a small piece of software installed on a dedicated computer at your venue and wired directly into your sound mixer. It runs the same live transcription and translation as Broadcast and Meeting Translation, but delivers the translated audio as its own feed through your venue's sound system — a dedicated language channel a congregant can listen to on the spot — alongside the same translated text everyone can follow on their own phone. It's the physical, in-room counterpart to Rekindle's cloud-based translation: built for ministries that want translated audio available through their existing PA setup, not only on-screen.</p>
           </section>
 
           <section id="where" className="guide-section">
