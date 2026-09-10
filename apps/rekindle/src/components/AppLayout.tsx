@@ -1443,7 +1443,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             {renderStatCapsules('grid grid-cols-2 gap-2')}
           </div>
         )}
-        <div className="min-w-0 max-w-full overflow-x-hidden">
+        <div className="min-w-0 max-w-full overflow-x-clip">
             <ErrorBoundary>
           {activeTab === 'home' && (
             <div className="space-y-6">
