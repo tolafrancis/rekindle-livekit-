@@ -30,6 +30,8 @@ import {
   HeartOff,
   Maximize,
   Minimize,
+  Minimize2,
+  PictureInPicture2,
   Volume2,
   VolumeX,
   X,
@@ -138,6 +140,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   const entitlements = useUserEntitlements();
   
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const [viewerCount, setViewerCount] = useState(channel.viewer_count);
@@ -981,6 +984,17 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     setIsFullscreen(!isFullscreen);
   };
 
+  const handleNativePiP = async () => {
+    const videoEl = videoContainerRef.current?.querySelector('video');
+    if (videoEl && document.pictureInPictureEnabled) {
+      try {
+        await videoEl.requestPictureInPicture();
+      } catch (err) {
+        console.error('[LiveChannelViewer] PiP failed:', err);
+      }
+    }
+  };
+
   const toggleMute = () => {
     setIsMuted(!isMuted);
     if (remoteAudioRef.current) {
@@ -1075,7 +1089,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl overflow-hidden">
+    <div className={`bg-gray-900 rounded-xl overflow-hidden ${isMinimized ? 'invisible h-0 overflow-hidden' : ''}`}>
       <div className="flex flex-col md:flex-row">
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -1241,14 +1255,37 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
               </div>
             </div>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleFullscreen}
-              className="absolute top-4 right-4 text-white bg-black/50 hover:bg-black/70"
-            >
-              {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
-            </Button>
+            <div className="absolute top-4 right-4 flex items-center gap-2 z-50">
+              {typeof document !== 'undefined' && document.pictureInPictureEnabled ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleNativePiP}
+                  className="text-white bg-black/50 hover:bg-black/70"
+                  title={t('liveChannelViewer', 'pictureInPicture', 'Picture in Picture')}
+                >
+                  <PictureInPicture2 className="h-5 w-5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsMinimized(true)}
+                  className="text-white bg-black/50 hover:bg-black/70"
+                  title={t('liveChannelViewer', 'minimize', 'Minimize')}
+                >
+                  <Minimize2 className="h-5 w-5" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleFullscreen}
+                className="text-white bg-black/50 hover:bg-black/70"
+              >
+                {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+              </Button>
+            </div>
 
             <Button
               variant="ghost"
@@ -1476,6 +1513,56 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Minimized Floating Player (Desktop Fallback) */}
+      {isMinimized && (
+        <div
+          onClick={() => setIsMinimized(false)}
+          className="fixed bottom-4 right-4 z-50 w-80 rounded-xl overflow-hidden shadow-2xl bg-gray-900 border border-gray-700 cursor-pointer group p-3 flex flex-col gap-2"
+        >
+          <div className="aspect-video w-full rounded-lg overflow-hidden bg-black relative">
+            {hlsSrc ? (
+              <HlsPlayer src={hlsSrc} muted={true} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="text-gray-400 text-xs">Stream unavailable</span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+              <span className="text-white text-xs font-semibold truncate">{channel.name}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+                className="h-7 w-7 text-white bg-black/50 hover:bg-black/70"
+              >
+                {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); setIsMinimized(false); }}
+                className="h-7 w-7 text-white bg-black/50 hover:bg-black/70"
+              >
+                <Maximize className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); onLeave?.(); }}
+                className="h-7 w-7 text-white bg-black/50 hover:bg-black/70"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
