@@ -1544,6 +1544,22 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     fetchMeetings();
   }, [ministryId]);
 
+  // Realtime subscription for meetings list status updates
+  useEffect(() => {
+    if (!ministryId) return;
+    const ch = supabase
+      .channel(`ministry-meetings-list-${ministryId}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ministry_video_meetings', filter: `ministry_id=eq.${ministryId}` },
+        (payload) => {
+          setMeetings(prev => prev.map(m =>
+            m.id === (payload.new as any).id ? { ...m, ...(payload.new as any) } : m
+          ));
+        })
+      .subscribe();
+    return () => { try { supabase.removeChannel(ch); } catch { /* noop */ } };
+  }, [ministryId]);
+
   // Auto-open meeting from Skeleton redirect
   useEffect(() => {
     const autoOpenMeetingId = sessionStorage.getItem('autoOpenMeetingId');

@@ -1371,6 +1371,22 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     fetchMeetings();
   }, [channelId]);
 
+  // Realtime subscription for meetings list status updates
+  useEffect(() => {
+    if (!channelId) return;
+    const ch = supabase
+      .channel(`lc-meetings-list-${channelId}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'live_channel_video_meetings', filter: `channel_id=eq.${channelId}` },
+        (payload) => {
+          setMeetings(prev => prev.map(m =>
+            m.id === (payload.new as any).id ? { ...m, ...(payload.new as any) } : m
+          ));
+        })
+      .subscribe();
+    return () => { try { supabase.removeChannel(ch); } catch { /* noop */ } };
+  }, [channelId]);
+
   // Auto-open meeting from Skeleton redirect
   useEffect(() => {
     const autoOpenMeetingId = sessionStorage.getItem('autoOpenMeetingId');
