@@ -44,6 +44,7 @@ const MINISTRY_NAV = [
   { id: 'meetings', label: 'Interactive Meetings', icon: Video },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
+import { MinistrySettingsManager } from './MinistrySettingsManager';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
 import { MinistryRulesManager } from './MinistryRulesManager';
 import { AcceptRulesModal } from './AcceptRulesModal';
@@ -842,6 +843,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'donations', label: 'Donations', icon: Gift },
       { id: 'meetings', label: 'Meetings', icon: Video },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
+      ...(canManageMinistry ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
     ] },
   ];
 
@@ -1420,6 +1422,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             settings={ministry.settings}
             themeColor={themeColor}
             onSourceChange={loadMinistryData}
+          />
+        )}
+
+        {/* Settings Tab (leaders/admins) */}
+        {activeTab === 'settings' && canManageMinistry && (
+          <MinistrySettingsManager
+            ministry={ministry}
+            onUpdate={loadMinistryData}
           />
         )}
 
