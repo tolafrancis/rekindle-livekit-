@@ -1330,11 +1330,11 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                   </div>
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white font-bold">
-                    {channel.owner_name?.charAt(0) || 'H'}
+                    {channel.name?.charAt(0) || 'H'}
                   </div>
                 )}
                 <div>
-                  <p className="text-white font-medium">{channel.owner_name || t('liveChannelViewer', 'hostFallback', 'Host')}</p>
+                  <p className="text-white font-medium">{channel.name || t('liveChannelViewer', 'hostFallback', 'Host')}</p>
                   <p className="text-gray-400 text-sm">{t('liveChannelViewer', 'followersCount', '{count} followers').replace('{count}', String(channel.total_followers))}</p>
                 </div>
               </div>
