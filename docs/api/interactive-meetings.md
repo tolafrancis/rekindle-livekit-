@@ -185,31 +185,41 @@ more detail).
 
 ## Deploying the portal (`apps/developer-portal`) to `developers.rekindlebc.com`
 
-This is a Cloudflare **dashboard** task, not something committed to the repo —
-same as the rest of `rekindlebc.com`'s hosting (see the domain/hosting
-topology notes). Code-side, the app is ready: it builds standalone
-(`npm run build` from `apps/developer-portal`) and ships its own SPA
-`_redirects` fallback.
+Deployed and verified 2026-09-10. Not classic Pages — Cloudflare's current
+"Create an app → Import a repository" flow deploys this as a **Worker with
+static assets**, driven by `apps/developer-portal/wrangler.jsonc`
+(`assets.directory: "./dist"`, `not_found_handling: "single-page-application"`
+for the SPA fallback — no `_redirects` file; that's Pages-only and actually
+causes a "redirect loop" deploy error under Workers Assets, since it fights
+`not_found_handling`).
 
-1. **New Cloudflare Pages project** for this app — mirror however the
-   existing ministry app's Pages project (`rekindle-livekit`, deploys from
-   `main`) is configured, except point its root/build at
-   `apps/developer-portal` instead. Output directory: `dist`.
-2. **Custom domain**: attach `developers.rekindlebc.com` to that new Pages
-   project (Pages → your project → Custom domains). Cloudflare adds the DNS
-   record for you when you do this from the Pages UI.
-3. **⚠️ The wildcard gotcha**: `*.rekindlebc.com` is already wildcard-proxied
-   and routed by a Worker (`tenant-router`, route `*.rekindlebc.com/*`) to
-   the ministry app's Pages project — the same mechanism that serves tenant
-   subdomains like `grace.rekindlebc.com`. That Worker route will intercept
-   `developers.rekindlebc.com` too and serve the *ministry app* there instead
-   of this portal, unless `developers` is excluded from it. The consumer
-   app dodges this today by being **grey-clouded** (DNS-only, bypasses
-   Workers entirely) — that trick doesn't work here because Pages-hosted
-   domains need to stay proxied. Instead, add an explicit exclusion for the
-   `developers` hostname in the `tenant-router` Worker's source (return/pass
-   through without rewriting to the ministry app when
-   `hostname === 'developers.rekindlebc.com'`), the same way you'd exclude
-   any other reserved subdomain from tenant resolution.
-4. Verify: `developers.rekindlebc.com` should load the portal's landing page,
+1. **Cloudflare dashboard** → Workers & Pages → Create → Import a repository
+   → this repo. Project name `rekindle-developer-portal` (must match
+   `wrangler.jsonc`'s `name`). Path: `apps/developer-portal`. Build command
+   `npm run build`, deploy command `npx wrangler deploy` (all dashboard
+   defaults once Path is set). This gives it a live URL at
+   `rekindle-developer-portal.<account>.workers.dev` — no custom-domain
+   attachment needed for what follows.
+2. **The wildcard gotcha**: `*.rekindlebc.com` is wildcard-proxied and
+   entirely owned by the `tenant-router` Worker (route `*.rekindlebc.com/*`),
+   which rewrites every subdomain's hostname to `rekindle-livekit.pages.dev`
+   (the ministry app) and re-fetches. Left alone, `developers.rekindlebc.com`
+   would resolve to the ministry app instead of this portal — and since this
+   is a Worker doing a plain hostname-rewrite proxy (not a Pages custom
+   domain), the fix is a one-line branch in that same Worker, not a DNS or
+   Pages change:
+
+   ```js
+   export default {
+     async fetch(request) {
+       const target = new URL(request.url);
+       target.hostname = target.hostname === 'developers.rekindlebc.com'
+         ? 'rekindle-developer-portal.<account>.workers.dev'
+         : 'rekindle-livekit.pages.dev';
+       return fetch(new Request(target, request));
+     },
+   };
+   ```
+
+3. Verify: `developers.rekindlebc.com` should load the portal's landing page,
    not a ministry workspace or a 404.
