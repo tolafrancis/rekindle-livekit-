@@ -19,10 +19,11 @@ import { PlatformWhatsAppOptIn } from '@/components/WhatsAppOptIn';
 import { DailyReminders } from '@/components/DailyReminders';
 import { PartnerDonationPage } from '@/components/PartnerDonationPage';
 import { PushNotificationSettings } from '@/components/PushNotificationSettings';
-import { 
-  User, Mail, Globe, BookOpen, Bell, MessageSquare, 
-  Save, Loader2, Lock, AlertTriangle, CheckCircle, 
-  RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles
+import { DeveloperApiKeysPanel } from '@/components/DeveloperApiKeysPanel';
+import {
+  User, Mail, Globe, BookOpen, Bell, MessageSquare,
+  Save, Loader2, Lock, AlertTriangle, CheckCircle,
+  RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles, Code2
 } from 'lucide-react';
 
 const spiritualLevels = [
@@ -107,6 +108,12 @@ const SETTINGS_GROUPS: { group: string; items: { key: string; label: string; ico
     group: 'Involvement',
     items: [
       { key: 'involvement', label: 'Counsellor & Partner', icon: Heart },
+    ],
+  },
+  {
+    group: 'Developer',
+    items: [
+      { key: 'developer', label: 'API Keys', icon: Code2 },
     ],
   },
 ];
@@ -570,6 +577,10 @@ export const ProfileSettings: React.FC = () => {
         )}
       </Card>
 
+                </>)}
+
+          {section === 'developer' && (<>
+            <DeveloperApiKeysPanel />
                 </>)}
 
           {section === 'declarations' && (<>

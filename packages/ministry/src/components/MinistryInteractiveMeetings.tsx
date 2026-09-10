@@ -73,6 +73,7 @@ import { getEffectiveRecordingRetentionDays } from '@rekindle/features/ministryB
 import {
   getMaxMeetingDuration,
   logUsage,
+  FREE_TIER_MEETING_LIMITS,
   AccessCheckResult
 } from '@rekindle/auth/subscriptionEnforcement';
 // Interactive-meeting access is a ministry-level capability
@@ -80,7 +81,7 @@ import {
 // not an individual user's own subscription — getUserActiveSubscription/
 // canHostInteractiveMeeting used to gate this off the wrong (legacy,
 // individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
-import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
+import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@rekindle/auth/ministryEntitlements';
 
 /* ======================================================
    TYPES
@@ -854,8 +855,13 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
   const { t } = useLanguage();
   const isEditing = !!meeting;
   const [isLoading, setIsLoading] = useState(false);
-  const [accessCheck, setAccessCheck] = useState<AccessCheckResult | null>(null);
+  // Widened with optional usage numbers (current_usage/limit) so the free-tier
+  // notice banner can read back what checkMinistryMeetingQuota reported.
+  const [accessCheck, setAccessCheck] = useState<(AccessCheckResult & { current_usage?: number; limit?: number | null }) | null>(null);
   const [maxDuration, setMaxDuration] = useState<number | null>(null);
+  // True when this ministry has no paid plan and is on the free "Free
+  // Ministry Meetings" allowance instead — drives clamping and copy.
+  const [isFreeTier, setIsFreeTier] = useState(false);
 
   const [formData, setFormData] = useState<CreateMeetingFormData>({
     title: '',
@@ -917,18 +923,29 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
 
       try {
         const entitlements = await getMinistryEntitlements(ministryId);
+        const isFreePlan = entitlements.tierSlug === 'free';
+        const quota = isFreePlan && !isEditing
+          ? await checkMinistryMeetingQuota(ministryId, 'ministry_video_meetings')
+          : null;
+
         setAccessCheck({
-          allowed: entitlements.caps.interactiveMeetings,
-          reason: entitlements.caps.interactiveMeetings
-            ? undefined
-            : "This ministry's plan doesn't include interactive meetings — upgrade to enable this.",
+          allowed: entitlements.caps.interactiveMeetings && (quota?.allowed ?? true),
+          reason: !entitlements.caps.interactiveMeetings
+            ? "This ministry's plan doesn't include interactive meetings — upgrade to enable this."
+            : quota && !quota.allowed
+            ? `This ministry has used all ${quota.limit} free meetings this month. Upgrade for more, or wait until next month.`
+            : undefined,
+          current_usage: quota?.used,
+          limit: quota?.limit,
         });
+        setIsFreeTier(isFreePlan);
 
         // Out of scope for the ministry-tier fix: no 1:1 field in
         // MinistryCaps for "max minutes per single meeting" (limits are
         // monthly budgets, not per-meeting caps) — left on the individual
-        // path for now.
-        const maxDur = await getMaxMeetingDuration(user.id);
+        // path for now. That path itself now falls back to the free-tier
+        // 60-minute cap (instead of 0) when the host has no paid plan.
+        const maxDur = isFreePlan ? FREE_TIER_MEETING_LIMITS.maxDurationMinutes : await getMaxMeetingDuration(user.id);
         setMaxDuration(maxDur);
       } catch (error) {
         console.error('Error loading ministry meeting access:', error);
@@ -967,6 +984,16 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
     setIsLoading(true);
 
     try {
+      // Belt-and-suspenders clamp to the free plan's caps — the duration
+      // input's max attribute already steers free-tier hosts here, but this
+      // guards direct form manipulation and the max_participants field too.
+      const durationMinutes = isFreeTier
+        ? Math.min(formData.duration_minutes, FREE_TIER_MEETING_LIMITS.maxDurationMinutes)
+        : formData.duration_minutes;
+      const maxParticipants = isFreeTier
+        ? Math.min(formData.max_participants, FREE_TIER_MEETING_LIMITS.maxParticipants)
+        : formData.max_participants;
+
       const sharedFields = {
         title: formData.title,
         description: formData.description,
@@ -975,10 +1002,10 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
         timezone: isScheduled ? formData.timezone : null,
         reminder_offsets: isScheduled ? formData.reminder_offsets : [],
         registration_enabled: isScheduled ? formData.registration_enabled : false,
-        duration_minutes: formData.duration_minutes,
-        max_participants: formData.max_participants,
+        duration_minutes: durationMinutes,
+        max_participants: maxParticipants,
         access_level: formData.access_level,
-        enable_recording: formData.enable_recording,
+        enable_recording: isFreeTier ? false : formData.enable_recording,
         enable_chat: formData.enable_chat,
         enable_screenshare: formData.enable_screenshare,
       };
@@ -1065,6 +1092,23 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               {accessCheck?.reason || t('ministryInteractiveMeetings', 'subscriptionRequired', 'Subscription required')}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {accessCheck?.allowed && isFreeTier && !isEditing && (
+          <Alert className="border-purple-200 bg-purple-50 text-purple-900">
+            <Sparkles className="h-4 w-4" />
+            <AlertDescription>
+              {t(
+                'ministryInteractiveMeetings',
+                'freeTierNotice',
+                'Free Ministry Meetings: {used} of {limit} used this month · up to {participants} participants · {minutes} minutes each · no credit card required.'
+              )
+                .replace('{used}', String(accessCheck?.current_usage ?? 0))
+                .replace('{limit}', String(accessCheck?.limit ?? FREE_TIER_MEETING_LIMITS.monthlyMeetings))
+                .replace('{participants}', String(FREE_TIER_MEETING_LIMITS.maxParticipants))
+                .replace('{minutes}', String(FREE_TIER_MEETING_LIMITS.maxDurationMinutes))}
             </AlertDescription>
           </Alert>
         )}

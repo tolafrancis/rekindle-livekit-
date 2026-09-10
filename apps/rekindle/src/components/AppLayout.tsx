@@ -51,6 +51,7 @@ import { EnhancedPrayerChallenges } from './EnhancedPrayerChallenges';
 import { LiveChannels } from './LiveChannels';
 import { OfflineIndicator } from './OfflineIndicator';
 import { DailyDevotionalWidget } from './DailyDevotionalWidget';
+import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
 import { DevotionalSourceSettings } from './DevotionalSourceSettings';
 import AdminDashboard from './AdminDashboard';
 import { SubscriptionManager } from './SubscriptionManager';
@@ -1454,6 +1455,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     new CustomEvent('openProfileSection', { detail: { section: 'reminders' } })), 100);
                 }}
               />
+              <FreeMeetingsPromoCard onStartMeeting={() => { navigateTab('live-channels'); setLiveChannelsTab('meetings'); }} />
               <StreakWidget />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>

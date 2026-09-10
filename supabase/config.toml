@@ -174,3 +174,19 @@ enabled = true
 # with a real check: a full ministry admin can broadcast any way; a
 # small-group leader can only target their own group.
 verify_jwt = true
+
+[functions.developer-api-keys]
+enabled = true
+# In-app management (create/list/revoke) of Interactive Meetings API keys.
+# Requires a real signed-in user — verifies their own JWT (auth.getUser())
+# inside the function, same pattern as its siblings above. Gateway JWT
+# verification stays on.
+verify_jwt = true
+
+[functions.meetings-api]
+enabled = true
+# Public third-party "Interactive Meetings" API — callers have no Supabase
+# account (they authenticate with a developer_api_keys bearer key instead),
+# so gateway JWT verification MUST be off, matching livekit-webhook's own
+# non-Supabase-JWT auth model.
+verify_jwt = false

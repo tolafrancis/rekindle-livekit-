@@ -1,4 +1,7 @@
 import { supabase } from '@rekindle/supabase';
+import { FREE_TIER_MEETING_LIMITS } from './subscriptionEnforcement';
+
+export { FREE_TIER_MEETING_LIMITS };
 
 // Ministry (tenant) entitlements: resolves a ministry's subscription into concrete
 // limits + capability flags that gate modules, branding, white-label, custom domains,
@@ -63,7 +66,10 @@ const NO_CAPS: MinistryCaps = {
   whiteLabel: false,
   customDomain: false,
   liveChannels: false,
-  interactiveMeetings: false,
+  // "Free Ministry Meetings": every ministry gets Interactive Meetings even
+  // with no paid plan — bounded by FREE_TIER_MEETING_LIMITS (checked at
+  // creation time via checkMinistryMeetingQuota below), not unlimited.
+  interactiveMeetings: true,
   recordMeetings: false,
   broadcastMessaging: false,
   manageTeam: false,
@@ -161,4 +167,36 @@ export async function getMinistryEntitlements(
     console.error('[ministryEntitlements] resolve error:', error);
     return FREE_ENTITLEMENTS;
   }
+}
+
+function startOfMonthIso(): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+/**
+ * Free-tier monthly meeting quota for a ministry with no paid plan — only
+ * meaningful when caps.interactiveMeetings came from NO_CAPS (i.e. free),
+ * not from an active subscription (those aren't quota-limited here).
+ *
+ * Ministries have TWO separate meeting surfaces on two different tables —
+ * this checks whichever one the caller is creating from, so each gets its
+ * own 4/month pool rather than sharing one counter (a known simplification,
+ * not a unified ministry-wide cap):
+ *   - 'ministry_video_meetings' (the standalone ministry app's own Meetings tab)
+ *   - 'live_channel_video_meetings' (a ministry-owned channel's meetings — pass channelId)
+ */
+export async function checkMinistryMeetingQuota(
+  ministryId: string,
+  table: 'ministry_video_meetings' | 'live_channel_video_meetings',
+  channelId?: string,
+): Promise<{ allowed: boolean; used: number; limit: number }> {
+  const base = supabase.from(table).select('id', { count: 'exact', head: true }).gte('created_at', startOfMonthIso());
+  const { count } = table === 'ministry_video_meetings'
+    ? await base.eq('ministry_id', ministryId)
+    : await base.eq('channel_id', channelId ?? '');
+  const used = count ?? 0;
+  return { allowed: used < FREE_TIER_MEETING_LIMITS.monthlyMeetings, used, limit: FREE_TIER_MEETING_LIMITS.monthlyMeetings };
 }
