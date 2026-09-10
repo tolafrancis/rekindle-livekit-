@@ -1223,21 +1223,44 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 </div>
               );
             })() : (
-              <div className="text-center text-gray-500">
-                <div className="relative">
-                  {channel.channel_logo_url ? (
-                    <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-purple-500 mx-auto mb-4">
-                      <img src={channel.channel_logo_url} alt={channel.name} className="w-full h-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="w-32 h-32 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center mx-auto mb-4">
-                      <Mic className="h-16 w-16 text-white" />
-                    </div>
-                  )}
+              isSpeaker && dailyRoom.localParticipant ? (
+                <div className="w-full h-full flex gap-1 p-1">
+                  {/* Host Audio Broadcast Card */}
+                  <div className="flex-1 min-w-0 bg-gray-900 rounded-lg flex flex-col items-center justify-center text-center p-4">
+                    {channel.channel_logo_url ? (
+                      <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-purple-500 mb-3">
+                        <img src={channel.channel_logo_url} alt={channel.name} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center mb-3">
+                        <Mic className="h-12 w-12 text-white" />
+                      </div>
+                    )}
+                    <p className="text-lg font-medium text-white">{channel.owner_name || t('liveChannelViewer', 'hostFallback', 'Host')}</p>
+                    <p className="text-xs text-gray-400">{t('liveChannelViewer', 'audioBroadcast', 'Audio Broadcast')}</p>
+                  </div>
+                  {/* Local Speaker Tile */}
+                  <div className="w-28 sm:w-48 flex-shrink-0">
+                    <SpeakerVideoTile participant={dailyRoom.localParticipant} muted={true} />
+                  </div>
                 </div>
-                <p className="text-xl text-white mt-4">{channel.owner_name || t('liveChannelViewer', 'hostFallback', 'Host')}</p>
-                <p className="text-gray-400">{t('liveChannelViewer', 'audioBroadcast', 'Audio Broadcast')}</p>
-              </div>
+              ) : (
+                <div className="text-center text-gray-500">
+                  <div className="relative">
+                    {channel.channel_logo_url ? (
+                      <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-purple-500 mx-auto mb-4">
+                        <img src={channel.channel_logo_url} alt={channel.name} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-32 h-32 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center mx-auto mb-4">
+                        <Mic className="h-16 w-16 text-white" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xl text-white mt-4">{channel.owner_name || t('liveChannelViewer', 'hostFallback', 'Host')}</p>
+                  <p className="text-gray-400">{t('liveChannelViewer', 'audioBroadcast', 'Audio Broadcast')}</p>
+                </div>
+              )
             )}
 
             {/* Hidden audio element for audio-only broadcasts */}
@@ -1328,17 +1351,15 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                   >
                     {dailyRoom.isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
                   </Button>
-                  {channel.is_video_enabled && (
-                    <Button
-                      size="sm"
-                      variant={dailyRoom.isCameraOn ? 'default' : 'destructive'}
-                      onClick={dailyRoom.toggleCamera}
-                      className="rounded-full h-9 w-9 p-0"
-                      title={dailyRoom.isCameraOn ? t('liveChannelViewer', 'stopCameraTitle', 'Stop Camera') : t('liveChannelViewer', 'startCameraTitle', 'Start Camera')}
-                    >
-                      {dailyRoom.isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    variant={dailyRoom.isCameraOn ? 'default' : 'destructive'}
+                    onClick={dailyRoom.toggleCamera}
+                    className="rounded-full h-9 w-9 p-0"
+                    title={dailyRoom.isCameraOn ? t('liveChannelViewer', 'stopCameraTitle', 'Stop Camera') : t('liveChannelViewer', 'startCameraTitle', 'Start Camera')}
+                  >
+                    {dailyRoom.isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                  </Button>
                 </div>
               )}
 
