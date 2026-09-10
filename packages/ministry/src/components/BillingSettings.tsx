@@ -285,6 +285,26 @@ export default function BillingSettings() {
         </Select>
       </div>
 
+      {/* Free plan info — not a purchasable row in ministry_partner_plans (that
+          table is for paid plans only, priced/selected via checkout), so this
+          is a static card rather than DB-driven like the plans grid below. */}
+      {!isPaid && (
+        <Card className="border-purple-200 bg-purple-50/60">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              Free Plan <Badge variant="outline">Current</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              <li>• Free Ministry Meetings — 4 meetings/month, up to 10 participants, 60 minutes each</li>
+              <li>• No credit card required</li>
+              <li>• Join live channels, devotionals, prayer library, and more</li>
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 md:grid-cols-3">
         {plans.map((plan) => {
           const { currency, amount } = resolvePlanPricing(plan, country, cycle);
