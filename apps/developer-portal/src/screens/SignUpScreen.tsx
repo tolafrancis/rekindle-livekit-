@@ -62,7 +62,7 @@ export default function SignUpScreen() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Get API Access</CardTitle>
-          <CardDescription>Free Ministry Meetings plan — 4 meetings/month, no card required.</CardDescription>
+          <CardDescription>Free Ministry Meetings plan — 10 hours/month, no card required.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

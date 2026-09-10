@@ -23,20 +23,23 @@ your account. Revoke a compromised key from your dashboard at any time.
 
 ## Free plan limits — "Free Ministry Meetings"
 
-Every account is on the same free plan today — there's no paid tier yet:
+Every account is on the same free plan today — there's no paid tier yet.
+Gated on a monthly **time budget**, not a meeting count — create as many
+meetings as you want, as long as their allotted durations add up to 10
+hours or less this month:
 
 | Limit | Value |
 |---|---|
-| Meetings per month | 4 |
-| Concurrent active meetings | 2 |
+| Meeting time per month | 10 hours (no cap on number of meetings) |
+| Concurrent active meetings | 3 |
 | Max meeting duration | 60 minutes |
-| Max participants per meeting | 10 |
+| Max participants per meeting | 15 |
 | Recording | Not available yet |
 | Credit card required | No |
 
 `duration_minutes` / `max_participants` in a `create` call are capped to
-these automatically rather than rejected. Hitting the monthly or concurrent
-cap returns a `403 quota_exceeded` error (see [Errors](#errors)).
+these automatically rather than rejected. Hitting the monthly-hours or
+concurrent cap returns a `403 quota_exceeded` error (see [Errors](#errors)).
 
 ## Base URL
 
@@ -69,7 +72,7 @@ curl -X POST https://<project>.functions.supabase.co/meetings-api \
     "title": "Weekly Team Sync",
     "description": "Optional",
     "duration_minutes": 60,
-    "max_participants": 50,
+    "max_participants": 15,
     "enable_recording": false,
     "metadata": { "external_id": "your-own-reference-id" }
   }'
@@ -83,7 +86,7 @@ Response:
   "roomName": "api-1a2b3c4d-1699999999999",
   "title": "Weekly Team Sync",
   "durationMinutes": 60,
-  "maxParticipants": 50,
+  "maxParticipants": 15,
   "recordingEnabled": false,
   "createdAt": "2026-09-09T12:00:00.000Z"
 }
@@ -128,7 +131,7 @@ own UI. Tokens expire after 2 hours; request a fresh one per join.
   "isActive": true,
   "participantCount": 3,
   "durationMinutes": 60,
-  "maxParticipants": 50,
+  "maxParticipants": 15,
   "recordingEnabled": false,
   "metadata": { "external_id": "your-own-reference-id" },
   "createdAt": "...", "startedAt": "...", "endedAt": null
@@ -164,7 +167,7 @@ Paginate with `before` (an ISO timestamp from the oldest item you've seen):
 | Status | Meaning |
 |---|---|
 | 401 | Missing, invalid, or revoked API key |
-| 403 | `quota_exceeded` — free plan monthly or concurrent-meeting limit reached |
+| 403 | `quota_exceeded` — free plan's monthly hours or concurrent-meeting limit reached |
 | 404 | Meeting not found (or belongs to a different account) |
 | 409 | Meeting has already ended (`join-token`) |
 | 400 | Missing/invalid field |

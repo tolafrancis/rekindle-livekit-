@@ -83,6 +83,12 @@ import {
 // individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
 import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@rekindle/auth/ministryEntitlements';
 
+// Minutes -> a trimmed hours string for the free-tier notice (e.g. 90 -> "1.5", 600 -> "10").
+const formatHours = (minutes: number): string => {
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+};
+
 /* ======================================================
    TYPES
 ====================================================== */
@@ -1103,10 +1109,10 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
               {t(
                 'ministryInteractiveMeetings',
                 'freeTierNotice',
-                'Free Ministry Meetings: {used} of {limit} used this month · up to {participants} participants · {minutes} minutes each · no credit card required.'
+                'Free Ministry Meetings: {used} of {limit} hours used this month · as many meetings as you like · up to {participants} participants · {minutes} min each · no credit card required.'
               )
-                .replace('{used}', String(accessCheck?.current_usage ?? 0))
-                .replace('{limit}', String(accessCheck?.limit ?? FREE_TIER_MEETING_LIMITS.monthlyMeetings))
+                .replace('{used}', formatHours(accessCheck?.current_usage ?? 0))
+                .replace('{limit}', formatHours(accessCheck?.limit ?? FREE_TIER_MEETING_LIMITS.monthlyHours * 60))
                 .replace('{participants}', String(FREE_TIER_MEETING_LIMITS.maxParticipants))
                 .replace('{minutes}', String(FREE_TIER_MEETING_LIMITS.maxDurationMinutes))}
             </AlertDescription>

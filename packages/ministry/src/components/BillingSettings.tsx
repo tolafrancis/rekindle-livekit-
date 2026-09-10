@@ -297,7 +297,7 @@ export default function BillingSettings() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-1 text-sm text-muted-foreground">
-              <li>• Free Ministry Meetings — 4 meetings/month, up to 10 participants, 60 minutes each</li>
+              <li>• Free Ministry Meetings — 10 hours/month, as many meetings as you like, up to 15 participants, 60 minutes each</li>
               <li>• No credit card required</li>
               <li>• Join live channels, devotionals, prayer library, and more</li>
             </ul>

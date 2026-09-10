@@ -9,8 +9,8 @@ import { useLanguage } from '../LanguageContext';
 const API_PORTAL_URL = 'https://developers.rekindlebc.com';
 
 /**
- * Home-screen banner for the "Free Ministry Meetings" allowance (4/month, up
- * to 10 participants, 60 min each, no card required) — shown on both the
+ * Home-screen banner for the "Free Ministry Meetings" allowance (10 hrs/month,
+ * up to 15 participants, 60 min each, no card required) — shown on both the
  * consumer app's and ministry app's Home tabs so the free tier is actually
  * discoverable, not just a gate that only appears once someone opens the
  * Create Meeting modal. Also the primary on-ramp to the standalone
@@ -30,7 +30,7 @@ export const FreeMeetingsPromoCard: React.FC<{ onStartMeeting?: () => void }> = 
             <Sparkles className="h-4 w-4 text-purple-500 shrink-0" />
           </p>
           <p className="text-sm text-gray-600">
-            {t('freeMeetingsPromo', 'desc', '4 meetings every month, up to 10 participants, 60 minutes each. No credit card required.')}
+            {t('freeMeetingsPromo', 'desc', '10 hours every month, as many meetings as you like, up to 15 participants, 60 minutes each. No credit card required.')}
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">

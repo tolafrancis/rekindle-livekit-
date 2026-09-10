@@ -24,9 +24,15 @@ interface ApiKeySummary {
 interface Account {
   plan: string;
   companyName: string | null;
-  monthlyMeetingsUsed: number;
-  monthlyMeetingsLimit: number;
+  monthlyMinutesUsed: number;
+  monthlyMinutesLimit: number;
 }
+
+// Minutes -> a trimmed hours string (e.g. 90 -> "1.5", 600 -> "10").
+const formatHours = (minutes: number): string => {
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+};
 
 export default function DashboardScreen() {
   const { user, signOut } = useAuth();
@@ -128,8 +134,8 @@ export default function DashboardScreen() {
                   <p className="font-medium capitalize">{account?.plan ?? 'free'}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Meetings this month</p>
-                  <p className="font-medium">{account?.monthlyMeetingsUsed ?? 0} / {account?.monthlyMeetingsLimit ?? 4}</p>
+                  <p className="text-muted-foreground">Hours used this month</p>
+                  <p className="font-medium">{formatHours(account?.monthlyMinutesUsed ?? 0)} / {formatHours(account?.monthlyMinutesLimit ?? 600)} hrs</p>
                 </div>
               </div>
             )}

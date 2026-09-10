@@ -17,19 +17,21 @@
 //   { action: 'list' }            → { keys: [{ id, label, keyPrefix, lastUsedAt, requestCount, revokedAt, createdAt }] }
 //   { action: 'revoke', id }      → { success: true }
 //   { action: 'account', companyName? }
-//     → { plan, companyName, monthlyMeetingsUsed, monthlyMeetingsLimit, createdAt }
+//     → { plan, companyName, monthlyMinutesUsed, monthlyMinutesLimit, createdAt }
 //     Lazily creates the caller's developer_accounts row (plan='free') on
 //     first call — the standalone developer portal calls this right after
 //     signup, and again on every dashboard load to refresh usage numbers.
 //     `companyName`, if passed, updates the stored value (e.g. edited later).
+//     Usage is a monthly TIME budget (minutes), not a meeting count — see
+//     meetings-api's FREE_TIER header comment for why.
 // ────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Mirrors meetings-api's FREE_TIER.monthlyMeetings — kept in sync manually
+// Mirrors meetings-api's FREE_TIER.monthlyHours — kept in sync manually
 // (no shared module between these two Edge Functions).
-const FREE_TIER_MONTHLY_MEETINGS = 4;
+const FREE_TIER_MONTHLY_HOURS = 10;
 
 function startOfMonthIso(): string {
   const d = new Date();
@@ -156,17 +158,20 @@ serve(async (req) => {
         .single();
       if (error) throw error;
 
-      const { count: monthlyUsed } = await admin
+      const { data: monthlyRows } = await admin
         .from('api_meetings')
-        .select('id', { count: 'exact', head: true })
+        .select('duration_minutes')
         .eq('owner_user_id', user.id)
         .gte('created_at', startOfMonthIso());
+      const monthlyMinutesUsed = (monthlyRows ?? []).reduce(
+        (sum: number, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0,
+      );
 
       return json({
         plan: account.plan,
         companyName: account.company_name,
-        monthlyMeetingsUsed: monthlyUsed ?? 0,
-        monthlyMeetingsLimit: FREE_TIER_MONTHLY_MEETINGS,
+        monthlyMinutesUsed,
+        monthlyMinutesLimit: FREE_TIER_MONTHLY_HOURS * 60,
         createdAt: account.created_at,
       });
     }

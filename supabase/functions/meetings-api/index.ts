@@ -70,10 +70,10 @@ async function sha256Hex(input: string): Promise<string> {
 // developer-api-keys' 'account' action for display) — there's no shared
 // module between them.
 const FREE_TIER = {
-  monthlyMeetings: 4,
-  maxConcurrentActive: 2,
+  monthlyHours: 10,
+  maxConcurrentActive: 3,
   maxDurationMinutes: 60,
-  maxParticipants: 10,
+  maxParticipants: 15,
 };
 
 function startOfMonthIso(): string {
@@ -83,20 +83,24 @@ function startOfMonthIso(): string {
   return d.toISOString();
 }
 
-/** Enforces the free-plan quota: a monthly cap on meetings created, and a cap
- *  on how many can be active (is_active) at once. Both computed on the fly
- *  from api_meetings — no counters to keep in sync. */
+/** Enforces the free-plan quota: a monthly TIME budget (minutes allotted at
+ *  creation, summed — not measured call time) rather than a meeting count —
+ *  no cap on how many meetings, only on total minutes and how many can be
+ *  active (is_active) at once. Both computed on the fly from api_meetings —
+ *  no counters to keep in sync. */
 async function checkFreeTierQuota(
   admin: ReturnType<typeof createClient>,
   ownerId: string,
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const { count: monthlyCount } = await admin
+  const limitMinutes = FREE_TIER.monthlyHours * 60;
+  const { data: monthlyRows } = await admin
     .from('api_meetings')
-    .select('id', { count: 'exact', head: true })
+    .select('duration_minutes')
     .eq('owner_user_id', ownerId)
     .gte('created_at', startOfMonthIso());
-  if ((monthlyCount ?? 0) >= FREE_TIER.monthlyMeetings) {
-    return { allowed: false, reason: `Free plan limit reached: ${FREE_TIER.monthlyMeetings} meetings/month.` };
+  const usedMinutes = (monthlyRows ?? []).reduce((sum: number, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0);
+  if (usedMinutes >= limitMinutes) {
+    return { allowed: false, reason: `Free plan limit reached: ${FREE_TIER.monthlyHours} hours/month.` };
   }
 
   const { count: activeCount } = await admin

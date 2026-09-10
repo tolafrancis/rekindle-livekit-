@@ -177,26 +177,43 @@ function startOfMonthIso(): string {
 }
 
 /**
- * Free-tier monthly meeting quota for a ministry with no paid plan — only
- * meaningful when caps.interactiveMeetings came from NO_CAPS (i.e. free),
- * not from an active subscription (those aren't quota-limited here).
+ * Free-tier monthly meeting TIME budget (minutes) for a ministry with no paid
+ * plan — only meaningful when caps.interactiveMeetings came from NO_CAPS
+ * (i.e. free), not from an active subscription (those aren't quota-limited
+ * here). No cap on how many meetings, only on total allotted minutes and how
+ * many can be live at once — see FREE_TIER_MEETING_LIMITS' header comment.
  *
  * Ministries have TWO separate meeting surfaces on two different tables —
  * this checks whichever one the caller is creating from, so each gets its
- * own 4/month pool rather than sharing one counter (a known simplification,
- * not a unified ministry-wide cap):
+ * own budget rather than sharing one counter (a known simplification, not a
+ * unified ministry-wide cap):
  *   - 'ministry_video_meetings' (the standalone ministry app's own Meetings tab)
  *   - 'live_channel_video_meetings' (a ministry-owned channel's meetings — pass channelId)
+ *
+ * used/limit are in MINUTES.
  */
 export async function checkMinistryMeetingQuota(
   ministryId: string,
   table: 'ministry_video_meetings' | 'live_channel_video_meetings',
   channelId?: string,
 ): Promise<{ allowed: boolean; used: number; limit: number }> {
-  const base = supabase.from(table).select('id', { count: 'exact', head: true }).gte('created_at', startOfMonthIso());
-  const { count } = table === 'ministry_video_meetings'
-    ? await base.eq('ministry_id', ministryId)
-    : await base.eq('channel_id', channelId ?? '');
-  const used = count ?? 0;
-  return { allowed: used < FREE_TIER_MEETING_LIMITS.monthlyMeetings, used, limit: FREE_TIER_MEETING_LIMITS.monthlyMeetings };
+  const isChannelTable = table === 'live_channel_video_meetings';
+  const limitMinutes = FREE_TIER_MEETING_LIMITS.monthlyHours * 60;
+
+  const minutesQuery = supabase.from(table).select('duration_minutes').gte('created_at', startOfMonthIso());
+  const { data } = isChannelTable
+    ? await minutesQuery.eq('channel_id', channelId ?? '')
+    : await minutesQuery.eq('ministry_id', ministryId);
+  const used = (data ?? []).reduce((sum: number, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0);
+  if (used >= limitMinutes) return { allowed: false, used, limit: limitMinutes };
+
+  const activeQuery = supabase.from(table).select('id', { count: 'exact', head: true }).eq('is_active', true);
+  const { count: activeCount } = isChannelTable
+    ? await activeQuery.eq('channel_id', channelId ?? '')
+    : await activeQuery.eq('ministry_id', ministryId);
+  if ((activeCount ?? 0) >= FREE_TIER_MEETING_LIMITS.maxConcurrentActive) {
+    return { allowed: false, used, limit: limitMinutes };
+  }
+
+  return { allowed: true, used, limit: limitMinutes };
 }

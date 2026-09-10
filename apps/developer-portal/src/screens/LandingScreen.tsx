@@ -41,7 +41,7 @@ export default function LandingScreen() {
             <CardHeader>
               <Zap className="h-6 w-6 text-primary mb-1" />
               <CardTitle className="text-base">Free to start</CardTitle>
-              <CardDescription>4 meetings/month, no card required.</CardDescription>
+              <CardDescription>10 hours/month, as many meetings as you like, no card required.</CardDescription>
             </CardHeader>
           </Card>
           <Card>
@@ -54,7 +54,7 @@ export default function LandingScreen() {
           <Card>
             <CardHeader>
               <Users className="h-6 w-6 text-primary mb-1" />
-              <CardTitle className="text-base">Up to 10 participants</CardTitle>
+              <CardTitle className="text-base">Up to 15 participants</CardTitle>
               <CardDescription>Multi-party rooms, up to 60 minutes each.</CardDescription>
             </CardHeader>
           </Card>
