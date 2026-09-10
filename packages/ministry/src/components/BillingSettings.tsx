@@ -46,8 +46,9 @@ const RETENTION_OPTIONS: { value: string; label: string; days: number | null }[]
   { value: '180', label: '180 days', days: 180 },
 ];
 
-export default function BillingSettings() {
-  const { currentMinistryId } = useCurrentMinistry();
+export default function BillingSettings({ ministryId }: { ministryId?: string } = {}) {
+  const { currentMinistryId: ctxMinistryId } = useCurrentMinistry();
+  const currentMinistryId = ministryId || ctxMinistryId;
   const { name: ministryName } = useMinistryBranding();
   const { entitlements, loading: entitlementsLoading } = useMinistryEntitlements();
 

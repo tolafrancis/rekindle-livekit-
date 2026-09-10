@@ -41,8 +41,9 @@ function DnsRow({ label, name, type, value }: { label: string; name: string; typ
   );
 }
 
-export default function CustomDomainSettings() {
-  const { currentMinistryId, currentMinistry } = useCurrentMinistry();
+export default function CustomDomainSettings({ ministryId }: { ministryId?: string } = {}) {
+  const { currentMinistryId: ctxMinistryId, currentMinistry } = useCurrentMinistry();
+  const currentMinistryId = ministryId || ctxMinistryId;
   const { entitlements, loading: entLoading } = useMinistryEntitlements();
   const canUse = entitlements.caps.customDomain;
 
