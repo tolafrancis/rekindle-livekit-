@@ -69,7 +69,7 @@ const WHATSAPP_PLANS = [
     id: 'basic' as const,
     name: 'Basic',
     monthlyUsd: 10,
-    setupUsd: 20,
+    setupUsd: 50,
     features: [
       'Your own WABA & verified phone number',
       'Up to 1,000 messages/month included',

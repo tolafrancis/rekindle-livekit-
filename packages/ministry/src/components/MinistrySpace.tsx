@@ -62,6 +62,7 @@ import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContex
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
 import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip';
+import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
 import { recordDailyActivity } from '@rekindle/features/streak';
 import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
 import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan';
@@ -1469,6 +1470,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 </div>
               );
             })()}
+
+            <FreeMeetingsPromoCard onStartMeeting={() => setActiveTab('meetings')} />
 
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
             <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">

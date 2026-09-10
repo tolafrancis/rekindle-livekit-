@@ -1,0 +1,19 @@
+{
+  // Deployed as a Worker with static assets (Cloudflare's current model for
+  // "Create an app" Git-connected deploys) rather than classic Pages — this
+  // is what "npx wrangler deploy" reads to know where the built site is.
+  //
+  // `name` becomes both the Worker's resource name and its default
+  // workers.dev subdomain: rekindle-developer-portal.<account>.workers.dev.
+  // Keep it matching whatever "Project name" is typed in the Cloudflare
+  // dashboard's Create-an-app wizard.
+  "name": "rekindle-developer-portal",
+  "compatibility_date": "2026-09-10",
+  "assets": {
+    "directory": "./dist",
+    // SPA fallback: any path with no matching static file serves index.html,
+    // so react-router client routes (/signup, /login, /dashboard) resolve on
+    // direct load / refresh — the Workers-assets equivalent of public/_redirects.
+    "not_found_handling": "single-page-application"
+  }
+}

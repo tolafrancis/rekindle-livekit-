@@ -341,38 +341,102 @@ export async function canCreateLiveChannel(userId: string): Promise<AccessCheckR
   return { allowed: true };
 }
 
-/**
- * Check if user can host interactive meetings
- */
-export async function canHostInteractiveMeeting(userId: string): Promise<AccessCheckResult> {
-  const subscription = await getUserActiveSubscription(userId);
-  
-  if (!subscription) {
-    return {
-      allowed: false,
-      reason: 'No active subscription found',
-      tier_required: 'premium_plus'
-    };
-  }
+// "Free Ministry Meetings" — every account (individual or ministry, no card
+// required) gets this baseline for Interactive Meetings even with no paid
+// plan, instead of being blocked outright. Gated on a monthly TIME budget,
+// not a meeting count — no real video product caps how often you can meet
+// (Zoom/Meet/Teams cap duration+size per session and let you meet as often
+// as you like); a meeting-count cap breaks the single most common use case
+// (a weekly recurring meeting) the moment someone wants a second one. Same
+// numbers as the standalone Interactive Meetings API's free plan
+// (supabase/functions/meetings-api's FREE_TIER) and mirrored into
+// ministryEntitlements.ts for the ministry side — keep all three in sync
+// manually if these change.
+export const FREE_TIER_MEETING_LIMITS = {
+  monthlyHours: 10,
+  maxParticipants: 15,
+  maxDurationMinutes: 60,
+  maxConcurrentActive: 3,
+};
 
-  if (!subscription.tier.can_host_interactive_meetings) {
-    return {
-      allowed: false,
-      reason: 'Interactive meetings require Premium Plus or higher',
-      tier_required: 'premium_plus',
-      current_tier: subscription.tier.slug
-    };
-  }
+function startOfMonthIso(): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
 
-  return { allowed: true };
+/** This user's own meeting-minutes budget consumed this calendar month,
+ *  across every live_channel_video_meetings row they host (personal or
+ *  ministry-owned channels alike) — summed from duration_minutes at
+ *  creation time (the allotted slot), not measured call time; there's no
+ *  actual-usage tracking wired for this table. */
+async function sumIndividualMeetingMinutesThisMonth(userId: string): Promise<number> {
+  const { data } = await supabase
+    .from('live_channel_video_meetings')
+    .select('duration_minutes')
+    .eq('host_id', userId)
+    .gte('created_at', startOfMonthIso());
+  return (data ?? []).reduce((sum, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0);
+}
+
+async function countIndividualActiveMeetings(userId: string): Promise<number> {
+  const { count } = await supabase
+    .from('live_channel_video_meetings')
+    .select('id', { count: 'exact', head: true })
+    .eq('host_id', userId)
+    .eq('is_active', true);
+  return count ?? 0;
 }
 
 /**
- * Get maximum meeting duration for user
+ * Check if user can host interactive meetings — a paid plan with the flag
+ * always wins; otherwise falls back to the free monthly time budget rather
+ * than blocking outright. current_usage/limit are in MINUTES.
+ */
+export async function canHostInteractiveMeeting(userId: string): Promise<UsageCheckResult> {
+  const subscription = await getUserActiveSubscription(userId);
+
+  if (subscription?.tier.can_host_interactive_meetings) {
+    return { allowed: true, current_usage: 0, limit: null };
+  }
+
+  const limitMinutes = FREE_TIER_MEETING_LIMITS.monthlyHours * 60;
+  const usedMinutes = await sumIndividualMeetingMinutesThisMonth(userId);
+  if (usedMinutes >= limitMinutes) {
+    return {
+      allowed: false,
+      reason: `You've used all ${FREE_TIER_MEETING_LIMITS.monthlyHours} free hours of meetings this month. Upgrade for more, or wait until next month.`,
+      tier_required: 'premium_plus',
+      current_tier: subscription?.tier.slug,
+      current_usage: usedMinutes,
+      limit: limitMinutes,
+    };
+  }
+
+  const activeCount = await countIndividualActiveMeetings(userId);
+  if (activeCount >= FREE_TIER_MEETING_LIMITS.maxConcurrentActive) {
+    return {
+      allowed: false,
+      reason: `Free plan limit reached: ${FREE_TIER_MEETING_LIMITS.maxConcurrentActive} active meetings at once. End one before starting another.`,
+      tier_required: 'premium_plus',
+      current_tier: subscription?.tier.slug,
+      current_usage: usedMinutes,
+      limit: limitMinutes,
+    };
+  }
+
+  return { allowed: true, current_usage: usedMinutes, limit: limitMinutes };
+}
+
+/**
+ * Get maximum meeting duration for user — falls back to the free-tier cap
+ * (60 min) instead of 0 when there's no paid plan, so free meetings aren't
+ * silently capped at zero.
  */
 export async function getMaxMeetingDuration(userId: string): Promise<number | null> {
   const subscription = await getUserActiveSubscription(userId);
-  if (!subscription) return 0;
+  if (!subscription) return FREE_TIER_MEETING_LIMITS.maxDurationMinutes;
   return subscription.tier.max_meeting_duration_minutes; // null = unlimited
 }
 
