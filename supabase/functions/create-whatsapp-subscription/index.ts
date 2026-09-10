@@ -78,7 +78,7 @@ serve(async (req) => {
     // for display/line-item purposes, but never trust it blindly; reject any
     // amount that doesn't match this plan's known price.
     const KNOWN_PRICES: Record<string, { monthlyUsd: number; setupUsd: number }> = {
-      basic:   { monthlyUsd: 10, setupUsd: 20 },
+      basic:   { monthlyUsd: 10, setupUsd: 50 },
       growth:  { monthlyUsd: 35, setupUsd: 50 },
       premium: { monthlyUsd: 75, setupUsd: 100 },
     };
