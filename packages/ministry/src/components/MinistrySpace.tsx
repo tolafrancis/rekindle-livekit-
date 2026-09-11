@@ -26,7 +26,7 @@ import {
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
-  User,
+  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake,
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -257,7 +257,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [mQaFilter, setMQaFilter] = useState<'all' | 'open' | 'resolved'>('all');
   const [mExpandedQ, setMExpandedQ] = useState<string | null>(null);
   const [mAnswerDrafts, setMAnswerDrafts] = useState<Record<string, string>>({});
-  const [showManagement, setShowManagement] = useState(false);
   const [navMenuOpen, setNavMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -800,6 +799,28 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     return m && typeof m === 'object' && key in m ? !!m[key] : true;
   };
 
+  const ADMIN_TAB_MAP: Record<string, string> = {
+    'overview': 'overview',
+    'members': 'members',
+    'announcements': 'announcements',
+    'requests': 'prayer-requests',
+    'donations': 'donations',
+    'events': 'events',
+    'testimonies': 'testimonies',
+    'inbox': 'inbox',
+    'birthdays': 'birthdays',
+    'registrations': 'registrations',
+    'whatsapp': 'whatsapp',
+    'volunteers': 'volunteers',
+    'video-messages': 'video-messages',
+    'devotionals-mgmt': 'devotionals',
+    'prayer-library-mgmt': 'prayer-library',
+    'rules': 'rules',
+    'translation-mgmt': 'translation',
+    'broadcast': 'broadcast',
+    'content': 'content',
+  };
+
   // ── Two-level grouped navigation (mirrors the consumer app) ──
   type NavChild = { id: string; label: string; icon: any };
   type NavGroup = { id: string; label: string; icon: any; gradient: string; children?: NavChild[] };
@@ -835,16 +856,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' }]
       : []),
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
+      { id: 'overview', label: 'Overview', icon: BarChart3 },
+      { id: 'members', label: 'Members', icon: Users },
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
-      ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
-      { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
-      { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
-      { id: 'meetings', label: 'Meetings', icon: Video },
+      { id: 'events', label: 'Events', icon: Calendar },
+      { id: 'testimonies', label: 'Testimonies', icon: Star },
+      { id: 'inbox', label: 'Inbox', icon: Inbox },
+      { id: 'birthdays', label: 'Birthdays', icon: Cake },
+      { id: 'registrations', label: 'Registrations', icon: ClipboardList },
+      { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
+      { id: 'volunteers', label: 'Volunteers', icon: HeartHandshake },
+      { id: 'video-messages', label: 'Video Messages', icon: Video },
+      { id: 'devotionals-mgmt', label: 'Devotionals', icon: BookOpen },
+      { id: 'prayer-library-mgmt', label: 'Prayer Library', icon: Heart },
+      { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
+      { id: 'translation-mgmt', label: 'Live Translation', icon: Radio },
+      ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
-      ...(canManageMinistry ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
     ] },
+    ...(canManageMinistry ? [{ id: 'settings', label: 'Settings', icon: Settings, gradient: 'from-gray-500 to-gray-600' }] : []),
   ];
 
   // word/prayer/community children switch a sub-view; 'admin' children are their own activeTab.
@@ -897,14 +929,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         </div>
         <Skeleton className="h-48 rounded-xl" />
       </div>
-    );
-  }
-  if (showManagement && canManageMinistry) {
-    return (
-      <MinistryManagement
-        ministryId={ministry.id}
-        onBack={() => setShowManagement(false)}
-      />
     );
   }
 
@@ -1181,30 +1205,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       t('ministrySpace', 'roleMember', 'Member')
                     )}
                   </Badge>
-
-                  {/* Manage Ministry Button */}
-                  {canManageMinistry && (
-                    <Button
-                      onClick={() => {
-                        if (!hasMinistryAccess) {
-                          toast({
-                            title: t('ministrySpace', 'ministryTierRequired', 'Ministry Tier Required'),
-                            description: t('ministrySpace', 'upgradeManagementFeatures', 'Upgrade to Ministry tier to access management features'),
-                            variant: 'destructive'
-                          });
-                          return;
-                        }
-                        setShowManagement(true);
-                      }}
-                      className="bg-white text-purple-600 hover:bg-white/90"
-                      size="sm"
-                      disabled={!hasMinistryAccess}
-                    >
-                      {!hasMinistryAccess && <Lock className="h-4 w-4 mr-2" />}
-                      <LayoutDashboard className="h-4 w-4 sm:mr-2" />
-                      <span className="hidden sm:inline">{t('ministrySpace', 'manageMinistry', 'Manage Ministry')}</span>
-                    </Button>
-                  )}
                 </div>
 
                 {/* "Back to Rekindle" now lives inside the mobile menu button (below). */}
@@ -1405,6 +1405,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
           {/* Main content */}
           <div className="min-w-0 flex-1">
+        {/* Admin Ministry Management View */}
+        {activeGroup.id === 'admin' && canManageMinistry && (
+          <MinistryManagement
+            ministryId={ministry.id}
+            activeTab={ADMIN_TAB_MAP[activeTab] || 'overview'}
+          />
+        )}
+
         {/* Live Tab - MLiveChannel */}
         {activeTab === 'live' && (
           <MLiveChannel

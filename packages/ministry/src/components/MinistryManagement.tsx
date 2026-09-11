@@ -37,6 +37,7 @@ import { MinistrySmallGroupsManager } from './MinistrySmallGroupsManager';
 
 interface MinistryManagementProps {
   ministryId: string;
+  activeTab?: string;
   onBack?: () => void;
 }
 
@@ -84,11 +85,12 @@ const TABS = [
 
 export const MinistryManagement: React.FC<MinistryManagementProps> = ({
   ministryId,
+  activeTab: propActiveTab,
   onBack
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useViewHistory<string>('ministry-management', 'overview');
+  const [activeTab, setActiveTab] = useViewHistory<string>('ministry-management', propActiveTab || 'overview');
   const [ministry, setMinistry] = useState<Ministry | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLeader, setIsLeader] = useState(false);
