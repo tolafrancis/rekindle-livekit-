@@ -1084,7 +1084,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Pastor's Video Message player overlay */}
       {showVideoPlayer && activeVideoMessage && (
         <VideoMessagePlayer
@@ -1296,7 +1296,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       )}
 
       {/* Content Area */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 flex-1 overflow-y-auto">
         <div className="flex items-start gap-6 min-h-0">
           {/* Web sidebar (desktop only) — restores the original ministry menu */}
           {/* Desktop navigation — consumer-style: a narrow icon RAIL of primary
