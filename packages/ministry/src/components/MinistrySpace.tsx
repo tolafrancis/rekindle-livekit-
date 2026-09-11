@@ -44,7 +44,7 @@ const MINISTRY_NAV = [
   { id: 'meetings', label: 'Interactive Meetings', icon: Video },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
-import { MinistrySettingsManager } from './MinistrySettingsManager';
+import { MinistrySettingsHub } from './MinistrySettingsHub';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
 import { MinistryRulesManager } from './MinistryRulesManager';
 import { AcceptRulesModal } from './AcceptRulesModal';
@@ -799,28 +799,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     return m && typeof m === 'object' && key in m ? !!m[key] : true;
   };
 
-  const ADMIN_TAB_MAP: Record<string, string> = {
-    'overview': 'overview',
-    'members': 'members',
-    'announcements': 'announcements',
-    'requests': 'prayer-requests',
-    'donations': 'donations',
-    'events': 'events',
-    'testimonies': 'testimonies',
-    'inbox': 'inbox',
-    'birthdays': 'birthdays',
-    'registrations': 'registrations',
-    'whatsapp': 'whatsapp',
-    'volunteers': 'volunteers',
-    'video-messages': 'video-messages',
-    'devotionals-mgmt': 'devotionals',
-    'prayer-library-mgmt': 'prayer-library',
-    'rules': 'rules',
-    'translation-mgmt': 'translation',
-    'broadcast': 'broadcast',
-    'content': 'content',
-  };
-
   // ── Two-level grouped navigation (mirrors the consumer app) ──
   type NavChild = { id: string; label: string; icon: any };
   type NavGroup = { id: string; label: string; icon: any; gradient: string; children?: NavChild[] };
@@ -856,24 +834,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' }]
       : []),
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
-      { id: 'overview', label: 'Overview', icon: BarChart3 },
-      { id: 'members', label: 'Members', icon: Users },
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
-      { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
-      { id: 'donations', label: 'Donations', icon: Gift },
-      { id: 'events', label: 'Events', icon: Calendar },
-      { id: 'testimonies', label: 'Testimonies', icon: Star },
-      { id: 'inbox', label: 'Inbox', icon: Inbox },
-      { id: 'birthdays', label: 'Birthdays', icon: Cake },
-      { id: 'registrations', label: 'Registrations', icon: ClipboardList },
-      { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
-      { id: 'volunteers', label: 'Volunteers', icon: HeartHandshake },
-      { id: 'video-messages', label: 'Video Messages', icon: Video },
-      { id: 'devotionals-mgmt', label: 'Devotionals', icon: BookOpen },
-      { id: 'prayer-library-mgmt', label: 'Prayer Library', icon: Heart },
-      { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
-      { id: 'translation-mgmt', label: 'Live Translation', icon: Radio },
       ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
+      { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
+      { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
+      { id: 'testimonies', label: 'Testimonies', icon: Star },
+      { id: 'donations', label: 'Donations', icon: Gift },
+      { id: 'meetings', label: 'Meetings', icon: Video },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
     ...(canManageMinistry ? [{ id: 'settings', label: 'Settings', icon: Settings, gradient: 'from-gray-500 to-gray-600' }] : []),
@@ -1405,14 +1372,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
           {/* Main content */}
           <div className="min-w-0 flex-1">
-        {/* Admin Ministry Management View */}
-        {activeGroup.id === 'admin' && canManageMinistry && (
-          <MinistryManagement
-            ministryId={ministry.id}
-            activeTab={ADMIN_TAB_MAP[activeTab] || 'overview'}
-          />
-        )}
-
         {/* Live Tab - MLiveChannel */}
         {activeTab === 'live' && (
           <MLiveChannel
@@ -1433,9 +1392,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           />
         )}
 
-        {/* Settings Tab (leaders/admins) */}
+        {/* Settings Hub (leaders/admins) */}
         {activeTab === 'settings' && canManageMinistry && (
-          <MinistrySettingsManager
+          <MinistrySettingsHub
             ministry={ministry}
             onUpdate={loadMinistryData}
           />
