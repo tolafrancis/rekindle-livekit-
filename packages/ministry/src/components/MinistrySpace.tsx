@@ -1296,82 +1296,82 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       )}
 
       {/* Content Area */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 flex-1 overflow-y-auto">
-        <div className="flex items-start gap-6 min-h-0">
-          {/* Web sidebar (desktop only) — restores the original ministry menu */}
-          {/* Desktop navigation — consumer-style: a narrow icon RAIL of primary
-              groups + a MODULE panel listing the active group's sub-tabs. */}
-          <div className="hidden md:flex items-start gap-3 shrink-0 sticky top-24 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
-            {/* Primary icon rail */}
-            <aside className="flex w-[4.75rem] flex-col items-center rounded-2xl border border-gray-200 bg-white shadow-sm py-3">
-              <div
-                className="mb-2 h-10 w-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
-                style={{ backgroundColor: `${themeColor}1a` }}
-                title={ministry.name}
-              >
-                {ministry.logo_url
-                  ? <img src={ministry.logo_url} alt={ministry.name} className="h-10 w-10 rounded-xl object-cover" />
-                  : <Building2 className="h-5 w-5" style={{ color: themeColor }} />}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Web sidebar (desktop only) — restores the original ministry menu */}
+        {/* Desktop navigation — consumer-style: a narrow icon RAIL of primary
+            groups + a MODULE panel listing the active group's sub-tabs. */}
+        <div className="hidden md:flex items-start gap-3 shrink-0 w-auto overflow-y-auto border-r border-gray-200 bg-gray-50 pt-4 pl-3 pr-3 pb-4">
+          {/* Primary icon rail */}
+          <aside className="flex w-[4.75rem] flex-col items-center rounded-2xl border border-gray-200 bg-white shadow-sm py-3">
+            <div
+              className="mb-2 h-10 w-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
+              style={{ backgroundColor: `${themeColor}1a` }}
+              title={ministry.name}
+            >
+              {ministry.logo_url
+                ? <img src={ministry.logo_url} alt={ministry.name} className="h-10 w-10 rounded-xl object-cover" />
+                : <Building2 className="h-5 w-5" style={{ color: themeColor }} />}
+            </div>
+            <nav className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
+              {GROUPS.map((g) => {
+                const GIcon = g.icon;
+                const gActive = isGroupActive(g);
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => goToGroup(g)}
+                    aria-current={gActive ? 'page' : undefined}
+                    className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                  >
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${g.gradient} text-white shadow-md transition-transform ${gActive ? 'scale-105 ring-2 ring-offset-2 ring-gray-300' : 'group-hover:scale-105'}`}>
+                      <GIcon className="h-5 w-5" />
+                    </span>
+                    <span className="w-full truncate">{navLabel(g)}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <button
+              onClick={onExit}
+              title={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
+              className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          </aside>
+
+          {/* Secondary MODULE panel — only for groups that have sub-tabs */}
+          {activeGroup.children && (
+            <aside className="flex w-52 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-gray-100 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('ministrySpace', 'module', 'Module')}</p>
+                <h2 className="text-base font-semibold text-gray-900 truncate">{navLabel(activeGroup)}</h2>
               </div>
-              <nav className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
-                {GROUPS.map((g) => {
-                  const GIcon = g.icon;
-                  const gActive = isGroupActive(g);
+              <nav className="flex flex-col gap-1 p-3" aria-label={`${navLabel(activeGroup)} navigation`}>
+                {activeGroup.children.map((c) => {
+                  const CIcon = c.icon;
+                  const cActive = isChildActive(activeGroup, c.id);
                   return (
                     <button
-                      key={g.id}
-                      onClick={() => goToGroup(g)}
-                      aria-current={gActive ? 'page' : undefined}
-                      className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                      key={c.id}
+                      onClick={() => goToChild(activeGroup, c.id)}
+                      aria-current={cActive ? 'page' : undefined}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${cActive ? '' : 'text-gray-700 hover:bg-gray-50'}`}
+                      style={cActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
                     >
-                      <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${g.gradient} text-white shadow-md transition-transform ${gActive ? 'scale-105 ring-2 ring-offset-2 ring-gray-300' : 'group-hover:scale-105'}`}>
-                        <GIcon className="h-5 w-5" />
-                      </span>
-                      <span className="w-full truncate">{navLabel(g)}</span>
+                      <CIcon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{navLabel(c)}</span>
                     </button>
                   );
                 })}
               </nav>
-              <button
-                onClick={onExit}
-                title={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
-                className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
             </aside>
+          )}
+        </div>
 
-            {/* Secondary MODULE panel — only for groups that have sub-tabs */}
-            {activeGroup.children && (
-              <aside className="flex w-52 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-                <div className="border-b border-gray-100 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('ministrySpace', 'module', 'Module')}</p>
-                  <h2 className="text-base font-semibold text-gray-900 truncate">{navLabel(activeGroup)}</h2>
-                </div>
-                <nav className="flex flex-col gap-1 p-3" aria-label={`${navLabel(activeGroup)} navigation`}>
-                  {activeGroup.children.map((c) => {
-                    const CIcon = c.icon;
-                    const cActive = isChildActive(activeGroup, c.id);
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => goToChild(activeGroup, c.id)}
-                        aria-current={cActive ? 'page' : undefined}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${cActive ? '' : 'text-gray-700 hover:bg-gray-50'}`}
-                        style={cActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
-                      >
-                        <CIcon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{navLabel(c)}</span>
-                      </button>
-                    );
-                  })}
-                </nav>
-              </aside>
-            )}
-          </div>
-
-          {/* Main content */}
-          <div className="min-w-0 flex-1 min-h-0">
+        {/* Main content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {/* Live Tab - MLiveChannel */}
         {activeTab === 'live' && (
           <MLiveChannel
