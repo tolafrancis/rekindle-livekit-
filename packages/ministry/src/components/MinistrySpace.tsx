@@ -1297,11 +1297,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
       {/* Content Area */}
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        <div className="flex items-start gap-6">
+        <div className="flex items-start gap-6 min-h-0">
           {/* Web sidebar (desktop only) — restores the original ministry menu */}
           {/* Desktop navigation — consumer-style: a narrow icon RAIL of primary
               groups + a MODULE panel listing the active group's sub-tabs. */}
-          <div className="hidden md:flex items-start gap-3 shrink-0 sticky top-24 self-start">
+          <div className="hidden md:flex items-start gap-3 shrink-0 sticky top-24 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
             {/* Primary icon rail */}
             <aside className="flex w-[4.75rem] flex-col items-center rounded-2xl border border-gray-200 bg-white shadow-sm py-3">
               <div
@@ -1371,7 +1371,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </div>
 
           {/* Main content */}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 min-h-0">
         {/* Live Tab - MLiveChannel */}
         {activeTab === 'live' && (
           <MLiveChannel
