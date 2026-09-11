@@ -90,18 +90,27 @@ interface MinistrySettingsHubProps {
   ministry: Ministry;
   onUpdate: () => void;
   initialSection?: SettingsSectionId;
+  activeSection?: SettingsSectionId;
+  onNavigateSection?: (section: SettingsSectionId) => void;
 }
 
 export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   ministry,
   onUpdate,
-  initialSection = 'overview'
+  initialSection = 'overview',
+  activeSection: propActiveSection,
+  onNavigateSection
 }) => {
   const { t } = useLanguage();
   const [activeSection, setActiveSection] = useViewHistory<SettingsSectionId>(
     `ministry-settings-section-${ministry.id}`,
     initialSection
   );
+  const currentSection = propActiveSection || activeSection;
+  const setCurrentSection = (sec: SettingsSectionId) => {
+    setActiveSection(sec);
+    onNavigateSection?.(sec);
+  };
 
   // ── General Profile & Branding Form State ──
   const [savingGeneral, setSavingGeneral] = useState(false);
@@ -260,59 +269,11 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   const colorOptions = ['#7c3aed', '#2563eb', '#059669', '#dc2626', '#ea580c', '#0891b2', '#7c2d12', '#1e3a8a'];
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 min-h-[650px]">
-      {/* Mobile Horizontal Scrollable Nav */}
-      <div className="md:hidden flex gap-2 overflow-x-auto pb-2 border-b">
-        {SECTIONS.map((sec) => {
-          const Icon = sec.icon;
-          const isActive = activeSection === sec.id;
-          return (
-            <Button
-              key={sec.id}
-              variant={isActive ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setActiveSection(sec.id)}
-              className="flex-shrink-0 gap-1.5"
-            >
-              <Icon className="h-4 w-4" />
-              {sec.label}
-            </Button>
-          );
-        })}
-      </div>
-
-      {/* Desktop Vertical Left-Nav Sidebar */}
-      <aside className="hidden md:block w-64 flex-shrink-0 space-y-1 pr-2">
-        <div className="px-3 py-2 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-          Settings & Management
-        </div>
-        {SECTIONS.map((sec) => {
-          const Icon = sec.icon;
-          const isActive = activeSection === sec.id;
-          return (
-            <button
-              key={sec.id}
-              onClick={() => setActiveSection(sec.id)}
-              className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                isActive
-                  ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 shadow-sm border border-purple-100 dark:border-purple-900/50'
-                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800/60'
-              }`}
-            >
-              <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${isActive ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400'}`} />
-              <div className="text-left">
-                <div className="font-semibold leading-tight">{sec.label}</div>
-                <div className="text-[11px] text-muted-foreground font-normal leading-normal mt-0.5">{sec.description}</div>
-              </div>
-            </button>
-          );
-        })}
-      </aside>
-
+    <div className="space-y-6">
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 space-y-6">
+      <main className="space-y-6">
         {/* Section 1: Overview */}
-        {activeSection === 'overview' && (
+        {currentSection === 'overview' && (
           <MinistryOverviewDashboard
             ministryId={ministry.id}
             onNavigate={(navTarget) => {
@@ -337,14 +298,14 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                 settings: 'general',
               };
               if (navMap[navTarget]) {
-                setActiveSection(navMap[navTarget]);
+                setCurrentSection(navMap[navTarget]);
               }
             }}
           />
         )}
 
         {/* Section 2: General */}
-        {activeSection === 'general' && (
+        {currentSection === 'general' && (
           <div className="space-y-6">
             {/* Profile Settings */}
             <Card>
@@ -750,7 +711,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         )}
 
         {/* Section 3: People */}
-        {activeSection === 'people' && (
+        {currentSection === 'people' && (
           <div className="space-y-6">
             <MinistryMembersManager ministryId={ministry.id} />
             <MinistryVolunteerTeamsManager ministryId={ministry.id} />
@@ -760,7 +721,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         )}
 
         {/* Section 4: Content */}
-        {activeSection === 'content' && (
+        {currentSection === 'content' && (
           <div className="space-y-6">
             <MinistryDevotionalsManager ministryId={ministry.id} />
             <MinistryPrayerLibraryManager ministryId={ministry.id} />
@@ -772,7 +733,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         )}
 
         {/* Section 5: Engagement */}
-        {activeSection === 'engagement' && (
+        {currentSection === 'engagement' && (
           <div className="space-y-6">
             <MinistryPrayerRequestsManager ministryId={ministry.id} />
             <MinistryDonationsManager ministryId={ministry.id} ministryName={ministry.name} themeColor={ministry.theme_color} isLeader={true} />
@@ -783,7 +744,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         )}
 
         {/* Section 6: Live & Tech */}
-        {activeSection === 'live-tech' && (
+        {currentSection === 'live-tech' && (
           <div className="space-y-6">
             <MinistryTranslationHub ministryId={ministry.id} ministryName={ministry.name} />
             <MinistryTranslationSettings ministryId={ministry.id} />
@@ -831,7 +792,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         )}
 
         {/* Section 7: Finance & Billing */}
-        {activeSection === 'finance-billing' && (
+        {currentSection === 'finance-billing' && (
           <div className="space-y-6">
             <MinistryPaymentSettings ministryId={ministry.id} />
             <MinistryGiftAidSettings ministryId={ministry.id} countryCode={ministry.country_code} />

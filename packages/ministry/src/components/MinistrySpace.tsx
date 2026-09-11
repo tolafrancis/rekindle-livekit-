@@ -26,7 +26,7 @@ import {
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
-  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake,
+  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard,
 } from 'lucide-react';
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
@@ -44,7 +44,7 @@ const MINISTRY_NAV = [
   { id: 'meetings', label: 'Interactive Meetings', icon: Video },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
-import { MinistrySettingsHub } from './MinistrySettingsHub';
+import { MinistrySettingsHub, SettingsSectionId } from './MinistrySettingsHub';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
 import { MinistryRulesManager } from './MinistryRulesManager';
 import { AcceptRulesModal } from './AcceptRulesModal';
@@ -234,6 +234,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
   const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
+  const [settingsSection, setSettingsSection] = useViewHistory<SettingsSectionId>(
+    `ministry-settings-section-${ministry.id}`,
+    'overview'
+  );
   const navigate = useNavigate();
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
@@ -843,7 +847,21 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'meetings', label: 'Meetings', icon: Video },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
-    ...(canManageMinistry ? [{ id: 'settings', label: 'Settings', icon: Settings, gradient: 'from-gray-500 to-gray-600' }] : []),
+    ...(canManageMinistry ? [{
+      id: 'settings',
+      label: 'Settings',
+      icon: Settings,
+      gradient: 'from-gray-500 to-gray-600',
+      children: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'general', label: 'General', icon: Settings },
+        { id: 'people', label: 'People', icon: Users },
+        { id: 'content', label: 'Content', icon: BookOpen },
+        { id: 'engagement', label: 'Engagement', icon: MessageSquare },
+        { id: 'live-tech', label: 'Live & Tech', icon: Radio },
+        { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard },
+      ]
+    }] : []),
   ];
 
   // word/prayer/community children switch a sub-view; 'admin' children are their own activeTab.
@@ -851,6 +869,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     word: { value: wordSubTab, set: setWordSubTab },
     prayer: { value: prayerSubTab, set: setPrayerSubTab },
     community: { value: communitySubTab, set: setCommunitySubTab },
+    settings: { value: settingsSection, set: setSettingsSection },
   };
   const ownsSubtab = (gid: string) => gid in SUBTAB;
   const activeGroup = GROUPS.find(g => g.id === activeTab || g.children?.some(c => c.id === activeTab)) ?? GROUPS[0];
@@ -1397,6 +1416,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           <MinistrySettingsHub
             ministry={ministry}
             onUpdate={loadMinistryData}
+            activeSection={settingsSection}
+            onNavigateSection={(sec) => setSettingsSection(sec)}
           />
         )}
 
