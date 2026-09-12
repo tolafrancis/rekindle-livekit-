@@ -26,6 +26,52 @@ const corsHeaders = {
 const MAX_TRANSCRIPT_CHARS = 60000 // ~ gpt-4o-mini handles this comfortably; a hard ceiling against runaway cost/latency on an unusually long upload.
 const MAX_CORRECTIONS = 40
 
+// A long sermon can turn up dozens of corrections, and each "wrong"/"right"
+// pair has to be a verbatim clause (not a short token) — that can add up to
+// more output than a small cap allows, cutting the JSON off mid-object and
+// making it fail to parse. gpt-4o-mini supports up to 16384 completion
+// tokens; 8000 gives real headroom without paying for the whole range.
+const MAX_OUTPUT_TOKENS = 8000
+
+// If the model's output got cut off mid-array (hit MAX_OUTPUT_TOKENS before
+// finishing), the JSON up to that point is still well-formed — only the
+// last, incomplete object at the tail is broken. Recover the complete
+// objects rather than throwing away an otherwise-good partial result.
+function repairTruncatedCorrectionsJson(raw: string): { corrections: any[] } | null {
+  const arrayStart = raw.indexOf('[')
+  if (arrayStart === -1) return null
+  const body = raw.slice(arrayStart + 1)
+  const items: string[] = []
+  let depth = 0
+  let itemStart = -1
+  let inString = false
+  let escape = false
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]
+    if (inString) {
+      if (escape) escape = false
+      else if (ch === '\\') escape = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{') { if (depth === 0) itemStart = i; depth++ }
+    else if (ch === '}') {
+      depth--
+      if (depth === 0 && itemStart !== -1) {
+        items.push(body.slice(itemStart, i + 1))
+        itemStart = -1
+      }
+    }
+  }
+  if (items.length === 0) return null
+  try {
+    return { corrections: items.map((it) => JSON.parse(it)) }
+  } catch {
+    return null
+  }
+}
+
 serve(async (req) => {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -84,7 +130,7 @@ Respond with ONLY a JSON object matching exactly this shape:
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiApiKey}` },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        max_tokens: 4000,
+        max_tokens: MAX_OUTPUT_TOKENS,
         temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [
@@ -101,13 +147,25 @@ Respond with ONLY a JSON object matching exactly this shape:
     }
 
     const data = await res.json()
-    const raw = data.choices?.[0]?.message?.content?.trim() || ''
+    const choice = data.choices?.[0]
+    const finishReason = choice?.finish_reason
+    const raw = choice?.message?.content?.trim() || ''
     let parsed: any
     try {
       parsed = JSON.parse(raw)
     } catch {
-      console.error('[detect-transcript-corrections] Failed to parse OpenAI JSON:', raw)
-      return json({ error: 'AI returned malformed content. Please try again.' }, 502)
+      const repaired = repairTruncatedCorrectionsJson(raw)
+      if (repaired) {
+        console.warn('[detect-transcript-corrections] Recovered truncated JSON', { finishReason, rawLength: raw.length, recovered: repaired.corrections.length })
+        parsed = repaired
+      } else {
+        console.error('[detect-transcript-corrections] Failed to parse OpenAI JSON:', { finishReason, rawLength: raw.length, raw })
+        return json({
+          error: finishReason === 'length'
+            ? 'The transcript produced too many results for the AI to return at once. Try analyzing a shorter portion of the transcript.'
+            : 'AI returned malformed content. Please try again.',
+        }, 502)
+      }
     }
 
     const corrections = Array.isArray(parsed.corrections)

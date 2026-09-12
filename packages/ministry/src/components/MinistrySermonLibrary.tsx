@@ -600,14 +600,21 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   // Quick per-row action: replaces the exact flagged span with its
   // correction directly in the live transcript (both pattern and AI
   // "wrong" values are guaranteed exact substrings — the edge function
-  // discards anything that isn't).
+  // discards anything that isn't). Replaces EVERY occurrence, not just the
+  // first — a word like "anointing" (misheard as "annoying") typically
+  // repeats many times through a sermon, and String.replace(str, str) only
+  // touches the first match, which left the row re-appearing forever since
+  // detectPatternCorrections re-scans the whole transcript on every render
+  // and the word was still in there. split/join sidesteps needing to
+  // regex-escape an arbitrary AI-detected clause.
   const applyCorrectionToTranscript = (c: Correction) => {
     if (!transcript.includes(c.wrong)) {
       toast({ title: 'Could not apply', description: 'That text is no longer in the transcript (already edited?).', variant: 'destructive' });
       return;
     }
-    setTranscript(transcript.replace(c.wrong, c.right));
-    toast({ title: 'Applied', description: 'Updated in the transcript above — remember to save/update the sermon.' });
+    const occurrences = transcript.split(c.wrong).length - 1;
+    setTranscript(transcript.split(c.wrong).join(c.right));
+    toast({ title: 'Applied', description: `Updated ${occurrences} occurrence${occurrences === 1 ? '' : 's'} in the transcript above — remember to save/update the sermon.` });
   };
 
   // Deeper contextual pass (detect-transcript-corrections edge function,
