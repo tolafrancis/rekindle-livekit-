@@ -23,15 +23,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const MAX_TRANSCRIPT_CHARS = 60000 // ~ gpt-4o-mini handles this comfortably; a hard ceiling against runaway cost/latency on an unusually long upload.
+const MAX_TRANSCRIPT_CHARS = 60000 // ~ gpt-5-mini handles this comfortably; a hard ceiling against runaway cost/latency on an unusually long upload.
 const MAX_CORRECTIONS = 40
 
 // A long sermon can turn up dozens of corrections, and each "wrong"/"right"
 // pair has to be a verbatim clause (not a short token) — that can add up to
 // more output than a small cap allows, cutting the JSON off mid-object and
-// making it fail to parse. gpt-4o-mini supports up to 16384 completion
-// tokens; 8000 gives real headroom without paying for the whole range.
-const MAX_OUTPUT_TOKENS = 8000
+// making it fail to parse. gpt-5-mini is a reasoning model — part of this
+// budget is spent on invisible reasoning tokens before it writes the JSON
+// itself, on top of the array's own length — so this needs real headroom,
+// not just enough for the visible text.
+const MAX_OUTPUT_TOKENS = 16000
 
 // If the model's output got cut off mid-array (hit MAX_OUTPUT_TOKENS before
 // finishing), the JSON up to that point is still well-formed — only the
@@ -115,7 +117,7 @@ serve(async (req) => {
 
 Rules:
 - Only flag spans you are reasonably confident are genuine STT errors — not just informal speech, accented English, filler words, or repetition. Do NOT flag Nigerian English expressions (e.g. "I want to appreciate you", "by God's grace", "we are trusting God") — those are correct as heard, not errors.
-- Do NOT flag correct Bible references, proper names, or ministry/denominational terms.
+- Do NOT flag Bible references, proper names, or ministry/denominational terms that are ALREADY correct as transcribed. DO flag them if they are garbled or wrong — e.g. a mangled verse callout ("second kings chapter two from us nineteen" -> "2 Kings 2:19"), or one prophet's name misheard for another (Elijah misheard for Elisha in an Elisha-era passage) — these are exactly the kind of error this task exists to catch, not a reason to leave the span alone.
 - Each "wrong" value MUST be an EXACT, verbatim substring copied from the transcript below — do not paraphrase, reword, or fix capitalization/punctuation of it. If it is not an exact substring, it is useless (the app matches it literally).
 - Prefer the smallest span that captures the error clearly — a few words to a short clause, not a whole paragraph.
 - "right" is your best-guess correction — what the speaker most likely actually said.
@@ -129,9 +131,17 @@ Respond with ONLY a JSON object matching exactly this shape:
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiApiKey}` },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: MAX_OUTPUT_TOKENS,
-        temperature: 0.2,
+        // gpt-4o-mini (small, GPT-4o-era) was too weak at exactly the kind
+        // of reasoning this task needs — recalling precise KJV wording,
+        // telling one Bible-era prophet's name from another — to reliably
+        // catch the errors it was built to catch. gpt-5-mini is current-gen
+        // and meaningfully stronger at that, for a similar per-output-token
+        // price. NOTE: it's a reasoning model, which changes the API
+        // surface — no custom `temperature` (fixed to its default, 1; a
+        // non-default value is a hard 400) and `max_completion_tokens`
+        // instead of the legacy `max_tokens`.
+        model: 'gpt-5-mini',
+        max_completion_tokens: MAX_OUTPUT_TOKENS,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
