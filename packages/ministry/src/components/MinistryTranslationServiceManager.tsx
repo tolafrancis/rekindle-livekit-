@@ -6,6 +6,7 @@ import { Label } from '@rekindle/ui/label';
 import { Badge } from '@rekindle/ui/badge';
 import { Switch } from '@rekindle/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
+import { RadioGroup, RadioGroupItem } from '@rekindle/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
@@ -88,6 +89,13 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // which is the ministry-wide default for every OTHER pipeline
   // (Meetings/PA/etc.) — this only affects speaker links created here.
   const [speakerSourceLanguage, setSpeakerSourceLanguage] = useState('en');
+  // "Translation Engine" (2026-09-13). 'realtime_live' trades some accuracy
+  // for much lower latency (a genuine speech-to-speech model, not a
+  // transcribe->translate->synthesize relay); 'auto' resolves server-side to
+  // 'realtime_live' for a normal live session. Whatever vendor actually
+  // powers "Realtime Live" is deliberately never named in this UI — only in
+  // code/migrations, which is developer-facing, not admin-facing.
+  const [speakerEngine, setSpeakerEngine] = useState<'rekindle_ai' | 'realtime_live' | 'auto'>('auto');
   const [creatingSpeaker, setCreatingSpeaker] = useState(false);
   // The raw speaker token only ever exists in the RPC's response — shown
   // once here, same discipline as the device-registration dialog's raw key.
@@ -211,6 +219,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     // back to 'en' when the ministry-wide setting is itself 'auto' — never
     // pre-select Auto-detect for a new speaker link.
     setSpeakerSourceLanguage(sourceLanguage && sourceLanguage !== 'auto' ? sourceLanguage : 'en');
+    setSpeakerEngine('auto');
     setNewSpeakerLink(null);
     setNewSpeakerService(null);
     setShowSpeaker(true);
@@ -236,6 +245,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         p_source_language: speakerSourceLanguage,
         p_target_language: speakerLanguage,
         p_service_id: service.id,
+        p_engine: speakerEngine,
       });
       if (error) throw error;
       const { session_id, speaker_token } = data as { session_id: string; speaker_token: string };
@@ -671,6 +681,29 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Translation Engine</Label>
+                <RadioGroup value={speakerEngine} onValueChange={(v) => setSpeakerEngine(v as typeof speakerEngine)} className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="rekindle_ai" id="engine-rekindle-ai" className="mt-0.5" />
+                    <Label htmlFor="engine-rekindle-ai" className="cursor-pointer font-normal">
+                      <span className="font-medium">Rekindle AI</span> — High Accuracy
+                    </Label>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="realtime_live" id="engine-realtime-live" className="mt-0.5" />
+                    <Label htmlFor="engine-realtime-live" className="cursor-pointer font-normal">
+                      <span className="font-medium">Realtime Live</span> — Ultra Low Latency
+                    </Label>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem value="auto" id="engine-auto" className="mt-0.5" />
+                    <Label htmlFor="engine-auto" className="cursor-pointer font-normal">
+                      <span className="font-medium">Auto</span> — Recommended
+                    </Label>
+                  </div>
+                </RadioGroup>
               </div>
             </div>
           ) : (
