@@ -88,6 +88,8 @@ export const TranslationDisplayPage: React.FC = () => {
   const [privateNotReady, setPrivateNotReady] = useState(false);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [connStatus, setConnStatus] = useState<ConnStatus>('connecting');
+  const [downloadingTranscript, setDownloadingTranscript] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Display preferences — local to this visitor's browser only, no account
@@ -316,6 +318,46 @@ export const TranslationDisplayPage: React.FC = () => {
     }
   }, [session?.status]);
 
+  // Available for a defined window after a session ends (translation_logs
+  // ages out with the session 24h after it ends — cleanup_ended_translation_sessions,
+  // migration 0341), then genuinely gone rather than kept forever. Only the
+  // last 3 lines are ever kept in `lines` (the live-view feed), so this
+  // re-fetches the full log rather than reusing that state. Same public RLS
+  // as the live 3-line feed (migration 0273) — nothing new to grant.
+  const downloadTranscript = async () => {
+    if (!sessionId) return;
+    setDownloadingTranscript(true);
+    try {
+      const { data, error } = await supabase
+        .from('translation_logs')
+        .select('source_text, translated_text, created_at')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setDownloadError('No transcript was recorded for this session.');
+        return;
+      }
+      const bodyText = (data as Array<Pick<LogLine, 'source_text' | 'translated_text' | 'created_at'>>)
+        .map((row) => `[${new Date(row.created_at).toLocaleTimeString()}] ${row.source_text}\n→ ${row.translated_text}`)
+        .join('\n\n');
+      const blob = new Blob([bodyText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transcript-${session?.translation_services?.name || sessionId}.txt`.replace(/[^\w.-]+/g, '-');
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[TranslationDisplayPage] downloadTranscript failed:', err);
+      setDownloadError('Could not download the transcript. Please try again.');
+    } finally {
+      setDownloadingTranscript(false);
+    }
+  };
+
   const submitPin = async () => {
     if (!sessionId || !pin.trim()) return;
     setPinChecking(true);
@@ -412,12 +454,23 @@ export const TranslationDisplayPage: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
         <Card className="max-w-sm w-full bg-white/5 border-white/10">
-          <CardContent className="py-8 text-center space-y-2">
+          <CardContent className="py-8 text-center space-y-3">
             <Radio className="h-8 w-8 mx-auto text-white/30" />
             <p className="text-sm font-medium text-white">This link is no longer available</p>
             <p className="text-sm text-white/50">
               This translation session has ended. Ask your ministry for a new link if there's another one starting.
             </p>
+            <Button
+              variant="outline"
+              className="text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
+              onClick={downloadTranscript}
+              disabled={downloadingTranscript}
+            >
+              {downloadingTranscript ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Download transcript
+            </Button>
+            {downloadError && <p className="text-xs text-red-400">{downloadError}</p>}
+            <p className="text-[11px] text-white/30">Available for a limited time after the session ends.</p>
           </CardContent>
         </Card>
       </div>

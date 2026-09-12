@@ -290,6 +290,35 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     );
   };
 
+  // Speaker Link (browser_speaker) sessions only. The raw speaker token is
+  // deliberately never stored past its one-time reveal (migration 0288), so
+  // "Copy" here can't just re-copy something already on the row like
+  // copyDisplayLink does — speaker_session_get_link mints a fresh one, either
+  // refreshing the existing session (still running) or restarting it as a
+  // brand-new session under the same service (already ended). Either way the
+  // primary link this button hands the admin is the speaker link, not the
+  // listener link — that's the one whoever's actually speaking needs.
+  const [copyingSpeakerLinkFor, setCopyingSpeakerLinkFor] = useState<string | null>(null);
+  const copySpeakerLink = async (session: SessionRow) => {
+    setCopyingSpeakerLinkFor(session.id);
+    try {
+      const { data, error } = await supabase.rpc('speaker_session_get_link', { p_session_id: session.id });
+      if (error) throw error;
+      const { session_id, speaker_token, restarted } = data as { session_id: string; speaker_token: string; restarted: boolean };
+      const url = `${window.location.origin}/speak/${session_id}?t=${speaker_token}`;
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: restarted ? 'Restarted — speaker link copied' : 'Speaker link copied',
+        description: restarted ? 'A new session was started to replace the ended one.' : undefined,
+      });
+      if (restarted) load();
+    } catch (err: any) {
+      toast({ title: 'Could not get speaker link', description: err.message, variant: 'destructive' });
+    } finally {
+      setCopyingSpeakerLinkFor(null);
+    }
+  };
+
   const toggleBroadcastMode = (serviceId: string, on: boolean) => {
     setBroadcastMode(prev => {
       const next = new Set(prev);
@@ -405,6 +434,15 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => copySpeakerLink(session)}
+                    disabled={copyingSpeakerLinkFor === session.id}
+                    title={session.status === 'ended' ? 'Restart and copy a new speaker link' : 'Copy speaker link'}
+                  >
+                    {copyingSpeakerLinkFor === session.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session.status === 'ended' ? <Play className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy listener link">
                     <Copy className="h-4 w-4" />
                   </Button>
@@ -501,9 +539,21 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     </Badge>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy display link">
-                      <Copy className="h-4 w-4" />
-                    </Button>
+                    {session.source_type === 'browser_speaker' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copySpeakerLink(session)}
+                        disabled={copyingSpeakerLinkFor === session.id}
+                        title={session.status === 'ended' ? 'Restart and copy a new speaker link' : 'Copy speaker link'}
+                      >
+                        {copyingSpeakerLinkFor === session.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session.status === 'ended' ? <Play className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy display link">
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    )}
                     {session.status !== 'ended' && (
                       <Button variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this language">
                         <Square className="h-4 w-4" />
