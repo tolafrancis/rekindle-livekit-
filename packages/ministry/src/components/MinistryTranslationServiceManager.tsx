@@ -723,17 +723,22 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
               </div>
               <div className="space-y-1.5">
                 <Label>Translation Engine</Label>
+                {/* "Realtime Live" removed from this list (2026-09-13) --
+                    confirmed non-functional against a real Gemini Live
+                    session (audio verifiably reaches the model, it never
+                    once generates a response) through two fix attempts with
+                    zero error feedback to chase further. The engine and its
+                    'auto' server-side resolution both still exist
+                    (BotSession.ts/GeminiLiveEngine.ts, migration 0344 now
+                    resolves 'auto' -> 'rekindle_ai' instead) -- just not
+                    reachable from this dialog until it's actually fixed.
+                    Re-add the RadioGroupItem for 'realtime_live' here once
+                    it's confirmed working again. */}
                 <RadioGroup value={speakerEngine} onValueChange={(v) => setSpeakerEngine(v as typeof speakerEngine)} className="space-y-2">
                   <div className="flex items-start gap-2">
                     <RadioGroupItem value="rekindle_ai" id="engine-rekindle-ai" className="mt-0.5" />
                     <Label htmlFor="engine-rekindle-ai" className="cursor-pointer font-normal">
                       <span className="font-medium">Rekindle AI</span> — High Accuracy
-                    </Label>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <RadioGroupItem value="realtime_live" id="engine-realtime-live" className="mt-0.5" />
-                    <Label htmlFor="engine-realtime-live" className="cursor-pointer font-normal">
-                      <span className="font-medium">Realtime Live</span> — Ultra Low Latency
                     </Label>
                   </div>
                   <div className="flex items-start gap-2">
