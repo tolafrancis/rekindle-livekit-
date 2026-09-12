@@ -248,7 +248,7 @@ export const SpeakerPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4 py-10">
-      <Card className="max-w-sm w-full bg-white/5 border-white/10">
+      <Card className="max-w-md w-full bg-white/5 border-white/10">
         <CardContent className="py-8 space-y-5">
           <div className="text-center space-y-1">
             <Radio className="h-7 w-7 mx-auto text-indigo-400" />
@@ -305,12 +305,22 @@ export const SpeakerPage: React.FC = () => {
                 <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
                   <Captions className="h-3.5 w-3.5" /> What's being heard
                 </p>
-                <div className="min-h-[4.5rem] max-h-40 overflow-y-auto rounded-lg bg-black/30 px-3 py-2 space-y-1">
+                <div className="min-h-[6rem] max-h-64 overflow-y-auto rounded-lg bg-black/30 px-3 py-2 space-y-1.5">
                   {captions.length === 0 ? (
                     <p className="text-xs text-white/40 italic">Captions will appear here once you start talking…</p>
                   ) : (
+                    // Current line sized close to the listener /display page's
+                    // own caption size (its default "large" preset is text-2xl
+                    // sm:text-3xl) so it's actually readable at a glance, not
+                    // just present — older lines stay small/dim, just for
+                    // scroll-back context.
                     captions.map((c, i) => (
-                      <p key={c.id} className={`text-sm leading-snug ${i === captions.length - 1 ? 'text-white' : 'text-white/50'}`}>
+                      <p
+                        key={c.id}
+                        className={i === captions.length - 1
+                          ? 'text-xl sm:text-2xl font-semibold leading-snug text-white'
+                          : 'text-sm leading-snug text-white/40'}
+                      >
                         {c.text}
                       </p>
                     ))
