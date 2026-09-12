@@ -13,6 +13,7 @@ import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrC
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle } from 'lucide-react';
 import type { BadgeProps } from '@rekindle/ui/badge';
+import { COMMON_LANGUAGES } from './MinistryTranslationSettings';
 
 interface MinistryTranslationServiceManagerProps {
   ministryId: string;
@@ -77,6 +78,16 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const [showSpeaker, setShowSpeaker] = useState(false);
   const [speakerServiceName, setSpeakerServiceName] = useState('');
   const [speakerLanguage, setSpeakerLanguage] = useState('');
+  // The language the SPEAKER will talk in for this specific link — distinct
+  // from the ministry-wide `sourceLanguage` above, which may be 'auto'.
+  // Defaults to a real pinned language, never 'auto': manual selection gives
+  // Deepgram stronger context than auto-detect and measurably cuts errors
+  // like "praise" -> "press" (explicit product decision, not just a UI
+  // nicety) — auto-detect stays available in the dropdown, just not
+  // pre-selected. Independent of the Settings tab's own Auto-detect toggle,
+  // which is the ministry-wide default for every OTHER pipeline
+  // (Meetings/PA/etc.) — this only affects speaker links created here.
+  const [speakerSourceLanguage, setSpeakerSourceLanguage] = useState('en');
   const [creatingSpeaker, setCreatingSpeaker] = useState(false);
   // The raw speaker token only ever exists in the RPC's response — shown
   // once here, same discipline as the device-registration dialog's raw key.
@@ -196,6 +207,10 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const openSpeakerDialog = () => {
     setSpeakerServiceName('');
     setSpeakerLanguage(supportedLanguages[0] || '');
+    // Start from the ministry's pinned language if it has one; only fall
+    // back to 'en' when the ministry-wide setting is itself 'auto' — never
+    // pre-select Auto-detect for a new speaker link.
+    setSpeakerSourceLanguage(sourceLanguage && sourceLanguage !== 'auto' ? sourceLanguage : 'en');
     setNewSpeakerLink(null);
     setNewSpeakerService(null);
     setShowSpeaker(true);
@@ -218,7 +233,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
 
       const { data, error } = await supabase.rpc('start_speaker_session', {
         p_ministry_id: ministryId,
-        p_source_language: sourceLanguage,
+        p_source_language: speakerSourceLanguage,
         p_target_language: speakerLanguage,
         p_service_id: service.id,
       });
@@ -580,7 +595,24 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label>Target language ({sourceLanguage.toUpperCase()} → )</Label>
+                <Label>Speaker's language</Label>
+                <Select value={speakerSourceLanguage} onValueChange={setSpeakerSourceLanguage}>
+                  <SelectTrigger><SelectValue placeholder="Choose a language" /></SelectTrigger>
+                  <SelectContent>
+                    {COMMON_LANGUAGES.map(l => (
+                      <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
+                    ))}
+                    <SelectItem value="auto">Auto-detect language</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Picking the actual language (recommended) gives speech recognition stronger context and cuts
+                  errors like hearing "praise" as "press" — Auto-detect is available but a manual pick is more
+                  accurate.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Target language ({speakerSourceLanguage === 'auto' ? 'auto' : speakerSourceLanguage.toUpperCase()} → )</Label>
                 <Select value={speakerLanguage} onValueChange={setSpeakerLanguage}>
                   <SelectTrigger><SelectValue placeholder="Choose a language" /></SelectTrigger>
                   <SelectContent>

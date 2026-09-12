@@ -156,7 +156,7 @@ interface LanguageConfigState {
 // RLT pilots Asia first (see docs/rlt-build-checklist.md) — this list just
 // seeds the dropdown. "Add a language" below takes any code, this isn't an
 // enforced whitelist.
-const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
+export const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
   { code: 'en', label: 'English' },
   { code: 'vi', label: 'Vietnamese' },
   { code: 'ko', label: 'Korean' },

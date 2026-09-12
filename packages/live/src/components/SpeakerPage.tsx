@@ -5,7 +5,9 @@ import type { LocalAudioTrack } from 'livekit-client';
 import { supabase } from '@rekindle/supabase';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
-import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Input } from '@rekindle/ui/input';
+import { toast } from '@rekindle/ui/use-toast';
+import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus } from 'lucide-react';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
 
@@ -51,9 +53,27 @@ export const SpeakerPage: React.FC = () => {
   const [copyLabel, setCopyLabel] = useState('Copy listener link');
   const [level, setLevel] = useState(0); // 0–1, simple mic-activity meter
 
+  // Live captions — what the bot's STT actually heard, per finalized
+  // utterance. Purely informational: this never blocks or feeds back into
+  // translation (which keeps firing instantly, same as before) — it just
+  // lets the speaker glance at the screen and catch a misheard name/term.
+  // Sourced from translation_logs, which the bot already writes to in
+  // real time and which is already public-readable + realtime-enabled
+  // (migration 0273) — no bot-side changes needed for this.
+  const [captions, setCaptions] = useState<Array<{ id: string; text: string }>>([]);
+  const MAX_CAPTIONS = 6; // a short trailing window, not a full transcript
+
+  // "That word looked wrong" — banks a correction into the ministry's
+  // approved-terms vocabulary (same table/mechanism Sermon Library uses)
+  // so future sessions/uploads recognize it better. Explicitly does NOT
+  // touch anything already translated/spoken.
+  const [correctionText, setCorrectionText] = useState('');
+  const [submittingCorrection, setSubmittingCorrection] = useState(false);
+
   const roomRef = useRef<Room | null>(null);
   const analyserCleanupRef = useRef<(() => Promise<void>) | null>(null);
   const levelRafRef = useRef<number | null>(null);
+  const captionsChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
     if (!sessionId || !speakerToken) {
@@ -106,6 +126,7 @@ export const SpeakerPage: React.FC = () => {
     roomRef.current = room;
     room.on(RoomEvent.Disconnected, () => {
       teardownLevelMeter();
+      teardownCaptions();
       setPhase((prev) => (prev === 'ended' ? prev : 'ended'));
     });
 
@@ -117,6 +138,7 @@ export const SpeakerPage: React.FC = () => {
       const micPub = await room.localParticipant.setMicrophoneEnabled(true);
       if (micPub?.track) startLevelMeter(micPub.track as LocalAudioTrack);
       setPhase('live');
+      startCaptions(sessionId);
       console.log('[SpeakerPage] publishing as', identity);
     } catch (err) {
       console.error('[SpeakerPage] connect/publish failed:', err);
@@ -131,6 +153,50 @@ export const SpeakerPage: React.FC = () => {
     }
   };
 
+  const teardownCaptions = () => {
+    if (captionsChannelRef.current) {
+      supabase.removeChannel(captionsChannelRef.current);
+      captionsChannelRef.current = null;
+    }
+  };
+
+  const startCaptions = (forSessionId: string) => {
+    teardownCaptions();
+    setCaptions([]);
+    captionsChannelRef.current = supabase
+      .channel(`speaker-captions-${forSessionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${forSessionId}` },
+        (payload) => {
+          const row = payload.new as { id: string; source_text: string };
+          if (!row?.source_text) return;
+          setCaptions((prev) => [...prev, { id: row.id, text: row.source_text }].slice(-MAX_CAPTIONS));
+        },
+      )
+      .subscribe();
+  };
+
+  const submitCorrection = async () => {
+    if (!sessionId || !speakerToken || !correctionText.trim()) return;
+    setSubmittingCorrection(true);
+    try {
+      const { error } = await supabase.rpc('speaker_add_vocabulary_term', {
+        p_session_id: sessionId,
+        p_speaker_token: speakerToken,
+        p_term: correctionText.trim(),
+      });
+      if (error) throw error;
+      toast({ title: 'Added', description: `"${correctionText.trim()}" will be recognized better going forward.` });
+      setCorrectionText('');
+    } catch (err: any) {
+      console.error('[SpeakerPage] submitCorrection failed:', err);
+      toast({ title: "Couldn't add that", description: err.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSubmittingCorrection(false);
+    }
+  };
+
   const toggleMute = async () => {
     if (!roomRef.current) return;
     const next = !muted;
@@ -141,6 +207,7 @@ export const SpeakerPage: React.FC = () => {
   const stopSpeaking = async () => {
     if (!sessionId || !speakerToken) return;
     teardownLevelMeter();
+    teardownCaptions();
     try {
       await roomRef.current?.disconnect();
     } catch { /* already gone */ }
@@ -165,6 +232,7 @@ export const SpeakerPage: React.FC = () => {
     return () => {
       window.removeEventListener('beforeunload', onUnload);
       teardownLevelMeter();
+      teardownCaptions();
       roomRef.current?.disconnect().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -227,6 +295,48 @@ export const SpeakerPage: React.FC = () => {
                   className="h-full bg-emerald-500 transition-[width] duration-75"
                   style={{ width: `${Math.round(level * 100)}%` }}
                 />
+              </div>
+
+              {/* What the system is hearing — informational only. Nothing here
+                  delays or changes translation, which keeps firing instantly
+                  per utterance same as always; this is purely so the speaker
+                  can catch a misheard name/term at a glance. */}
+              <div className="space-y-1.5">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
+                  <Captions className="h-3.5 w-3.5" /> What's being heard
+                </p>
+                <div className="min-h-[4.5rem] max-h-40 overflow-y-auto rounded-lg bg-black/30 px-3 py-2 space-y-1">
+                  {captions.length === 0 ? (
+                    <p className="text-xs text-white/40 italic">Captions will appear here once you start talking…</p>
+                  ) : (
+                    captions.map((c, i) => (
+                      <p key={c.id} className={`text-sm leading-snug ${i === captions.length - 1 ? 'text-white' : 'text-white/50'}`}>
+                        {c.text}
+                      </p>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={correctionText}
+                    onChange={(e) => setCorrectionText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') submitCorrection(); }}
+                    placeholder="Heard a word/name wrong? Type the correct one…"
+                    className="h-8 flex-1 border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
+                    onClick={submitCorrection}
+                    disabled={submittingCorrection || !correctionText.trim()}
+                  >
+                    {submittingCorrection ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-white/40">
+                  This won't change what's already been translated — it just helps recognition going forward.
+                </p>
               </div>
 
               <div className="flex gap-2">
