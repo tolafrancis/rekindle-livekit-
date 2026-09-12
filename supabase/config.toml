@@ -37,6 +37,12 @@ enabled = true
 # generate-devotional-* functions above.
 verify_jwt = true
 
+[functions.fetch-youtube-transcript]
+enabled = true
+# Same ministry-admin pattern as detect-transcript-corrections — a Sermon
+# Library helper, not a public YouTube-scraping proxy.
+verify_jwt = true
+
 [functions.livekit-egress]
 enabled = true
 # start/stop-recording call supabase.auth.getUser() on the forwarded Bearer
