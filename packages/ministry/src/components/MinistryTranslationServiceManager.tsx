@@ -65,6 +65,14 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const [sourceLanguage, setSourceLanguage] = useState('en');
   const [speakerIdentityDefault, setSpeakerIdentityDefault] = useState<string | null>(null);
 
+  // Billing Phase 1 (2026-09-13) — informational only, nothing here gates
+  // client-side; the actual paid-plan requirement is enforced server-side
+  // in start_speaker_session/start_bot_session (migration 0343). This is
+  // just visibility so an admin isn't surprised by the RPC's error.
+  const [hasActiveTranslationPlan, setHasActiveTranslationPlan] = useState<boolean | null>(null);
+  const [translationHoursIncluded, setTranslationHoursIncluded] = useState<number | null>(null);
+  const [translationMinutesUsed, setTranslationMinutesUsed] = useState<number | null>(null);
+
   const [showStart, setShowStart] = useState(false);
   const [starting, setStarting] = useState(false);
   const [serviceName, setServiceName] = useState('');
@@ -118,10 +126,12 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: cfg }, { data: svc, error: svcErr }, { data: sess, error: sessErr }] = await Promise.all([
+      const [{ data: cfg }, { data: svc, error: svcErr }, { data: sess, error: sessErr }, { data: sub }, { data: minutesUsed }] = await Promise.all([
         supabase.from('language_configs').select('source_language, supported_target_languages, speaker_identity').eq('ministry_id', ministryId).maybeSingle(),
         supabase.from('translation_services').select('id, name, started_at, ended_at, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(20),
         supabase.from('translation_sessions').select('id, service_id, source_type, source_language, target_language, status, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('ministry_subscriptions').select('plan_type, status').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.rpc('get_ministry_translation_minutes_used', { p_ministry_id: ministryId }),
       ]);
       if (svcErr) throw svcErr;
       if (sessErr) throw sessErr;
@@ -132,6 +142,19 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       }
       setServices(svc || []);
       setSessions(sess || []);
+      setTranslationMinutesUsed(typeof minutesUsed === 'number' ? minutesUsed : null);
+
+      setHasActiveTranslationPlan(sub != null && sub.status === 'active');
+      if (sub != null && sub.status === 'active') {
+        const { data: plan } = await supabase
+          .from('ministry_partner_plans')
+          .select('translation_hours_included')
+          .eq('slug', sub.plan_type)
+          .maybeSingle();
+        setTranslationHoursIncluded(plan?.translation_hours_included ?? null);
+      } else {
+        setTranslationHoursIncluded(null);
+      }
     } catch (err: any) {
       console.error('[MinistryTranslationServiceManager] load failed:', err);
       toast({ title: 'Could not load translation services', description: err.message, variant: 'destructive' });
@@ -417,6 +440,22 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
           </Button>
         </div>
       </div>
+
+      {hasActiveTranslationPlan === false && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Live Translation requires a paid ministry plan. Upgrade in Billing settings to start a service.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {hasActiveTranslationPlan === true && translationMinutesUsed !== null && (
+        <p className="text-xs text-muted-foreground">
+          {(translationMinutesUsed / 60).toFixed(1)}h used this month
+          {translationHoursIncluded !== null ? ` of ${translationHoursIncluded}h included` : ' — unlimited on your plan'}.
+        </p>
+      )}
 
       {supportedLanguages.length === 0 && (
         <Card><CardContent className="py-4 text-sm text-muted-foreground">
