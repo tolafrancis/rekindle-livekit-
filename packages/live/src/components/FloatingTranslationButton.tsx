@@ -105,6 +105,13 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // TranslationDisplayPage.tsx reads, just condensed for an in-call overlay.
   const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
+  // Near-real-time captions (2026-09-13) — the growing, not-yet-finalized
+  // line, updated every ~150ms while the speaker is still talking (migration
+  // 0346 + rekindle-translation-bot's AudioPipeline.ts). 'original' mode
+  // ("Show Captions") only — the bot only ever publishes this for a same-
+  // language session; a translated-caption mode never receives updates here
+  // at all, so this naturally stays empty for those without extra gating.
+  const [interimText, setInterimText] = useState('');
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   // Draggable overlay (2026-08-22) — default position is the existing
   // bottom-center anchor (`left-1/2` + this hook's own translateX(-50%)),
@@ -145,6 +152,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       captionChannelRef.current = null;
     }
     setCaptionLines([]);
+    setInterimText('');
 
     const sessionId = sessionIdForCaptionMode(captionMode);
     const hadSessionForThisMode = hadSessionForModeRef.current.mode === captionMode && hadSessionForModeRef.current.had;
@@ -178,6 +186,18 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         (payload) => {
           const row = payload.new as { id: string; source_text: string; translated_text: string };
           setCaptionLines((prev) => [...prev, { id: row.id, text: field === 'source_text' ? row.source_text : row.translated_text }].slice(-2));
+          setInterimText(''); // a final line supersedes whatever was growing
+        })
+      // Near-real-time (2026-09-13): the bot overwrites
+      // translation_sessions.interim_text on every Deepgram interim result
+      // for a same-language ("Show Captions") session — see migration 0346.
+      // Only ever populated for captionMode === 'original' server-side, but
+      // this subscription itself is harmless for other modes (never fires).
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
+        (payload) => {
+          const row = payload.new as { interim_text: string | null };
+          setInterimText(row.interim_text || '');
         })
       .subscribe();
     captionChannelRef.current = channel;
@@ -451,21 +471,32 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             }`}
           >
             <div className="flex-1 min-w-0 space-y-1">
-              {captionLines.length === 0 ? (
+              {captionLines.length === 0 && !interimText ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
               ) : (
-                captionLines.map((line, i) => (
-                  <p
-                    key={line.id}
-                    className={`text-center leading-relaxed ${
-                      i === captionLines.length - 1
-                        ? 'text-base sm:text-xl font-medium'
-                        : 'text-sm sm:text-base text-white/50'
-                    }`}
-                  >
-                    {line.text}
-                  </p>
-                ))
+                <>
+                  {/* Finalized lines all render as "history" (dim) once
+                      there's a growing interim line to be the current one —
+                      only the most recent final gets the bold "current"
+                      treatment when nothing is actively being spoken. */}
+                  {captionLines.map((line, i) => (
+                    <p
+                      key={line.id}
+                      className={`text-center leading-relaxed ${
+                        i === captionLines.length - 1 && !interimText
+                          ? 'text-base sm:text-xl font-medium'
+                          : 'text-sm sm:text-base text-white/50'
+                      }`}
+                    >
+                      {line.text}
+                    </p>
+                  ))}
+                  {interimText && (
+                    <p className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
+                      {interimText}
+                    </p>
+                  )}
+                </>
               )}
             </div>
             <button
