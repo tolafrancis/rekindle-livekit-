@@ -116,7 +116,7 @@ async function upsert(sub: {
 // a base-plan event by metadata.addon, and upserted into ministry_addons
 // instead of ministry_subscriptions.
 async function upsertAddon(a: {
-  ministryId: string; addonType: string; unitGb: number | null; unitMembers: number | null;
+  ministryId: string; addonType: string; unitGb: number | null; unitMembers: number | null; unitHours: number | null;
   priceUsd: number; paystackSubCode?: string;
 }) {
   const db = admin();
@@ -126,6 +126,7 @@ async function upsertAddon(a: {
     quantity: 1,
     unit_gb: a.unitGb,
     unit_members: a.unitMembers,
+    unit_hours: a.unitHours,
     price_usd: a.priceUsd,
     status: 'active',
     paystack_subscription_code: a.paystackSubCode ?? null,
@@ -198,6 +199,7 @@ serve(async (req) => {
         if (event.event === 'subscription.create') {
           await upsertAddon({
             ministryId, addonType: meta.addon_type, unitGb: meta.unit_gb ?? null, unitMembers: meta.unit_members ?? null,
+            unitHours: meta.unit_hours ?? null,
             priceUsd: Number(meta.price_usd ?? 0), paystackSubCode: event.data?.subscription_code,
           });
         } else if (event.event === 'subscription.disable') {

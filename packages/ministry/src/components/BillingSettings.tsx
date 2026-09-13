@@ -346,7 +346,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
           <CardHeader>
             <CardTitle className="text-base">Add-ons</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Extra storage or members on top of your plan. Billed monthly alongside your subscription.
+              Extra storage, members, or Live Translation hours on top of your plan. Billed monthly alongside your subscription.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -354,7 +354,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
               <ul className="space-y-1 text-sm">
                 {myAddons.map((a) => (
                   <li key={a.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <span>{a.addonType === 'storage_pack' ? `+${a.unitGb} GB storage` : a.addonType === 'member_block' ? `+${a.unitMembers} members` : 'Gift Aid & HMRC submission'}</span>
+                    <span>{a.addonType === 'storage_pack' ? `+${a.unitGb} GB storage` : a.addonType === 'member_block' ? `+${a.unitMembers} members` : a.addonType === 'live_translation' ? `Live Translation — ${a.unitHours}h/month` : 'Gift Aid & HMRC submission'}</span>
                     <Badge variant="secondary">Active — ${a.priceUsd}/mo</Badge>
                   </li>
                 ))}

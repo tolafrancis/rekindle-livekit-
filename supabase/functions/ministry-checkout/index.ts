@@ -38,9 +38,10 @@ const form = (obj: Record<string, string>) =>
 
 // Human-readable line-item name for Stripe's inline price_data fallback,
 // when the catalog SKU has no pre-created stripe_price_id.
-function catalogRowLabel(addonType: string, unitGb: number | null, unitMembers: number | null): string {
+function catalogRowLabel(addonType: string, unitGb: number | null, unitMembers: number | null, unitHours: number | null): string {
   if (addonType === 'storage_pack') return `+${(unitGb ?? 0) >= 1024 ? `${(unitGb ?? 0) / 1024} TB` : `${unitGb} GB`} storage`;
   if (addonType === 'member_block') return `+${unitMembers ?? 0} members`;
+  if (addonType === 'live_translation') return `Live Translation — ${unitHours ?? 0} hours/month`;
   return 'Gift Aid claims & HMRC submission';
 }
 
@@ -123,7 +124,7 @@ serve(async (req) => {
         .from('ministry_addon_catalog').select('*').eq('id', catalogId).eq('is_active', true).maybeSingle();
       if (catalogErr || !catalogRow) return json({ error: 'Unknown or inactive add-on' }, 400);
       const c = catalogRow as {
-        id: string; addon_type: string; unit_gb: number | null; unit_members: number | null;
+        id: string; addon_type: string; unit_gb: number | null; unit_members: number | null; unit_hours: number | null;
         price_usd: number; stripe_price_id: string | null; paystack_plan_code: string | null;
       };
 
@@ -144,7 +145,7 @@ serve(async (req) => {
             callback_url: `${back}?billing=success`,
             metadata: {
               ministry_id: ministryId, addon: true, catalog_id: c.id, addon_type: c.addon_type,
-              unit_gb: c.unit_gb, unit_members: c.unit_members, price_usd: c.price_usd, country: countryCode,
+              unit_gb: c.unit_gb, unit_members: c.unit_members, unit_hours: c.unit_hours, price_usd: c.price_usd, country: countryCode,
             },
           }),
         });
@@ -168,7 +169,7 @@ serve(async (req) => {
           body['price_data[currency]'] = 'usd';
           body['price_data[unit_amount]'] = String(Math.round(c.price_usd * 100));
           body['price_data[recurring][interval]'] = 'month';
-          body['price_data[product_data][name]'] = catalogRowLabel(c.addon_type, c.unit_gb, c.unit_members);
+          body['price_data[product_data][name]'] = catalogRowLabel(c.addon_type, c.unit_gb, c.unit_members, c.unit_hours);
         }
         const r = await fetch('https://api.stripe.com/v1/subscription_items', {
           method: 'POST',
@@ -184,6 +185,7 @@ serve(async (req) => {
           quantity: 1,
           unit_gb: c.unit_gb,
           unit_members: c.unit_members,
+          unit_hours: c.unit_hours,
           price_usd: c.price_usd,
           status: 'active',
           stripe_subscription_item_id: j.id,

@@ -142,19 +142,21 @@ export async function openMinistryBillingPortal(ministryId: string): Promise<{ u
 
 export interface MinistryAddonCatalogItem {
   id: string;
-  addonType: 'storage_pack' | 'member_block' | 'gift_aid';
+  addonType: 'storage_pack' | 'member_block' | 'gift_aid' | 'live_translation';
   label: string;
   unitGb: number | null;
   unitMembers: number | null;
+  unitHours: number | null;
   priceUsd: number;
 }
 
 export interface MinistryAddon {
   id: string;
-  addonType: 'storage_pack' | 'member_block' | 'gift_aid';
+  addonType: 'storage_pack' | 'member_block' | 'gift_aid' | 'live_translation';
   quantity: number;
   unitGb: number | null;
   unitMembers: number | null;
+  unitHours: number | null;
   priceUsd: number;
   status: 'active' | 'cancelled';
   purchasedAt: string;
@@ -167,6 +169,7 @@ function mapCatalogRow(row: Record<string, unknown>): MinistryAddonCatalogItem {
     label: row.label as string,
     unitGb: (row.unit_gb as number | null) ?? null,
     unitMembers: (row.unit_members as number | null) ?? null,
+    unitHours: (row.unit_hours as number | null) ?? null,
     priceUsd: Number(row.price_usd),
   };
 }
@@ -178,10 +181,22 @@ function mapAddonRow(row: Record<string, unknown>): MinistryAddon {
     quantity: Number(row.quantity ?? 1),
     unitGb: (row.unit_gb as number | null) ?? null,
     unitMembers: (row.unit_members as number | null) ?? null,
+    unitHours: (row.unit_hours as number | null) ?? null,
     priceUsd: Number(row.price_usd),
     status: row.status as MinistryAddon['status'],
     purchasedAt: row.purchased_at as string,
   };
+}
+
+/** Sum of active live_translation add-on hours this ministry has bought
+ *  this billing cycle (quantity * unitHours across all active rows). Used
+ *  for the usage display in MinistryTranslationServiceManager.tsx —
+ *  actual enforcement is server-side (ministry_has_active_translation_plan,
+ *  migration 0345), this is purely for showing "X of Y hours" to the admin. */
+export function totalTranslationHoursPurchased(addons: MinistryAddon[]): number {
+  return addons
+    .filter((a) => a.addonType === 'live_translation')
+    .reduce((sum, a) => sum + a.quantity * (a.unitHours ?? 0), 0);
 }
 
 /** Active, purchasable add-on catalog. Public read (no auth required). */
