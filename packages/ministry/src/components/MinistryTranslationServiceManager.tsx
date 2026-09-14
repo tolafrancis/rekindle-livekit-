@@ -12,7 +12,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrCode';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
-import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle } from 'lucide-react';
+import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2 } from 'lucide-react';
 import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES } from './MinistryTranslationSettings';
 
@@ -315,6 +315,33 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     }
   };
 
+  // Removes the service label itself (e.g. a test/typo entry) — not a
+  // stronger version of "End Service". translation_sessions.service_id is
+  // "on delete set null" (migration 0273), so any past session under it
+  // just loses its grouping label rather than being deleted itself.
+  // Blocked while a session is still active so nobody deletes a service
+  // out from under a live translation session — end it first.
+  const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null);
+  const deleteService = async (service: ServiceRow) => {
+    const active = sessions.filter(s => s.service_id === service.id && s.status !== 'ended');
+    if (active.length > 0) {
+      toast({ title: 'Cannot delete', description: 'This service still has an active session — end it first.', variant: 'destructive' });
+      return;
+    }
+    if (!confirm(`Delete "${service.name}"? Past sessions stay, just no longer grouped under this name. This cannot be undone.`)) return;
+    setDeletingServiceId(service.id);
+    try {
+      const { error } = await supabase.from('translation_services').delete().eq('id', service.id);
+      if (error) throw error;
+      toast({ title: 'Service deleted' });
+      load();
+    } catch (err: any) {
+      toast({ title: 'Could not delete service', description: err.message, variant: 'destructive' });
+    } finally {
+      setDeletingServiceId(null);
+    }
+  };
+
   const copyDisplayLink = (sessionId: string) => {
     const url = `${window.location.origin}/display/${sessionId}`;
     navigator.clipboard.writeText(url).then(
@@ -532,6 +559,18 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                   {!service.ended_at && rows.some(r => r.status !== 'ended') && (
                     <Button variant="outline" size="sm" onClick={() => stopService(service)}>
                       <Square className="h-3.5 w-3.5 mr-1.5" /> End Service
+                    </Button>
+                  )}
+                  {!rows.some(r => r.status !== 'ended') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => deleteService(service)}
+                      disabled={deletingServiceId === service.id}
+                      title="Delete this service"
+                    >
+                      {deletingServiceId === service.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     </Button>
                   )}
                 </div>
