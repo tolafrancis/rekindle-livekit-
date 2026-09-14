@@ -45,6 +45,7 @@ const MINISTRY_NAV = [
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
 import { MinistrySettingsHub, SettingsSectionId } from './MinistrySettingsHub';
+import { MinistryLiveTechSettings } from './MinistryLiveTechSettings';
 import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
 import { MinistryRulesManager } from './MinistryRulesManager';
 import { AcceptRulesModal } from './AcceptRulesModal';
@@ -834,8 +835,21 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     // just role, unlike most of the 'admin' group's children below. Hidden
     // rather than shown-disabled, matching how canManageMinistry-gated
     // entries in this same array already work.
+    //
+    // Two-level nav (2026-09-14, per the user's request): "Live & Tech"
+    // (translation + restream config) used to live under Settings, several
+    // clicks away from the actual live channel it configures — moved here
+    // as a second child so it shows up in the same MODULE panel as "Live
+    // Channel", the way Word/Prayer/Community/Ministry/Settings already
+    // group their own sub-tabs. The first child's id intentionally matches
+    // the group's own id ('live') so goToGroup's default-to-first-child
+    // behavior lands on the live channel, unchanged from before this had
+    // children at all.
     ...(ministryEntitlements.caps.liveChannels
-      ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600' }]
+      ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600', children: [
+          { id: 'live', label: 'Live Channel', icon: Radio },
+          ...(canManageMinistry ? [{ id: 'live-tech', label: 'Live & Tech', icon: Settings }] : []),
+        ] }]
       : []),
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
@@ -858,7 +872,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         { id: 'people', label: 'People', icon: Users },
         { id: 'content', label: 'Content', icon: BookOpen },
         { id: 'engagement', label: 'Engagement', icon: MessageSquare },
-        { id: 'live-tech', label: 'Live & Tech', icon: Radio },
         { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard },
       ]
     }] : []),
@@ -1399,6 +1412,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             isLeader={isLeader}
             themeColor={themeColor}
           />
+        )}
+
+        {/* Live & Tech — translation + restream config, moved here from
+            Settings (2026-09-14) so it sits next to the live channel it
+            configures. See MinistryLiveTechSettings.tsx's doc comment. */}
+        {activeTab === 'live-tech' && canManageMinistry && (
+          <MinistryLiveTechSettings ministry={ministry} onUpdate={loadMinistryData} />
         )}
 
         {/* Content Tab (leaders/admins) — declaration & affirmation source + authoring */}

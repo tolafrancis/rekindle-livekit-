@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -12,7 +12,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
-  LayoutDashboard, Settings, Users, BookOpen, MessageSquare, Radio, CreditCard,
+  LayoutDashboard, Settings, Users, BookOpen, MessageSquare, CreditCard,
   Palette, Shield, Loader2, Save, Link as LinkIcon, Image, Upload
 } from 'lucide-react';
 
@@ -35,8 +35,6 @@ import { MinistryDonationsManager } from './MinistryDonationsManager';
 import { MinistryEventsManager } from './MinistryEventsManager';
 import { EvangelismInbox } from './EvangelismInbox';
 import { MinistryWhatsAppHub } from './MinistryWhatsAppHub';
-import { MinistryTranslationHub } from './MinistryTranslationHub';
-import { MinistryTranslationSettings } from './MinistryTranslationSettings';
 import { MinistryPaymentSettings } from './MinistryPaymentSettings';
 import { MinistryGiftAidSettings } from './MinistryGiftAidSettings';
 import BillingSettings from './BillingSettings';
@@ -66,7 +64,6 @@ export type SettingsSectionId =
   | 'people'
   | 'content'
   | 'engagement'
-  | 'live-tech'
   | 'finance-billing';
 
 interface SectionDef {
@@ -82,7 +79,6 @@ const SECTIONS: SectionDef[] = [
   { id: 'people',          label: 'People',            icon: Users,           description: 'Members, teams & signups' },
   { id: 'content',         label: 'Content',           icon: BookOpen,        description: 'Devotionals, library & rules' },
   { id: 'engagement',      label: 'Engagement',       icon: MessageSquare,   description: 'Requests, donations & WhatsApp' },
-  { id: 'live-tech',       label: 'Live & Tech',       icon: Radio,           description: 'Translation & restreaming' },
   { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard,      description: 'Gateways & subscription' },
 ];
 
@@ -147,47 +143,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
       enable_events: true
     }
   });
-
-  // ── Restream Defaults Form State ──
-  const [savingRestream, setSavingRestream] = useState(false);
-  const [ytKey, setYtKey] = useState<string>(() => ministry.settings?.restream_defaults?.youtube || '');
-  const [fbKey, setFbKey] = useState<string>(() => ministry.settings?.restream_defaults?.facebook || '');
-
-  useEffect(() => {
-    const rd = ministry.settings?.restream_defaults;
-    if (rd) {
-      setYtKey(rd.youtube || '');
-      setFbKey(rd.facebook || '');
-    }
-  }, [ministry.settings]);
-
-  const handleSaveRestream = async () => {
-    setSavingRestream(true);
-    try {
-      const updatedSettings = {
-        ...(ministry.settings || {}),
-        restream_defaults: {
-          youtube: ytKey.trim(),
-          facebook: fbKey.trim()
-        }
-      };
-      const { error } = await supabase
-        .from('ministry_groups')
-        .update({
-          settings: updatedSettings,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', ministry.id);
-
-      if (error) throw error;
-      toast({ title: t('ministrySettingsHub', 'restreamSaved', 'Restream defaults saved') });
-      onUpdate();
-    } catch (err: any) {
-      toast({ title: t('ministrySettingsHub', 'saveFailed', 'Save failed'), description: err.message, variant: 'destructive' });
-    } finally {
-      setSavingRestream(false);
-    }
-  };
 
   const uploadMinistryImage = async (
     file: File,
@@ -289,7 +244,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                 'small-groups': 'people',
                 volunteers: 'people',
                 'video-messages': 'content',
-                translation: 'live-tech',
                 registrations: 'people',
                 whatsapp: 'engagement',
                 inbox: 'engagement',
@@ -740,54 +694,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <MinistryEventsManager ministryId={ministry.id} />
             <EvangelismInbox ministryId={ministry.id} ministryName={ministry.name} isLeader={true} />
             <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
-          </div>
-        )}
-
-        {/* Section 6: Live & Tech */}
-        {currentSection === 'live-tech' && (
-          <div className="space-y-6">
-            <MinistryTranslationHub ministryId={ministry.id} ministryName={ministry.name} />
-            <MinistryTranslationSettings ministryId={ministry.id} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Radio className="h-5 w-5 text-purple-600" />
-                  Restream Defaults
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Configure default RTMP stream keys for broadcasting to external platforms.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>YouTube Stream Key</Label>
-                    <Input
-                      type="password"
-                      value={ytKey}
-                      onChange={(e) => setYtKey(e.target.value)}
-                      placeholder="xxxx-xxxx-xxxx-xxxx"
-                    />
-                  </div>
-                  <div>
-                    <Label>Facebook Stream Key</Label>
-                    <Input
-                      type="password"
-                      value={fbKey}
-                      onChange={(e) => setFbKey(e.target.value)}
-                      placeholder="FB-xxxx-xxxx-xxxx"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button onClick={handleSaveRestream} disabled={savingRestream}>
-                    {savingRestream ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                    Save Restream Defaults
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         )}
 
