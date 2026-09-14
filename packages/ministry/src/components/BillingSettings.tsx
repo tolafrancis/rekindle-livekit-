@@ -341,7 +341,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         automatically after payment (PayPal is confirmed manually — see note at checkout).
       </p>
 
-      {isPaid && addonCatalog.length > 0 && (
+      {addonCatalog.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Add-ons</CardTitle>
@@ -350,6 +350,19 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Shown on any plan now (2026-09-14, per the user — this card used
+                to be hidden entirely on the free plan, which was also hiding
+                Live Translation's own pricing from anyone who hadn't already
+                subscribed). Buying still requires a paid plan underneath
+                (purchaseAddon attaches to an EXISTING Stripe/Paystack
+                subscription — see ministry-checkout's purchase-addon action),
+                so the Buy buttons below are disabled with an explanation
+                rather than left to fail on click. */}
+            {!isPaid && (
+              <p className="text-xs text-muted-foreground rounded-md border border-dashed px-3 py-2">
+                Subscribe to a paid plan above to purchase add-ons — pricing below is visible either way.
+              </p>
+            )}
             {myAddons.length > 0 && (
               <ul className="space-y-1 text-sm">
                 {myAddons.map((a) => (
@@ -370,7 +383,8 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={buyingAddonId === item.id}
+                    disabled={!isPaid || buyingAddonId === item.id}
+                    title={!isPaid ? 'Subscribe to a paid plan first' : undefined}
                     onClick={() => buyAddon(item)}
                   >
                     {buyingAddonId === item.id ? 'Buying…' : 'Buy'}
