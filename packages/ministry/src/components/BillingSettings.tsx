@@ -306,7 +306,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {plans.map((plan) => {
           const { currency, amount } = resolvePlanPricing(plan, country, cycle);
           const isCurrent = plan.slug === currentSlug;
