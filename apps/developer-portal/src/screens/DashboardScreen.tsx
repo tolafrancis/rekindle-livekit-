@@ -9,7 +9,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@rekindle/ui/dialog';
 import { toast } from '@rekindle/ui/use-toast';
-import { Copy, KeyRound, Loader2, LogOut, Plus, Trash2 } from 'lucide-react';
+import { Copy, KeyRound, Loader2, LogOut, Plus, Trash2, Zap } from 'lucide-react';
 
 interface ApiKeySummary {
   id: string;
@@ -26,6 +26,9 @@ interface Account {
   companyName: string | null;
   monthlyMinutesUsed: number;
   monthlyMinutesLimit: number;
+  billingEnabled: boolean;
+  monthlyParticipantMinutes: number;
+  estimatedCostUsd: number;
 }
 
 // Minutes -> a trimmed hours string (e.g. 90 -> "1.5", 600 -> "10").
@@ -43,6 +46,7 @@ export default function DashboardScreen() {
   const [newLabel, setNewLabel] = useState('');
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [mintedKey, setMintedKey] = useState<{ key: string; label: string } | null>(null);
+  const [enablingBilling, setEnablingBilling] = useState(false);
 
   const load = async () => {
     setIsLoading(true);
@@ -62,7 +66,23 @@ export default function DashboardScreen() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Landed back here from enable-billing's Stripe Checkout redirect —
+    // the webhook that actually flips plan/billingEnabled may land a few
+    // seconds after Stripe redirects the browser, so this is optimistic
+    // (a reload a few seconds later would show it enabled); it just
+    // confirms the checkout itself went through.
+    const params = new URLSearchParams(window.location.search);
+    const billing = params.get('billing');
+    if (billing === 'success') {
+      toast({ title: 'Pay-as-you-go enabled', description: 'It may take a few seconds to show as active below.' });
+    } else if (billing === 'cancelled') {
+      toast({ title: 'Checkout cancelled', description: 'You’re still on the free plan.' });
+    }
+    if (billing) window.history.replaceState({}, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCreate = async () => {
     setIsCreating(true);
@@ -95,6 +115,20 @@ export default function DashboardScreen() {
     }
   };
 
+  const handleEnableBilling = async () => {
+    setEnablingBilling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('developer-api-keys', {
+        body: { action: 'enable-billing', back: window.location.href.split('?')[0] },
+      });
+      if (error) throw error;
+      if (data?.url) window.location.href = data.url;
+    } catch (error: any) {
+      toast({ title: 'Could not start checkout', description: error?.message, variant: 'destructive' });
+      setEnablingBilling(false);
+    }
+  };
+
   const copyKey = async (key: string) => {
     try {
       await navigator.clipboard.writeText(key);
@@ -124,20 +158,53 @@ export default function DashboardScreen() {
             <CardTitle>Account</CardTitle>
             <CardDescription>{account?.companyName || 'Free plan'}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             ) : (
-              <div className="flex items-center gap-6 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Plan</p>
-                  <p className="font-medium capitalize">{account?.plan ?? 'free'}</p>
+              <>
+                <div className="flex items-center gap-6 text-sm flex-wrap">
+                  <div>
+                    <p className="text-muted-foreground">Plan</p>
+                    <p className="font-medium capitalize">
+                      {account?.plan === 'pay_as_you_go' ? 'Pay-as-you-go' : 'Free'}
+                    </p>
+                  </div>
+                  {account?.plan === 'pay_as_you_go' ? (
+                    <>
+                      <div>
+                        <p className="text-muted-foreground">Participant-minutes this month</p>
+                        <p className="font-medium">{Math.round(account.monthlyParticipantMinutes)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Estimated cost this month</p>
+                        <p className="font-medium">${account.estimatedCostUsd.toFixed(2)}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <p className="text-muted-foreground">Hours used this month</p>
+                      <p className="font-medium">{formatHours(account?.monthlyMinutesUsed ?? 0)} / {formatHours(account?.monthlyMinutesLimit ?? 600)} hrs</p>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Hours used this month</p>
-                  <p className="font-medium">{formatHours(account?.monthlyMinutesUsed ?? 0)} / {formatHours(account?.monthlyMinutesLimit ?? 600)} hrs</p>
-                </div>
-              </div>
+
+                {account && !account.billingEnabled && (
+                  <div className="rounded-lg border bg-muted/40 p-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-sm">
+                      <p className="font-medium">Need more than the free 10 hrs/month?</p>
+                      <p className="text-muted-foreground">
+                        Pay-as-you-go has no monthly fee — you're only billed for participant-minutes past the free
+                        allotment (~$0.0035/participant-minute). No caps on meeting size, length, or how many run at once.
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={handleEnableBilling} disabled={enablingBilling}>
+                      {enablingBilling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
+                      Enable pay-as-you-go
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

@@ -32,12 +32,24 @@
 //   { action:'end', meetingId } → { success: true }
 //
 // NOTE (v1 scope): webinar/HLS mode is not exposed here — API-created
-// meetings are plain multi-party rooms. Every account is on the single free
-// plan (see FREE_TIER below) — there is no paid tier yet, and this API is
-// deliberately decoupled from the ministry/consumer subscription_tiers
-// system (0339_developer_accounts.sql): an outside company signing up here
-// has no ministry plan and never will, so gating on one would lock every
-// such signup out. Recording is disabled on the free plan.
+// meetings are plain multi-party rooms. This API is deliberately decoupled
+// from the ministry/consumer subscription_tiers system (0339_developer_
+// accounts.sql): an outside company signing up here has no ministry plan
+// and never will, so gating on one would lock every such signup out.
+// Recording is disabled on both plans below — a real future gap, not an
+// oversight: egress/recording has its own storage+encode cost this API
+// hasn't priced or built plumbing for yet.
+//
+// Two plans as of migration 0347 (2026-09-14) — see PAY_AS_YOU_GO below for
+// the pricing/cost-basis writeup:
+//   free           — FREE_TIER quota (unchanged from v1).
+//   pay_as_you_go  — no monthly base fee, no free-tier caps; billed purely
+//     on metered participant-minutes past the same 10 free hours, reported
+//     to Stripe by a separate cron (developer-api-usage-report, not in this
+//     file). Requires developer_accounts.stripe_subscription_item_id to be
+//     set (via developer-api-keys' 'enable-billing' action) — plan alone
+//     isn't enough, since a completed checkout's webhook may not have
+//     landed yet.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -76,6 +88,34 @@ const FREE_TIER = {
   maxParticipants: 15,
 };
 
+// "Option B" pay-as-you-go — priced against LiveKit Cloud's real Ship-plan
+// cost (confirmed live 2026-09-14, see migration 0347's header comment):
+// ~$0.03/participant-hour connection cost + ~$0.04-0.12/hour bandwidth,
+// worst case ~$0.15/hour all-in. $0.0035/min (~$0.21/hour) undercuts
+// Daily.co/Twilio Video's ~$0.004/participant-minute (~$0.24/hour) by
+// about a third while keeping real margin even in the worst-case bandwidth
+// scenario. Limits below are generous caps, not "unlimited" — LiveKit
+// Cloud's own Ship-plan ceiling is 1,000 concurrent connections shared
+// across the whole account, not just this API.
+const PAY_AS_YOU_GO = {
+  perParticipantMinuteCents: 0.35,
+  maxConcurrentActive: 20,
+  maxDurationMinutes: 480,
+  maxParticipants: 300,
+};
+
+interface DeveloperAccountRow {
+  plan: string;
+  stripe_subscription_item_id: string | null;
+}
+
+/** True only once a checkout has actually completed (stripe_subscription_item_id
+ *  set by the webhook) — plan='pay_as_you_go' alone can be true for a session
+ *  that hasn't finished checkout yet, per this file's header comment. */
+function isBillingEnabled(account: DeveloperAccountRow | null): boolean {
+  return !!account && account.plan === 'pay_as_you_go' && !!account.stripe_subscription_item_id;
+}
+
 function startOfMonthIso(): string {
   const d = new Date();
   d.setUTCDate(1);
@@ -83,24 +123,33 @@ function startOfMonthIso(): string {
   return d.toISOString();
 }
 
-/** Enforces the free-plan quota: a monthly TIME budget (minutes allotted at
- *  creation, summed — not measured call time) rather than a meeting count —
- *  no cap on how many meetings, only on total minutes and how many can be
- *  active (is_active) at once. Both computed on the fly from api_meetings —
- *  no counters to keep in sync. */
-async function checkFreeTierQuota(
+/** Enforces quota for the given plan. Free: a monthly TIME budget (minutes
+ *  allotted at creation, summed — not measured call time) rather than a
+ *  meeting count, PLUS a concurrency cap. Pay-as-you-go: no monthly budget
+ *  (it's metered/billed instead — see PAY_AS_YOU_GO), but STILL a
+ *  concurrency cap — generous, but real: LiveKit Cloud's own Ship-plan
+ *  ceiling (1,000 concurrent connections) is shared across this whole
+ *  Supabase project, not just this API, so an unbounded single account
+ *  could starve every ministry/translation session/other developer on it.
+ *  Both computed on the fly from api_meetings — no counters to keep in sync. */
+async function checkQuota(
   admin: ReturnType<typeof createClient>,
   ownerId: string,
+  billingEnabled: boolean,
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const limitMinutes = FREE_TIER.monthlyHours * 60;
-  const { data: monthlyRows } = await admin
-    .from('api_meetings')
-    .select('duration_minutes')
-    .eq('owner_user_id', ownerId)
-    .gte('created_at', startOfMonthIso());
-  const usedMinutes = (monthlyRows ?? []).reduce((sum: number, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0);
-  if (usedMinutes >= limitMinutes) {
-    return { allowed: false, reason: `Free plan limit reached: ${FREE_TIER.monthlyHours} hours/month.` };
+  const limits = billingEnabled ? PAY_AS_YOU_GO : FREE_TIER;
+
+  if (!billingEnabled) {
+    const limitMinutes = FREE_TIER.monthlyHours * 60;
+    const { data: monthlyRows } = await admin
+      .from('api_meetings')
+      .select('duration_minutes')
+      .eq('owner_user_id', ownerId)
+      .gte('created_at', startOfMonthIso());
+    const usedMinutes = (monthlyRows ?? []).reduce((sum: number, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0);
+    if (usedMinutes >= limitMinutes) {
+      return { allowed: false, reason: `Free plan limit reached: ${FREE_TIER.monthlyHours} hours/month. Enable pay-as-you-go for more.` };
+    }
   }
 
   const { count: activeCount } = await admin
@@ -108,8 +157,8 @@ async function checkFreeTierQuota(
     .select('id', { count: 'exact', head: true })
     .eq('owner_user_id', ownerId)
     .eq('is_active', true);
-  if ((activeCount ?? 0) >= FREE_TIER.maxConcurrentActive) {
-    return { allowed: false, reason: `Free plan limit reached: ${FREE_TIER.maxConcurrentActive} active meetings at once. End one before starting another.` };
+  if ((activeCount ?? 0) >= limits.maxConcurrentActive) {
+    return { allowed: false, reason: `Plan limit reached: ${limits.maxConcurrentActive} active meetings at once. End one before starting another.` };
   }
 
   return { allowed: true };
@@ -197,15 +246,24 @@ serve(async (req) => {
     if (action === 'create') {
       if (!body.title || !body.title.trim()) return json({ error: 'title is required' }, 400);
 
-      const quota = await checkFreeTierQuota(admin, ownerId);
+      const { data: accountRow } = await admin
+        .from('developer_accounts')
+        .select('plan, stripe_subscription_item_id')
+        .eq('owner_user_id', ownerId)
+        .maybeSingle();
+      const billingEnabled = isBillingEnabled(accountRow as DeveloperAccountRow | null);
+
+      const quota = await checkQuota(admin, ownerId, billingEnabled);
       if (!quota.allowed) {
         return json({ error: 'quota_exceeded', reason: quota.reason }, 403);
       }
 
-      const durationMinutes = Math.max(5, Math.min(body.duration_minutes ?? FREE_TIER.maxDurationMinutes, FREE_TIER.maxDurationMinutes));
-      const maxParticipants = Math.max(2, Math.min(body.max_participants ?? FREE_TIER.maxParticipants, FREE_TIER.maxParticipants));
-      // Recording isn't offered on the free plan yet — silently ignored rather
-      // than erroring, same spirit as the in-app modal downgrading it.
+      const limits = billingEnabled ? PAY_AS_YOU_GO : FREE_TIER;
+      const durationMinutes = Math.max(5, Math.min(body.duration_minutes ?? limits.maxDurationMinutes, limits.maxDurationMinutes));
+      const maxParticipants = Math.max(2, Math.min(body.max_participants ?? limits.maxParticipants, limits.maxParticipants));
+      // Recording isn't offered on either plan yet — silently ignored rather
+      // than erroring, same spirit as the in-app modal downgrading it. See
+      // this file's header comment.
       const enableRecording = false;
 
       const roomName = `api-${ownerId.slice(0, 8)}-${Date.now()}`;

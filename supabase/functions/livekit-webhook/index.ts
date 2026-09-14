@@ -5,8 +5,15 @@
 //   1. egress_ended / egress_updated: Flips recording status to completed/failed and records usage metering.
 //   2. ingress_started: Auto-starts HLS broadcast egress and sets live_channels.is_live = true.
 //   3. ingress_ended: Auto-stops HLS broadcast egress and sets live_channels.is_live = false.
+//   4. participant_joined / participant_left: records real join/leave times for
+//      the standalone Interactive Meetings API's "api-" rooms only (migration
+//      0347) — the pay-as-you-go billing basis for that API.
 //
 // ⚠️ Deploy with JWT VERIFICATION OFF (verify_jwt = false in config.toml).
+// ⚠️ Also confirm in the LiveKit Cloud project settings that this webhook is
+//    subscribed to participant_joined/participant_left, not just the
+//    ingress/egress events already in use — #4 silently collects nothing
+//    otherwise. See migration 0347's header comment.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -314,6 +321,52 @@ serve(async (req) => {
             }).then(({ error }: { error: unknown }) => {
               if (error) console.error('[livekit-webhook] usage metering failed:', error);
             });
+          }
+        }
+      }
+    }
+
+    // ── 3. Developer API Meeting Participants (usage metering) ──────────────
+    // Scoped to api_meetings' "api-" room-name prefix ONLY — every other room
+    // (ministry/consumer meetings, translation sessions, live channels) is
+    // untouched by this block. See migration 0347's header comment for why
+    // pay-as-you-go billing needs real participant join/leave times rather
+    // than api_meetings.duration_minutes (a booked-at-creation estimate, not
+    // measured time).
+    if (event.event === 'participant_joined' || event.event === 'participant_left') {
+      const roomName = event.room?.name;
+      const identity = event.participant?.identity;
+      if (roomName?.startsWith('api-') && identity) {
+        const { data: meeting } = await admin
+          .from('api_meetings')
+          .select('id, owner_user_id')
+          .eq('room_name', roomName)
+          .maybeSingle();
+        if (meeting) {
+          if (event.event === 'participant_joined') {
+            await admin.from('api_meeting_participants').insert({
+              meeting_id: meeting.id,
+              owner_user_id: meeting.owner_user_id,
+              participant_identity: identity,
+              joined_at: new Date().toISOString(),
+            });
+          } else {
+            // Closes only the LATEST still-open row for this identity — a
+            // reconnect after a network blip opens a second row rather than
+            // reusing the first (see the table's own left_at doc comment),
+            // so there can legitimately be more than one to choose from.
+            const { data: openRow } = await admin
+              .from('api_meeting_participants')
+              .select('id')
+              .eq('meeting_id', meeting.id)
+              .eq('participant_identity', identity)
+              .is('left_at', null)
+              .order('joined_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (openRow) {
+              await admin.from('api_meeting_participants').update({ left_at: new Date().toISOString() }).eq('id', openRow.id);
+            }
           }
         }
       }
