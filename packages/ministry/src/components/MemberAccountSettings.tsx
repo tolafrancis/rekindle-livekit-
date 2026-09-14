@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -11,7 +12,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { usePushNotifications } from '@rekindle/features/usePushNotifications';
 import { DailyReminders } from '@rekindle/features/components/DailyReminders';
 import {
-  User as UserIcon, Bell, Globe, ShieldCheck, LogOut, Loader2, Save, Languages,
+  User as UserIcon, Bell, Globe, ShieldCheck, LogOut, Loader2, Save, Languages, Shield,
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 
@@ -26,8 +27,15 @@ const SPIRITUAL_LEVELS = [
   { value: 'leader', label: 'Leader' },
 ];
 
+const SUPERADMIN_EMAILS = [
+  'tolaolabanjo@gmail.com',
+  'tolafrancis4biz@gmail.com'
+];
+
 export default function MemberAccountSettings() {
-  const { user, profile, updateProfile, updatePassword, signOut } = useAuth();
+  const navigate = useNavigate();
+  const { user, profile, updateProfile, updatePassword, signOut, isAdmin } = useAuth();
+  const isUserAdmin = isAdmin || (user?.email && SUPERADMIN_EMAILS.includes(user.email.toLowerCase())) || profile?.role === 'admin' || profile?.role === 'super_admin';
   const { language, setLanguage, availableLanguages } = useLanguage();
   const push = usePushNotifications();
   useEffect(() => { push.checkStatus(); }, []);
@@ -189,6 +197,18 @@ export default function MemberAccountSettings() {
             {savingPw ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
             Update password
           </Button>
+
+          {isUserAdmin && (
+            <div className="border-t pt-4">
+              <Button
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
+                onClick={() => navigate('/admin')}
+              >
+                <Shield className="h-4 w-4" /> Admin Dashboard
+              </Button>
+            </div>
+          )}
 
           <div className="border-t pt-4">
             <Button variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => void signOut()}>
