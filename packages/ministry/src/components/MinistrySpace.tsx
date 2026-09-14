@@ -836,7 +836,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     // rather than shown-disabled, matching how canManageMinistry-gated
     // entries in this same array already work.
     //
-    // Two-level nav (2026-09-14, per the user's request): "Live & Tech"
+    // Two-level nav (2026-09-14, per the user's request): "Live Translation"
     // (translation + restream config) used to live under Settings, several
     // clicks away from the actual live channel it configures — moved here
     // as a second child so it shows up in the same MODULE panel as "Live
@@ -848,7 +848,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     ...(ministryEntitlements.caps.liveChannels
       ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600', children: [
           { id: 'live', label: 'Live Channel', icon: Radio },
-          ...(canManageMinistry ? [{ id: 'live-tech', label: 'Live & Tech', icon: Settings }] : []),
+          ...(canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
         ] }]
       : []),
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
@@ -1414,7 +1414,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           />
         )}
 
-        {/* Live & Tech — translation + restream config, moved here from
+        {/* Live Translation — translation + restream config, moved here from
             Settings (2026-09-14) so it sits next to the live channel it
             configures. See MinistryLiveTechSettings.tsx's doc comment. */}
         {activeTab === 'live-tech' && canManageMinistry && (

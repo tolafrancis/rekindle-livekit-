@@ -247,14 +247,20 @@ export const SpeakerPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4 py-10">
-      <Card className="max-w-md w-full bg-white/5 border-white/10">
-        <CardContent className="py-8 space-y-5">
+    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4 py-6 sm:py-10">
+      {/* Widened (2026-09-14, per the user's request) from max-w-md so the
+          "What's being heard" captions below have room for a much bigger,
+          glance-readable font — the speaker is meant to read this while
+          talking, from further than arm's length, not just confirm it's
+          working. w-full keeps it filling the viewport (minus this div's
+          own px-4) on mobile, same as before. */}
+      <Card className="max-w-5xl w-full bg-white/5 border-white/10">
+        <CardContent className="py-6 sm:py-8 px-4 sm:px-8 space-y-5">
           <div className="text-center space-y-1">
-            <Radio className="h-7 w-7 mx-auto text-indigo-400" />
-            <p className="text-sm font-medium text-white">Speaker Link</p>
+            <Radio className="h-7 w-7 sm:h-8 sm:w-8 mx-auto text-indigo-400" />
+            <p className="text-sm sm:text-base font-medium text-white">Speaker Link</p>
             {languages && (
-              <p className="text-xs text-white/50">
+              <p className="text-xs sm:text-sm text-white/50">
                 {languages.source.toUpperCase()} → {languages.target.toUpperCase()}
               </p>
             )}
@@ -285,7 +291,7 @@ export const SpeakerPage: React.FC = () => {
             <>
               <div className="flex items-center justify-center gap-3">
                 <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-sm font-medium text-emerald-400">Live — you're being translated</span>
+                <span className="text-sm sm:text-base font-medium text-emerald-400">Live — you're being translated</span>
               </div>
 
               {/* Simple mic-activity meter — reassurance that audio is actually
@@ -305,21 +311,21 @@ export const SpeakerPage: React.FC = () => {
                 <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
                   <Captions className="h-3.5 w-3.5" /> What's being heard
                 </p>
-                <div className="min-h-[6rem] max-h-64 overflow-y-auto rounded-lg bg-black/30 px-3 py-2 space-y-1.5">
+                <div className="min-h-[10rem] max-h-[28rem] overflow-y-auto rounded-lg bg-black/30 px-4 py-3 space-y-2">
                   {captions.length === 0 ? (
-                    <p className="text-xs text-white/40 italic">Captions will appear here once you start talking…</p>
+                    <p className="text-sm text-white/40 italic">Captions will appear here once you start talking…</p>
                   ) : (
-                    // Current line sized close to the listener /display page's
-                    // own caption size (its default "large" preset is text-2xl
-                    // sm:text-3xl) so it's actually readable at a glance, not
-                    // just present — older lines stay small/dim, just for
-                    // scroll-back context.
+                    // Current line sized well past the listener /display page's
+                    // own "large" preset (text-2xl sm:text-3xl) — this is meant
+                    // to be read by the speaker from further than arm's length
+                    // while they're mid-sentence, not just glanced at up close.
+                    // Older lines stay smaller/dim, just for scroll-back context.
                     captions.map((c, i) => (
                       <p
                         key={c.id}
                         className={i === captions.length - 1
-                          ? 'text-xl sm:text-2xl font-semibold leading-snug text-white'
-                          : 'text-sm leading-snug text-white/40'}
+                          ? 'text-3xl sm:text-5xl font-semibold leading-snug text-white'
+                          : 'text-base sm:text-lg leading-snug text-white/40'}
                       >
                         {c.text}
                       </p>
