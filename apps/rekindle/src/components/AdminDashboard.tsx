@@ -365,6 +365,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     ...(isSuperAdmin ? [{ value: 'platform-admin', label: t('adminDashboard', 'tabPlatformAdmin', 'Platform Admin'), icon: Shield }] : [])
   ];
 
+  // 2-Level Navigation Categories definition
+  const categories = React.useMemo(() => [
+    { id: 'content', label: 'Content', icon: BookOpen, tabValues: ['devotionals', 'devotional-library', 'devotional-streams', 'prayer-library', 'prayer-wall', 'prayer-challenges', 'affirmations', 'declarations', 'books', 'reading-plans', 'music'] },
+    { id: 'users', label: 'Users', icon: Users, tabValues: ['users', 'subscriptions', 'mentors', 'referrals'] },
+    { id: 'community', label: 'Community', icon: Church, tabValues: ['community-revelations', 'leaderboard', 'ministry-groups'] },
+    { id: 'live', label: 'Live', icon: Radio, tabValues: ['live-channels', 'translations', 'content-translation', 'bulk-tts'] },
+    { id: 'finance', label: 'Finance', icon: DollarSign, tabValues: ['donations-manage', 'whatsapp-admin'] },
+    { id: 'system', label: 'System', icon: Settings, tabValues: ['analytics', 'notifications', 'broadcast', 'broadcast-history', 'languages', 'ai-companion', 'platform-admin'] },
+  ], []);
+
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    return categories.find(cat => cat.tabValues.includes(activeTab))?.id || 'content';
+  });
+
+  useEffect(() => {
+    if (activeTab !== 'dashboard') {
+      const cat = categories.find(c => c.tabValues.includes(activeTab));
+      if (cat) setSelectedCategory(cat.id);
+    }
+  }, [activeTab, categories]);
+
+  const currentCategoryTabs = React.useMemo(() => {
+    const cat = categories.find(c => c.id === selectedCategory);
+    if (!cat) return [];
+    return adminTabs.filter(tab => cat.tabValues.includes(tab.value));
+  }, [selectedCategory, categories, adminTabs]);
+
   // Load all data
   const loadAllData = useCallback(async () => {
     setLoading(true);
@@ -1447,22 +1474,68 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
             />
           </div>
 
-          {/* Desktop Tabs */}
-          <TabsList className="hidden lg:flex flex-wrap h-auto mb-6 bg-white border rounded-lg p-2 gap-1">
-            {adminTabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <TabsTrigger 
-                  key={tab.value} 
-                  value={tab.value}
-                  className="flex items-center gap-2 data-[state=active]:bg-purple-100 data-[state=active]:text-purple-700"
-                >
-                  {Icon && <Icon className="h-4 w-4" />}
-                  <span className="hidden xl:inline">{tab.label}</span>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
+          {/* Desktop 2-Level Nav */}
+          <div className="hidden lg:block space-y-3 mb-6">
+            {/* Level 1: Category Selector + Dashboard */}
+            <div className="flex items-center gap-2 bg-white border rounded-xl p-2 shadow-xs">
+              <Button
+                variant={activeTab === 'dashboard' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab('dashboard')}
+                className={`flex items-center gap-2 font-medium ${
+                  activeTab === 'dashboard'
+                    ? 'bg-purple-600 text-white hover:bg-purple-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <BarChart3 className="h-4 w-4" />
+                Dashboard
+              </Button>
+              <div className="h-5 w-px bg-gray-200 mx-1" />
+              {categories.map((cat) => {
+                const Icon = cat.icon;
+                const isSelected = activeTab !== 'dashboard' && selectedCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setSelectedCategory(cat.id);
+                      if (!cat.tabValues.includes(activeTab)) {
+                        setActiveTab(cat.tabValues[0]);
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs font-semibold'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Level 2: Sub-tabs for selected category */}
+            {activeTab !== 'dashboard' && (
+              <TabsList className="flex flex-wrap h-auto bg-gray-50/80 border rounded-xl p-1.5 gap-1">
+                {currentCategoryTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-2xs"
+                    >
+                      {Icon && <Icon className="h-3.5 w-3.5" />}
+                      {tab.label}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            )}
+          </div>
 
           {/* Dashboard Overview */}
           {activeTab === 'dashboard' && (
