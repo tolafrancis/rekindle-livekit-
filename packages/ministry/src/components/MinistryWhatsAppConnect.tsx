@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
-import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import {
@@ -126,7 +125,6 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   ministryName,
   onStatusChange,
 }) => {
-  const { user } = useAuth();
   const { t } = useLanguage();
   const [config, setConfig]         = useState<MinistryWABAConfig | null>(null);
   const [templates, setTemplates]   = useState<WABATemplate[]>([]);
@@ -155,7 +153,15 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   const [notifyTemplateLanguage, setNotifyTemplateLanguage] = useState('en_US');
   const [savingNotifyTemplate, setSavingNotifyTemplate] = useState(false);
 
-  const fbWindowRef = useRef<Window | null>(null);
+  // Embedded Signup hands the two halves of a completed connection back on
+  // two different channels — `code` from FB.login's own JS callback,
+  // `waba_id`/`phone_number_id` from a postMessage the popup sends
+  // separately (see the listener below). Order isn't guaranteed, so each
+  // arrival is stashed here and finishEmbeddedSignupIfReady() fires the
+  // actual connect once both halves are in hand.
+  const signupCodeRef = useRef<string | null>(null);
+  const signupIdsRef  = useRef<{ wabaId: string; phoneNumberId: string } | null>(null);
+  const fbSdkLoadingRef = useRef<Promise<void> | null>(null);
 
   // ── Load existing WABA config ───────────────────────────────────────────
   const loadConfig = useCallback(async () => {
@@ -216,13 +222,69 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     }
   };
 
-  // ── Meta Embedded Signup ────────────────────────────────────────────────
-  const launchEmbeddedSignup = () => {
+  // ── Meta Embedded Signup (Facebook JS SDK) ──────────────────────────────
+  // Embedded Signup's WABA/phone-number picker only exists inside Meta's own
+  // Facebook Login for Business SDK — it is NOT the plain `/dialog/oauth`
+  // redirect screen, which has no such picker and never emits the
+  // WA_EMBEDDED_SIGNUP postMessage the listener below depends on. This loads
+  // that SDK and drives the flow through FB.login() with a Configuration ID
+  // (create one in Meta App Dashboard → WhatsApp → Embedded Signup →
+  // Configurations) instead. Because FB.login manages its own popup, there's
+  // no redirect_uri and nothing for this app to host at a callback route.
+  function loadFacebookSdk(appId: string): Promise<void> {
+    if ((window as any).FB) return Promise.resolve();
+    if (fbSdkLoadingRef.current) return fbSdkLoadingRef.current;
+
+    fbSdkLoadingRef.current = new Promise<void>((resolve, reject) => {
+      (window as any).fbAsyncInit = () => {
+        (window as any).FB.init({ appId, autoLogAppEvents: true, xfbml: false, version: 'v20.0' });
+        resolve();
+      };
+      if (document.getElementById('facebook-jssdk')) return;
+      const script = document.createElement('script');
+      script.id = 'facebook-jssdk';
+      script.src = 'https://connect.facebook.net/en_US/sdk.js';
+      script.async = true;
+      script.defer = true;
+      script.onerror = () => reject(new Error('Failed to load the Facebook SDK'));
+      document.body.appendChild(script);
+    });
+    return fbSdkLoadingRef.current;
+  }
+
+  // Fires the actual connect once both halves of Embedded Signup have
+  // arrived — see the refs' doc comment above.
+  const finishEmbeddedSignupIfReady = useCallback(async () => {
+    if (!signupCodeRef.current || !signupIdsRef.current) return;
+    const code = signupCodeRef.current;
+    const { wabaId, phoneNumberId } = signupIdsRef.current;
+    signupCodeRef.current = null;
+    signupIdsRef.current = null;
+
+    try {
+      const { error } = await supabase.functions.invoke('whatsapp-embedded-signup-complete', {
+        body: { ministryId, wabaId, phoneNumberId, code },
+      });
+      if (error) throw new Error(error.message);
+
+      toast({ title: t('ministryWhatsAppConnect', 'whatsappConnected', 'WhatsApp connected!'), description: t('ministryWhatsAppConnect', 'ministryNowConnected', '{name} is now connected via its own WhatsApp Business Account.').replace('{name}', String(ministryName)) });
+      loadConfig();
+    } catch (err: any) {
+      toast({ title: t('ministryWhatsAppConnect', 'connectionFailed', 'Connection failed'), description: err.message, variant: 'destructive' });
+    } finally {
+      setConnecting(false);
+    }
+  }, [ministryId, ministryName, loadConfig]);
+
+  const launchEmbeddedSignup = async () => {
     const META_APP_ID = import.meta.env.VITE_META_APP_ID;
-    if (!META_APP_ID) {
+    const CONFIG_ID = import.meta.env.VITE_META_WHATSAPP_CONFIG_ID;
+    if (!META_APP_ID || !CONFIG_ID) {
       toast({
         title: t('ministryWhatsAppConnect', 'metaAppNotConfigured', 'Meta App not configured'),
-        description: t('ministryWhatsAppConnect', 'metaAppIdNotSet', 'VITE_META_APP_ID is not set. Use manual setup instead.'),
+        description: !META_APP_ID
+          ? t('ministryWhatsAppConnect', 'metaAppIdNotSet', 'VITE_META_APP_ID is not set. Use manual setup instead.')
+          : t('ministryWhatsAppConnect', 'metaConfigIdNotSet', 'VITE_META_WHATSAPP_CONFIG_ID is not set. Use manual setup instead.'),
         variant: 'destructive',
       });
       setShowManualModal(true);
@@ -230,69 +292,58 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     }
 
     setConnecting(true);
+    signupCodeRef.current = null;
+    signupIdsRef.current = null;
 
-    // Construct the Embedded Signup OAuth URL
-    const state = btoa(JSON.stringify({ ministryId, userId: user?.id, ts: Date.now() }));
-    const params = new URLSearchParams({
-      client_id:     META_APP_ID,
-      display:       'popup',
-      extras:        JSON.stringify({ setup: {}, featureType: '', sessionInfoVersion: '3' }),
-      redirect_uri:  `${window.location.origin}/api/meta-whatsapp-callback`,
-      response_type: 'code',
-      scope:         'whatsapp_business_management,whatsapp_business_messaging,business_management',
-      state,
-    });
+    try {
+      await loadFacebookSdk(META_APP_ID);
+    } catch (err: any) {
+      toast({ title: t('ministryWhatsAppConnect', 'connectionFailed', 'Connection failed'), description: err.message, variant: 'destructive' });
+      setConnecting(false);
+      return;
+    }
 
-    const url = `https://www.facebook.com/dialog/oauth?${params.toString()}`;
-    fbWindowRef.current = window.open(url, 'FacebookLogin', 'width=600,height=700');
-
-    // Poll for the popup to close (callback will save credentials via edge function)
-    const poll = setInterval(() => {
-      if (fbWindowRef.current?.closed) {
-        clearInterval(poll);
-        setConnecting(false);
-        // Reload config — callback may have saved credentials
-        setTimeout(() => loadConfig(), 1500);
-      }
-    }, 500);
+    (window as any).FB.login(
+      (response: any) => {
+        const code = response?.authResponse?.code;
+        if (!code) {
+          // User closed the dialog or denied permissions — SDK already closed its own popup.
+          setConnecting(false);
+          return;
+        }
+        signupCodeRef.current = code;
+        finishEmbeddedSignupIfReady();
+      },
+      {
+        config_id: CONFIG_ID,
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+      },
+    );
   };
 
-  // Handle postMessage from the Embedded Signup popup (Meta sends session_info)
+  // Handle postMessage from the Embedded Signup popup (Meta sends session_info
+  // separately from FB.login's own callback above — see the refs' doc comment).
   useEffect(() => {
-    const handler = async (e: MessageEvent) => {
+    const handler = (e: MessageEvent) => {
       if (e.origin !== 'https://www.facebook.com') return;
       if (e.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
 
-      const { data } = e.data;
-      if (!data?.phone_number_id || !data?.waba_id) return;
-
-      fbWindowRef.current?.close();
-      setConnecting(true);
-
-      try {
-        const { error } = await supabase.functions.invoke('whatsapp-embedded-signup-complete', {
-          body: {
-            ministryId,
-            wabaId:          data.waba_id,
-            phoneNumberId:   data.phone_number_id,
-            code:            data.code,
-          },
-        });
-
-        if (error) throw new Error(error.message);
-
-        toast({ title: t('ministryWhatsAppConnect', 'whatsappConnected', 'WhatsApp connected!'), description: t('ministryWhatsAppConnect', 'ministryNowConnected', '{name} is now connected via its own WhatsApp Business Account.').replace('{name}', String(ministryName)) });
-        loadConfig();
-      } catch (err: any) {
-        toast({ title: t('ministryWhatsAppConnect', 'connectionFailed', 'Connection failed'), description: err.message, variant: 'destructive' });
-      } finally {
+      const { event, data } = e.data;
+      if (event === 'CANCEL' || event === 'ERROR') {
         setConnecting(false);
+        return;
       }
+      if (event !== 'FINISH' || !data?.phone_number_id || !data?.waba_id) return;
+
+      signupIdsRef.current = { wabaId: data.waba_id, phoneNumberId: data.phone_number_id };
+      finishEmbeddedSignupIfReady();
     };
 
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [ministryId, ministryName, loadConfig]);
+  }, [finishEmbeddedSignupIfReady]);
 
   // ── Manual credential save ──────────────────────────────────────────────
   const saveManualCredentials = async () => {
