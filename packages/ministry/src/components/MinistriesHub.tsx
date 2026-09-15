@@ -17,7 +17,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
   Plus, Users, Crown, Shield,
-  QrCode, Loader2, ChevronRight, Building2,
+  Loader2, ChevronRight, Building2,
   Heart, Upload, Image as ImageIcon,
   Sparkles
 } from 'lucide-react';
@@ -106,14 +106,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Join with Code modal states
-  const [showCodeJoinModal, setShowCodeJoinModal] = useState(false);
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number | null>(null);
+
 
   const [formData, setFormData] = useState({
     name: '',
@@ -453,69 +446,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     }
   }, [loading, activeView, selectedMinistry, selectedMinistryId, myMinistries]);
 
-  // QR Scanner logic
-  const stopScanner = () => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    animFrameRef.current = null;
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    setScanning(false);
-  };
 
-  const processDetectedCode = (raw: string) => {
-    stopScanner();
-    setShowCodeJoinModal(false);
-    let extractedCode = raw.trim();
-    try {
-      if (raw.startsWith('http://') || raw.startsWith('https://')) {
-        const url = new URL(raw);
-        const codeParam = url.searchParams.get('code');
-        if (codeParam) extractedCode = codeParam;
-      }
-    } catch { /* use raw */ }
-    window.location.href = `/join-ministry?code=${encodeURIComponent(extractedCode)}`;
-  };
-
-  const startScanner = async () => {
-    setScanError(null);
-
-    if (!('BarcodeDetector' in window)) {
-      setScanError('QR scanning not supported on this device. Please type the code manually.');
-      return;
-    }
-
-    setScanning(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-      const detectFrame = async () => {
-        if (!videoRef.current || !streamRef.current) return;
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes.length > 0 && barcodes[0].rawValue) {
-            processDetectedCode(barcodes[0].rawValue);
-            return;
-          }
-        } catch (e) {
-          console.error('BarcodeDetector error:', e);
-        }
-        animFrameRef.current = requestAnimationFrame(detectFrame);
-      };
-      animFrameRef.current = requestAnimationFrame(detectFrame);
-    } catch (err: any) {
-      console.error('Camera access error:', err);
-      stopScanner();
-      setScanError('QR scanning not supported on this device. Please type the code manually.');
-    }
-  };
 
   if (activeView === 'ministry-space' && selectedMinistry) {
     const membership = memberships[selectedMinistry.id];
@@ -567,8 +498,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             <p className="text-sm italic text-white/90">{welcomeVerse}</p>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-            {(is_ministry_Leader || isAdmin) && (
+          {(is_ministry_Leader || isAdmin) && (
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               <Button
                 variant="outline"
                 className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
@@ -577,19 +508,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                 <Plus className="h-4 w-4 mr-2" />
                 {t('ministriesHub', 'createMinistry', 'Create Ministry')}
               </Button>
-            )}
-            <Button
-              className="bg-white text-indigo-700 hover:bg-white/90 shadow-sm font-semibold"
-              onClick={() => {
-                setJoinCodeInput('');
-                setScanError(null);
-                setShowCodeJoinModal(true);
-              }}
-            >
-              <QrCode className="h-4 w-4 mr-2" />
-              {t('ministriesHub', 'joinWithCode', 'Join with Code')}
-            </Button>
-          </div>
+            </div>
+          )}
 
           <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-1.5 text-sm text-white/85">
             <span className="flex items-center gap-1.5">
@@ -607,16 +527,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'noMinistriesYet', 'No Ministries Yet')}</h3>
             <p className="text-gray-500 mb-4">{t('ministriesHub', 'joinToConnect', 'Join a ministry to connect with a faith community')}</p>
-            <Button
-              onClick={() => {
-                setJoinCodeInput('');
-                setScanError(null);
-                setShowCodeJoinModal(true);
-              }}
-            >
-              <QrCode className="h-4 w-4 mr-2" />
-              {t('ministriesHub', 'joinWithCode', 'Join with Code')}
-            </Button>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -687,92 +597,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         )}
       </div>
 
-      {/* Join with Code Modal */}
-      <Dialog open={showCodeJoinModal} onOpenChange={(open) => {
-        if (!open) stopScanner();
-        setShowCodeJoinModal(open);
-      }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5 text-purple-600" />
-              {t('ministriesHub', 'joinWithCode', 'Join with Code')}
-            </DialogTitle>
-          </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label>{t('ministriesHub', 'enterInviteCode', 'Enter Invite Code')}</Label>
-              <div className="flex gap-2 mt-1">
-                <Input
-                  placeholder="e.g. ABC12345"
-                  value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && joinCodeInput.trim()) {
-                      window.location.href = `/join-ministry?code=${encodeURIComponent(joinCodeInput.trim())}`;
-                    }
-                  }}
-                  className="font-mono uppercase"
-                />
-                <Button
-                  disabled={!joinCodeInput.trim()}
-                  onClick={() => {
-                    window.location.href = `/join-ministry?code=${encodeURIComponent(joinCodeInput.trim())}`;
-                  }}
-                >
-                  {t('ministriesHub', 'join', 'Join')}
-                </Button>
-              </div>
-            </div>
-
-            <div className="relative flex items-center justify-center my-2">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
-              <span className="relative bg-white px-2 text-xs text-gray-500 uppercase">{t('ministriesHub', 'or', 'OR')}</span>
-            </div>
-
-            <div>
-              {!scanning ? (
-                <Button
-                  variant="outline"
-                  className="w-full flex items-center justify-center gap-2"
-                  onClick={startScanner}
-                >
-                  <QrCode className="h-4 w-4" />
-                  {t('ministriesHub', 'scanQrCode', 'Scan QR Code')}
-                </Button>
-              ) : (
-                <div className="space-y-2">
-                  <div className="relative aspect-square w-full max-w-xs mx-auto overflow-hidden rounded-xl bg-black border-2 border-purple-500">
-                    <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 border-2 border-dashed border-white/60 rounded-xl pointer-events-none" />
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                    onClick={stopScanner}
-                  >
-                    {t('ministriesHub', 'cancelScan', 'Cancel Scanning')}
-                  </Button>
-                </div>
-              )}
-
-              {scanError && (
-                <p className="text-xs text-amber-600 bg-amber-50 p-2.5 rounded-lg border border-amber-200 mt-2 text-center">
-                  {scanError}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => { stopScanner(); setShowCodeJoinModal(false); }}>
-              {t('ministriesHub', 'close', 'Close')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Create Ministry Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
