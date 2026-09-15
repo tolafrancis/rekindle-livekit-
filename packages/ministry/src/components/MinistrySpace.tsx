@@ -1691,11 +1691,39 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
             {/* Pastor's Video Message — latest published (pinned first), plus a
                 browsable strip of previous messages. */}
-            {videoMessages.length > 0 && (() => {
+            {(() => {
               const published = videoMessages.filter(v => v.playback_url);
               const latest = published[0] || null;
               const previous = published.slice(1, 7);
-              if (!latest) return null;
+              if (!latest) {
+                if (!canManageMinistry) return null;
+                return (
+                  <Card className="p-6 text-center border-dashed">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-3">
+                      <div className="h-12 w-12 rounded-full flex items-center justify-center" style={{ backgroundColor: `${themeColor}15` }}>
+                        <Video className="h-6 w-6" style={{ color: themeColor }} />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900">{t('ministrySpace', 'noVideoMessagesYet', 'No video messages yet')}</h4>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {t('ministrySpace', 'uploadPastorMessageDesc', "Upload pastor's video messages and weekly sermons for your members.")}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        style={{ backgroundColor: themeColor }}
+                        onClick={() => {
+                          setActiveTab('settings');
+                          setSettingsSection('content');
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-1.5" />
+                        {t('ministrySpace', 'addVideoMessage', 'Add Video Message')}
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              }
               return (
                 <Card className="overflow-hidden">
                   <div className="grid grid-cols-1 md:grid-cols-5">
@@ -1706,8 +1734,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       {latest.thumbnail_url ? (
                         <img src={latest.thumbnail_url} alt={latest.title} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                          <Video className="h-10 w-10 text-gray-600" />
+                        <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${themeColor}40 0%, ${themeColor}15 100%)` }}>
+                          <Video className="h-10 w-10" style={{ color: themeColor }} />
                         </div>
                       )}
                       <div className="absolute inset-0 flex items-center justify-center">
@@ -1752,28 +1780,48 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                         {t('ministrySpace', 'previousMessages', 'Previous Messages')}
                       </p>
-                      <div className="flex gap-3 overflow-x-auto pb-1">
+                      <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory items-stretch">
                         {previous.map(video => (
                           <button
                             key={video.id}
                             onClick={() => { setActiveVideoMessage(video); setShowVideoPlayer(true); }}
-                            className="flex-shrink-0 w-40 text-left group"
+                            className="flex-shrink-0 w-40 text-left group snap-start"
                           >
                             <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
                               {video.thumbnail_url ? (
                                 <img src={video.thumbnail_url} alt={video.title} className="w-full h-full object-cover" />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <Video className="h-6 w-6 text-gray-300" />
+                                <div
+                                  className="w-full h-full flex items-center justify-center"
+                                  style={{ background: `linear-gradient(135deg, ${themeColor}40 0%, ${themeColor}15 100%)` }}
+                                >
+                                  <Video className="h-6 w-6" style={{ color: themeColor }} />
                                 </div>
                               )}
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
-                                <Play className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 group-focus-visible:bg-black/20 transition-colors">
+                                <Play className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" />
                               </div>
                             </div>
                             <p className="text-xs font-medium mt-1 line-clamp-2">{video.title}</p>
+                            {video.speaker_name && (
+                              <p className="text-[11px] text-gray-500 truncate mt-0.5">{video.speaker_name}</p>
+                            )}
                           </button>
                         ))}
+                        <button
+                          onClick={() => {
+                            if (canManageMinistry) {
+                              setActiveTab('settings');
+                              setSettingsSection('content');
+                            } else {
+                              setActiveTab('content');
+                            }
+                          }}
+                          className="flex-shrink-0 w-28 aspect-video rounded-lg border-2 border-dashed border-gray-200 hover:border-gray-300 flex flex-col items-center justify-center gap-1 text-gray-500 hover:text-gray-700 transition-colors snap-start self-start"
+                        >
+                          <Video className="h-5 w-5" />
+                          <span className="text-xs font-medium">{t('ministrySpace', 'viewAll', 'View All')}</span>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1849,15 +1897,21 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             </Card>
 
             {/* Upcoming Events */}
-            {events.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5" style={{ color: themeColor }} />
-                    {t('ministrySpace', 'upcomingEvents', 'Upcoming Events')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" style={{ color: themeColor }} />
+                  {t('ministrySpace', 'upcomingEvents', 'Upcoming Events')}
+                </CardTitle>
+                {events.length > 0 && canManageMinistry && (
+                  <Button size="sm" variant="outline" onClick={() => setActiveTab('meetings')}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    {t('ministrySpace', 'addEvent', 'Add Event')}
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {events.length > 0 ? (
                   <div className="space-y-3">
                     {events.slice(0, 3).map(event => (
                       <div key={event.id} className="flex items-center gap-4 p-3 border rounded-lg">
@@ -1883,9 +1937,24 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                ) : (
+                  <div className="text-center py-6 space-y-3">
+                    <Calendar className="h-8 w-8 mx-auto text-gray-300" />
+                    <p className="text-gray-500 text-sm font-medium">{t('ministrySpace', 'noUpcomingEvents', 'No upcoming events')}</p>
+                    {canManageMinistry && (
+                      <Button
+                        size="sm"
+                        style={{ backgroundColor: themeColor }}
+                        onClick={() => setActiveTab('meetings')}
+                      >
+                        <Plus className="h-4 w-4 mr-1.5" />
+                        {t('ministrySpace', 'addEvent', 'Add Event')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 
