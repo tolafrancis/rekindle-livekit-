@@ -266,6 +266,16 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
       const { data } = e.data;
       if (!data?.phone_number_id || !data?.waba_id) return;
 
+      // Cache Meta WABA credentials in sessionStorage for the callback route
+      try {
+        sessionStorage.setItem('wa_signup_info', JSON.stringify({
+          wabaId: data.waba_id,
+          phoneNumberId: data.phone_number_id,
+        }));
+      } catch (err) {
+        console.warn('Could not save wa_signup_info to sessionStorage', err);
+      }
+
       fbWindowRef.current?.close();
       setConnecting(true);
 
