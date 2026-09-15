@@ -19,6 +19,13 @@ import {
   Info, Zap, Clock, ChevronRight, Settings, FileText,
 } from 'lucide-react';
 
+declare global {
+  interface Window {
+    FB: any;
+    fbAsyncInit: () => void;
+  }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface MinistryWABAConfig {
@@ -199,6 +206,24 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     if (activeTab === 'templates' || activeTab === 'settings') loadTemplates();
   }, [activeTab, loadTemplates]);
 
+  // Load Facebook JS SDK on mount
+  useEffect(() => {
+    if (window.FB) return;
+    window.fbAsyncInit = function() {
+      window.FB.init({
+        appId: import.meta.env.VITE_META_APP_ID,
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: 'v20.0'
+      });
+    };
+    const script = document.createElement('script');
+    script.src = 'https://connect.facebook.net/en_US/sdk.js';
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+  }, []);
+
   const saveNotifyTemplate = async () => {
     setSavingNotifyTemplate(true);
     try {
@@ -218,43 +243,31 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
 
   // ── Meta Embedded Signup ────────────────────────────────────────────────
   const launchEmbeddedSignup = () => {
-    const META_APP_ID = import.meta.env.VITE_META_APP_ID;
-    if (!META_APP_ID) {
-      toast({
-        title: t('ministryWhatsAppConnect', 'metaAppNotConfigured', 'Meta App not configured'),
-        description: t('ministryWhatsAppConnect', 'metaAppIdNotSet', 'VITE_META_APP_ID is not set. Use manual setup instead.'),
-        variant: 'destructive',
-      });
-      setShowManualModal(true);
+    if (!window.FB) {
+      toast({ title: 'Facebook SDK not loaded', description: 'Please try again in a moment.', variant: 'destructive' });
       return;
     }
-
     setConnecting(true);
-
-    // Construct the Embedded Signup OAuth URL
-    const state = btoa(JSON.stringify({ ministryId, userId: user?.id, ts: Date.now() }));
-    const params = new URLSearchParams({
-      client_id:     META_APP_ID,
-      display:       'popup',
-      extras:        JSON.stringify({ setup: {}, featureType: '', sessionInfoVersion: '3' }),
-      redirect_uri:  `${window.location.origin}/api/meta-whatsapp-callback`,
-      response_type: 'code',
-      scope:         'whatsapp_business_management,whatsapp_business_messaging,business_management',
-      state,
-    });
-
-    const url = `https://www.facebook.com/dialog/oauth?${params.toString()}`;
-    fbWindowRef.current = window.open(url, 'FacebookLogin', 'width=600,height=700');
-
-    // Poll for the popup to close (callback will save credentials via edge function)
-    const poll = setInterval(() => {
-      if (fbWindowRef.current?.closed) {
-        clearInterval(poll);
+    window.FB.login((response: any) => {
+      if (response.authResponse?.code) {
+        const code = response.authResponse.code;
+        const state = btoa(JSON.stringify({ ministryId, userId: user?.id, ts: Date.now() }));
+        // Navigate popup to callback route to process
+        window.location.href = `/api/meta-whatsapp-callback?code=${code}&state=${state}`;
+      } else {
         setConnecting(false);
-        // Reload config — callback may have saved credentials
-        setTimeout(() => loadConfig(), 1500);
+        toast({ title: 'Connection cancelled', variant: 'destructive' });
       }
-    }, 500);
+    }, {
+      config_id: '1892078505508098',
+      response_type: 'code',
+      override_default_response_type: true,
+      extras: {
+        setup: {},
+        featureType: '',
+        sessionInfoVersion: '3'
+      }
+    });
   };
 
   // Handle postMessage from the Embedded Signup popup (Meta sends session_info)
