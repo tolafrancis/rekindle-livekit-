@@ -335,33 +335,26 @@ const AuthGate: React.FC = () => {
 
     if (showAuthOverlay) {
       return (
-        <div>
-          {/* Dim the backdrop (preview or landing) behind the auth form */}
-          <div style={{ filter: 'blur(4px) brightness(0.5)', pointerEvents: 'none', userSelect: 'none' }}>
-            {backdrop}
-          </div>
-          {/* Auth form overlay */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <button
-              onClick={() => setAuthOpen(false)}
-              className="absolute right-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1.5 text-sm font-medium text-gray-700 shadow hover:bg-white"
-            >
-              {isSharedContent ? '← Back to preview' : '← Back'}
-            </button>
-            {authMode === 'login' && (
-              <LoginForm
-                onSwitchToSignup={() => setAuthMode('signup')}
-                onSwitchToReset={() => setAuthMode('reset')}
-                onSuccess={() => {}}
-              />
-            )}
-            {authMode === 'signup' && (
-              <SignupForm
-                onSwitchToLogin={() => setAuthMode('login')}
-                onSuccess={() => {}}
-              />
-            )}
-          </div>
+        <div className="relative min-h-screen">
+          <button
+            onClick={() => setAuthOpen(false)}
+            className="fixed top-4 right-4 z-50 rounded-full bg-white/90 border px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-md hover:bg-white transition-all flex items-center gap-1.5"
+          >
+            {isSharedContent ? '← Back to preview' : '← Back'}
+          </button>
+          {authMode === 'login' && (
+            <LoginForm
+              onSwitchToSignup={() => setAuthMode('signup')}
+              onSwitchToReset={() => setAuthMode('reset')}
+              onSuccess={() => {}}
+            />
+          )}
+          {authMode === 'signup' && (
+            <SignupForm
+              onSwitchToLogin={() => setAuthMode('login')}
+              onSuccess={() => {}}
+            />
+          )}
         </div>
       );
     }

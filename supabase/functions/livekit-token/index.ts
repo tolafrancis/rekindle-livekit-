@@ -81,6 +81,22 @@ const json = (body: unknown, status = 200) =>
 // ws(s):// (browser signaling URL) → http(s):// (server API URL for RoomServiceClient).
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 
+// Deno's fetch (which the LiveKit server SDK calls under the hood) has no
+// default timeout. If LIVEKIT_URL points at a host that accepts the TCP
+// connection but never responds (a stale IP, a firewalled port), an awaited
+// SDK call hangs forever, the whole function invocation hangs with it, and
+// the client's own invoke() never gets a response to catch — the "Connecting…"
+// spinner spins forever with nothing logged anywhere. Race every such call
+// against a timer so a misbehaving LiveKit server always surfaces as an error.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
 /**
  * Derive the caller's role from the DB. NEVER trusts the client. Absent any
  * server-verifiable proof of host/speaker, the caller is an attendee (or viewer
@@ -293,10 +309,10 @@ serve(async (req) => {
     // (auto-create), it isn't locked.
     if (!isHost) {
       try {
-        const rooms = await svc.listRooms([body.roomName]);
+        const rooms = await withTimeout(svc.listRooms([body.roomName]), 8000, 'listRooms');
         const meta = rooms[0]?.metadata ? JSON.parse(rooms[0].metadata) : {};
         if (meta.locked) return json({ error: 'locked' }, 403);
-      } catch { /* room not present / API blip → treat as unlocked */ }
+      } catch { /* room not present / API blip / timeout → treat as unlocked */ }
     }
 
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,

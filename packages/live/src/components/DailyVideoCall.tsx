@@ -738,7 +738,15 @@ const ParticipantVideo: React.FC<{
       }
     };
 
-    if (participant.hasVideo || participant.videoTrack) {
+    // Gate on hasVideo alone, not videoTrack — normalize() (LiveKitRoomWrapper.ts)
+    // already folds mute state into hasVideo (`!!videoTrack && !camera?.isMuted`),
+    // but leaves `videoTrack` pointing at the (now-muted) MediaStreamTrack. Toggling
+    // the camera off mutes the publication rather than tearing down the track, so
+    // `videoTrack` stays truthy and `track.readyState` stays 'live' — the old
+    // `hasVideo || videoTrack` check kept attaching that muted track instead of
+    // falling through to the avatar fallback below, so the tile just went black
+    // instead of showing the "camera off" placeholder.
+    if (participant.hasVideo) {
       tryAttach();
     } else {
       // No video - clear the element
@@ -1903,7 +1911,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         {/* Top bar. Extra right padding reserves room for the wrapper's top-right
             Copy Link / End for All buttons so the meeting's own right controls
             (participant count · mini-player · fullscreen) don't sit under them. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-28 sm:px-4 sm:py-4 sm:pr-72">
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-36 sm:px-4 sm:py-4 sm:pr-96">
           <div className="pointer-events-auto flex items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">

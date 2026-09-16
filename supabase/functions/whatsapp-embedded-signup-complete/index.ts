@@ -37,9 +37,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { ministryId, wabaId, phoneNumberId, code } = await req.json();
-    if (!ministryId || !wabaId || !phoneNumberId || !code) {
-      return json({ error: 'ministryId, wabaId, phoneNumberId and code are required' }, 400);
+    let { ministryId, wabaId, phoneNumberId, code } = await req.json();
+    if (!ministryId || !code) {
+      return json({ error: 'ministryId and code are required' }, 400);
     }
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -80,6 +80,28 @@ serve(async (req) => {
     // follow-up, not silently fixed here since it needs a Meta System User
     // set up on the Business Manager side first.
     const accessToken = tokenData.access_token;
+
+    // Auto-discover WABA ID and Phone Number ID from Meta Graph API if omitted
+    if (!wabaId || !phoneNumberId) {
+      try {
+        const wabaRes = await fetch(`${WHATSAPP_BASE_URL}/me/whatsapp_business_accounts?access_token=${accessToken}`);
+        const wabaData = await wabaRes.json();
+        if (wabaData.data && wabaData.data.length > 0) {
+          wabaId = wabaId || wabaData.data[0].id;
+          const phoneRes = await fetch(`${WHATSAPP_BASE_URL}/${wabaId}/phone_numbers?access_token=${accessToken}`);
+          const phoneData = await phoneRes.json();
+          if (phoneData.data && phoneData.data.length > 0) {
+            phoneNumberId = phoneNumberId || phoneData.data[0].id;
+          }
+        }
+      } catch (err) {
+        console.warn('[whatsapp-embedded-signup-complete] could not auto-discover WABA/Phone ID:', err);
+      }
+    }
+
+    if (!wabaId || !phoneNumberId) {
+      return json({ error: 'Could not resolve WABA ID or Phone Number ID from Meta.' }, 400);
+    }
 
     let phoneDisplay = '';
     let businessName = '';

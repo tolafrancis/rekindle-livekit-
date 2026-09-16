@@ -1,37 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
-import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
+import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Textarea } from '@rekindle/ui/textarea';
 import { Badge } from '@rekindle/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { Label } from '@rekindle/ui/label';
 import { COUNTRY_OPTIONS } from '../giftAid';
 import { Switch } from '@rekindle/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
-  Search, Plus, Users, Crown, Shield, Settings,
-  Globe, Lock, Copy, Check, QrCode, Loader2,
-  ChevronRight, Building2, MapPin, Heart, X, ArrowLeft,
-  BookOpen, LayoutDashboard, Upload, Image as ImageIcon,
-  Sparkles, Compass, ArrowRight
+  Plus, Users, Crown, Shield,
+  Loader2, ChevronRight, Building2,
+  Heart, Upload, Image as ImageIcon,
+  Sparkles
 } from 'lucide-react';
 import MinistrySpace from './MinistrySpace';
 import { peekDeepLink } from '@rekindle/features/deepLink';
-import { MinistryDevotionalCreator } from './MinistryDevotionalCreator';
-import { MinistryManagement } from './MinistryManagement';
-import {
-  SearchFilterPanel,
-  searchFilterIconClass,
-  searchFilterInputClass,
-  searchFilterSelectTriggerClass
-} from '@rekindle/features/components/SearchFilterPanel';
 
 interface Ministry {
   id: string;
@@ -63,12 +54,6 @@ interface MembershipInfo {
   joined_at: string;
 }
 
-interface MinistrySubscription {
-  ministry_id: string;
-  plan_type: string;
-  status: string;
-}
-
 const MINISTRY_CATEGORIES = [
   'General', 'Youth', 'Women', 'Men', 'Children', 'Worship',
   'Prayer', 'Outreach', 'Missions', 'Education', 'Family', 'Singles'
@@ -83,7 +68,6 @@ const WELCOME_VERSES = [
   '"Therefore encourage one another and build each other up." — 1 Thessalonians 5:11',
 ];
 
-// White-label subdomain handle: churches get <handle>.<domain> (grace.rekindlebc.com).
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 const MINISTRY_DOMAIN = (import.meta as any).env?.VITE_MINISTRY_DOMAIN || 'rekindlebc.com';
@@ -94,11 +78,11 @@ const RESERVED_HANDLES = new Set([
   'rekindle', 'rekindlebc', 'join', 'kiosk', 'settings', 'billing',
 ]);
 
-type MinistryHubView = 'discover' | 'my-ministries' | 'manage' | 'ministry-space' | 'ministry-management';
+type ViewMode = 'my-ministries' | 'ministry-space';
 
 interface MinistriesHubProps {
-  activeView?: MinistryHubView;
-  onActiveViewChange?: (view: MinistryHubView) => void;
+  activeView?: string;
+  onActiveViewChange?: (view: string) => void;
   onWorkspaceChange?: (active: boolean) => void;
 }
 
@@ -106,40 +90,23 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const { user, profile, isAdmin: authIsAdmin, isPartner, initialized: authInitialized } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
-  // Uncontrolled view (ministry app) rides browser history: entering a ministry
-  // ('ministry-space') and switching hub tabs push entries, so Back steps through
-  // them then out. When a parent controls activeView it owns history instead.
-  const [internalActiveView, setInternalActiveView] = useViewHistory<MinistryHubView>('ministries-hub', 'my-ministries');
-  const activeView = controlledActiveView ?? internalActiveView;
-  const setActiveView = useCallback((view: MinistryHubView) => {
+
+  const [internalActiveView, setInternalActiveView] = useViewHistory<ViewMode>('ministries-hub', 'my-ministries');
+  const activeView = (controlledActiveView as ViewMode) ?? internalActiveView;
+  const setActiveView = useCallback((view: ViewMode) => {
     setInternalActiveView(view);
     onActiveViewChange?.(view);
   }, [onActiveViewChange]);
-  // Companion to activeView above, same history.state mechanism — fixes a
-  // real bug: activeView alone already survived a refresh back to
-  // 'ministry-space' correctly, but selectedMinistry (a full object, set
-  // by handleEnterMinistry below) is plain useState and reset to null on
-  // every remount, so the `activeView === 'ministry-space' && selectedMinistry`
-  // render check below silently failed and fell through to the ministries
-  // list — reads as "refresh sends me back to home" even though activeView
-  // itself was right. Only the id needs persisting (useViewHistory's T
-  // extends string) — the restoration effect below resolves it back into
-  // the real Ministry object once the lists have loaded.
+
   const [selectedMinistryId, setSelectedMinistryId] = useViewHistory<string>('ministries-hub-selected-ministry', '');
-  const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [myMinistries, setMyMinistries] = useState<Ministry[]>([]);
   const [memberships, setMemberships] = useState<Record<string, MembershipInfo>>({});
-  const [subscriptions, setSubscriptions] = useState<Record<string, MinistrySubscription>>({});
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showJoinModal, setShowJoinModal] = useState(false);
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
-  const [managingMinistry, setManagingMinistry] = useState<Ministry | null>(null);
-  const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+
 
   const [formData, setFormData] = useState({
     name: '',
@@ -159,17 +126,10 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
-  // Keep the white-label handle in sync with the name until the user edits it.
   useEffect(() => {
     if (!slugEdited) setFormData(prev => ({ ...prev, slug: slugify(prev.name) }));
   }, [formData.name, slugEdited]);
 
-  // Was OR'd with a check against profile.subscription_tier for a fixed
-  // list of "ministry" tier slugs — removed as dead code: none of those
-  // slugs' underlying subscription_tiers catalog rows are active anymore
-  // (deactivated in migration 0271), and no live path writes them to a
-  // profile, so that clause was unconditionally false. Zero behavior
-  // change (see docs/investigations/ministry-billing-tier-enforcement-audit.md).
   const is_ministry_Leader = isPartner || authIsAdmin;
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
 
@@ -178,36 +138,11 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     return () => onWorkspaceChange?.(false);
   }, [activeView, selectedMinistry, onWorkspaceChange]);
 
-  // Get approved ministries that the user owns/leads
-  const approvedOwnedMinistries = myMinistries.filter(m => 
-    (m.owner_id === user?.id || m.leader_id === user?.id || memberships[m.id]?.is_leader) &&
-    (m.approval_status === 'approved' || !m.approval_status) // Default to approved if no status
-  );
-
-
-  const loadMinistries = useCallback(async () => {
-    try {
-      // Discovery reads the public-safe directory VIEW (non-PII columns of
-      // public+active ministries) — the base ministry_groups table no longer
-      // exposes billing/PII columns to non-members (see migration 0154).
-      const { data, error } = await supabase
-        .from('ministry_directory')
-        .select('*')
-        .order('member_count', { ascending: false });
-
-      if (error) throw error;
-      setMinistries(data || []);
-    } catch (err: any) {
-      console.error('Error loading ministries:', err);
-    }
-  }, []);
-
-  // Load user's ministries
+  // Load user's joined & owned ministries
   const loadMyMinistries = useCallback(async () => {
     if (!user?.id) return;
 
     try {
-      // Get memberships
       const { data: memberData, error: memberError } = await supabase
         .from('ministry_group_members')
         .select('*')
@@ -217,7 +152,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
       const membershipMap: Record<string, MembershipInfo> = {};
       const membershipIds = new Set<string>();
-      const ministryIds = (memberData || []).map(m => {
+      (memberData || []).forEach(m => {
         membershipIds.add(String(m.group_id));
         membershipMap[m.group_id] = {
           ministry_id: m.group_id,
@@ -226,7 +161,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           is_leader: m.is_leader || false,
           joined_at: m.joined_at
         };
-        return m.group_id;
       });
 
       const { data: activeProfiles, error: activeProfileError } = await supabase
@@ -237,8 +171,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
       if (activeProfileError) throw activeProfileError;
 
-      for (const profile of activeProfiles || []) {
-        const id = String(profile.ministry_id);
+      for (const profileItem of activeProfiles || []) {
+        const id = String(profileItem.ministry_id);
         if (!membershipIds.has(id)) {
           const { data: existing } = await supabase
             .from('ministry_group_members')
@@ -256,7 +190,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               joined_at: new Date().toISOString(),
             });
             if (insertError && !/duplicate|already exists|unique/i.test(insertError.message || '')) {
-              console.warn('Unable to reconcile active ministry membership for user:', insertError.message);
+              console.warn('Unable to reconcile active ministry membership:', insertError.message);
             }
           }
           membershipMap[id] = {
@@ -272,9 +206,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
       setMemberships(membershipMap);
 
-      // Initialize ministryData array to collect all ministries
       let allMinistries: Ministry[] = [];
-
       if (membershipIds.size > 0) {
         const { data: ministryData, error: ministryError } = await supabase
           .from('ministry_groups')
@@ -285,7 +217,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         allMinistries = ministryData || [];
       }
 
-      // Also include ministries owned by user
       const { data: ownedData } = await supabase
         .from('ministry_groups')
         .select('*')
@@ -313,26 +244,17 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     }
   }, [user?.id]);
 
-
-  // Wait for auth to fully settle (not just user?.id appearing) before fetching.
-  // On slower session restores — mobile especially — user?.id can populate
-  // slightly before the Supabase client's session is actually attached, so a
-  // fetch gated only on user?.id can silently return an empty result with
-  // nothing left to trigger a retry. `initialized` flips true only once the
-  // auth check has genuinely finished, one way or another.
   useEffect(() => {
     if (!authInitialized) return;
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([loadMinistries(), loadMyMinistries()]);
+      await loadMyMinistries();
       setLoading(false);
     };
     loadData();
-  }, [loadMinistries, loadMyMinistries, authInitialized]);
+  }, [loadMyMinistries, authInitialized]);
 
-  // Shared ministry links (/ministry-videos/:id, /ministry-devotional/:id, /ministry-prayer/:id)
-  // carry an item id, not which ministry it belongs to — resolve that here and
-  // enter the right ministry. MinistrySpace itself consumes (and clears) the deep link.
+  // Deep links handler
   useEffect(() => {
     if (loading || selectedMinistry) return;
     const dl = peekDeepLink();
@@ -341,61 +263,33 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     (async () => {
       try {
         let targetMinistryId: string | null = null;
-
         if (dl.type === 'ministry-videos') {
-          const { data: video } = await supabase
-            .from('ministry_video_messages')
-            .select('ministry_id')
-            .eq('id', dl.id)
-            .maybeSingle();
+          const { data: video } = await supabase.from('ministry_video_messages').select('ministry_id').eq('id', dl.id).maybeSingle();
           targetMinistryId = video?.ministry_id || null;
         } else if (dl.type === 'ministry-devotional') {
-          const { data: dev } = await supabase
-            .from('ministry_devotionals')
-            .select('ministry_id')
-            .eq('id', dl.id)
-            .maybeSingle();
+          const { data: dev } = await supabase.from('ministry_devotionals').select('ministry_id').eq('id', dl.id).maybeSingle();
           targetMinistryId = dev?.ministry_id || null;
         } else if (dl.type === 'ministry-prayer') {
-          const { data: prayer } = await supabase
-            .from('ministry_prayer_requests')
-            .select('ministry_id')
-            .eq('id', dl.id)
-            .maybeSingle();
+          const { data: prayer } = await supabase.from('ministry_prayer_requests').select('ministry_id').eq('id', dl.id).maybeSingle();
           targetMinistryId = prayer?.ministry_id || null;
         } else if (dl.type === 'small-group') {
-          // "Share to WhatsApp" invite (SmallGroupPage.tsx) — arrives either
-          // as a direct /small-group/:id link (already a ministry member) or
-          // via /join/:slug?group=:id (MinistryJoinLanding stashes the same
-          // deep link for a brand-new member, consumed here once they land
-          // back on '/' after registering).
-          const { data: sg } = await supabase
-            .from('small_groups')
-            .select('ministry_id')
-            .eq('id', dl.id)
-            .maybeSingle();
+          const { data: sg } = await supabase.from('small_groups').select('ministry_id').eq('id', dl.id).maybeSingle();
           targetMinistryId = sg?.ministry_id || null;
         }
 
         if (!targetMinistryId) return;
 
-        const known = [...myMinistries, ...ministries].find(m => m.id === targetMinistryId);
+        const known = myMinistries.find(m => m.id === targetMinistryId);
         if (known) {
           handleEnterMinistry(known);
           return;
         }
-        const { data: ministry } = await supabase
-          .from('ministry_groups')
-          .select('*')
-          .eq('id', targetMinistryId)
-          .maybeSingle();
+        const { data: ministry } = await supabase.from('ministry_groups').select('*').eq('id', targetMinistryId).maybeSingle();
         if (ministry) handleEnterMinistry(ministry);
       } catch (err) {
         console.error('Error resolving shared link:', err);
       }
     })();
-    // Only needs to run once the lists have settled after the initial load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
   const uploadMinistryImage = async (
@@ -461,7 +355,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     setCreating(true);
     try {
       const inviteCode = Math.random().toString(36).substring(2, 10).toUpperCase();
-      
+
       const { data, error } = await supabase
         .from('ministry_groups')
         .insert({
@@ -489,8 +383,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
       if (error) throw error;
 
-      // Add creator as admin member
-      const { error: memberError } = await supabase
+      await supabase
         .from('ministry_group_members')
         .insert({
           ministry_id: data.id,
@@ -500,11 +393,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           is_leader: true,
           joined_at: new Date().toISOString()
         });
-
-      if (memberError) {
-        console.error('Error adding creator as admin:', memberError);
-        // Continue anyway - ministry is created
-      }
 
       toast({ title: t('ministriesHub', 'success', 'Success'), description: t('ministriesHub', 'ministryCreated', 'Ministry created successfully!') });
       setShowCreateModal(false);
@@ -523,7 +411,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         slug: ''
       });
       setSlugEdited(false);
-      loadMinistries();
       loadMyMinistries();
     } catch (err: any) {
       const taken = /uniq_ministry_groups_slug|duplicate key/i.test(err?.message || '');
@@ -537,79 +424,9 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     }
   };
 
-  const handleJoinMinistry = async (ministry: Ministry) => {
-    if (!user?.id) {
-      toast({ title: t('ministriesHub', 'error', 'Error'), description: t('ministriesHub', 'signInToJoin', 'Please sign in to join'), variant: 'destructive' });
-      return;
-    }
-
-    setJoining(true);
-    try {
-      // Check if already a member
-      const { data: existing, error: checkError } = await supabase
-        .from('ministry_group_members')
-        .select('id')
-        .eq('group_id', ministry.id)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (checkError) {
-        console.error('Error checking membership:', checkError);
-        throw checkError;
-      }
-
-      if (existing) {
-        toast({ title: t('ministriesHub', 'alreadyJoined', 'Already Joined'), description: t('ministriesHub', 'alreadyMember', 'You are already a member of this ministry') });
-        setJoining(false);
-        return;
-      }
-
-      // Add as member
-      const { error: insertError } = await supabase
-        .from('ministry_group_members')
-        .insert({
-          ministry_id: ministry.id,
-          group_id: ministry.id,
-          user_id: user.id,
-          role: 'member',
-          is_leader: false,
-          joined_at: new Date().toISOString()
-        });
-
-      if (insertError) {
-        console.error('Error joining ministry:', insertError);
-        toast({
-          title: t('ministriesHub', 'error', 'Error'),
-          description: t('ministriesHub', 'failedToJoin', 'Failed to join ministry. Please try again.'),
-          variant: 'destructive'
-        });
-        setJoining(false);
-        return;
-      }
-
-      // Update member count
-      await supabase
-        .from('ministry_groups')
-        .update({ member_count: (ministry.member_count || 0) + 1 })
-        .eq('id', ministry.id);
-
-      toast({ title: t('ministriesHub', 'welcome', 'Welcome!'), description: t('ministriesHub', 'youHaveJoinedX', 'You have joined {name}').replace('{name}', ministry.name) });
-      loadMyMinistries();
-      setShowJoinModal(false);
-      setSelectedMinistry(null);
-    } catch (err: any) {
-      toast({ title: t('ministriesHub', 'error', 'Error'), description: err.message, variant: 'destructive' });
-    } finally {
-      setJoining(false);
-    }
-  };
-
   const handleEnterMinistry = (ministry: Ministry) => {
     setSelectedMinistry(ministry);
     setActiveView('ministry-space');
-    // replace:true merges into the history entry setActiveView just pushed
-    // above, instead of pushing a second one — one Back press should exit
-    // a ministry, not two.
     setSelectedMinistryId(ministry.id, { replace: true });
   };
 
@@ -619,38 +436,18 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     setSelectedMinistryId('', { replace: true });
   };
 
-  // Runs once on a refresh that lands back on activeView === 'ministry-space'
-  // (restored from history.state, see the hook above) — resolves the
-  // persisted id into the actual Ministry object once the lists it could be
-  // in have loaded. Falls back to exiting cleanly rather than getting stuck
-  // rendering nothing if the id isn't found (ministry deleted, access lost).
   useEffect(() => {
     if (loading || activeView !== 'ministry-space' || selectedMinistry || !selectedMinistryId) return;
-    const found = myMinistries.find(m => m.id === selectedMinistryId) || ministries.find(m => m.id === selectedMinistryId);
+    const found = myMinistries.find(m => m.id === selectedMinistryId);
     if (found) {
       setSelectedMinistry(found);
     } else {
       handleExitMinistry();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, activeView, selectedMinistry, selectedMinistryId, myMinistries, ministries]);
+  }, [loading, activeView, selectedMinistry, selectedMinistryId, myMinistries]);
 
-  const copyInviteLink = (code: string) => {
-    const link = `${window.location.origin}/join-ministry?code=${code}`;
-    navigator.clipboard.writeText(link);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
-    toast({ title: t('ministriesHub', 'copied', 'Copied!'), description: t('ministriesHub', 'inviteLinkCopied', 'Invite link copied to clipboard') });
-  };
 
-  const filteredMinistries = ministries.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      m.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || m.category === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
 
-  // If viewing a ministry space, render that instead
   if (activeView === 'ministry-space' && selectedMinistry) {
     const membership = memberships[selectedMinistry.id];
     return (
@@ -681,9 +478,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
 
   return (
     <div className="space-y-6">
-      {/* Welcome hero — centered */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-6 sm:p-10 text-white shadow-lg shadow-indigo-500/20">
-        {/* soft decorative glows */}
+      {/* Welcome hero — compact */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 p-5 sm:p-7 text-white shadow-lg shadow-indigo-500/20">
         <div className="pointer-events-none absolute -right-24 -top-28 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 -left-20 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl" />
         <div className="relative mx-auto max-w-2xl flex flex-col items-center text-center">
@@ -697,17 +493,13 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             {t('ministriesHub', 'heroSubtitle', 'Discover ministries, grow together, and stay connected wherever you are.')}
           </p>
 
-          {/* Daily encouragement */}
           <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-white/10 p-3.5 ring-1 ring-white/15 backdrop-blur-sm">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
             <p className="text-sm italic text-white/90">{welcomeVerse}</p>
           </div>
 
-          {/* Primary actions — joining happens via a shared invite link/QR
-              code (see MinistryRegistrationSettings), not by typing a code
-              here, so there is deliberately no "Join by Code" entry point. */}
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
-            {(is_ministry_Leader || isAdmin) && (
+          {(is_ministry_Leader || isAdmin) && (
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               <Button
                 variant="outline"
                 className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
@@ -716,10 +508,9 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                 <Plus className="h-4 w-4 mr-2" />
                 {t('ministriesHub', 'createMinistry', 'Create Ministry')}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* At-a-glance stat */}
           <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-1.5 text-sm text-white/85">
             <span className="flex items-center gap-1.5">
               <Heart className="h-4 w-4" />
@@ -729,306 +520,84 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         </div>
       </div>
 
-      {/* Navigation Tabs — the Discover / My Ministries / Manage switcher is
-          provided by the app's secondary navigation (sidebar on desktop, the
-          nav card on mobile), so it is not duplicated here. */}
-      <Tabs value={activeView} onValueChange={(v) => setActiveView(v as any)}>
-        {/* Discover Ministries */}
-        <TabsContent value="discover" className="space-y-4 mt-6">
-          {/* Search & Filter */}
-          <SearchFilterPanel icon={<Globe className="h-6 w-6 text-white/60" />}>
-            <div className="relative flex-1">
-              <Search className={searchFilterIconClass} />
-              <Input
-                placeholder={t('ministriesHub', 'searchPlaceholder', 'Search ministries...')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className={searchFilterInputClass}
-              />
-            </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className={`w-full md:w-48 ${searchFilterSelectTriggerClass}`}>
-                <SelectValue placeholder={t('ministriesHub', 'categoryPlaceholder', 'Category')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('ministriesHub', 'allCategories', 'All Categories')}</SelectItem>
-                {MINISTRY_CATEGORIES.map(cat => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SearchFilterPanel>
-
-          {/* Section heading */}
-          <div className="flex items-center justify-between px-0.5">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-              <Compass className="h-5 w-5 text-indigo-600" />
-              {t('ministriesHub', 'discoverCommunities', 'Discover communities')}
-            </h2>
-            <span className="text-sm text-gray-500">
-              {t('ministriesHub', 'countFound', '{count} found').replace('{count}', String(filteredMinistries.length))}
-            </span>
-          </div>
-
-          {/* Ministry Cards */}
+      {/* Your Ministries grid */}
+      <div className="space-y-4">
+        {myMinistries.length === 0 ? (
+          <Card className="p-8 text-center">
+            <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'noMinistriesYet', 'No Ministries Yet')}</h3>
+            <p className="text-gray-500 mb-4">{t('ministriesHub', 'joinToConnect', 'Join a ministry to connect with a faith community')}</p>
+          </Card>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredMinistries.length === 0 ? (
-              <div className="col-span-full">
-                <div className="mx-auto max-w-md rounded-3xl border border-dashed border-gray-200 bg-gradient-to-b from-gray-50 to-white p-10 text-center">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-                    <Compass className="h-8 w-8 text-indigo-500" />
+            {myMinistries.map(ministry => {
+              const membership = memberships[ministry.id];
+              const color = ministry.theme_color || '#7c3aed';
+              return (
+                <Card
+                  key={ministry.id}
+                  className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl cursor-pointer"
+                  onClick={() => handleEnterMinistry(ministry)}
+                >
+                  <div
+                    className="relative h-16 overflow-hidden"
+                    style={ministry.banner_url
+                      ? { backgroundImage: `url(${ministry.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                      : { background: `linear-gradient(135deg, ${color} 0%, ${color}99 100%)` }
+                    }
+                  >
+                    <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/15 blur-2xl" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-800">{t('ministriesHub', 'noMinistriesFound', 'No ministries found')}</h3>
-                  <p className="mt-1 text-sm text-gray-500">{t('ministriesHub', 'noMinistriesHint', 'Try a different search, or ask your ministry for their invite link.')}</p>
-                  <div className="mt-5 flex justify-center gap-2">
-                    {(is_ministry_Leader || isAdmin) && (
-                      <Button onClick={() => setShowCreateModal(true)}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        {t('ministriesHub', 'createMinistry', 'Create Ministry')}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              filteredMinistries.map(ministry => {
-                const isMember = !!memberships[ministry.id];
-                return (
-                  <Card key={ministry.id} className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl">
-                    {/* Banner */}
-                    <div 
-                      className="h-24 bg-gradient-to-r from-purple-600 to-indigo-600"
-                      style={ministry.banner_url ? { backgroundImage: `url(${ministry.banner_url})`, backgroundSize: 'cover' } : { backgroundColor: ministry.theme_color || '#7c3aed' }}
-                    />
-                    <CardContent className="p-4 -mt-8 relative">
-                      {/* Logo */}
-                      <div className="w-16 h-16 rounded-xl bg-white shadow-lg flex items-center justify-center mb-3 border-2 border-white">
+                  <CardContent className="p-4 -mt-5 relative">
+                    <div className="flex items-start justify-between">
+                      <div className="w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center border">
                         {ministry.logo_url ? (
-                          <img src={ministry.logo_url} alt={ministry.name} className="w-12 h-12 rounded-lg object-cover" />
+                          <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded object-cover" />
                         ) : (
-                          <Building2 className="h-8 w-8 text-purple-600" />
+                          <Building2 className="h-6 w-6 text-purple-600" />
                         )}
                       </div>
 
-                      <h3 className="font-bold text-lg mb-1">{ministry.name}</h3>
-                      <p className="text-sm text-gray-600 line-clamp-2 mb-3">{ministry.description || t('ministriesHub', 'aFaithCommunity', 'A faith community')}</p>
-
-                      <div className="flex items-center gap-3 text-sm text-gray-500 mb-4">
-                        <span className="flex items-center gap-1">
-                          <Users className="h-4 w-4" />
-                          {ministry.member_count || 0}
-                        </span>
-                        {ministry.location && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="h-4 w-4" />
-                            {ministry.location}
-                          </span>
+                      <Badge className={
+                        membership?.is_leader ? 'bg-amber-500' :
+                        membership?.role === 'admin' ? 'bg-purple-600' :
+                        membership?.subscription_level === 2 ? 'bg-blue-600' :
+                        'bg-gray-500'
+                      }>
+                        {membership?.is_leader ? (
+                          <><Crown className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleLeader', 'Leader')}</>
+                        ) : membership?.role === 'admin' ? (
+                          <><Shield className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleAdmin', 'Admin')}</>
+                        ) : membership?.subscription_level === 2 ? (
+                          t('ministriesHub', 'rolePremium', 'Premium')
+                        ) : (
+                          t('ministriesHub', 'roleMember', 'Member')
                         )}
-                        <Badge variant="secondary">{ministry.category || 'General'}</Badge>
-                      </div>
+                      </Badge>
+                    </div>
 
-                      {isMember ? (
-                        <Button 
-                          className="w-full bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl" 
-                          onClick={() => handleEnterMinistry(ministry)}
-                        >
-                          {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
-                          <ChevronRight className="h-4 w-4 ml-2" />
-                        </Button>
-                      ) : (
-                        <Button
-                          className="w-full"
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedMinistry(ministry);
-                            setShowJoinModal(true);
-                          }}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          {t('ministriesHub', 'joinMinistry', 'Join Ministry')}
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
-          </div>
-        </TabsContent>
+                    <h3 className="font-bold text-lg mt-3">{ministry.name}</h3>
+                    {ministry.description && (
+                      <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ministry.description}</p>
+                    )}
+                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-2">
+                      <Users className="h-4 w-4" />
+                      {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
+                    </p>
 
-        {/* My Ministries */}
-        <TabsContent value="my-ministries" className="space-y-4 mt-6">
-          {myMinistries.length === 0 ? (
-            <Card className="p-8 text-center">
-              <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'noMinistriesYet', 'No Ministries Yet')}</h3>
-              <p className="text-gray-500 mb-4">{t('ministriesHub', 'joinToConnect', 'Join a ministry to connect with a faith community')}</p>
-              <Button onClick={() => setActiveView('discover')}>
-                <Globe className="h-4 w-4 mr-2" />
-                {t('ministriesHub', 'discoverMinistries', 'Discover Ministries')}
-              </Button>
-            </Card>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myMinistries.map(ministry => {
-                  const membership = memberships[ministry.id];
-                  const color = ministry.theme_color || '#7c3aed';
-                  return (
-                    <Card
-                      key={ministry.id}
-                      className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl cursor-pointer"
-                      onClick={() => handleEnterMinistry(ministry)}
-                    >
-                      <div
-                        className="relative h-20 overflow-hidden"
-                        style={ministry.banner_url
-                          ? { backgroundImage: `url(${ministry.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                          : { background: `linear-gradient(135deg, ${color} 0%, ${color}99 100%)` }
-                        }
-                      >
-                        <div className="pointer-events-none absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/15 blur-2xl" />
-                      </div>
-                      <CardContent className="p-4 -mt-6 relative">
-                        <div className="flex items-start justify-between">
-                          <div className="w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center border">
-                            {ministry.logo_url ? (
-                              <img src={ministry.logo_url} alt={ministry.name} className="w-10 h-10 rounded object-cover" />
-                            ) : (
-                              <Building2 className="h-6 w-6 text-purple-600" />
-                            )}
-                          </div>
-                          <Badge className={
-                            membership?.is_leader ? 'bg-amber-500' :
-                            membership?.role === 'admin' ? 'bg-purple-600' :
-                            membership?.subscription_level === 2 ? 'bg-blue-600' :
-                            'bg-gray-500'
-                          }>
-                            {membership?.is_leader ? (
-                              <><Crown className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleLeader', 'Leader')}</>
-                            ) : membership?.role === 'admin' ? (
-                              <><Shield className="h-3 w-3 mr-1" />{t('ministriesHub', 'roleAdmin', 'Admin')}</>
-                            ) : membership?.subscription_level === 2 ? (
-                              t('ministriesHub', 'rolePremium', 'Premium')
-                            ) : (
-                              t('ministriesHub', 'roleMember', 'Member')
-                            )}
-                          </Badge>
-                        </div>
-
-                        <h3 className="font-bold text-lg mt-3">{ministry.name}</h3>
-                        {ministry.description && (
-                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ministry.description}</p>
-                        )}
-                        <p className="text-sm text-gray-500 flex items-center gap-1 mt-2">
-                          <Users className="h-4 w-4" />
-                          {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))}
-                        </p>
-
-                        <Button className="w-full mt-4 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl" size="sm">
-                          {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
-                          <ChevronRight className="h-4 w-4 ml-2" />
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </TabsContent>
-
-        {/* Manage Ministries */}
-        <TabsContent value="manage" className="space-y-4 mt-6">
-          {!is_ministry_Leader && !isAdmin ? (
-            <Card className="p-8 text-center">
-              <Crown className="h-12 w-12 mx-auto text-amber-500 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'premiumFeature', 'Premium Feature')}</h3>
-              <p className="text-gray-500 mb-4">{t('ministriesHub', 'upgradeToManage', 'Upgrade to Ministry tier to create and manage ministries')}</p>
-              <Button onClick={() => navigate('/settings/billing')}>{t('ministriesHub', 'upgradeNow', 'Upgrade Now')}</Button>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold">{t('ministriesHub', 'yourMinistries', 'Your Ministries')}</h3>
-                <Button onClick={() => setShowCreateModal(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('ministriesHub', 'createNew', 'Create New')}
-                </Button>
-              </div>
-
-              {myMinistries.filter(m => memberships[m.id]?.is_leader || m.owner_id === user?.id).length === 0 ? (
-                <Card className="p-8 text-center">
-                  <Building2 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'noMinistriesCreated', 'No Ministries Created')}</h3>
-                  <p className="text-gray-500 mb-4">{t('ministriesHub', 'createFirstMinistry', 'Create your first ministry to start building your community')}</p>
-                  <Button onClick={() => setShowCreateModal(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('ministriesHub', 'createMinistry', 'Create Ministry')}
-                  </Button>
+                    <Button className="w-full mt-4 bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl" size="sm">
+                      {t('ministriesHub', 'enterMinistry', 'Enter Ministry')}
+                      <ChevronRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  </CardContent>
                 </Card>
-              ) : (
-                <div className="space-y-4">
-                  {myMinistries
-                    .filter(m => memberships[m.id]?.is_leader || m.owner_id === user?.id)
-                    .map(ministry => (
-                      <Card key={ministry.id} className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div 
-                              className="w-12 h-12 rounded-lg flex items-center justify-center"
-                              style={{ backgroundColor: ministry.theme_color || '#7c3aed' }}
-                            >
-                              <Building2 className="h-6 w-6 text-white" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold">{ministry.name}</h4>
-                              <p className="text-sm text-gray-500">
-                                {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(ministry.member_count || 0))} • {ministry.category}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1 bg-gray-100 px-3 py-1 rounded-lg">
-                              <code className="text-sm font-mono">{ministry.invite_code}</code>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  copyInviteLink(ministry.invite_code);
-                                }}
-                              >
-                                {copiedCode === ministry.invite_code ? (
-                                  <Check className="h-3 w-3 text-green-500" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </div>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleEnterMinistry(ministry)}
-                            >
-                              {t('ministriesHub', 'manage', 'Manage')}
-                              <ChevronRight className="h-4 w-4 ml-1" />
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="mt-3 rounded-md border border-indigo-100 bg-indigo-50/70 px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-700">Join code</p>
-                          <p className="mt-1 text-xs text-slate-600">Tip: share this code with members so they can join from the Ministry space.</p>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
-              )}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+
 
       {/* Create Ministry Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
@@ -1049,7 +618,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               />
             </div>
 
-            {/* White-label web address (subdomain handle) — set from onset */}
             <div>
               <Label>{t('ministriesHub', 'webAddressLabel', 'Web Address (White Label)')}</Label>
               <div className="flex items-center gap-2 mt-1">
@@ -1076,7 +644,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               />
             </div>
 
-            {/* Ministry Logo */}
             <div>
               <Label>{t('ministriesHub', 'ministryLogoLabel', 'Ministry Logo')}</Label>
               <div className="flex items-center gap-3 mt-1">
@@ -1102,7 +669,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               </div>
             </div>
 
-            {/* Featured Image */}
             <div>
               <Label>{t('ministriesHub', 'featuredImageLabel', 'Featured Image')}</Label>
               <div className="mt-1 space-y-2">
@@ -1228,53 +794,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Join Ministry Modal — confirmation step after tapping "Join" on a
-          ministry card in Discover. Joining-by-typed-code was removed;
-          members join via a shared invite link/QR code instead. */}
-      {selectedMinistry && (
-        <Dialog open={showJoinModal} onOpenChange={setShowJoinModal}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {t('ministriesHub', 'joinX', 'Join {name}').replace('{name}', selectedMinistry.name)}
-              </DialogTitle>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div
-                className="h-24 rounded-lg"
-                style={{ backgroundColor: selectedMinistry.theme_color || '#7c3aed' }}
-              />
-              <div className="-mt-8 px-4">
-                <div className="w-16 h-16 rounded-xl bg-white shadow-lg flex items-center justify-center border-2 border-white">
-                  <Building2 className="h-8 w-8 text-purple-600" />
-                </div>
-              </div>
-              <div className="px-4">
-                <h3 className="font-bold text-xl">{selectedMinistry.name}</h3>
-                <p className="text-gray-600 mt-1">{selectedMinistry.description}</p>
-                <div className="flex items-center gap-3 mt-3 text-sm text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(selectedMinistry.member_count || 0))}
-                  </span>
-                  <Badge variant="secondary">{selectedMinistry.category}</Badge>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => { setShowJoinModal(false); setSelectedMinistry(null); }}>
-                  {t('ministriesHub', 'cancel', 'Cancel')}
-                </Button>
-                <Button onClick={() => handleJoinMinistry(selectedMinistry)} disabled={joining}>
-                  {joining ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  {t('ministriesHub', 'joinMinistry', 'Join Ministry')}
-                </Button>
-              </DialogFooter>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 };

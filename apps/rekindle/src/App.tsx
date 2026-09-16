@@ -18,6 +18,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import AdminPage from "./pages/AdminPage";
 import LandingPage from "./pages/LandingPage";
+import MetaWhatsAppCallback from "./pages/MetaWhatsAppCallback";
 import PrivacyPolicyPage from "@rekindle/features/components/PrivacyPolicyPage";
 import TermsOfServicePage from "@rekindle/features/components/TermsOfServicePage";
 import RekindleGuidePage from "@rekindle/features/components/RekindleGuidePage";
@@ -154,6 +155,7 @@ const App = () => {
                       onSignUp={() => window.location.href = '/'}
                     />
                   } />
+                  <Route path="/api/meta-whatsapp-callback" element={<MetaWhatsAppCallback />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
                 {/* Universal back-to-top — available on every route, no per-page wiring */}
