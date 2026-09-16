@@ -57,6 +57,7 @@ export interface DailyParticipantInfo {
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
   screenVideoTrack?: MediaStreamTrack;
+  screenAudioTrack?: MediaStreamTrack;
 }
 
 export interface UseDailyRoomReturn {
@@ -547,6 +548,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         videoTrack: convertedParticipant.videoTrack,
         audioTrack: convertedParticipant.audioTrack,
         screenVideoTrack: convertedParticipant.screenVideoTrack,
+        screenAudioTrack: convertedParticipant.screenAudioTrack,
       });
     });
 
@@ -1965,7 +1967,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         setIsScreenSharing(true);
         toast({
           title: 'Screen Sharing',
-          description: 'You are now sharing your screen'
+          description: 'You are now sharing your screen. Tip: to share a video\'s sound too, tick "Share tab audio" / "Share system audio" in the browser\'s share dialog.'
         });
       }
     } catch (error: any) {

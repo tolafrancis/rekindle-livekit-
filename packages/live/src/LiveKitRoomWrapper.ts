@@ -399,7 +399,14 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return false;
     try {
-      await lp.setScreenShareEnabled(true);
+      // `audio: true` is what makes the browser offer its native "Share tab
+      // audio" / "Share system audio" checkbox (Zoom-style) on the
+      // getDisplayMedia picker — omitting it (the old behavior) meant the
+      // browser never even asked, so shared video was always silent.
+      // `systemAudio: 'include'` additionally offers system-wide audio as a
+      // source (Chrome/Edge) when the user picks "Entire Screen" instead of
+      // a single tab.
+      await lp.setScreenShareEnabled(true, { audio: true, systemAudio: 'include' });
       return true;
     } catch (e) {
       this.callbacks.onError?.(e);
@@ -553,6 +560,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     const camera = this.pub(p, Track.Source.Camera);
     const mic = this.pub(p, Track.Source.Microphone);
     const screen = this.pub(p, Track.Source.ScreenShare);
+    const screenAudio = this.pub(p, Track.Source.ScreenShareAudio);
 
     let role: ParticipantRole | undefined;
     try {
@@ -562,6 +570,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     const videoTrack = camera?.track?.mediaStreamTrack;
     const audioTrack = mic?.track?.mediaStreamTrack;
     const screenVideoTrack = screen?.track?.mediaStreamTrack;
+    const screenAudioTrack = screenAudio?.track?.mediaStreamTrack;
 
     return {
       id: p.identity,
@@ -580,6 +589,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       audioTrack,
       videoTrack,
       screenVideoTrack,
+      screenAudioTrack,
       metadata: role ? { role } : undefined,
     };
   }

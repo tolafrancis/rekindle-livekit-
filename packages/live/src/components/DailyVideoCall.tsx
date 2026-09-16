@@ -926,6 +926,38 @@ const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ 
   <>{participants.filter((p) => !p.isLocal && p.audioTrack).map((p) => <RemoteAudio key={p.sessionId} participant={p} />)}</>
 );
 
+// One hidden <audio> for a remote participant's shared TAB/SCREEN audio (a
+// second, separate published track from their mic — see LiveKitRoomWrapper's
+// startScreenShare, which now requests `{ audio: true }` so a shared video's
+// sound publishes alongside its picture). Kept as its own persistent element
+// for the same reason as RemoteAudio: ScreenShareView's <video> is muted (so
+// its audio doesn't double up with this element) and can unmount/remount as
+// the layout changes, so the audio can't live inside it.
+const RemoteScreenAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
+  const ref = useRef<HTMLAudioElement>(null);
+  const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
+  useEffect(() => {
+    const track = participant.screenAudioTrack;
+    const el = ref.current;
+    if (!el || !track || track.readyState !== 'live') return;
+    el.srcObject = new MediaStream([track]);
+    registerAudioElement(el);
+    el.play().catch(() => {
+      const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
+      document.addEventListener('click', resume);
+    });
+    return () => {
+      unregisterAudioElement(el);
+      if (el) el.srcObject = null;
+    };
+  }, [participant.screenAudioTrack, registerAudioElement, unregisterAudioElement]);
+  return <audio ref={ref} autoPlay playsInline className="hidden" />;
+};
+
+const RemoteScreenAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ participants }) => (
+  <>{participants.filter((p) => !p.isLocal && p.screenAudioTrack).map((p) => <RemoteScreenAudio key={`screen-${p.sessionId}`} participant={p} />)}</>
+);
+
 
 export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   roomName,
@@ -1623,6 +1655,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     return (
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
         <RemoteAudioLayer participants={remoteParticipants} />
+        <RemoteScreenAudioLayer participants={remoteParticipants} />
         {miniFeature ? (
           // fill: the mini-player parent already fixes the frame size; without it
           // the aspect-ratio box collapses to zero width and the video goes blank.
@@ -1677,6 +1710,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
       <RemoteAudioLayer participants={remoteParticipants} />
+      {/* Shared tab/screen audio (e.g. a video the presenter is playing) — a
+          second track per participant, kept just as persistent as their mic. */}
+      <RemoteScreenAudioLayer participants={remoteParticipants} />
 
       {/* Main video area */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -2053,6 +2089,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+              title={isScreenSharing ? undefined : t('dailyVideoCall', 'shareScreenAudioHint', 'Tick "Share tab audio" / "Share system audio" in the picker to include sound')}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`

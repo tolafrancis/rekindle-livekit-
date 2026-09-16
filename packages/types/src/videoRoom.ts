@@ -23,6 +23,7 @@ export interface NormalizedParticipant {
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
   screenVideoTrack?: MediaStreamTrack;
+  screenAudioTrack?: MediaStreamTrack;
   metadata?: { role?: ParticipantRole };
 }
 
