@@ -72,7 +72,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col md:flex-row bg-white">
+    <div className="min-h-screen w-full flex flex-col md:flex-row bg-gray-50">
       {/* Mobile / Tablet Header (hidden on desktop) */}
       <div className="md:hidden bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-6 text-center">
         <div className="inline-flex items-center gap-2 mb-2">
@@ -86,7 +86,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
 
       {/* Left Panel: Form Container */}
       <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-6 sm:p-8 md:p-12 min-h-[calc(100vh-100px)] md:min-h-screen">
-        <div className="w-full max-w-md space-y-5">
+        <div className="w-full max-w-md space-y-5 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
           {/* Logo Header (Desktop only) */}
           <div className="hidden md:flex items-center gap-2.5 mb-2">
             <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md">
@@ -236,7 +236,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
 
       {/* Right Panel: Background Image + Overlay (Desktop only) */}
       <div 
-        className="hidden md:flex md:w-1/2 relative bg-cover bg-center flex-col justify-end p-12 text-white"
+        className="hidden md:flex md:w-1/2 relative bg-cover bg-center flex-col justify-end p-12 text-white overflow-hidden"
         style={{ backgroundImage: "url('/auth-bg.jpg')" }}
       >
         <div 
