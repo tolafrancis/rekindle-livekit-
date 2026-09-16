@@ -128,12 +128,29 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     this.joining = true;
     this.viewerOnly = viewerOnly;
 
+    // room.connect() has no built-in timeout: if the WebSocket handshake is
+    // silently dropped (bad/unreachable url, a proxy that swallows the
+    // upgrade) the promise never settles, the catch below never runs, and the
+    // "Connecting…" spinner spins forever with nothing to log. Racing it
+    // against a timer guarantees the catch fires either way.
+    const CONNECT_TIMEOUT_MS = 15000;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     try {
       const room = new Room({ adaptiveStream: true, dynacast: true });
       this.room = room;
       this.wireEvents(room);
 
-      await room.connect(url, token);
+      await Promise.race([
+        room.connect(url, token),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Timed out connecting to the meeting server. Check your connection and try again.')),
+            CONNECT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      clearTimeout(timeoutId);
       this.joined = true;
       this.joining = false;
 
@@ -171,7 +188,11 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       }
       return true;
     } catch (error) {
+      clearTimeout(timeoutId);
       this.joining = false;
+      // Best-effort cleanup in case room.connect() eventually resolves after
+      // we've already given up and reported the error.
+      this.room?.disconnect().catch(() => {});
       this.callbacks.onError?.(error);
       throw error;
     }

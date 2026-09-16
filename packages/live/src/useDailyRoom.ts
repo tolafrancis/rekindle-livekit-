@@ -578,16 +578,31 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // §1F — LiveKit collapses get-or-create + generate-token into ONE locally-signed
       // JWT. Role is derived server-side (the client `isHost` is NOT trusted).
       if (isLiveKitBackend()) {
-        const { data, error } = await supabase.functions.invoke('livekit-token', {
-          body: {
-            action: 'token',
-            roomName: options.roomName,
-            userName: options.userName,
-            viewerOnly: options.viewerOnlyMode && !options.isHost,
-            enableWaitingRoom: options.enableWaitingRoom || false,
-            context: roleContext(),
-          },
-        });
+        // The edge function has its own hang risks (e.g. an unreachable
+        // LIVEKIT_URL stalling a server-side fetch with no timeout) and
+        // supabase-js's fetch has no default timeout either, so an invoke()
+        // that never settles would leave this catch block — and the
+        // "Connecting…" spinner — waiting forever. Race it against a timer
+        // so a stuck edge function always surfaces as an error.
+        const TOKEN_FETCH_TIMEOUT_MS = 15000;
+        const { data, error } = await Promise.race([
+          supabase.functions.invoke('livekit-token', {
+            body: {
+              action: 'token',
+              roomName: options.roomName,
+              userName: options.userName,
+              viewerOnly: options.viewerOnlyMode && !options.isHost,
+              enableWaitingRoom: options.enableWaitingRoom || false,
+              context: roleContext(),
+            },
+          }),
+          new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error('Timed out reaching the meeting server. Check your connection and try again.')),
+              TOKEN_FETCH_TIMEOUT_MS,
+            );
+          }),
+        ]);
         if (error) throw new Error(error.message || 'Failed to get LiveKit token');
         if (data?.waiting) {
           // Gated into the waiting room (§1C). Phase 3D wires the admit round-trip.
