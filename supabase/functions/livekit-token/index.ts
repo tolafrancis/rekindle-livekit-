@@ -345,11 +345,26 @@ serve(async (req) => {
       // admitted → continue to mint the token below.
     }
 
+    // Display picture (shown in place of the initial-letter avatar when a
+    // participant's camera is off) — looked up once here at join time and
+    // carried in LiveKit metadata (same channel role/guest already ride), so
+    // every other participant's tile reads it off p.metadata for free instead
+    // of each tile doing its own profile lookup. Guests have no profile row.
+    let avatarUrl: string | undefined;
+    if (!isGuest) {
+      const { data: prof } = await admin
+        .from('user_profiles')
+        .select('avatar_url')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      avatarUrl = (prof as { avatar_url?: string } | null)?.avatar_url || undefined;
+    }
+
     // Mint the JWT.
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity,
       name: body.userName ?? user?.email ?? 'Guest',
-      metadata: JSON.stringify({ role, guest: isGuest }),
+      metadata: JSON.stringify({ role, guest: isGuest, avatarUrl }),
       ttl: '2h',
     });
     at.addGrant(grantFor(role, body.roomName));

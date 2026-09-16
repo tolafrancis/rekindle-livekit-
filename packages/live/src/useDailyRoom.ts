@@ -58,6 +58,7 @@ export interface DailyParticipantInfo {
   videoTrack?: MediaStreamTrack;
   screenVideoTrack?: MediaStreamTrack;
   screenAudioTrack?: MediaStreamTrack;
+  avatarUrl?: string;
 }
 
 export interface UseDailyRoomReturn {

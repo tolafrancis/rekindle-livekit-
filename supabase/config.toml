@@ -141,12 +141,12 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 # WhatsApp Business connection (MinistryWhatsAppConnect.tsx). Split out of a
 # combined router file that was only ever partially deployed — see each
-# function's own header comment. All four require a real signed-in ministry
+# function's own header comment. All five require a real signed-in ministry
 # admin (checked via is_group_admin inside the function, same pattern as
-# ministry-checkout), so gateway JWT verification stays on, unlike the older
-# sibling whatsapp-save-credentials (deployed outside this config, found with
-# verify_jwt off and no in-function authorization check at all — a known gap,
-# not fixed here since it's out of scope for this deploy).
+# ministry-checkout), so gateway JWT verification stays on. whatsapp-save-
+# credentials was the last holdout of this group still deployed outside this
+# config with verify_jwt off and no in-function authorization check at all —
+# now mirrored here with the same admin check as its siblings.
 # ---------------------------------------------------------------------------
 [functions.create-whatsapp-subscription]
 enabled = true
@@ -157,6 +157,10 @@ enabled = true
 verify_jwt = true
 
 [functions.whatsapp-verify-connection]
+enabled = true
+verify_jwt = true
+
+[functions.whatsapp-save-credentials]
 enabled = true
 verify_jwt = true
 
@@ -180,6 +184,32 @@ enabled = true
 # with a real check: a full ministry admin can broadcast any way; a
 # small-group leader can only target their own group.
 verify_jwt = true
+
+[functions.whatsapp-webhook]
+enabled = true
+# Meta's Cloud API webhook for a ministry's connected WhatsApp Business
+# Account (inbound messages -> Evangelism Inbox). Like livekit-webhook, Meta
+# signs these requests itself (X-Hub-Signature-256), not with a Supabase
+# JWT, so gateway JWT verification must be off. Was previously deployed
+# outside this repo's tracked layout with a POST handler that logged the
+# body and did nothing else — every real inbound message was silently
+# discarded. Mirrored here with an actual fix; see the function's own
+# header comment for the ministry-resolution and signature-verification
+# details, including the known gap for ministries on their own separate
+# Meta app (manual "Enter Credentials Manually" path) rather than
+# Embedded Signup.
+verify_jwt = false
+
+[functions.evangelism-inbox-webhook]
+enabled = true
+# Inbound messages for the other three Evangelism Inbox channels
+# (Messenger, Instagram, Twilio-relayed WhatsApp) — same situation as
+# whatsapp-webhook above: complete, working logic that lived outside
+# supabase/functions/ and so was never actually deployed. Meta/Twilio sign
+# these requests themselves, not with a Supabase JWT, so gateway JWT
+# verification is off, same reasoning as whatsapp-webhook and
+# livekit-webhook.
+verify_jwt = false
 
 [functions.developer-api-keys]
 enabled = true

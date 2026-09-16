@@ -210,7 +210,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
         <div className="space-y-2">
           <Label htmlFor="slug">{t('ministryRegistrationSettings', 'joinLinkAddress', 'Join link address')}</Label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400 whitespace-nowrap">/join/</span>
+            <span className="text-sm text-gray-400 whitespace-nowrap">{typeof window !== 'undefined' ? window.location.origin : ''}/join/</span>
             <Input
               id="slug"
               value={slug}
@@ -281,7 +281,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
                     <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">v{qrVersion}</span>
                   </div>
                   <p className="mt-2 text-xs text-slate-600">
-                    Tip: share this code with members so they can join from the Ministry space using the Join by Code option.
+                    {t('ministryRegistrationSettings', 'codeTip', 'Tip: share the QR code or join link above with members so they can join your ministry directly.')}
                   </p>
                 </div>
               )}

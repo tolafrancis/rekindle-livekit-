@@ -24,6 +24,10 @@ export interface NormalizedParticipant {
   videoTrack?: MediaStreamTrack;
   screenVideoTrack?: MediaStreamTrack;
   screenAudioTrack?: MediaStreamTrack;
+  /** Profile display picture, shown in place of the initial-letter avatar
+   *  when this participant's camera is off. Undefined for guests / users
+   *  with no photo uploaded. */
+  avatarUrl?: string;
   metadata?: { role?: ParticipantRole };
 }
 

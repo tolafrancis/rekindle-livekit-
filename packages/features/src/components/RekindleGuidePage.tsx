@@ -55,7 +55,7 @@ const TOC_ITEMS: Array<[string, string]> = [
   ['welcome', 'Welcome to Rekindle'],
   ['why', 'Why Rekindle fits a ministry'],
   ['devotionals', 'Daily Devotionals'],
-  ['prayer', 'Prayer Rooms & Prayer Library'],
+  ['prayer', 'Prayer Wall & Prayer Library'],
   ['live-channels', 'Live Channels'],
   ['video', 'Video Conferencing & Webinars'],
   ['crm', 'Ministry Management (CRM)'],
@@ -182,8 +182,8 @@ const RekindleGuidePage: React.FC = () => {
             id="devotionals" eyebrow="Feature" title="Daily Devotionals"
             what="A beautiful daily devotional reader. Your ministry can publish its own devotionals — each with a teaching, a Scripture passage and a second Bible passage — and members read them in a gentle, slide-by-slide experience that scrolls hands-free for longer readings and closes in guided prayer."
             how={[
-              'A leader opens the devotional creator, writes the title and message, and adds the Scripture and Bible passages — tapping "Load" pulls in the verse text automatically in your chosen Bible version.',
-              'Members open Devotionals, choose their source (the daily devotional or "My Ministry"), and read.',
+              'Leaders: from the main navigation, tap Ministries, open Manage, then go to Settings → Content — the devotional creator is there. Write the title and message, add the Scripture and Bible passages, and tap "Load" to pull in the verse text automatically in your chosen Bible version.',
+              'Members: from the main navigation, tap The Word, then Devotionals — choose the source (the daily devotional or "My Ministry") and read.',
             ]}
             cases={[
               'A daily word for the whole congregation between Sundays.',
@@ -193,15 +193,15 @@ const RekindleGuidePage: React.FC = () => {
           />
 
           <FeatureSection
-            id="prayer" eyebrow="Feature" title="Prayer Rooms & Prayer Library"
-            what="Live prayer rooms let members gather to pray together in real time, wherever they are. The Prayer Library offers guided prayer topics and declarations to pray through, and members can build a habit with Scripture memory and a personal prayer journal."
+            id="prayer" eyebrow="Feature" title="Prayer Wall & Prayer Library"
+            what="The Prayer Wall lets members share prayer requests and stand with one another — wherever they are. The Prayer Library offers guided prayer topics and declarations to pray through, and members can build a habit with Scripture memory and a personal prayer journal."
             how={[
-              'Open Prayer and join a live room to pray together by voice and video.',
-              'Use the Prayer Library to pray through guided topics, or set a verse to memorise.',
+              'From the main navigation, tap Prayer, then Prayer Wall to post a request or pray for others.',
+              'Still under Prayer, open Prayer Library to pray through guided topics, or Journal to set a verse to memorise and keep a personal prayer journal.',
             ]}
             cases={[
-              'Early-morning or midweek prayer meetings without anyone leaving home.',
-              'Intercession teams praying together across cities — ideal for a national or diaspora network.',
+              'Sharing a need and inviting the whole ministry to pray, any time of day.',
+              'Intercession — standing with requests from across the congregation, even a national or diaspora network.',
               'Personal devotion — a quiet place to pray, journal and memorise Scripture.',
             ]}
           />
@@ -210,7 +210,8 @@ const RekindleGuidePage: React.FC = () => {
             id="live-channels" eyebrow="Feature" title="Live Channels — broadcasting your services"
             what="Live Channels is your ministry’s broadcasting home. Go live to your congregation straight from a phone or computer camera, or stream a polished production from professional software (OBS or any encoder). Your audience watches a smooth, one-to-many livestream — so a service can reach an unlimited number of viewers, and past broadcasts are saved automatically for catch-up."
             how={[
-              'Open Live Channels and tap Go Live to broadcast from your camera, or use Broadcast setup (OBS / encoder) for a studio-quality stream.',
+              'Members: from the main navigation, tap Live Broadcast, then Discover to find live and past broadcasts, or My Channels to watch your ministry’s stream.',
+              'Leaders: open Live Broadcast and tap Go Live to broadcast from your camera, or use Broadcast setup (OBS / encoder) for a studio-quality stream.',
               'Share the channel link; members open it and watch live — no sign-in barrier to viewing.',
               'After the service, the recording is available to re-watch.',
             ]}
@@ -225,6 +226,7 @@ const RekindleGuidePage: React.FC = () => {
             id="video" eyebrow="Feature" title="Video Conferencing & Webinars"
             what="Face-to-face video meetings for teams and groups, plus a webinar mode for larger gatherings where a host (and invited speakers) present while the audience watches and interacts — raising a hand to be invited up, sending live reactions and joining the chat."
             how={[
+              'From the main navigation, tap Live Broadcast, then the Meetings tab.',
               'Create a meeting for a leadership team, small group or class.',
               'For a larger event, switch on webinar mode so the audience watches a presentation and interacts without crowding the call.',
             ]}
@@ -239,8 +241,8 @@ const RekindleGuidePage: React.FC = () => {
             id="crm" eyebrow="Feature" title="Ministry Management (CRM) — Members & Ministries"
             what="A proper ministry management system. Organise your ministry into groups, keep rich member records, assign leaders and roles, and see at a glance how your congregation is growing — total members, who is active, who is new this month, and attendance over time."
             how={[
-              'Create your ministries and invite or add members.',
-              'Open the Members list to view everyone — including those who registered themselves — with roles, status and attendance.',
+              'From the main navigation, tap Ministries, then Manage to open your ministry’s dashboard, and create your ministries and invite or add members.',
+              'Go to Settings → People to open the Members list and view everyone — including those who registered themselves — with roles, status and attendance.',
               'Assign roles (Leader, Admin, Content editor, Member), and import or export your membership as a spreadsheet at any time.',
             ]}
             cases={[
@@ -254,9 +256,9 @@ const RekindleGuidePage: React.FC = () => {
             id="qr" eyebrow="Feature" title="QR Self-Registration"
             what="A printed QR code that lets new people register themselves in seconds. They scan, fill in a short form — including the consent choices your ministry needs — and they are added to your records, ready for you to welcome and follow up."
             how={[
-              'Generate your ministry’s QR code and display or print it for services and events.',
+              'In your ministry’s dashboard (Ministries → Manage), go to Settings → General to find your QR Self-Registration code — generate it and display or print it for services and events.',
               'Newcomers scan it and complete the short registration form on their own phone.',
-              'Leaders review new sign-ups in the approval queue, where likely duplicates are flagged automatically, and approve them into the membership.',
+              'Leaders review new sign-ups in Settings → People, where likely duplicates are flagged automatically, and approve them into the membership.',
             ]}
             cases={[
               'A welcome desk for first-time visitors.',
@@ -269,8 +271,8 @@ const RekindleGuidePage: React.FC = () => {
             id="kiosk" eyebrow="Feature" title="Kiosk Check-in"
             what="Turn a tablet at your entrance into a self-service welcome desk. As people arrive, regulars check themselves in with their phone number or email — and their attendance is recorded automatically — while first-time visitors register on the spot. No volunteer with a clipboard, no data to type up afterwards: it all flows straight into your ministry records."
             how={[
-              'In your ministry’s settings, set a short kiosk PIN and enable kiosk mode.',
-              'On the tablet you want to use, tap Activate this device — it opens the full-screen kiosk.',
+              'In your ministry’s dashboard (Ministries → Manage), go to Settings → General to set a short kiosk PIN and enable kiosk mode.',
+              'On the tablet you want to use, open your ministry’s kiosk link and tap Activate this device — it opens the full-screen kiosk.',
               'At the door, members tap to check in (recording their attendance) or register if they are new.',
               'The kiosk clears each person’s details before the next, and can only be closed with your PIN — so it is safe to leave unattended.',
             ]}
@@ -286,7 +288,7 @@ const RekindleGuidePage: React.FC = () => {
             id="inbox" eyebrow="Feature" title="Multi-Channel Evangelism Inbox"
             what="Every message your ministry receives across WhatsApp, Facebook Messenger and Instagram, gathered into one inbox. Your team can respond from a single place, and conversations that need spiritual care can be passed to a counsellor for follow-up — so no seeker slips through the cracks."
             how={[
-              'Connect your ministry’s messaging channels.',
+              'In your ministry’s dashboard (Ministries → Manage), go to Settings → Engagement to find the Evangelism Inbox and connect your ministry’s messaging channels.',
               'Respond to incoming messages from one shared inbox.',
               'Escalate significant conversations to a designated counsellor.',
             ]}
@@ -302,7 +304,8 @@ const RekindleGuidePage: React.FC = () => {
             what="Rekindle lets your members give easily — one-off or regularly — with secure card payments. For UK ministries, Gift Aid is built in: members add a Gift Aid declaration when they give, and the app keeps track of which gifts are eligible."
             note="In communication with HMRC. We are in active communication with HM Revenue & Customs and are completing HMRC’s Charities Online software-recognition process. Once recognition is in place, your ministry will be able to prepare and submit Gift Aid (R68) claims to HMRC directly from within Rekindle — no spreadsheets and no separate Government Gateway portal to wrestle with. Currently, you can extract manually and submit."
             how={[
-              'Members add a Gift Aid declaration as they give; the app stores it with their consent.',
+              'Members: tap your profile icon in the top right, then Donate (Give) from the Account menu — add a Gift Aid declaration as you give, and the app stores it with your consent.',
+              'Leaders: in your ministry’s dashboard (Ministries → Manage), go to Settings → Finance & Billing to connect a payment provider and manage Gift Aid.',
               'Rekindle works out which donations are eligible and assembles the claim for you.',
               'Before anything is sent, the claim is checked against HMRC’s rules so errors are caught early.',
               'With one step, the claim is submitted to HMRC from inside the app, and its progress is tracked.',
@@ -317,6 +320,10 @@ const RekindleGuidePage: React.FC = () => {
           <FeatureSection
             id="notifications" eyebrow="Feature" title="Notifications & Consent"
             what="Keep your ministry informed with notifications members actually want — and only those they have agreed to. Every member controls which messages they receive, and their consent is recorded, in keeping with UK data-protection expectations."
+            how={[
+              'Tap your profile icon in the top right, then Profile to open Settings.',
+              'Go to the Notifications group to choose what you receive — In-app & Email, Push, WhatsApp, and Daily Reminders — each with its own toggle.',
+            ]}
             cases={[
               'Reminders for services, prayer meetings and events.',
               'Letting members know when the ministry is live.',
@@ -327,6 +334,10 @@ const RekindleGuidePage: React.FC = () => {
           <FeatureSection
             id="discipleship" eyebrow="Feature" title="Discipleship Tools"
             what="Beyond Sundays, Rekindle helps members grow: a Scripture memory tool, reading plans to journey through the Bible, and a space to record and share what God is saying."
+            how={[
+              'From the main navigation, tap The Word, then Reading Plan, Scripture Memory or Books.',
+              'To share what God is saying, tap Community, then Revelations.',
+            ]}
             cases={[
               'Encouraging daily time in the Word with reading plans.',
               'Helping members hide Scripture in their hearts.',
@@ -338,8 +349,8 @@ const RekindleGuidePage: React.FC = () => {
             id="small-groups" eyebrow="Feature" title="Small Groups"
             what="Small Groups brings your home groups, cell groups and Bible-study circles into Rekindle. Ministries create and organise their small groups, members discover and join the ones that fit them, and each group gets its own space to meet, discuss and grow together between Sundays."
             how={[
-              'A leader creates a small group — its name, description and meeting rhythm — and assigns coordinators to help run it.',
-              'Members browse and discover the small groups open to them, and request to join the one that fits.',
+              'Leaders: from your ministry’s dashboard (Ministries → Manage), open Small Groups to create a group — its name, description and meeting rhythm — and assign coordinators to help run it.',
+              'Members: from the main navigation, tap Small Groups, then Discover to browse and request to join the one that fits — or My Groups to see the ones you’re already in.',
               'Group leaders review and approve join requests; the member is notified the moment they’re in.',
               'Inside the group, leaders schedule meetings and post updates, and members discuss together — everyone active in the group is notified whenever a new meeting is set.',
               'A “Share to WhatsApp” button lets a member paste a ready-made invite straight into a WhatsApp group chat the ministry already uses — anyone who taps it joins the ministry (if they’re new) and lands directly inside that small group, no separate signup step.',
@@ -365,9 +376,11 @@ const RekindleGuidePage: React.FC = () => {
               'Register the ministry’s real phone number under WhatsApp → API Setup → Add phone number. It can’t already be active on regular WhatsApp or WhatsApp Business — Meta verifies it by SMS or a voice call. The Business Display Name entered here is permanent: it’s exactly what every recipient sees as the sender, so use the ministry’s real name.',
               'Generate a permanent access token: in Business Settings → Users → System Users, add a system user with Admin access to the WhatsApp Business Account, then generate a token for it with the whatsapp_business_messaging and whatsapp_business_management permissions and no expiry. Copy it immediately — Meta only shows it once.',
               'Start Business Verification under Business Settings → Security Center. This is a manual review by Meta that can take a few days, and is required before the account can message beyond a handful of test numbers.',
-              'Add a payment method to the WABA itself, separate from Rekindle’s own billing — Meta charges the ministry directly for conversation costs once its free tier is used up. The “Configure Webhooks” step in Meta’s checklist can be skipped entirely; Rekindle’s broadcast tool is send-only and doesn’t need it.',
-              'Back in Rekindle, open Connect WhatsApp and choose a plan to unlock the connection screen.',
-              'On the Connection tab, choose Enter Credentials Manually and paste in the WABA ID, Phone Number ID, the verified phone number, the Business Display Name, and the permanent access token gathered above.',
+              'Add a payment method to the WABA itself, separate from Rekindle’s own billing — Meta charges the ministry directly for conversation costs once its free tier is used up.',
+              'On the app’s WhatsApp → Configuration page, set up the webhook so replies people send you actually reach your Evangelism Inbox: Callback URL is https://vpnpembyqbbaaiynfvli.supabase.co/functions/v1/whatsapp-webhook, and Verify Token is a value Rekindle gives you (ask your contact for it — it isn’t something you choose yourself, since it has to match what’s configured on Rekindle’s side). After it verifies, subscribe the webhook to the “messages” field.',
+              'While you’re in that app, copy the App Secret from Settings → Basic (click “Show” and confirm your password) — this is what lets Rekindle confirm an incoming message genuinely came from your WhatsApp Business Account, not just anyone who found your webhook URL.',
+              'Back in Rekindle, from your ministry’s dashboard (Ministries → Manage), go to Settings → Engagement and open Connect WhatsApp, then choose a plan to unlock the connection screen.',
+              'On the Connection tab, choose Enter Credentials Manually and paste in the WABA ID, Phone Number ID, the verified phone number, the Business Display Name, the permanent access token, and the App Secret gathered above (App Secret is optional — without it your Evangelism Inbox still works, just unverified).',
               'Save Credentials, then click Verify — Rekindle confirms the phone number and token directly with Meta and marks the connection Connected once it succeeds.',
               'Once connected, pick an approved message template under Settings → Small Group Notifications (WhatsApp requires one for any message a business sends first), and members can subscribe to ministry-wide WhatsApp updates from their own ministry space.',
             ]}
@@ -375,20 +388,20 @@ const RekindleGuidePage: React.FC = () => {
           />
 
           <FeatureSection
-            id="pastoral" eyebrow="Feature" title="Pastoral Messages"
-            what="Pastoral Messages gives your pastor or senior leader a dedicated, direct channel to speak into the lives of every member — beyond Sunday. A pastoral message is a personal word: text, an audio clip, or a short video, sent straight to the congregation and delivered as a notification to every member’s phone. Unlike Announcements (which are ministry-wide notices) or the Evangelism Inbox (inbound messages from seekers), a Pastoral Message is a one-to-many word of care, encouragement, direction, or prayer — from shepherd to flock."
+            id="pastoral" eyebrow="Feature" title="Pastoral Messages (Video Messages)"
+            what="Pastoral Messages gives your pastor or senior leader a dedicated, direct channel to speak into the lives of every member — beyond Sunday. A pastoral message is a short video, recorded on the spot or uploaded, sent straight to the congregation and delivered as a notification to every member’s phone. In the app itself this feature is labelled Video Messages. Unlike Announcements (which are ministry-wide notices) or the Evangelism Inbox (inbound messages from seekers), a Pastoral Message is a one-to-many word of care, encouragement, direction, or prayer — from shepherd to flock."
             how={[
-              'The pastor opens Pastoral Messages from the ministry dashboard and taps Compose.',
-              'Write the message, add an optional audio or video clip, and save as draft or publish immediately.',
-              'On publish, every member of the ministry receives a push notification and the message appears pinned at the top of their feed.',
-              'Past messages are stored in a searchable archive — a record of pastoral leadership over time.',
+              'From your ministry’s dashboard (Ministries → Manage), go to Settings → Content, then tap New Video Message.',
+              'Record on the spot or upload a video, add a title, speaker and category, and save as a draft or publish immediately (or schedule it).',
+              'On publish, every member of the ministry receives a push notification, and the message can be pinned to the top of the list.',
+              'Past messages are stored in a searchable, filterable archive — a record of pastoral leadership over time.',
             ]}
             cases={[
               'A midweek word of encouragement or prophetic declaration to the whole ministry.',
               'Urgent pastoral care — reaching every member instantly in a crisis or time of need.',
               'Post-service follow-up from Sunday’s sermon, with a personal reflection or prayer point.',
               'Seasonal messages — Christmas, Easter, fasting seasons, and special occasions.',
-              'A voice note or short video from the pastor while travelling or on mission.',
+              'A short video from the pastor while travelling or on mission.',
             ]}
             note="Every Pastoral Message is logged with a date and time stamp, creating an ongoing record of the spiritual care and direction given to the congregation — useful for accountability, handover, and heritage."
           />
@@ -400,10 +413,13 @@ const RekindleGuidePage: React.FC = () => {
             <p>Rekindle’s Live Translation brings the power of real-time AI translation directly into your broadcasts and video meetings — so every member can hear and read your service in their own language, without any delay or separate interpreter. Rekindle Live Translation (RLT) listens to a speaker in one language and delivers the translation as live audio and live text to anyone who needs it — whether they are sitting in the same room, joining a meeting online, or watching a broadcast from home.</p>
             <p className="kicker">Broadcast Translation</p>
             <p>As your pastor or speaker preaches live, Rekindle transcribes the audio in real time and displays a rolling translated subtitle at the bottom of the viewer’s screen. Viewers choose their preferred language from a list before or during the stream. Translations are powered by AI and rendered instantly — no human interpreter required.</p>
+            <p><em>To use it:</em> from the main navigation, tap Live Broadcast and open a live stream — the language/subtitle picker is on the viewer screen.</p>
             <p className="kicker">Meeting Translation</p>
             <p>During video conferencing and webinars, each participant can enable live captions in their chosen language. When someone speaks, their words appear as translated captions for every other participant who has enabled a different language — enabling truly multilingual leadership meetings, Bible studies, Bible College School of Disciples and prayer sessions.</p>
+            <p><em>To use it:</em> inside a video meeting (Live Broadcast → Meetings), tap the Translate/captions button in the call controls and choose your language.</p>
             <p className="kicker">Edge Agent (in-venue hardware, premium add-on)</p>
             <p>An <strong>edge agent</strong> is a small piece of software installed on a dedicated computer at your venue and wired directly into your sound mixer. It runs the same live transcription and translation as Broadcast and Meeting Translation, but delivers the translated audio as its own feed through your venue's sound system — a dedicated language channel a congregant can listen to on the spot — alongside the same translated text everyone can follow on their own phone. It's the physical, in-room counterpart to Rekindle's cloud-based translation: built for ministries that want translated audio available through their existing PA setup, not only on-screen.</p>
+            <p><em>Leader setup:</em> from your ministry's dashboard (Ministries → Manage), tap Live, then Live Translation.</p>
           </section>
 
           <section id="where" className="guide-section">
@@ -412,7 +428,7 @@ const RekindleGuidePage: React.FC = () => {
             <p>Rekindle is designed to be woven through the whole life of your ministry:</p>
             <ul className="cases">
               <li><strong>Sunday services</strong> — broadcast the service on Live Channels and check members in at the door with the kiosk.</li>
-              <li><strong>Midweek</strong> — gather for prayer in a live room, send out the daily devotional, run a Bible study by video.</li>
+              <li><strong>Midweek</strong> — share requests on the Prayer Wall, send out the daily devotional, run a Bible study by video.</li>
               <li><strong>Welcome &amp; follow-up</strong> — register newcomers by QR, care for them, and keep their details safely on file.</li>
               <li><strong>Outreach</strong> — meet seekers in the evangelism inbox and lead them toward a counsellor and a community.</li>
               <li><strong>Giving</strong> — receive tithes and offerings online and reclaim Gift Aid.</li>

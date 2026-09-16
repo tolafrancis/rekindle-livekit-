@@ -584,8 +584,11 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     const screenAudio = this.pub(p, Track.Source.ScreenShareAudio);
 
     let role: ParticipantRole | undefined;
+    let avatarUrl: string | undefined;
     try {
-      role = p.metadata ? (JSON.parse(p.metadata).role as ParticipantRole) : undefined;
+      const meta = p.metadata ? JSON.parse(p.metadata) : undefined;
+      role = meta?.role as ParticipantRole | undefined;
+      avatarUrl = meta?.avatarUrl as string | undefined;
     } catch { /* metadata not JSON */ }
 
     const videoTrack = camera?.track?.mediaStreamTrack;
@@ -611,6 +614,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       videoTrack,
       screenVideoTrack,
       screenAudioTrack,
+      avatarUrl,
       metadata: role ? { role } : undefined,
     };
   }

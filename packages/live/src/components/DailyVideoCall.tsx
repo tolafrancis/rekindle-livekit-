@@ -687,6 +687,11 @@ const ParticipantVideo: React.FC<{
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasJoined, setHasJoined] = useState(false);
   const [videoAttached, setVideoAttached] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  // A stale/broken uploaded photo shouldn't leave a blank hole forever — fall
+  // back to the initial-letter circle. Reset if the URL itself changes (e.g.
+  // the user re-uploads mid-call), so a fixed one isn't stuck hidden.
+  useEffect(() => { setAvatarError(false); }, [participant.avatarUrl]);
 
   // Attach video track - with retry logic for tracks that aren't immediately ready
   useEffect(() => {
@@ -802,13 +807,24 @@ const ParticipantVideo: React.FC<{
         className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
       />
       
-      {/* Avatar fallback when no video */}
+      {/* Avatar fallback when no video — a real uploaded photo (participant.avatarUrl,
+          carried in LiveKit metadata since join) takes priority over the initial-letter
+          circle, which stays as the fallback for guests / anyone without a photo. */}
       {!showVideo && (
         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-700">
           <div className="text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-white/20 flex items-center justify-center text-white text-2xl font-bold mb-2">
-              {participant.userName.charAt(0).toUpperCase()}
-            </div>
+            {participant.avatarUrl && !avatarError ? (
+              <img
+                src={participant.avatarUrl}
+                alt=""
+                className="w-16 h-16 mx-auto rounded-full object-cover mb-2 ring-2 ring-white/30"
+                onError={() => setAvatarError(true)}
+              />
+            ) : (
+              <div className="w-16 h-16 mx-auto rounded-full bg-white/20 flex items-center justify-center text-white text-2xl font-bold mb-2">
+                {participant.userName.charAt(0).toUpperCase()}
+              </div>
+            )}
             <p className="text-white text-sm">{participant.userName}</p>
           </div>
         </div>
@@ -1880,9 +1896,18 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             {/* Avatar fallback when camera is off */}
             {!isCameraOn && (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-700">
-                <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-sm sm:text-xl font-bold">
-                  {userName.charAt(0).toUpperCase()}
-                </div>
+                {localParticipant?.avatarUrl ? (
+                  <img
+                    src={localParticipant.avatarUrl}
+                    alt=""
+                    className="w-8 h-8 sm:w-12 sm:h-12 rounded-full object-cover ring-2 ring-white/30"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-sm sm:text-xl font-bold">
+                    {userName.charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
             )}
             <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between">
