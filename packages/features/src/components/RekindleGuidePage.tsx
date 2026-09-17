@@ -54,6 +54,7 @@ const FeatureSection: React.FC<FeatureSectionProps> = ({ id, eyebrow, title, wha
 const TOC_ITEMS: Array<[string, string]> = [
   ['welcome', 'Welcome to Rekindle'],
   ['why', 'Why Rekindle fits a ministry'],
+  ['creating-ministry', 'Creating Your Ministry'],
   ['devotionals', 'Daily Devotionals'],
   ['prayer', 'Prayer Wall & Prayer Library'],
   ['live-channels', 'Live Channels'],
@@ -177,6 +178,24 @@ const RekindleGuidePage: React.FC = () => {
               <li>Leaders: create your ministry space and invite your team.</li>
             </ol>
           </section>
+
+          <FeatureSection
+            id="creating-ministry" eyebrow="Setup Guide" title="Creating Your Ministry"
+            what="A ministry is your church or organisation's own space inside Rekindle — its own subdomain (e.g. grace.rekindlebc.com), branding, members and everything covered in the rest of this guide. Creating one isn't available on the free plan: you need to be a Ministry Partner (a paid tier) or a platform admin. Becoming a Partner is a personal account upgrade, separate from any one ministry's own settings."
+            how={[
+              'Become a Ministry Partner first: tap your profile icon, then Billing (or go directly to Settings → Billing), and choose "Partner Your Ministry" to subscribe. Until this is active, the Create Ministry button won’t appear anywhere in the app.',
+              'From the main navigation, tap Ministries — a Create Ministry button now appears at the top of the page.',
+              'Fill in the form: Ministry Name, Web Address (this becomes your subdomain — you can connect your own custom domain later), Description, a Logo and Featured Image, Category and Location, and Country (choosing United Kingdom is what unlocks Gift Aid later).',
+              'Add a Welcome Message for new members and pick a Theme Colour for your ministry’s branding.',
+              'Choose your Join Method: Open (anyone can join immediately), Approval Required, or Invite Only.',
+              'Tap Create Ministry. You land in your new ministry’s dashboard as its leader, ready to invite your team and set up devotionals, giving, QR self-registration and everything else in this guide.',
+            ]}
+            cases={[
+              'A church planting its first digital presence.',
+              'A ministry network creating a dedicated space for a new campus, chapter or language group.',
+            ]}
+            note="Country matters beyond display: it drives region-specific features like UK Gift Aid, so choose carefully — it isn't just a label."
+          />
 
           <FeatureSection
             id="devotionals" eyebrow="Feature" title="Daily Devotionals"
