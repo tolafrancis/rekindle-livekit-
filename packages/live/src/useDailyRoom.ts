@@ -1985,6 +1985,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           title: 'Screen Sharing',
           description: 'You are now sharing your screen. Tip: to share a video\'s sound too, tick "Share tab audio" / "Share system audio" in the browser\'s share dialog.'
         });
+      } else {
+        // The wrapper reports failures (unsupported browser, permission denied, etc.)
+        // via its onError callback rather than throwing, so this branch — not the
+        // catch below — is the normal path for a failed screen share attempt.
+        toast({
+          title: 'Screen Share Error',
+          description: 'Could not start screen sharing',
+          variant: 'destructive'
+        });
       }
     } catch (error: any) {
       console.error('[Daily] Failed to start screen share:', error);
