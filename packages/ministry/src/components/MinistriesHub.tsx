@@ -19,7 +19,7 @@ import {
   Plus, Users, Crown, Shield,
   Loader2, ChevronRight, Building2,
   Heart, Upload, Image as ImageIcon,
-  Sparkles
+  Sparkles, ScrollText
 } from 'lucide-react';
 import MinistrySpace from './MinistrySpace';
 import { peekDeepLink } from '@rekindle/features/deepLink';
@@ -498,8 +498,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             <p className="text-sm italic text-white/90">{welcomeVerse}</p>
           </div>
 
-          {(is_ministry_Leader || isAdmin) && (
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            {(is_ministry_Leader || isAdmin) && (
               <Button
                 variant="outline"
                 className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
@@ -508,8 +508,16 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
                 <Plus className="h-4 w-4 mr-2" />
                 {t('ministriesHub', 'createMinistry', 'Create Ministry')}
               </Button>
-            </div>
-          )}
+            )}
+            <Button
+              variant="outline"
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              onClick={() => navigate('/guide')}
+            >
+              <ScrollText className="h-4 w-4 mr-2" />
+              {t('ministriesHub', 'rekindleGuide', 'The Rekindle Guide')}
+            </Button>
+          </div>
 
           <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-1.5 text-sm text-white/85">
             <span className="flex items-center gap-1.5">
