@@ -5,7 +5,12 @@
 // check as ministry-checkout).
 //
 // Requests (POST):
-//   { action:'start',   ministryId, returnUrl } -> { url }   (redirect admin to Stripe)
+//   { action:'start',   ministryId, returnUrl, country } -> { url }   (redirect admin to Stripe;
+//                                                                      country is a 2-letter ISO
+//                                                                      code, must match the
+//                                                                      ministry's real bank
+//                                                                      account's country — Stripe
+//                                                                      locks it in permanently)
 //   { action:'refresh', ministryId, returnUrl } -> { url }   (stale/expired Account Link)
 //   { action:'status',  ministryId }             -> { connected, chargesEnabled,
 //                                                      payoutsEnabled, detailsSubmitted,
@@ -69,7 +74,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { action, ministryId, returnUrl } = await req.json();
+    const { action, ministryId, returnUrl, country } = await req.json();
     if (!action || !ministryId) return json({ error: 'action and ministryId are required' }, 400);
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -131,17 +136,16 @@ serve(async (req) => {
       if (!accountId) {
         if (action === 'refresh') return json({ error: 'No Stripe Connect account started yet — use action "start" first.' }, 400);
 
-        // KNOWN LIMITATION: hardcoded to 'US'. Stripe Express requires the
-        // account's country to match where the ministry's real bank account
-        // is, and there's no reliable "ministry's legal country" field on
-        // ministry_groups today (ministry_subscriptions.country reflects
-        // billing currency choice for SUBSCRIPTIONS, not necessarily the
-        // same thing). Non-US ministries can't correctly onboard until this
-        // is wired to a real country field — flag before launching this
-        // outside the US.
+        // Country is picked by the admin in the onboarding UI (matching the
+        // ministry's real bank account) and passed in at 'start' — Stripe
+        // Express requires the account's country to match where the bank
+        // account actually is, and Stripe locks it in permanently once set
+        // (can't be changed later without creating a new account).
+        const accountCountry = /^[A-Z]{2}$/.test(country || '') ? country : 'US';
+
         const account = await stripeCall('POST', '/accounts', STRIPE_KEY, {
           type: 'express',
-          country: 'US',
+          country: accountCountry,
           business_type: 'non_profit',
           capabilities: {
             card_payments: { requested: true },

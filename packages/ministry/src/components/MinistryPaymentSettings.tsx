@@ -6,11 +6,13 @@ import { Label } from '@rekindle/ui/label';
 import { Textarea } from '@rekindle/ui/textarea';
 import { Switch } from '@rekindle/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@rekindle/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Badge } from '@rekindle/ui/badge';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { detectRegion, COUNTRY_OPTIONS } from '@rekindle/features/regionDetection';
 import {
   CreditCard, Globe, ExternalLink, Loader2, Save, Eye, EyeOff,
   CheckCircle, AlertCircle, Settings, Link2, DollarSign, Info, Shield, Landmark
@@ -85,6 +87,14 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
   const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(null);
   const [connectLoading, setConnectLoading] = useState(true);
   const [connectBusy, setConnectBusy] = useState(false);
+  // Country the ministry's bank account is in — Stripe locks this in
+  // permanently on the connected account once onboarding starts, so it's
+  // only editable before that (see the 'not started' branch below).
+  const [connectCountry, setConnectCountry] = useState('US');
+
+  useEffect(() => {
+    detectRegion().then((r) => setConnectCountry(r.countryCode)).catch(() => {});
+  }, []);
 
   const loadConnectStatus = useCallback(async () => {
     setConnectLoading(true);
@@ -115,7 +125,7 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
     setConnectBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke('ministry-connect-onboarding', {
-        body: { action, ministryId, returnUrl: window.location.href }
+        body: { action, ministryId, returnUrl: window.location.href, country: connectCountry }
       });
       if (error || data?.error) {
         toast({
@@ -338,10 +348,24 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
               {t('ministryPaymentSettings', 'checkingStatus', 'Checking status...')}
             </div>
           ) : !connectStatus?.connected ? (
-            <Button onClick={() => startStripeConnect('start')} disabled={connectBusy} className="bg-purple-600 hover:bg-purple-700">
-              {connectBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
-              {t('ministryPaymentSettings', 'connectWithStripe', 'Connect with Stripe')}
-            </Button>
+            <div className="space-y-3">
+              <div>
+                <Label className="mb-1 block">{t('ministryPaymentSettings', 'bankCountry', "Which country is your ministry's bank account in?")}</Label>
+                <Select value={connectCountry} onValueChange={setConnectCountry}>
+                  <SelectTrigger className="h-9 w-56"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_OPTIONS.map((c) => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {t('ministryPaymentSettings', 'bankCountryNote', "This can't be changed later — make sure it matches where your bank account actually is.")}
+                </p>
+              </div>
+              <Button onClick={() => startStripeConnect('start')} disabled={connectBusy} className="bg-purple-600 hover:bg-purple-700">
+                {connectBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
+                {t('ministryPaymentSettings', 'connectWithStripe', 'Connect with Stripe')}
+              </Button>
+            </div>
           ) : !connectStatus.detailsSubmitted ? (
             <div className="space-y-3">
               <Alert>
