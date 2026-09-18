@@ -85,6 +85,27 @@ Deno.serve(async (req) => {
       case 'charge.success': {
         const data = event.data;
         const meta = data.metadata || {};
+
+        // Donations never carry plan_type — must be handled BEFORE the
+        // subscription branch's guard below, which used to `break` on any
+        // event missing plan_type. That made the old donation-record update
+        // (further down) genuinely unreachable for real donation charges.
+        if (meta.type === 'donation') {
+          if (meta.ministry_id) {
+            const { error } = await supabase.from('ministry_donations')
+              .update({ status: 'completed' })
+              .eq('transaction_id', data.reference)
+              .eq('ministry_id', meta.ministry_id);
+            if (error) console.error('ministry_donations update failed:', error.message, error.details);
+          } else {
+            await supabase.from('donations')
+              .update({ status: 'completed', updated_at: new Date().toISOString() })
+              .eq('payment_reference', data.reference)
+              .eq('payment_provider', 'paystack');
+          }
+          break;
+        }
+
         const userId   = meta.user_id;
         const planType = meta.plan_type;
 
@@ -105,12 +126,6 @@ Deno.serve(async (req) => {
           pending_plan_type:       null,
           subscription_ends_at:    expiresAt.toISOString(),
         }).eq('user_id', userId);
-
-        // Update donation record if applicable
-        await supabase.from('donations')
-          .update({ status: 'completed', updated_at: new Date().toISOString() })
-          .eq('payment_reference', data.reference)
-          .eq('payment_provider', 'paystack');
 
         console.log(`Charge success for user ${userId} → ${subscriptionTier}`);
         break;

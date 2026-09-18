@@ -320,3 +320,12 @@ enabled = true
 # distinct from ministry-billing-webhook's STRIPE_WEBHOOK_SECRET and
 # stripe-webhook's STRIPE_WEBHOOK_SECRET_CONSUMER.
 verify_jwt = false
+
+[functions.create-donation]
+enabled = true
+# Called by a donor's own browser session — anonymous donors carry
+# Supabase's anon-key JWT, which satisfies gateway verification without
+# requiring a signed-in user; the function itself trusts the email/name in
+# the request body, same trust model as ministry-donation-checkout. Gateway
+# JWT verification stays on.
+verify_jwt = true

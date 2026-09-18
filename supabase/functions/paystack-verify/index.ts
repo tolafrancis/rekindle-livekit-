@@ -145,6 +145,23 @@ serve(async (req) => {
       console.log('No donation record to update (may be a subscription payment) — continuing')
     }
 
+    // ── Same, for a ministry-scoped donation (different table/columns —
+    // create-donation's Paystack branch writes the reference as
+    // transaction_id on ministry_donations, not payment_reference). Without
+    // this, ministry Paystack donations were created 'pending' by
+    // create-donation and NEVER flipped to 'completed' by anything.
+    if (metadata.ministry_id) {
+      const { error: ministryUpdateError } = await supabaseClient
+        .from('ministry_donations')
+        .update({ status: 'completed' })
+        .eq('transaction_id', reference)
+        .eq('ministry_id', metadata.ministry_id)
+
+      if (ministryUpdateError) {
+        console.error('ministry_donations update failed:', ministryUpdateError.message, ministryUpdateError.details)
+      }
+    }
+
     console.log('Payment verified successfully:', reference)
 
     return new Response(
