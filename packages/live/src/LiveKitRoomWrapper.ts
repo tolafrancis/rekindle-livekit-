@@ -421,15 +421,54 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
    *  actual camera error. */
   private acquiringScreenShare = false;
 
+  private static readonly SCREEN_SHARE_UNSUPPORTED_MESSAGE =
+    "Screen sharing isn't supported in this browser. Try joining from a desktop browser instead.";
+
+  /** The message from the most recent failed startScreenShare() call, if any.
+   *  The global onError callback (this.callbacks.onError) is fire-and-forget and
+   *  nothing downstream currently surfaces its message to the user for this
+   *  specific failure — useDailyRoom's startScreenShare() only sees the boolean
+   *  return value, so without this the accurate message computed below (mobile
+   *  vs. genuinely unsupported vs. a real error) never reaches the toast the
+   *  user actually sees. Read via getLastScreenShareError() right after a
+   *  `false` return; cleared at the start of the next attempt so a stale
+   *  message can't leak into a later unrelated failure. */
+  private lastScreenShareError: string | null = null;
+
+  getLastScreenShareError(): string | null {
+    return this.lastScreenShareError;
+  }
+
+  /** Chrome for Android (and most other mobile browsers) DEFINE getDisplayMedia
+   *  on navigator.mediaDevices but never actually implement it — calling it
+   *  always rejects immediately (typically NotAllowedError), with no picker ever
+   *  shown. That's indistinguishable from a desktop user genuinely clicking
+   *  Cancel on the real picker at the error-object level, so startScreenShare's
+   *  catch block uses this to tell them apart by platform instead: on a mobile
+   *  device a getDisplayMedia rejection is always the "not implemented" case,
+   *  never a real cancellation. */
+  private isLikelyMobileDevice(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const nav = navigator as Navigator & { userAgentData?: { mobile?: boolean }; maxTouchPoints?: number };
+    if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean') return nav.userAgentData.mobile;
+    const ua = nav.userAgent || '';
+    // iPadOS 13+ reports a desktop ("Macintosh") UA but is a touch device.
+    const isIpadOS = /Macintosh/.test(ua) && (nav.maxTouchPoints || 0) > 1;
+    return /Android|iPhone|iPod|iPad|Mobile|Windows Phone/i.test(ua) || isIpadOS;
+  }
+
   async startScreenShare(): Promise<boolean> {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return false;
+
+    this.lastScreenShareError = null;
 
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
       // Most mobile browsers (iOS Safari, and most Android browsers) don't support
       // in-browser screen capture at all. Fail fast with an accurate message instead
       // of letting the call below throw a generic, misleading error.
-      this.callbacks.onError?.(new Error("Screen sharing isn't supported in this browser. Try joining from a desktop browser instead."));
+      this.lastScreenShareError = LiveKitRoomWrapper.SCREEN_SHARE_UNSUPPORTED_MESSAGE;
+      this.callbacks.onError?.(new Error(LiveKitRoomWrapper.SCREEN_SHARE_UNSUPPORTED_MESSAGE));
       return false;
     }
 
@@ -445,7 +484,12 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       await lp.setScreenShareEnabled(true, { audio: true, systemAudio: 'include' });
       return true;
     } catch (e) {
-      this.callbacks.onError?.(e);
+      const isMobile = this.isLikelyMobileDevice();
+      const message = isMobile
+        ? LiveKitRoomWrapper.SCREEN_SHARE_UNSUPPORTED_MESSAGE
+        : ((e as Error)?.message || 'Could not start screen sharing');
+      this.lastScreenShareError = message;
+      this.callbacks.onError?.(isMobile ? new Error(message) : e);
       return false;
     } finally {
       this.acquiringScreenShare = false;
@@ -519,6 +563,10 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
         this.callbacks.onParticipantLeft?.(this.normalize(p, false));
         if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
+        // Covers an unclean shadow disconnect (app killed mid-share, etc.) that
+        // never fires TrackUnpublished — without this the real participant's
+        // tile could keep showing a dead screenVideoTrack.
+        this.refreshRealParticipantForShadow(p);
       })
       .on(RoomEvent.ParticipantMetadataChanged, (_prev, p: Participant) =>
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
@@ -534,6 +582,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       })
       .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
         this.callbacks.onTrackStarted?.({ track, participant: p });
+        this.refreshRealParticipantForShadow(p);
         // Real bug found live (2026-08-19): setTranslationLanguage() only
         // muted whoever ALREADY had a published mic at the moment a
         // language was selected — a one-time snapshot, not a standing
@@ -552,7 +601,10 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
           } catch { /* ignore */ }
         }
       })
-      .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => this.callbacks.onTrackStopped?.({ track, participant: p }))
+      .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => {
+        this.callbacks.onTrackStopped?.({ track, participant: p });
+        this.refreshRealParticipantForShadow(p);
+      })
       // A remote track being PUBLISHED / UNPUBLISHED (e.g. a screen share starting
       // or STOPPING) must refresh that participant so tiles recompute. Without the
       // unpublished case, a viewer's screen-share stage stayed frozen after the host
@@ -564,6 +616,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       .on(RoomEvent.TrackUnpublished, (_pub, p: Participant) => {
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
         if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
+        this.refreshRealParticipantForShadow(p);
       })
       .on(RoomEvent.LocalTrackPublished, () => {
         this.syncLocalMediaState();
@@ -618,8 +671,26 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
 
     const videoTrack = camera?.track?.mediaStreamTrack;
     const audioTrack = mic?.track?.mediaStreamTrack;
-    const screenVideoTrack = screen?.track?.mediaStreamTrack;
-    const screenAudioTrack = screenAudio?.track?.mediaStreamTrack;
+    let screenVideoTrack = screen?.track?.mediaStreamTrack;
+    let screenAudioTrack = screenAudio?.track?.mediaStreamTrack;
+
+    // Native Android screen share: the WebView's own getDisplayMedia is a
+    // non-functional stub there (defines the API, always rejects — see
+    // startScreenShare's isLikelyMobileDevice), so on that platform screen
+    // share instead comes from a second, native-only "shadow" participant
+    // under identity "<this identity>-screenshare" (NativeScreenSharePlugin.kt,
+    // minted via livekit-token's asScreenShareShadow — see that function's own
+    // comment). Merge its video track in here so it renders identically to a
+    // desktop share on this participant's own tile, instead of the shadow
+    // showing up as a separate person — it's filtered out of the visible
+    // participant list entirely (useDailyRoom.ts's updateParticipants, same
+    // way the RLT bot's own shadow identity already is).
+    if (!screenVideoTrack && this.room) {
+      const shadow = this.room.remoteParticipants.get(`${p.identity}-screenshare`);
+      if (shadow) {
+        screenVideoTrack = this.pub(shadow, Track.Source.ScreenShare)?.track?.mediaStreamTrack;
+      }
+    }
 
     return {
       id: p.identity,
@@ -646,6 +717,23 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
 
   private pub(p: Participant, source: Track.Source): TrackPublication | undefined {
     return (p as LocalParticipant | RemoteParticipant).getTrackPublication(source);
+  }
+
+  /** When a "<identity>-screenshare" shadow participant's track changes, the
+   *  REAL participant's own normalized object needs recomputing too — that's
+   *  where normalize() merges the shadow's track in — otherwise its
+   *  screenVideoTrack stays stale until some unrelated event forces a
+   *  refresh. No-op for anyone who isn't a shadow participant. */
+  private refreshRealParticipantForShadow(p: Participant): void {
+    if (!p.identity.endsWith('-screenshare') || !this.room) return;
+    const realIdentity = p.identity.slice(0, -'-screenshare'.length);
+    const lp = this.room.localParticipant;
+    if (lp && lp.identity === realIdentity) {
+      this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
+      return;
+    }
+    const real = this.room.remoteParticipants.get(realIdentity);
+    if (real) this.callbacks.onParticipantUpdated?.(this.normalize(real, false));
   }
 
   private buildVideoConstraints(deviceId?: string): MediaTrackConstraints {

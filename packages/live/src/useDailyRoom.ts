@@ -6,10 +6,12 @@ type DailyCall = unknown;
 type DailyParticipant = any;
 type DailyEventObjectParticipant = any;
 type DailyEventObjectParticipantLeft = any;
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { createVideoWrapper, isLiveKitBackend } from './videoBackend';
+import { NativeScreenShare } from './NativeScreenShare';
 import type { IVideoRoomWrapper, NormalizedParticipant } from '@rekindle/types/videoRoom';
 import {
   ParticipantRole,
@@ -400,7 +402,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // participant count, the broadcast host's "All Participants" panel)
       // reads from, so nothing downstream has to remember to filter it.
       setHasTranslationBot(list.some((p) => p.sessionId.startsWith('rlt-bot-')));
-      participantList = list.filter((p) => !p.sessionId.startsWith('rlt-bot-'));
+      // Same pattern, same reason, for native Android screen share: the
+      // "<identity>-screenshare" shadow connection (see startScreenShare
+      // above / NativeScreenSharePlugin.kt) is also a genuine second
+      // participant, not something anyone should see as a separate tile —
+      // its video track gets merged into the real participant's own
+      // screenVideoTrack instead (LiveKitRoomWrapper.ts's normalize()).
+      participantList = list.filter((p) => !p.sessionId.startsWith('rlt-bot-') && !p.sessionId.endsWith('-screenshare'));
     } else {
       // Daily-backed meetings never share a room with the LiveKit-only bot —
       // it has nothing to filter and nothing to detect here.
@@ -1978,6 +1986,35 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     if (!wrapper || isScreenSharing) return;
 
     try {
+      // Native Android: the WebView's getDisplayMedia is a non-functional stub
+      // (defines the API, always rejects — see LiveKitRoomWrapper.ts's
+      // isLikelyMobileDevice), so the web path below can never work here. The
+      // native plugin instead opens a second, publish-only LiveKit connection
+      // under a derived "<identity>-screenshare" identity and captures via
+      // MediaProjection — mirrors the RLT bot's own second-participant
+      // pattern (see LiveKitRoomWrapper.ts). Fetch that identity's token the
+      // same way the room's own join token is fetched (livekit-token,
+      // asScreenShareShadow: true — see that function's own doc comment on
+      // why this can't be used to mint a token for anyone but the caller).
+      if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+        const { data, error } = await supabase.functions.invoke('livekit-token', {
+          body: {
+            action: 'token',
+            roomName: options.roomName,
+            userName: options.userName,
+            context: roleContext(),
+            asScreenShareShadow: true,
+          },
+        });
+        if (error || data?.error || !data?.url || !data?.token) {
+          throw new Error(data?.error || error?.message || 'Could not start screen sharing');
+        }
+        await NativeScreenShare.start({ url: data.url, token: data.token });
+        setIsScreenSharing(true);
+        toast({ title: 'Screen Sharing', description: 'You are now sharing your screen.' });
+        return;
+      }
+
       const success = await wrapper.startScreenShare();
       if (success) {
         setIsScreenSharing(true);
@@ -1989,29 +2026,45 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         // The wrapper reports failures (unsupported browser, permission denied, etc.)
         // via its onError callback rather than throwing, so this branch — not the
         // catch below — is the normal path for a failed screen share attempt.
+        // getLastScreenShareError() carries the specific reason (e.g. "not
+        // supported in this browser, try desktop" on mobile) — onError itself is
+        // fire-and-forget and nothing else surfaces its message to the user, so
+        // without reading it back here every failure looked like the same
+        // generic "Could not start screen sharing".
+        const detail = (wrapper as any).getLastScreenShareError?.();
         toast({
           title: 'Screen Share Error',
-          description: 'Could not start screen sharing',
+          description: detail || 'Could not start screen sharing',
           variant: 'destructive'
         });
       }
     } catch (error: any) {
       console.error('[Daily] Failed to start screen share:', error);
-      
+
       if (error.message !== 'Permission denied') {
         toast({
           title: 'Screen Share Error',
-          description: 'Could not start screen sharing',
+          description: error?.message || 'Could not start screen sharing',
           variant: 'destructive'
         });
       }
     }
-  }, [isScreenSharing]);
+  }, [isScreenSharing, roleContext]);
 
   // Stop screen share
   const stopScreenShare = useCallback(async () => {
     const wrapper = wrapperRef.current;
     if (!wrapper || !isScreenSharing) return;
+
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      try {
+        await NativeScreenShare.stop();
+      } catch (error) {
+        console.error('[Daily] Failed to stop native screen share:', error);
+      }
+      setIsScreenSharing(false);
+      return;
+    }
 
     try {
       await wrapper.stopScreenShare();

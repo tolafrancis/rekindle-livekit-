@@ -57,6 +57,16 @@ interface RequestBody {
   identity?: string;        // grant-publish target (defaults to caller)
   maxParticipants?: number; // create-room preset
   emptyTimeout?: number;    // create-room preset (seconds)
+  // Native Android screen share (MediaProjection): the WebView's getDisplayMedia
+  // is a non-functional stub on Android (exists, always rejects — see
+  // LiveKitRoomWrapper.ts's isLikelyMobileDevice), so the native layer joins the
+  // SAME room as a second, publish-only connection under a derived identity and
+  // publishes the screen capture with LiveKit's native Android SDK. Mirrors the
+  // RLT translation bot's existing "second real participant, filtered out of the
+  // normal list, track merged back in" pattern (see LiveKitRoomWrapper.ts's
+  // rlt-bot- handling) — never a client-chosen identity, always `<caller's own
+  // resolved identity>-screenshare`, so this can't be used to spoof anyone else.
+  asScreenShareShadow?: boolean;
 }
 
 // meetings tables that carry host_id, keyed by context.kind.
@@ -313,6 +323,26 @@ serve(async (req) => {
         const meta = rooms[0]?.metadata ? JSON.parse(rooms[0].metadata) : {};
         if (meta.locked) return json({ error: 'locked' }, 403);
       } catch { /* room not present / API blip / timeout → treat as unlocked */ }
+    }
+
+    // Screen-share shadow connection (native Android only — see RequestBody's
+    // asScreenShareShadow doc comment): mint immediately with a derived identity
+    // and a minimal publish-only grant, skipping the waiting-room re-enqueue below
+    // entirely — the caller is already IN the room under their real identity by
+    // the time they'd ever request this, so queueing a second time would be wrong,
+    // not just redundant. A viewer can't publish at all (grantFor already denies
+    // canPublish for that role), so screen share is denied here the same way.
+    if (body.asScreenShareShadow) {
+      if (role === 'viewer') return json({ error: 'Viewers cannot share their screen' }, 403);
+      const shadowIdentity = `${identity}-screenshare`;
+      const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity: shadowIdentity,
+        name: `${body.userName ?? user?.email ?? 'Guest'} (screen share)`,
+        metadata: JSON.stringify({ role, guest: isGuest, screenShareShadow: true }),
+        ttl: '2h',
+      });
+      at.addGrant({ room: body.roomName, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: false });
+      return json({ url: LIVEKIT_URL, token: await at.toJwt(), role });
     }
 
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,
