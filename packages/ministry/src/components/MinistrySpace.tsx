@@ -240,6 +240,28 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     'overview'
   );
   const navigate = useNavigate();
+
+  // Restore Settings > Finance & Billing after a full external redirect
+  // round-trip (Stripe Connect onboarding) — activeTab/settingsSection live
+  // only in browser history.state via useViewHistory, which a real
+  // navigation away and back (not an in-app view change) does not preserve,
+  // so without this the app reopens at its default view instead of where
+  // the admin actually was.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connect') === 'return' || params.get('connect') === 'refresh') {
+      setActiveTab('settings', { replace: true });
+      setSettingsSection('finance-billing', { replace: true });
+      params.delete('connect');
+      const query = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
   const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);

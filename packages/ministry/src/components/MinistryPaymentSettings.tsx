@@ -111,14 +111,13 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
   }, [ministryId]);
 
   useEffect(() => {
+    // Re-check status immediately on mount rather than waiting on the
+    // account.updated webhook, which can lag a few seconds behind the
+    // redirect back from Stripe's hosted onboarding. (The ?connect=return
+    // query param itself — and restoring this as the visible settings tab —
+    // is handled by MinistrySpace, which owns browser history state here;
+    // clearing it a second time from this component would wipe that.)
     loadConnectStatus();
-    // If we just came back from Stripe's hosted onboarding, re-check status
-    // immediately rather than waiting on the account.updated webhook, which
-    // can lag a few seconds behind the redirect.
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('connect') === 'return' || params.get('connect') === 'refresh') {
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
   }, [loadConnectStatus]);
 
   const startStripeConnect = async (action: 'start' | 'refresh') => {
