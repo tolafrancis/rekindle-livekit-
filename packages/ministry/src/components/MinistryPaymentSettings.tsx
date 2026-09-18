@@ -384,13 +384,21 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  {t('ministryPaymentSettings', 'pendingReview', 'Stripe is verifying your account — this can take 1-2 business days.')}
+                  {connectStatus.disabledReason?.includes('past_due') || (connectStatus.currentlyDue?.length ?? 0) > 0
+                    ? t('ministryPaymentSettings', 'needsMoreInfo', "Stripe needs a bit more information from you to finish setting up your account.")
+                    : t('ministryPaymentSettings', 'pendingReview', 'Stripe is verifying your account — this can take 1-2 business days.')}
                   {connectStatus.disabledReason ? ` (${connectStatus.disabledReason})` : ''}
                 </AlertDescription>
               </Alert>
-              <Button variant="outline" size="sm" onClick={loadConnectStatus} disabled={connectLoading}>
-                {t('ministryPaymentSettings', 'refreshStatus', 'Refresh status')}
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => startStripeConnect('refresh')} disabled={connectBusy} className="bg-purple-600 hover:bg-purple-700">
+                  {connectBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
+                  {t('ministryPaymentSettings', 'updateInfo', 'Update Info')}
+                </Button>
+                <Button variant="outline" onClick={loadConnectStatus} disabled={connectLoading}>
+                  {t('ministryPaymentSettings', 'refreshStatus', 'Refresh status')}
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2">
