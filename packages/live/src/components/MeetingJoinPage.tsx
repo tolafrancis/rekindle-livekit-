@@ -526,7 +526,8 @@ const MeetingJoinPage: React.FC = () => {
   const appHandoffBanner = showAppHandoffBanner && (
     <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3 space-y-2">
       <p className="text-xs text-muted-foreground text-center">
-        {t('skeleton', 'haveTheAppInstalled', 'Have the ReKindle app installed?')}
+        {t('skeleton', 'noAppInstalledPrefix', "If you don't have the ReKindle app installed, please click")}{' '}
+        <span className="font-bold text-foreground">{t('skeleton', 'continueInBrowser', 'Continue in Browser')}</span>
       </p>
       <div className="flex gap-2">
         {/* A real <a href> with a genuine click, not a scripted
@@ -540,7 +541,7 @@ const MeetingJoinPage: React.FC = () => {
         >
           {t('skeleton', 'openInApp', 'Open in App')}
         </a>
-        <Button type="button" variant="ghost" size="sm" className="flex-1" onClick={() => setHandoffDismissed(true)}>
+        <Button type="button" variant="ghost" size="sm" className="flex-1 font-bold" onClick={() => setHandoffDismissed(true)}>
           {t('skeleton', 'continueInBrowser', 'Continue in Browser')}
         </Button>
       </div>
@@ -615,6 +616,7 @@ const MeetingJoinPage: React.FC = () => {
                     onChange={(e) => setGuestName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleJoinMeeting(); }}
                     autoFocus
+                    className="border-2 border-purple-300 focus-visible:border-purple-500 dark:border-purple-700"
                   />
                   <Button
                     onClick={() => handleJoinMeeting()}
