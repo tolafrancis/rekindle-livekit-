@@ -120,18 +120,14 @@ Deno.serve(async (req) => {
       },
     });
 
-    await supabase.from('ministry_donations').insert({
+    const { error: insertError } = await supabase.from('ministry_donations').insert({
       user_id: userId || null,
       amount: amount / 100,
       currency: String(currency).toUpperCase(),
       payment_method: 'stripe',
-      payment_provider: 'stripe',
-      payment_reference: paymentIntent.id,
       donor_name: donorName,
       donor_email: email,
       is_anonymous: isAnonymous,
-      message: message || null,
-      payment_status: 'pending',
       status: 'pending',
       ministry_id: ministryId,
       donor_id: userId || null,
@@ -142,6 +138,11 @@ Deno.serve(async (req) => {
       fund_allocation: fundAllocation || 'General',
       campaign_id: campaignId || null,
     });
+    // Don't fail the request over this — Stripe already has a valid
+    // PaymentIntent and the donor's card may already be charged by the time
+    // they confirm it client-side. Log loudly so a schema mismatch like this
+    // is visible in function logs instead of silently losing the record.
+    if (insertError) console.error('ministry_donations insert failed:', insertError.message, insertError.details);
 
     return json({ clientSecret: paymentIntent.client_secret });
 

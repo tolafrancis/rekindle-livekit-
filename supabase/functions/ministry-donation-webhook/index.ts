@@ -121,9 +121,10 @@ Deno.serve(async (req) => {
       }
 
       const status = event.type === 'payment_intent.succeeded' ? 'completed' : 'failed';
-      await db.from('ministry_donations')
-        .update({ payment_status: status, status })
+      const { error: updateError } = await db.from('ministry_donations')
+        .update({ status })
         .eq('stripe_payment_id', obj.id);
+      if (updateError) console.error('ministry_donations update failed:', updateError.message, updateError.details);
 
       return new Response('ok', { status: 200 });
     }
