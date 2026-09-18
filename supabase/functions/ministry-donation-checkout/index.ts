@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
       amount_cents: amount,
       stripe_payment_id: paymentIntent.id,
       notes: message || null,
-      donation_type: 'one-time',
+      donation_type: 'one_time',
       fund_allocation: fundAllocation || 'General',
       campaign_id: campaignId || null,
     });
