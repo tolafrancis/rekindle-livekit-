@@ -17,10 +17,15 @@
 // an older Meta-only version with no Twilio/wallet-deduction logic; that
 // file isn't imported by anything, just misleading if read as current.)
 //
-// KNOWN GAP (not fixed here — flagging only, same as send-whatsapp): no
-// ministry-scoped authorization check — trusts whatever `userId` is passed
-// for wallet deduction, with no verification that the caller administers
-// any ministry at all.
+// Caller must be a platform admin (user_profiles.role in
+// admin/super_admin) — same check generate-devotional-day uses. This
+// function is only ever reached from BroadcastMessaging.tsx, which is
+// rendered inside AdminDashboard.tsx, so this is a platform-wide check, not
+// a per-ministry one (there's no ministryId in this flow at all — it
+// broadcasts across the whole platform). Previously this function trusted
+// whatever phones/userId came in the raw POST body with no identity check,
+// letting any logged-in user mass-send WhatsApp messages and (if a userId
+// was passed) deduct someone else's wallet credits.
 //
 // Secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM,
 // WHATSAPP_API_URL, WHATSAPP_PHONE_ID, WHATSAPP_ACCESS_TOKEN.
@@ -55,10 +60,29 @@ serve(async (req) => {
       throw new Error('Missing required fields: title, message, phones')
     }
 
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+    const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+      global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+    })
+    const { data: { user } } = await userClient.auth.getUser()
+    if (!user) {
+      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const supabaseClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+
+    const { data: profile } = await supabaseClient
+      .from('user_profiles')
+      .select('role')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!profile || !['admin', 'super_admin'].includes(profile.role)) {
+      return new Response(JSON.stringify({ success: false, error: 'Admin access required.' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const TWILIO_ACCOUNT_SID   = Deno.env.get('TWILIO_ACCOUNT_SID')
     const TWILIO_AUTH_TOKEN    = Deno.env.get('TWILIO_AUTH_TOKEN')

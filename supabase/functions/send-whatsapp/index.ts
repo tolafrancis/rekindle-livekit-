@@ -12,18 +12,16 @@
 // the real, trackable deploy pipeline — this function was previously called
 // from real, live UI with its actual deployment status unconfirmed.
 //
-// KNOWN GAP (not fixed here — flagging only): unlike evangelism-send-message
-// (which checks is_group_admin against a ministryId), this function does
-// NOT verify the caller administers any ministry before sending — it just
-// trusts phone_number/message from the request body. Anyone who can reach
-// this endpoint with a valid Supabase session can send WhatsApp messages
-// through the platform's shared number at will. Worth the same ministryId +
-// is_group_admin check evangelism-send-message already has, since the
-// caller (MinistryGroupsManager.tsx) already has a ministryId in scope
-// (selectedGroup.id) it isn't currently passing through.
+// Caller must be a leader/admin/owner of ministryId (checked via
+// is_group_admin, same gate evangelism-send-message uses) — previously this
+// function trusted whatever phone_number/message came in the raw POST body
+// with no identity check at all, letting any logged-in user send WhatsApp
+// messages through the platform's shared number to any number they liked.
 //
 // Secrets: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_ID.
 // =====================================================================
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,6 +29,7 @@ export const corsHeaders = {
 };
 
 interface WhatsAppRequest {
+  ministryId: string;
   phone_number: string;
   message_type: 'text' | 'template';
   message?: string;
@@ -63,8 +62,13 @@ Deno.serve(async (req) => {
     }
 
     const body: WhatsAppRequest = await req.json();
-    const { phone_number, message_type, message, template_name, template_params } = body;
+    const { ministryId, phone_number, message_type, message, template_name, template_params } = body;
 
+    if (!ministryId) {
+      return new Response(JSON.stringify({ error: 'ministryId is required' }), {
+        status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
     if (!phone_number) {
       return new Response(
         JSON.stringify({ error: 'Phone number is required' }),
@@ -73,6 +77,29 @@ Deno.serve(async (req) => {
           headers: { 'Content-Type': 'application/json', ...corsHeaders }
         }
       );
+    }
+
+    // Caller must administer ministryId — resolve their identity from the
+    // forwarded Authorization header (supabase.functions.invoke() already
+    // sends this from the client SDK).
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+    });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: isAdmin } = await admin.rpc('is_group_admin', { p_ministry_id: ministryId, p_user_id: user.id });
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: 'Not authorized to message on behalf of this ministry' }), {
+        status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
     }
 
     // Clean phone number - remove + and any spaces/dashes

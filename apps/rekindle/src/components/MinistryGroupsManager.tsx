@@ -624,6 +624,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
             for (const profile of phones) {
               const { error } = await supabase.functions.invoke('send-whatsapp', {
                 body: {
+                  ministryId: selectedGroup.id,
                   phone_number: profile.phone_number,
                   message_type: 'text',
                   message: `*${broadcastFormData.title.trim()}*\n\n${broadcastFormData.message.trim()}`,
