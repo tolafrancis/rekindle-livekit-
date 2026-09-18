@@ -1,14 +1,25 @@
 // Supabase Edge Function: stripe-subscription
-// Deploy with: supabase functions deploy stripe-subscription
+// =====================================================================
+// Individual "Premium"/"Premium Plus" consumer subscription checkout —
+// SetupIntent + Elements flow (see packages/features/src/components/
+// SubscriptionManager.tsx). Uses the official Stripe API directly — no
+// third-party proxy needed. Mirrored here from the untracked
+// supabase/stripe-subscription/index.sql (never actually deployed via the
+// CLI — that layout has no index.ts, which `supabase functions deploy`
+// requires) so it's part of the real, trackable deploy pipeline.
 //
-// Uses the official Stripe API directly — no third-party proxy needed.
 // Requires STRIPE_SECRET_KEY in Supabase secrets.
 //
 // Price IDs are read from env vars so you can update without redeploying:
 //   STRIPE_PRICE_PREMIUM          = price_xxx
 //   STRIPE_PRICE_PREMIUM_PLUS     = price_xxx
-//   STRIPE_PRICE_FAMILY           = price_xxx
-//   STRIPE_PRICE_MINISTRY_PLUS    = price_xxx
+//
+// 'family'/'ministry_plus' individual tiers are dead (subscription_tiers.is_active
+// = false as of migration 0350 — superseded by the Ministry Partner tenant model,
+// see supabase/functions/ministry-checkout) — no price mapping for them here
+// anymore. Their old fallback Price IDs belonged to a previous Stripe account
+// and would have failed regardless.
+// =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -20,25 +31,16 @@ const corsHeaders = {
 const TIER_MAPPING: Record<string, string> = {
   'premium':       'premium',
   'premium_plus':  'premium_plus',
-  'family':        'ministry',
-  'ministry_plus': 'ministry_plus',
 };
 
 function getPriceId(planType: string): string {
   const fromEnv = Deno.env.get(`STRIPE_PRICE_${planType.toUpperCase()}`);
   if (fromEnv) return fromEnv;
-  const fallbacks: Record<string, string> = {
-    // premium/premium_plus (Individual Partner tiers) were repriced to
-    // $10/$18 — the old fallback IDs point to Stripe Price objects for the
-    // previous $9.99/$19.99 amounts (Stripe Prices are immutable), so both
-    // are intentionally blank until real $10/$18 Price IDs are created and
-    // set as STRIPE_PRICE_PREMIUM / STRIPE_PRICE_PREMIUM_PLUS secrets.
-    'premium':       '',
-    'premium_plus':  '',
-    'family':        'price_1Sm5c7HaTSTkefainOuS8sZy',
-    'ministry_plus': 'price_1Sm5c7HaTSTkefaiQogiqvaB',
-  };
-  return fallbacks[planType] ?? '';
+  // premium/premium_plus (Individual Partner tiers) were repriced to $10/$18
+  // — no fallback here on purpose (Stripe Prices are immutable, so an old
+  // Price ID for the previous $9.99/$19.99 amounts can't be reused). Set
+  // STRIPE_PRICE_PREMIUM / STRIPE_PRICE_PREMIUM_PLUS as Supabase secrets.
+  return '';
 }
 
 function flattenForStripe(obj: Record<string, any>, prefix = ''): Record<string, string> {
@@ -91,7 +93,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const { action, email, name, planType, customerId: existingCustomerId, userId } = await req.json();
+    const { action, email, name, planType, customerId: existingCustomerId, userId, paymentMethodId } = await req.json();
 
     if (planType && !getPriceId(planType)) {
       throw new Error(`No Stripe price ID configured for plan "${planType}". Set STRIPE_PRICE_${(planType as string).toUpperCase()} in Supabase secrets.`);
@@ -138,21 +140,71 @@ Deno.serve(async (req) => {
       if (!planType)           throw new Error('Plan type is required');
       if (!userId)             throw new Error('User ID is required');
 
-      const subscription = await stripeCall('POST', '/subscriptions', stripeSecretKey, {
+      // default_payment_method records the card for future renewals, but
+      // Stripe does NOT use it to auto-confirm the very first invoice's
+      // PaymentIntent — that one is created in 'requires_payment_method'
+      // status and must be confirmed explicitly (below), or the subscription
+      // stays 'incomplete' forever despite showing a payment method attached.
+      let subscription = await stripeCall('POST', '/subscriptions', stripeSecretKey, {
         customer: existingCustomerId,
         items: [{ price: getPriceId(planType) }],
+        ...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
         payment_behavior: 'default_incomplete',
         payment_settings: { save_default_payment_method: 'on_subscription' },
         metadata: { user_id: userId, plan_type: planType },
+        expand: ['latest_invoice.payment_intent'],
       });
 
+      const firstInvoicePi = subscription.latest_invoice?.payment_intent;
+      // 'requires_payment_method' — no card attached to the PaymentIntent yet.
+      // 'requires_confirmation' — default_payment_method WAS attached (via the
+      // subscription create call above) but Stripe still needs an explicit
+      // confirm; it does not do this automatically on the first invoice.
+      const needsConfirm = firstInvoicePi?.status === 'requires_payment_method'
+        || firstInvoicePi?.status === 'requires_confirmation';
+      if (needsConfirm && paymentMethodId) {
+        const confirmed = await stripeCall(
+          'POST', `/payment_intents/${firstInvoicePi.id}/confirm`, stripeSecretKey,
+          { payment_method: paymentMethodId }
+        ).catch((e: Error) => ({ status: 'failed', error: e.message }));
+
+        if (confirmed.status === 'requires_action') {
+          // Rare for a test card, but a real one may need 3D Secure — hand
+          // the client the PaymentIntent's own client_secret so it can run
+          // stripe.confirmCardPayment interactively, separate from the
+          // SetupIntent's client_secret it already confirmed.
+          return new Response(JSON.stringify({
+            requiresAction: true,
+            clientSecret: confirmed.client_secret,
+            subscriptionId: subscription.id,
+          }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
+
+        // Re-fetch regardless of confirm outcome — succeeded flips the
+        // subscription to 'active'; a decline leaves it 'incomplete', which
+        // the status check below already treats as unpaid.
+        subscription = await stripeCall('GET', `/subscriptions/${subscription.id}`, stripeSecretKey);
+      }
+
+      if (subscription.status === 'incomplete') {
+        console.error(`Subscription ${subscription.id} stayed incomplete — first invoice payment did not go through.`);
+      }
+
+      // Only grant the paid tier once Stripe confirms the first invoice
+      // actually went through — 'active'/'trialing' — never on 'incomplete'
+      // (payment failed or needs further 3D Secure action). An incomplete
+      // subscription still records its ids/status so cancel-subscription and
+      // the billing UI can see it, but the user stays on their current tier
+      // (normally free) until stripe-webhook's customer.subscription.updated
+      // confirms it went active.
+      const paidStates = ['active', 'trialing'];
       const subscriptionTier = TIER_MAPPING[planType] || planType;
       const periodEnd = subscription.current_period_end
         ? new Date(subscription.current_period_end * 1000).toISOString()
         : null;
 
       await supabase.from('user_profiles').update({
-        subscription_tier:      subscriptionTier,
+        ...(paidStates.includes(subscription.status) ? { subscription_tier: subscriptionTier } : {}),
         subscription_status:    subscription.status,
         stripe_subscription_id: subscription.id,
         subscription_ends_at:   periodEnd,

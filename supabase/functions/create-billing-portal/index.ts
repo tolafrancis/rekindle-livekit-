@@ -1,3 +1,16 @@
+// Supabase Edge Function: create-billing-portal
+// =====================================================================
+// Opens a Stripe-hosted Billing Portal session for the signed-in consumer
+// user so they can update their card / view invoices. Calls Stripe's API
+// directly — the untracked version of this function (supabase/
+// create-billing-portal/index.sql) routed through a third-party proxy
+// (stripe.gateway.fastrouter.io, GATEWAY_API_KEY) that nothing else in this
+// codebase uses; rewritten here to match the direct-Stripe-API pattern used
+// everywhere else (see stripe-subscription, ministry-checkout).
+//
+// Secrets: STRIPE_SECRET_KEY.
+// =====================================================================
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -11,14 +24,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const gatewayApiKey = Deno.env.get("GATEWAY_API_KEY");
-    if (!gatewayApiKey) throw new Error("Gateway API key not configured");
+    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+    if (!stripeSecretKey) throw new Error('Stripe is not configured. Set STRIPE_SECRET_KEY in Supabase secrets.');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user from auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('No authorization header');
 
@@ -28,7 +40,6 @@ Deno.serve(async (req) => {
 
     const { returnUrl } = await req.json();
 
-    // Get user profile with Stripe customer ID
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
       .select('stripe_customer_id')
@@ -39,36 +50,28 @@ Deno.serve(async (req) => {
       throw new Error('No Stripe customer found. Please contact support.');
     }
 
-    // Create billing portal session
-    // Note: The Stripe Gateway may not support billing portal directly
-    // In that case, we'll return an error message
-    const portalResponse = await fetch('https://stripe.gateway.fastrouter.io/payments/billing-portal-sessions', {
+    const portalResponse = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': gatewayApiKey },
-      body: JSON.stringify({
+      headers: {
+        'Authorization': `Bearer ${stripeSecretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
         customer: profile.stripe_customer_id,
-        return_url: returnUrl || 'https://rekindled.app/subscription'
-      })
+        return_url: returnUrl || 'https://rekindlebc.com/subscription',
+      }),
     });
 
+    const portalData = await portalResponse.json();
     if (!portalResponse.ok) {
-      // If billing portal is not supported, provide alternative
-      return new Response(JSON.stringify({
-        error: 'Billing portal is not available. Please contact support to manage your subscription.',
-        supportEmail: 'support@rekindled.app'
-      }), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
-      });
+      throw new Error(portalData?.error?.message ?? 'Failed to create billing portal session');
     }
 
-    const portalData = await portalResponse.json();
-    
     return new Response(JSON.stringify({
       url: portalData.url
     }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Billing portal error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }

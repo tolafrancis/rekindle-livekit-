@@ -1,4 +1,16 @@
 // supabase/functions/paystack-verify/index.ts
+// =====================================================================
+// Verifies a Paystack transaction reference after the browser redirects
+// back from checkout, and activates the individual "Premium"/"Premium
+// Plus" consumer subscription. Mirrored here from the untracked
+// supabase/paystack-verify/index.sql (never actually deployed via the CLI,
+// which requires index.ts) so it's part of the real, trackable deploy
+// pipeline. Cleaned of the dead 'family'/'ministry_plus' tier mapping
+// (subscription_tiers.is_active = false per migration 0350/0271).
+//
+// Secrets: PAYSTACK_SECRET_KEY.
+// =====================================================================
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -19,9 +31,9 @@ serve(async (req) => {
     if (!reference) {
       return new Response(
         JSON.stringify({ error: 'Payment reference is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -32,9 +44,9 @@ serve(async (req) => {
       console.error('PAYSTACK_SECRET_KEY not found')
       return new Response(
         JSON.stringify({ error: 'Payment verification unavailable' }),
-        { 
-          status: 503, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -58,13 +70,13 @@ serve(async (req) => {
     if (!verifyResponse.ok || !verifyData.status) {
       console.error('Paystack verification failed:', verifyData)
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: verifyData.message || 'Payment verification failed' 
+        JSON.stringify({
+          success: false,
+          error: verifyData.message || 'Payment verification failed'
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -74,13 +86,13 @@ serve(async (req) => {
     // Only update if payment was successful
     if (transaction.status !== 'success') {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error: 'Payment was not successful',
-          status: transaction.status 
+          status: transaction.status
         }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
@@ -98,8 +110,6 @@ serve(async (req) => {
     const tierMapping: Record<string, string> = {
       'premium':       'premium',
       'premium_plus':  'premium_plus',
-      'family':        'ministry',
-      'ministry_plus': 'ministry_plus',
     }
     const subscriptionTier = metadata.subscription_tier || tierMapping[planType] || planType
 
@@ -124,7 +134,7 @@ serve(async (req) => {
     // ── Update donation record if this was a donation payment ─────────────
     const { error: updateError } = await supabaseClient
       .from('donations')
-      .update({ 
+      .update({
         status: 'completed',
         updated_at: new Date().toISOString()
       })
@@ -138,7 +148,7 @@ serve(async (req) => {
     console.log('Payment verified successfully:', reference)
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
         subscriptionTier,
         amount: transaction.amount / 100,
@@ -146,21 +156,21 @@ serve(async (req) => {
         reference: transaction.reference,
         paidAt: transaction.paid_at
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
 
   } catch (error: any) {
     console.error('Verification error:', error)
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: error.message || 'An unexpected error occurred'
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
   }

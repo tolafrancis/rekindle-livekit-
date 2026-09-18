@@ -18,10 +18,11 @@ import {
   MessageSquare, Video, Download, Clock, Loader2, Globe
 } from 'lucide-react';
 
-// Initialize Stripe with the connected account
-const stripePromise = loadStripe('pk_live_51OJhJBHdGQpsHqInIzu7c6PzGPSH0yImD4xfpofvxvFZs0VFhPRXZCyEgYkkhOtBOXFWvssYASs851mflwQvjnrl00T6DbUwWZ', {
-  stripeAccount: 'acct_1ShQgqHaTSTkefai'
-});
+// Charges land directly on the platform's own Stripe account — no Connect
+// account here, unlike a marketplace routing payments to a third party.
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+
+const MINISTRY_APP_URL = import.meta.env.VITE_MINISTRY_APP_URL || 'https://rekindlebc.com';
 
 interface SubscriptionTier {
   id: string;
@@ -123,183 +124,14 @@ const subscriptionTiers: SubscriptionTier[] = [
       'Export personal journals & prayers (PDF)'
     ]
   },
-  {
-    id: 'ministry',
-    name: '🏛 Ministry',
-    price: 29.99,
-    interval: 'month',
-    planType: 'family',
-    category: 'individual' as const,
-    description: 'For churches, ministries & organized teams',
-    liveChannelLimit: 'Up to 3 Live Channels • Interactive meetings (1 hr limit) • No recording',
-    features: [
-      'Everything in Premium Plus, plus:',
-      '🔴 Live & Broadcast',
-      'Create 1 Live Channels',
-      'Host live meetings & live broadcasts',
-      'Interactive meetings (1 hr limit)',
-      'Broadcast messaging (one-to-many)',
-      '🎁 50 free WhatsApp credits on first subscription',
-      '👥 Team & Operations',
-      'Counsellor dashboard',
-      'Team management (admins, hosts, moderators)',
-      'Role-based permissions',
-      '🎨 Branding & Control',
-      'Custom dashboard',
-      'Ministry branding (logo, colors)',
-      'Dedicated support',
-      '📊 Data & Analytics',
-      'Advanced ministry analytics',
-      'Analytics export (CSV)'
-    ]
-  },
-  {
-    id: 'ministry_plus',
-    name: '🏛➕ Ministry Plus',
-    price: 49.99,
-    interval: 'month',
-    planType: 'ministry_plus',
-    category: 'individual' as const,
-    description: 'For large ministries & networks',
-    liveChannelLimit: 'Unlimited Live Channels • Unlimited meeting duration • Full recording',
-    features: [
-      'Everything in Ministry, plus:',
-      '🔴 Live & Broadcast',
-      '🎁 150 free WhatsApp credits on first subscription',
-      'Create 3 Live Channels',
-      '🌐 White-Label Experience',
-      'Full white-label solution',
-      'Custom homepage (not Rekindled-branded)',
-      'Ministry widgets replace app widgets:',
-      '  • Ministry affirmations',
-      '  • Ministry space',
-      '  • Ministry devotionals',
-      '🎥 Live Experience',
-      'Interactive meetings (Unlimited duration)',
-      'Meeting recordings & replay library',
-      'Session archives per channel',
-      '🚀 Advanced Control',
-      'Priority infrastructure',
-      'SLA-backed dedicated support',
-      'Custom feature requests (enterprise-ready)'
-    ]
-  }
 ];
 
-
-const ministrySubscriptionTiers: SubscriptionTier[] = [
-  {
-    id: 'ministry_starter',
-    name: '🌱 Starter',
-    price: 49,
-    interval: 'month' as const,
-    planType: 'ministry_starter',
-    category: 'ministry' as const,
-    description: 'For new and growing ministries',
-    features: [
-      'Up to 200 members / subscribers',
-      'Ministry space with full community tab',
-      'Announcements & events management',
-      'WhatsApp broadcast messaging',
-      'Prayer requests & testimonies',
-      'Devotional library (ministry content)',
-      'Discipleship journeys & reading plans',
-      'Donation campaigns (basic)',
-      'Basic analytics dashboard',
-      '50 free WhatsApp credits on signup',
-      'Email support',
-    ],
-    notIncluded: [
-      'Multi-channel evangelism inbox',
-      'Facebook Messenger & Instagram DMs',
-      'Advanced analytics & exports',
-      'Custom branding',
-      'API access',
-    ],
-  },
-  {
-    id: 'ministry_growth',
-    name: '🚀 Growth',
-    price: 149,
-    interval: 'month' as const,
-    highlighted: true,
-    planType: 'ministry_growth',
-    category: 'ministry' as const,
-    description: 'For established ministries scaling outreach',
-    features: [
-      'Up to 1,000 members / subscribers',
-      'Everything in Starter, plus:',
-      '📲 Multi-Channel Evangelism Inbox',
-      'WhatsApp DMs & broadcasts',
-      'Facebook Messenger integration',
-      'Instagram DMs integration',
-      'Website chat widget',
-      'AI gospel response suggestions',
-      '📊 Advanced Analytics',
-      'Member engagement reports',
-      'Channel performance metrics',
-      'Analytics export (CSV)',
-      '📣 Broadcast Messaging',
-      'Scheduled broadcasts',
-      'Segment targeting (groups, roles)',
-      'Live channels & interactive meetings',
-      '150 free WhatsApp credits on signup',
-      'Priority email support',
-    ],
-    notIncluded: [
-      'Custom branding / white-label',
-      'API access',
-      'Dedicated onboarding',
-    ],
-  },
-  {
-    id: 'ministry_enterprise',
-    name: '\u{1F3DB} Enterprise',
-    price: 299,
-    interval: 'month' as const,
-    planType: 'ministry_enterprise',
-    category: 'ministry' as const,
-    description: 'For large churches, networks & denominations',
-    features: [
-      'Unlimited members / subscribers',
-      'Everything in Growth, plus:',
-      '\u{1F310} All 4 Evangelism Channels',
-      'WhatsApp, Messenger, Instagram, Website',
-      '\u{1F3A8} Custom Branding',
-      'Ministry logo & brand colours',
-      'Custom ministry dashboard',
-      '\u2699\uFE0F Platform Access',
-      'API access (REST)',
-      'Webhook integrations',
-      'Multi-admin & role management',
-      '\u{1F680} Onboarding & Support',
-      'Dedicated onboarding specialist',
-      'SLA-backed support (24hr response)',
-      'Feature request pipeline',
-      '300 free WhatsApp credits on signup',
-    ],
-  },
-];
-
-interface WhiteLabelAddon {
-  price: number;
-  features: string[];
-  note: string;
-}
-
-const whiteLabelAddon: WhiteLabelAddon = {
-  price: 2000,
-  features: [
-    'Branded custom domain (e.g. app.yourchurch.com)',
-    'Custom app colours matching your brand',
-    'Church logo throughout the app',
-    'Church-branded login & splash screen',
-    'Remove all ReKindle BC branding',
-    'Custom email sender domain',
-    'White-label app store listing (optional, quoted separately)',
-  ],
-  note: 'Available on Enterprise plan only. One-time setup + annual renewal.',
-};
+// Ministries/churches/teams are billed in the Ministry app's own tenant
+// model (real Stripe/Paystack pricing set per-tenant in ministry_partner_plans)
+// -- not sold here. This block used to offer fictional Starter/Growth/Enterprise
+// pricing with no matching Stripe Price (getPriceId in stripe-subscription/index.sql
+// had no ministry_starter/growth/enterprise entries), so "Upgrade" would have
+// errored. Removed in favor of a redirect to the real Ministry app billing page.
 
 // Stripe Payment Form Component
 interface StripePaymentFormProps {
@@ -346,14 +178,19 @@ const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
         return;
       }
 
-      // If setup succeeded, create the subscription
+      // If setup succeeded, create the subscription — pass the saved
+      // payment method along so the backend can set it as the
+      // subscription's default and actually charge it (without this the
+      // subscription is created with no payment method attached and gets
+      // stuck in Stripe's 'incomplete' status, never actually billed).
       if (setupIntent?.status === 'succeeded') {
         const { data, error: subError } = await supabase.functions.invoke('stripe-subscription', {
-          body: { 
-            action: 'activate-subscription', 
+          body: {
+            action: 'activate-subscription',
             customerId,
             planType,
-            userId
+            userId,
+            paymentMethodId: setupIntent.payment_method,
           }
         });
 
@@ -362,11 +199,39 @@ const StripePaymentForm: React.FC<StripePaymentFormProps> = ({
           setLoading(false);
           return;
         }
-        
-        toast({
-          title: t('subscriptionManager', 'subscriptionActivatedTitle', 'Subscription Activated!'),
-          description: t('subscriptionManager', 'subscriptionActivatedDesc', 'Welcome to your new plan!')
-        });
+
+        // First-invoice charge needs 3D Secure — confirm it with the same
+        // saved card, separate from the SetupIntent already confirmed above.
+        if (data?.requiresAction && data?.clientSecret) {
+          const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(data.clientSecret, {
+            payment_method: setupIntent.payment_method as string,
+          });
+          if (confirmError || paymentIntent?.status !== 'succeeded') {
+            setError(confirmError?.message || t('subscriptionManager', 'paymentNeedsConfirmation', "Your card couldn't be charged yet — it may need additional verification. Please contact support or try a different card."));
+            setLoading(false);
+            return;
+          }
+          toast({
+            title: t('subscriptionManager', 'subscriptionActivatedTitle', 'Subscription Activated!'),
+            description: t('subscriptionManager', 'subscriptionActivatedDesc', 'Welcome to your new plan!')
+          });
+          onSuccess();
+          return;
+        }
+
+        if (data?.status === 'active' || data?.status === 'trialing') {
+          toast({
+            title: t('subscriptionManager', 'subscriptionActivatedTitle', 'Subscription Activated!'),
+            description: t('subscriptionManager', 'subscriptionActivatedDesc', 'Welcome to your new plan!')
+          });
+        } else {
+          // 'incomplete' — the card needs further authentication (3D Secure)
+          // that this SetupIntent-based flow doesn't run automatically, or
+          // the charge itself failed. Don't claim success on an unpaid plan.
+          setError(t('subscriptionManager', 'paymentNeedsConfirmation', "Your card couldn't be charged yet — it may need additional verification. Please contact support or try a different card."));
+          setLoading(false);
+          return;
+        }
         onSuccess();
       }
     } catch (err: any) {
@@ -929,117 +794,34 @@ export const SubscriptionManager: React.FC = () => {
             </>
           )}
 
-          {/* Ministry Plans */}
+          {/* Ministry Plans — real pricing/checkout lives in the Ministry app's
+              own tenant billing (ministry_partner_plans / ministry-checkout),
+              not here. */}
           {planCategory === 'ministry' && (
-            <>
-              <p className="text-sm text-gray-500 text-center mb-4">
-                {t('subscriptionManager', 'ministryPlansSubtitle', 'For churches, ministries and outreach organisations — member management, multi-channel evangelism, broadcasts and analytics.')}
-              </p>
-              <div className="grid md:grid-cols-3 gap-6 mb-6">
-                {ministrySubscriptionTiers.map(tier => (
-                  <Card
-                    key={tier.id}
-                    className={`relative overflow-hidden ${
-                      tier.highlighted ? 'border-2 border-purple-500 shadow-lg shadow-purple-100' : ''
-                    } ${currentTier === tier.id ? 'ring-2 ring-green-500' : ''}`}
-                  >
-                    {tier.highlighted && (
-                      <div className="absolute top-0 right-0 bg-purple-500 text-white text-xs px-3 py-1 rounded-bl-lg">
-                        {t('subscriptionManager', 'mostPopular', 'Most Popular')}
-                      </div>
-                    )}
-                    {currentTier === tier.id && (
-                      <div className="absolute top-0 left-0 bg-green-500 text-white text-xs px-3 py-1 rounded-br-lg">
-                        {t('subscriptionManager', 'currentPlan', 'Current Plan')}
-                      </div>
-                    )}
-                    <CardHeader>
-                      <CardTitle className="text-lg">{tier.name}</CardTitle>
-                      {tier.description && (
-                        <p className="text-xs text-gray-500 mt-1">{tier.description}</p>
-                      )}
-                      <CardDescription>
-                        <span className="text-3xl font-bold text-gray-900">${tier.price}</span>
-                        <span className="text-gray-500">/{tier.interval}</span>
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <ul className="space-y-2 text-sm max-h-72 overflow-y-auto">
-                        {tier.features.map((feature, i) => (
-                          <li key={i} className="flex items-start gap-2">
-                            <span className="text-green-500 mt-0.5 flex-shrink-0">{getFeatureIcon(feature)}</span>
-                            <span className="text-gray-600">{feature}</span>
-                          </li>
-                        ))}
-                        {tier.notIncluded && tier.notIncluded.length > 0 && (
-                          <>
-                            <li className="pt-2 border-t border-gray-200">
-                              <span className="text-xs font-semibold text-gray-500">❌ {t('subscriptionManager', 'notIncluded', 'Not Included')}</span>
-                            </li>
-                            {tier.notIncluded.map((feature, i) => (
-                              <li key={`not-${i}`} className="flex items-start gap-2">
-                                <X className="h-4 w-4 text-red-400 mt-0.5 flex-shrink-0" />
-                                <span className="text-gray-500">{feature}</span>
-                              </li>
-                            ))}
-                          </>
-                        )}
-                      </ul>
-                      <Button
-                        className={`w-full ${tier.highlighted ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
-                        variant={currentTier === tier.id ? 'outline' : 'default'}
-                        disabled={currentTier === tier.id}
-                        onClick={() => handleSelectTier(tier)}
-                      >
-                        {currentTier === tier.id ? (
-                          <><Check className="h-4 w-4 mr-2" />{t('subscriptionManager', 'currentPlan', 'Current Plan')}</>
-                        ) : (
-                          <>{t('subscriptionManager', 'upgrade', 'Upgrade')} <Zap className="h-4 w-4 ml-2" /></>
-                        )}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              {/* White-Label Add-On */}
-              <Card className="border-2 border-amber-400 bg-gradient-to-r from-amber-50 to-yellow-50">
-                <CardHeader>
-                  <div className="flex items-start justify-between flex-wrap gap-3">
-                    <div>
-                      <CardTitle className="flex items-center gap-2 text-amber-800">
-                        <Crown className="h-5 w-5 text-amber-500" />
-                        {t('subscriptionManager', 'whiteLabelAddon', 'White-Label Add-On')}
-                      </CardTitle>
-                      <p className="text-sm text-amber-700 mt-1">
-                        {whiteLabelAddon.note}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-3xl font-bold text-amber-800">+${whiteLabelAddon.price.toLocaleString()}</span>
-                      <p className="text-sm text-amber-600">{t('subscriptionManager', 'perYear', '/year')}</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid sm:grid-cols-2 gap-2 mb-4">
-                    {whiteLabelAddon.features.map((f, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <Check className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                        <span className="text-sm text-amber-800">{f}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    className="bg-amber-500 hover:bg-amber-600 text-white"
-                    onClick={() => window.open('mailto:enterprise@rekindlebc.com?subject=White-Label Enquiry', '_blank')}
-                  >
-                    <Crown className="h-4 w-4 mr-2" />
-                    {t('subscriptionManager', 'contactWhiteLabel', 'Contact us to add White-Label')}
-                  </Button>
-                </CardContent>
-              </Card>
-            </>
+            <Card className="border-2 border-purple-200 bg-purple-50/60">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-purple-800">
+                  <Crown className="h-5 w-5 text-purple-500" />
+                  {t('subscriptionManager', 'ministryPlansMovedTitle', 'Running a ministry, church, or team?')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-purple-700">
+                  {t(
+                    'subscriptionManager',
+                    'ministryPlansMovedDesc',
+                    "Ministry plans — member management, multi-channel evangelism, live channels, branding — are set up and billed in the Ministry app, built for teams rather than individual accounts."
+                  )}
+                </p>
+                <Button
+                  className="bg-purple-600 hover:bg-purple-700"
+                  onClick={() => window.open(`${MINISTRY_APP_URL}/settings/billing`, '_blank')}
+                >
+                  <Globe className="h-4 w-4 mr-2" />
+                  {t('subscriptionManager', 'goToMinistryApp', 'Go to Ministry app')}
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 

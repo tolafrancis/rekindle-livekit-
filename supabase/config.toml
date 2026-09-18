@@ -226,3 +226,97 @@ enabled = true
 # so gateway JWT verification MUST be off, matching livekit-webhook's own
 # non-Supabase-JWT auth model.
 verify_jwt = false
+
+[functions.ministry-checkout]
+enabled = true
+# Called by a signed-in ministry leader/admin/owner (checked inside the
+# function). Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.ministry-billing-webhook]
+enabled = true
+# Stripe and Paystack sign these requests themselves, not with a Supabase
+# JWT — same reasoning as livekit-webhook/whatsapp-webhook. Gateway JWT
+# verification must be off or Stripe's webhook calls get rejected with 401
+# before the function's own signature check ever runs.
+verify_jwt = false
+
+[functions.stripe-subscription]
+enabled = true
+# Individual "Premium"/"Premium Plus" consumer checkout, called by the
+# signed-in user's own browser session (supabase.functions.invoke attaches
+# their Bearer token automatically). Gateway JWT verification stays on —
+# the function itself trusts the userId in the request body rather than
+# re-deriving it, so this is the actual auth boundary.
+verify_jwt = true
+
+[functions.stripe-webhook]
+enabled = true
+# Individual consumer subscription webhook — Stripe signs these requests
+# itself, not with a Supabase JWT. Gateway JWT verification must be off or
+# Stripe's webhook calls get rejected with 401 before the function's own
+# signature check ever runs. Uses its OWN STRIPE_WEBHOOK_SECRET_CONSUMER
+# secret, distinct from ministry-billing-webhook's STRIPE_WEBHOOK_SECRET —
+# each Stripe webhook endpoint has its own signing secret.
+verify_jwt = false
+
+[functions.create-billing-portal]
+enabled = true
+# Called by the signed-in user's own browser session; the function also
+# verifies the Bearer token itself via auth.getUser(). Gateway JWT
+# verification stays on.
+verify_jwt = true
+
+[functions.cancel-subscription]
+enabled = true
+# Called by the signed-in user's own browser session; the function also
+# verifies the Bearer token itself via auth.getUser(). Gateway JWT
+# verification stays on.
+verify_jwt = true
+
+[functions.paystack-initialize]
+enabled = true
+# Individual consumer checkout via Paystack, called by the signed-in user's
+# own browser session. Gateway JWT verification stays on, same reasoning as
+# stripe-subscription.
+verify_jwt = true
+
+[functions.paystack-verify]
+enabled = true
+# Called right after the browser redirects back from Paystack checkout, by
+# the signed-in user's own browser session. Gateway JWT verification stays
+# on.
+verify_jwt = true
+
+[functions.paystack-webhook]
+enabled = true
+# Paystack signs these requests itself, not with a Supabase JWT — same
+# reasoning as stripe-webhook. Gateway JWT verification must be off.
+verify_jwt = false
+
+[functions.ministry-connect-onboarding]
+enabled = true
+# Called by a signed-in ministry leader/admin/owner (checked inside the
+# function via is_group_admin, same pattern as ministry-checkout). Gateway
+# JWT verification stays on.
+verify_jwt = true
+
+[functions.ministry-donation-checkout]
+enabled = true
+# Called by the donor's own browser session — anonymous donors carry
+# Supabase's anon-key JWT, which satisfies gateway verification without
+# requiring a signed-in user; the function itself trusts the email/name in
+# the request body, same trust model as the legacy create-donation function
+# it replaces for the ministry+Stripe case. Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.ministry-donation-webhook]
+enabled = true
+# Stripe signs these requests itself (both payment_intent events and Connect
+# account.updated events), not with a Supabase JWT — same reasoning as
+# ministry-billing-webhook/stripe-webhook. Gateway JWT verification must be
+# off or Stripe's calls get rejected with 401 before the function's own
+# signature check runs. Uses its own STRIPE_WEBHOOK_SECRET_DONATIONS secret,
+# distinct from ministry-billing-webhook's STRIPE_WEBHOOK_SECRET and
+# stripe-webhook's STRIPE_WEBHOOK_SECRET_CONSUMER.
+verify_jwt = false

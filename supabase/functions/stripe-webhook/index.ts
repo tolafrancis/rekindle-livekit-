@@ -1,18 +1,33 @@
 // Supabase Edge Function: stripe-webhook
-// Deploy with: supabase functions deploy stripe-webhook
+// =====================================================================
+// Individual "Premium"/"Premium Plus" consumer subscription webhook.
+// Mirrored here from the untracked supabase/stripe-webhook/ (index.sql /
+// stripe-webhook.ts — never actually deployed via the CLI, which requires
+// index.ts) so it's part of the real, trackable deploy pipeline. Cleaned
+// of the dead 'family'/'ministry_plus'/'ministry_starter'/'ministry_growth'/
+// 'ministry_enterprise' tier mappings (subscription_tiers.is_active = false
+// per migration 0350/0271 — ministries are billed via the separate
+// ministry-checkout/ministry-billing-webhook tenant pipeline instead).
 //
-// Set in Supabase secrets:
-//   STRIPE_SECRET_KEY        = sk_live_xxx
-//   STRIPE_WEBHOOK_SECRET    = whsec_xxx  (from Stripe Dashboard → Webhooks)
-//
-// Register this webhook URL in Stripe Dashboard → Developers → Webhooks:
-//   https://<your-project>.supabase.co/functions/v1/stripe-webhook
+// Register this webhook URL in Stripe Dashboard -> Developers -> Webhooks:
+//   https://<project>.supabase.co/functions/v1/stripe-webhook
+// Use CLASSIC/SNAPSHOT events, not the newer v2 "thin" event style — this
+// function verifies the classic HMAC-SHA256 Stripe-Signature scheme.
 //
 // Events to listen for:
 //   customer.subscription.updated
 //   customer.subscription.deleted
 //   invoice.payment_succeeded
 //   invoice.payment_failed
+//
+// Secrets: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET_CONSUMER (this
+// endpoint's OWN signing secret -- deliberately a different secret name
+// than ministry-billing-webhook's STRIPE_WEBHOOK_SECRET and
+// developer-billing-webhook's, since each Stripe webhook endpoint gets its
+// own distinct signing secret and Supabase function secrets are
+// project-global, not per-function).
+// verify_jwt must be OFF (Stripe doesn't send a Supabase JWT).
+// =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -24,68 +39,7 @@ const corsHeaders = {
 const TIER_MAPPING: Record<string, string> = {
   'premium':       'premium',
   'premium_plus':  'premium_plus',
-  'family':        'ministry',
-  'ministry_plus': 'ministry_plus',
 };
-
-const WELCOME_CREDITS: Record<string, number> = {
-  'family':        50,   // Ministry plan
-  'ministry_plus': 150,  // Ministry Plus plan
-};
-
-// Grant one-time welcome credits to ministry plan subscribers
-async function grantWelcomeCredits(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-  planType: string,
-): Promise<void> {
-  const credits = WELCOME_CREDITS[planType];
-  if (!credits) return; // Not a ministry plan
-
-  // Get or create wallet
-  const { data: wallet } = await supabase
-    .from('broadcast_wallets')
-    .select('id, balance_credits, total_purchased, welcome_credits_granted')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  // Already granted — never grant twice
-  if (wallet?.welcome_credits_granted) return;
-
-  if (wallet) {
-    await supabase
-      .from('broadcast_wallets')
-      .update({
-        balance_credits:          wallet.balance_credits + credits,
-        total_purchased:          wallet.total_purchased + credits,
-        welcome_credits_granted:  true,
-        updated_at:               new Date().toISOString(),
-      })
-      .eq('id', wallet.id);
-  } else {
-    // Create wallet with welcome credits
-    await supabase.from('broadcast_wallets').insert({
-      user_id:                  userId,
-      balance_credits:          credits,
-      total_purchased:          credits,
-      total_used:               0,
-      welcome_credits_granted:  true,
-    });
-  }
-
-  // Log the transaction
-  await supabase.from('broadcast_wallet_transactions').insert({
-    user_id:     userId,
-    type:        'welcome_credit',
-    credits:     credits,
-    usd_amount:  0,
-    description: `Welcome gift: ${credits} free WhatsApp credits on first subscription`,
-    status:      'completed',
-    created_at:  new Date().toISOString(),
-  });
-
-  console.log(`Granted ${credits} welcome credits to user ${userId}`);
-}
 
 // Verify Stripe webhook signature
 async function verifyWebhookSignature(
@@ -119,7 +73,7 @@ async function verifyWebhookSignature(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
+  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET_CONSUMER');
   const stripeKey     = Deno.env.get('STRIPE_SECRET_KEY');
 
   const supabase = createClient(
@@ -131,13 +85,14 @@ Deno.serve(async (req) => {
     const payload   = await req.text();
     const sigHeader = req.headers.get('stripe-signature') ?? '';
 
-    // Verify signature if secret is configured
-    if (webhookSecret) {
-      const valid = await verifyWebhookSignature(payload, sigHeader, webhookSecret);
-      if (!valid) {
-        console.error('Invalid webhook signature');
-        return new Response('Invalid signature', { status: 401 });
-      }
+    if (!webhookSecret) {
+      console.error('STRIPE_WEBHOOK_SECRET_CONSUMER not configured');
+      return new Response('Webhook secret not configured', { status: 500 });
+    }
+    const valid = await verifyWebhookSignature(payload, sigHeader, webhookSecret);
+    if (!valid) {
+      console.error('Invalid webhook signature');
+      return new Response('Invalid signature', { status: 401 });
     }
 
     const event = JSON.parse(payload);
@@ -168,7 +123,7 @@ Deno.serve(async (req) => {
           subscription_ends_at:   periodEnd,
         }).eq('user_id', userId);
 
-        console.log(`Updated subscription for user ${userId}: ${sub.status} → ${subscriptionTier}`);
+        console.log(`Updated subscription for user ${userId}: ${sub.status} -> ${subscriptionTier}`);
         break;
       }
 
@@ -215,9 +170,6 @@ Deno.serve(async (req) => {
           subscription_status: 'active',
           subscription_ends_at: periodEnd,
         }).eq('user_id', userId);
-
-        // Grant one-time welcome credits on first ministry subscription
-        await grantWelcomeCredits(supabase, userId, planType);
 
         console.log(`Payment succeeded for user ${userId} — plan renewed to ${periodEnd}`);
         break;

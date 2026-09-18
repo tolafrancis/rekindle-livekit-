@@ -1,10 +1,18 @@
 // Supabase Edge Function: paystack-webhook
-// Deploy with: supabase functions deploy paystack-webhook
+// =====================================================================
+// Individual "Premium"/"Premium Plus" consumer subscription webhook via
+// Paystack. Mirrored here from the untracked supabase/paystack-webhook/
+// index.sql (never actually deployed via the CLI, which requires index.ts)
+// so it's part of the real, trackable deploy pipeline. Cleaned of the dead
+// 'family'/'ministry_plus' tier mapping and the welcome-WhatsApp-credits
+// grant that only ever fired for those tiers (subscription_tiers.is_active
+// = false per migration 0350/0271 — ministries are billed via the separate
+// ministry-checkout/ministry-billing-webhook tenant pipeline instead).
 //
 // Set in Supabase secrets:
 //   PAYSTACK_SECRET_KEY   = sk_live_xxx
 //
-// Register this webhook URL in Paystack Dashboard → Settings → Webhooks:
+// Register this webhook URL in Paystack Dashboard -> Settings -> Webhooks:
 //   https://<your-project>.supabase.co/functions/v1/paystack-webhook
 //
 // Events handled:
@@ -12,6 +20,8 @@
 //   subscription.create     — new recurring subscription created
 //   subscription.disable    — subscription cancelled or disabled
 //   invoice.payment_failed  — recurring charge failed
+// verify_jwt must be OFF (Paystack doesn't send a Supabase JWT).
+// =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -23,60 +33,7 @@ const corsHeaders = {
 const TIER_MAPPING: Record<string, string> = {
   'premium':       'premium',
   'premium_plus':  'premium_plus',
-  'family':        'ministry',
-  'ministry_plus': 'ministry_plus',
 };
-
-const WELCOME_CREDITS: Record<string, number> = {
-  'family':        50,
-  'ministry_plus': 150,
-};
-
-async function grantWelcomeCredits(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-  planType: string,
-): Promise<void> {
-  const credits = WELCOME_CREDITS[planType];
-  if (!credits) return;
-
-  const { data: wallet } = await supabase
-    .from('broadcast_wallets')
-    .select('id, balance_credits, total_purchased, welcome_credits_granted')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (wallet?.welcome_credits_granted) return;
-
-  if (wallet) {
-    await supabase.from('broadcast_wallets').update({
-      balance_credits:         wallet.balance_credits + credits,
-      total_purchased:         wallet.total_purchased + credits,
-      welcome_credits_granted: true,
-      updated_at:              new Date().toISOString(),
-    }).eq('id', wallet.id);
-  } else {
-    await supabase.from('broadcast_wallets').insert({
-      user_id:                 userId,
-      balance_credits:         credits,
-      total_purchased:         credits,
-      total_used:              0,
-      welcome_credits_granted: true,
-    });
-  }
-
-  await supabase.from('broadcast_wallet_transactions').insert({
-    user_id:     userId,
-    type:        'welcome_credit',
-    credits,
-    usd_amount:  0,
-    description: `Welcome gift: ${credits} free WhatsApp credits on first subscription`,
-    status:      'completed',
-    created_at:  new Date().toISOString(),
-  });
-
-  console.log(`Granted ${credits} welcome credits to user ${userId}`);
-}
 
 // Verify Paystack webhook signature (HMAC-SHA512)
 async function verifySignature(payload: string, signature: string, secret: string): Promise<boolean> {
@@ -154,9 +111,6 @@ Deno.serve(async (req) => {
           .update({ status: 'completed', updated_at: new Date().toISOString() })
           .eq('payment_reference', data.reference)
           .eq('payment_provider', 'paystack');
-
-        // Grant one-time welcome credits on first ministry subscription
-        await grantWelcomeCredits(supabase, userId, planType);
 
         console.log(`Charge success for user ${userId} → ${subscriptionTier}`);
         break;

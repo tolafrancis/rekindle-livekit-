@@ -1,3 +1,19 @@
+// Supabase Edge Function: paystack-initialize
+// =====================================================================
+// Individual "Premium"/"Premium Plus" consumer subscription checkout via
+// Paystack (NGN/GHS/ZAR region). Mirrored here from the untracked
+// supabase/paystack-initialize/index.sql (never actually deployed via the
+// CLI, which requires index.ts) so it's part of the real, trackable deploy
+// pipeline. Cleaned of the dead 'family'/'ministry_plus' tier pricing
+// (subscription_tiers.is_active = false per migration 0350/0271 —
+// ministries are billed via the separate ministry-checkout/
+// ministry-billing-webhook tenant pipeline instead, which has its own
+// Paystack integration).
+//
+// Secrets: PAYSTACK_SECRET_KEY, PAYSTACK_PLAN_<PLANTYPE>_<CURRENCY> (optional,
+// enables recurring billing for that plan+currency).
+// =====================================================================
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -18,18 +34,6 @@ const PLAN_PRICES: Record<string, Record<string, number>> = {
     'NGN': 900000,  // 9,000 NGN
     'USD': 1800     // $18.00
   },
-  'family': {
-    'NGN': 4500000, // 45,000 NGN
-    'GHS': 45000,   // 450 GHS
-    'ZAR': 54000,   // 540 ZAR
-    'USD': 2999     // $29.99
-  },
-  'ministry_plus': {
-    'NGN': 7500000, // 75,000 NGN
-    'GHS': 75000,   // 750 GHS
-    'ZAR': 90000,   // 900 ZAR
-    'USD': 4999     // $49.99
-  }
 };
 
 // Paystack plan codes — create these in your Paystack dashboard
@@ -78,8 +82,6 @@ Deno.serve(async (req) => {
     const tierMapping: Record<string, string> = {
       'premium':       'premium',
       'premium_plus':  'premium_plus',
-      'family':        'ministry',
-      'ministry_plus': 'ministry_plus',
     };
 
     // Initialize transaction for subscription
@@ -138,7 +140,7 @@ Deno.serve(async (req) => {
       reference: initData.data.reference
     }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Paystack initialize error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
