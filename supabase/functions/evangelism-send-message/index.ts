@@ -1,6 +1,11 @@
 // Supabase Edge Function: evangelism-send-message
 // Routes an outbound reply from the inbox to the correct channel.
-// Deploy: supabase functions deploy evangelism-send-message
+//
+// Mirrored here from the untracked supabase/evangelism-send-message/
+// (never actually deployed via the CLI, which requires this file to live
+// under supabase/functions/) so it's part of the real, trackable deploy
+// pipeline — this function is called live from EvangelismInbox.tsx with
+// its actual deployment status previously unconfirmed.
 //
 // Caller must be a leader/admin/owner of ministryId (checked via
 // is_group_admin, same gate send-ministry-sms-broadcast uses for the

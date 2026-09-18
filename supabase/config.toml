@@ -329,3 +329,26 @@ enabled = true
 # the request body, same trust model as ministry-donation-checkout. Gateway
 # JWT verification stays on.
 verify_jwt = true
+
+[functions.send-whatsapp]
+enabled = true
+# Called from a signed-in admin's browser session (MinistryGroupsManager.tsx).
+# The function itself does NOT verify the caller administers any ministry
+# (known gap, flagged in its own header comment) — gateway JWT verification
+# is the only real check today.
+verify_jwt = true
+
+[functions.broadcast-whatsapp]
+enabled = true
+# Called from a signed-in admin's browser session (BroadcastMessaging.tsx).
+# Same known gap as send-whatsapp — no ministry-scoped authorization inside
+# the function itself.
+verify_jwt = true
+
+[functions.evangelism-send-message]
+enabled = true
+# Called from a signed-in ministry admin's browser session
+# (EvangelismInbox.tsx). The function verifies the caller via
+# auth.getUser() AND is_group_admin(ministryId) internally, so this needs a
+# real user JWT, not just the anon key. Gateway JWT verification stays on.
+verify_jwt = true

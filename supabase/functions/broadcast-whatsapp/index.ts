@@ -1,3 +1,31 @@
+// Supabase Edge Function: broadcast-whatsapp
+// =====================================================================
+// Batch WhatsApp broadcast to many recipients at once, via either Twilio or
+// the platform's shared Meta WhatsApp number (auto-picks Twilio when
+// configured, or the caller can force one via `provider`). Deducts the
+// sending user's broadcast wallet credits and logs to broadcast_logs.
+// Distinct from send-whatsapp (single-recipient) and from the ministry
+// app's per-ministry-WABA ministry-whatsapp-broadcast. Called from
+// BroadcastMessaging.tsx in the consumer app.
+//
+// Mirrored here from the untracked supabase/broadcast-whatsapp/index.sql
+// (never actually deployed via the CLI, which requires index.ts) so it's
+// part of the real, trackable deploy pipeline — this function was
+// previously called from real, live UI with its actual deployment status
+// unconfirmed. (A separate, STALE reference copy also sits at
+// apps/rekindle/src/lib/functions/broadcast-whatsapp-channels-function.ts —
+// an older Meta-only version with no Twilio/wallet-deduction logic; that
+// file isn't imported by anything, just misleading if read as current.)
+//
+// KNOWN GAP (not fixed here — flagging only, same as send-whatsapp): no
+// ministry-scoped authorization check — trusts whatever `userId` is passed
+// for wallet deduction, with no verification that the caller administers
+// any ministry at all.
+//
+// Secrets: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM,
+// WHATSAPP_API_URL, WHATSAPP_PHONE_ID, WHATSAPP_ACCESS_TOKEN.
+// =====================================================================
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 

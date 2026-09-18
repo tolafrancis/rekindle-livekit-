@@ -1,3 +1,30 @@
+// Supabase Edge Function: send-whatsapp
+// =====================================================================
+// Sends a single WhatsApp text/template message via the platform's own
+// shared WhatsApp Business number (WHATSAPP_ACCESS_TOKEN/WHATSAPP_PHONE_ID)
+// — distinct from the ministry app's per-ministry-WABA system
+// (ministry-whatsapp-broadcast) and from broadcast-whatsapp (this
+// function's batch/multi-provider sibling). Called per-recipient from
+// MinistryGroupsManager.tsx's WhatsApp broadcast flow in the consumer app.
+//
+// Mirrored here from the untracked supabase/send-whatsapp/index.sql (never
+// actually deployed via the CLI, which requires index.ts) so it's part of
+// the real, trackable deploy pipeline — this function was previously called
+// from real, live UI with its actual deployment status unconfirmed.
+//
+// KNOWN GAP (not fixed here — flagging only): unlike evangelism-send-message
+// (which checks is_group_admin against a ministryId), this function does
+// NOT verify the caller administers any ministry before sending — it just
+// trusts phone_number/message from the request body. Anyone who can reach
+// this endpoint with a valid Supabase session can send WhatsApp messages
+// through the platform's shared number at will. Worth the same ministryId +
+// is_group_admin check evangelism-send-message already has, since the
+// caller (MinistryGroupsManager.tsx) already has a ministryId in scope
+// (selectedGroup.id) it isn't currently passing through.
+//
+// Secrets: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_ID.
+// =====================================================================
+
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
@@ -24,13 +51,13 @@ Deno.serve(async (req) => {
     if (!accessToken || !phoneNumberId) {
       console.error('Missing WhatsApp credentials');
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'WhatsApp integration not configured',
           details: 'Missing WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_ID environment variables'
         }),
-        { 
-          status: 500, 
-          headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
         }
       );
     }
@@ -41,9 +68,9 @@ Deno.serve(async (req) => {
     if (!phone_number) {
       return new Response(
         JSON.stringify({ error: 'Phone number is required' }),
-        { 
-          status: 400, 
-          headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
         }
       );
     }
@@ -110,13 +137,13 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       console.error('WhatsApp API error:', responseData);
-      
+
       // Parse WhatsApp error for better user feedback
       let errorMessage = 'Failed to send WhatsApp message';
-      
+
       if (responseData.error) {
         const waError = responseData.error;
-        
+
         if (waError.code === 131030) {
           errorMessage = 'This phone number is not registered on WhatsApp or has not opted in to receive messages.';
         } else if (waError.code === 131047) {
@@ -133,13 +160,13 @@ Deno.serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: errorMessage,
-          details: responseData.error 
+          details: responseData.error
         }),
-        { 
-          status: response.status, 
-          headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+        {
+          status: response.status,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
         }
       );
     }
@@ -147,28 +174,28 @@ Deno.serve(async (req) => {
     console.log('WhatsApp message sent successfully:', responseData);
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
         message_id: responseData.messages?.[0]?.id,
         data: responseData
       }),
-      { 
-        status: 200, 
-        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       }
     );
 
   } catch (error: any) {
     console.error('Error in send-whatsapp function:', error);
-    
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'Internal server error',
-        details: error.message 
+        details: error.message
       }),
-      { 
-        status: 500, 
-        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
       }
     );
   }
