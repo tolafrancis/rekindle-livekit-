@@ -1487,13 +1487,19 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         return;
       }
 
-      // Fall back to ministry_members role check
+      // Fall back to ministry_group_members role check — the canonical
+      // membership table (see MinistryMembersManager.tsx/is_group_admin SQL
+      // helper). ministry_members is a best-effort MIRROR of it that can
+      // silently fail to write (see MinistryMembersManager's own comment on
+      // that insert/update) — checking it directly here meant a promoted
+      // admin/leader whose mirror row never landed could never see this
+      // ministry's "Create Meeting" button, with no visible error anywhere.
       const { data, error } = await supabase
-        .from('ministry_members')
-        .select('role')
+        .from('ministry_group_members')
+        .select('role, is_leader')
         .eq('ministry_id', ministryId)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.warn('Leadership check failed:', error);
@@ -1504,6 +1510,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       setIsLeader(
         data?.role === 'leader' ||
         data?.role === 'admin' ||
+        data?.is_leader === true ||
         meetings.some(m => m.host_id === user.id)
       );
     };
