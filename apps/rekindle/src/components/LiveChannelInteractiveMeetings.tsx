@@ -53,7 +53,7 @@ import SavedMeetingInsights from './SavedMeetingInsights';
 // Import the DailyVideoCall component - SOLE CONTROLLER OF ALL MEDIA
 import DailyVideoCall from './DailyVideoCall';
 import { HlsPlayer } from './HlsPlayer';
-import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@/lib/muxMeetingStream';
+import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@/lib/videoBackend';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';

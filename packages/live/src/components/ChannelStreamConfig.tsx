@@ -9,11 +9,11 @@ import { Switch } from '@rekindle/ui/switch';
 import { Skeleton } from '@rekindle/ui/skeleton';
 import { Loader2, Copy, Check, Radio, Eye, EyeOff, ExternalLink, ChevronDown, AlertTriangle } from 'lucide-react';
 import {
-  provisionChannelStream, getChannelStreamCreds, deleteChannelStream, reprovisionChannelStream, type MuxProvision,
+  provisionChannelStream, getChannelStreamCreds, deleteChannelStream, reprovisionChannelStream, type IngressCredentials,
   addSimulcastTarget, removeSimulcastTarget, listSimulcastTargets,
   startChannelBroadcast, stopChannelBroadcast,
   type SimulcastPlatform, type SimulcastTarget, type StreamContext,
-} from '../muxStream';
+} from '../channelStreamControl';
 import { SIMULCAST_DESTINATIONS, SIMULCAST_PLATFORMS } from '../simulcastDestinations';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 
@@ -325,13 +325,13 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contex
 };
 
 /**
- * Per-channel low-latency Mux live stream.
- * The platform auto-mints a Mux live stream (no dashboards, no pasting). The
+ * Per-channel low-latency LiveKit live stream.
+ * The platform auto-mints a LiveKit Ingress (no dashboards, no pasting). The
  * owner can either:
  *   • Broadcast: paste the Server URL + Stream Key below into OBS/encoder, or
- *   • Interactive: just go live from the Daily room — the same Mux ingest is
+ *   • Interactive: just go live from the room — the same LiveKit ingest is
  *     used automatically.
- * Either way, viewers watch the channel via the Mux HLS playback URL.
+ * Either way, viewers watch the channel via the HLS Egress playback URL.
  */
 export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channel, meeting, contextKind, open, onClose }) => {
   const { t } = useLanguage();
@@ -347,7 +347,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [prov, setProv] = useState<MuxProvision | null>(null);
+  const [prov, setProv] = useState<IngressCredentials | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [recordEnabled, setRecordEnabled] = useState<boolean>(entity?.enable_recording !== false);
   const [recBusy, setRecBusy] = useState(false);

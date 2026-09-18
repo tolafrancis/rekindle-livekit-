@@ -2,10 +2,10 @@ import { supabase } from '@rekindle/supabase';
 
 // ============================================================
 // Webinar-meeting live streaming, backed by self-hosted LiveKit (HLS Egress).
-// (Mux + the `manage-stream-input` edge function were removed once LiveKit was the
-// only backend. On LiveKit a webinar host publishes into the room and an HLS Egress
-// composites it — there is no RTMP ingest to provision — so the former Mux ingest
-// helpers now return null. Exported names are kept because components import them.)
+// A webinar host publishes into the room and an HLS Egress composites it —
+// there is no RTMP ingest to provision, so the ingest-shaped functions below
+// (createMeetingStream, getMeetingIngest, etc.) are null no-ops kept only so
+// the webinar components that import them keep compiling.
 // ============================================================
 
 export interface StreamProvision {

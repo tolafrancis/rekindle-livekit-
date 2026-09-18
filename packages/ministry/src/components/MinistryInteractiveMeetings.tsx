@@ -54,7 +54,7 @@ import { ChannelStreamConfig } from '@rekindle/live/components/ChannelStreamConf
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from '@rekindle/live/components/DailyVideoCall';
 import { HlsPlayer } from '@rekindle/live/components/HlsPlayer';
-import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/muxMeetingStream';
+import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
@@ -163,8 +163,8 @@ const EnhancedVideoCallWrapper = ({
   onLeave: () => void;
   onEndMeeting?: () => void;
 }) => {
-  // Webinar mode: attendees watch the Cloudflare HLS stream; only the host
-  // (presenter) joins the Daily call and pushes the RTMP stream out.
+  // Webinar mode: attendees watch the LiveKit HLS Egress stream; only the
+  // host (presenter) actually joins the LiveKit room.
   const { t } = useLanguage();
   const isWebinar = meeting.mode === 'webinar';
   const hlsUrl = meeting.hls_playback_url;
@@ -294,7 +294,7 @@ const EnhancedVideoCallWrapper = ({
 
     // createMeetingStream reuses the existing input, or re-provisions one if a
     // previous session was torn down. A webinar needs it for the HLS audience
-    // feed; a recording-enabled meeting needs it so Mux records the call.
+    // feed; a recording-enabled meeting needs it so the call gets recorded.
     const needsStream = isWebinar || meeting.enable_recording !== false;
     if (!needsStream) return;
     createMeetingStream(meeting.id, meeting.enable_recording !== false).then(p => {
@@ -365,11 +365,12 @@ const EnhancedVideoCallWrapper = ({
     if (!isHost && isWebinar) {
       stage.removePresenter(userId);
     }
-    // A webinar's host IS the sole broadcaster (the Daily→Mux push is theirs), so
-    // if they hang up — via the call's leave button, not just "End for All" — the
-    // stream dies and the audience would otherwise sit on a blank Mux slate with
-    // no notice. End it for everyone: stop the stream + flip is_active so the
-    // audience's ended-detection fires and auto-closes them out.
+    // A webinar's host IS the sole broadcaster (the HLS Egress composites
+    // their published tracks), so if they hang up — via the call's leave
+    // button, not just "End for All" — the stream dies and the audience
+    // would otherwise sit on a frozen/blank feed with no notice. End it for
+    // everyone: stop the stream + flip is_active so the audience's
+    // ended-detection fires and auto-closes them out.
     if (isHost && isWebinar) {
       try {
         stopMeetingStream(meeting.id);
@@ -1046,7 +1047,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
 
       if (error) throw error;
 
-      // Webinar mode: auto-provision a Cloudflare live input (platform-managed,
+      // Webinar mode: auto-provision the LiveKit HLS Egress (platform-managed,
       // no host setup). This stores the HLS playback URL on the meeting.
       if (formData.mode === 'webinar') {
         const provisioned = await createMeetingStream(data.id, formData.enable_recording);
@@ -1743,9 +1744,12 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
   const [recordingBusyId, setRecordingBusyId] = useState<string | null>(null);
 
-  // Flip a meeting's recording on/off after it exists. Mux can't toggle
-  // recording on an existing live stream, so re-provision (delete + create).
-  // Mints a new stream key + playback URL, so it's meant for use before going live.
+  // Flip a meeting's recording on/off before it exists. reprovisionMeetingStream
+  // is a confirmed no-op on the LiveKit path (kept only so this call site keeps
+  // compiling — see meetingStreamControl.ts); the enable_recording DB write
+  // below is what this setting actually persists. (Not independently verified
+  // here: exactly how enable_recording is consulted when the meeting later
+  // goes live.)
   const toggleMeetingRecording = async (meeting: MinistryVideoMeeting, enabled: boolean) => {
     if (meeting.is_active) {
       toast.error(t('ministryInteractiveMeetings', 'cantChangeRecordingLive', "Can't change recording while the meeting is live — end it first."));
@@ -1769,7 +1773,8 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     
     setDeletingMeetingId(meetingId);
     try {
-      // Permanently tear down the Cloudflare live input first (best-effort)
+      // deleteMeetingStream is a confirmed no-op on the LiveKit path (kept
+      // only so this call site keeps compiling — see meetingStreamControl.ts)
       await deleteMeetingStream(meetingId);
 
       const { error } = await supabase

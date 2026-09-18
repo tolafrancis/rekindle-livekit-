@@ -1023,9 +1023,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const [meetingEnded, setMeetingEnded] = useState(false);
   const [waitingParticipants, setWaitingParticipants] = useState<DailyParticipantInfo[]>([]);
   const [recordingStatus, setRecordingStatus] = useState<'idle' | 'starting' | 'recording' | 'stopping' | 'error'>('idle');
-  // True while the host is pushing the call's composite to Mux (which records it).
-  // Replaces Daily cloud recording, which this app no longer uses.
-  const [isMuxRecording, setIsMuxRecording] = useState(false);
+  // True while this meeting is being recorded — on the live LiveKit path (see
+  // isLiveKitBackend() below) this reflects the livekit-egress recording
+  // started via useDailyRoom's startRecording/stopRecording. Replaces Daily
+  // cloud recording, which this app no longer uses.
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
 
   // Enhanced control panels
   const [showHostControls, setShowHostControls] = useState(false);
@@ -1233,11 +1235,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     });
   }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange]);
 
-  // The host pushes the call's composite to Mux via one RTMP stream. This serves
-  // two purposes depending on mode: in a webinar it's the feed the HLS audience
-  // watches; in a normal meeting it's how the session gets recorded (Mux records
-  // whatever it ingests). Starts once the host is connected and a stream URL is
-  // available; stops when the call ends.
+  // Legacy Daily-engine RTMP push path, superseded by the LiveKit migration
+  // (see isLiveKitBackend() below, hardcoded true — that path records/
+  // broadcasts via livekit-egress instead, no RTMP push or callObject
+  // involved). Only fires at all if the liveStreamRtmpUrl/callObject props
+  // are actually populated by the caller; not otherwise verified dead here.
   const liveStreamStartedRef = useRef(false);
   useEffect(() => {
     if (!isHost || !liveStreamRtmpUrl || !callObject || !isConnected) return;
@@ -1246,9 +1248,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     (async () => {
       try {
         await callObject.startLiveStreaming({ rtmpUrl: liveStreamRtmpUrl, width: 1280, height: 720 });
-        setIsMuxRecording(true);
+        setIsRecordingActive(true);
         setRecordingStatus('recording');
-        console.log('[DailyVideoCall] RTMP push to Mux started (broadcast/recording)');
+        console.log('[DailyVideoCall] RTMP push started (broadcast/recording)');
       } catch (e) {
         console.warn('[DailyVideoCall] Failed to start RTMP streaming:', e);
         liveStreamStartedRef.current = false;
@@ -1265,26 +1267,26 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           // The call object may already be destroyed during teardown — ignore.
         }
         liveStreamStartedRef.current = false;
-        setIsMuxRecording(false);
+        setIsRecordingActive(false);
       }
     };
   }, [isHost, liveStreamRtmpUrl, callObject, isConnected]);
 
-  // Toggle recording by starting/stopping the RTMP push to Mux. Mux records the
-  // ingested stream automatically (the live stream is provisioned with recording),
-  // so there's no separate Daily cloud-recording call. Webinars hide this control
-  // and keep the push running as the audience broadcast.
+  // Toggle recording. On the live LiveKit path (below) this starts/stops a
+  // livekit-egress recording. The rest of this function (past the
+  // isLiveKitBackend() return) is the legacy Daily-engine RTMP-push
+  // equivalent — see the comment on the effect above.
   const handleToggleRecording = async () => {
     if (!isHost) return;
 
     // LiveKit: recording is a room-composite Egress (no RTMP push, no call object).
     // The hook's startRecording/stopRecording hit the livekit-egress edge fn.
     if (isLiveKitBackend()) {
-      if (isMuxRecording) {
+      if (isRecordingActive) {
         setRecordingStatus('stopping');
         try {
           await stopRecording();
-          setIsMuxRecording(false);
+          setIsRecordingActive(false);
           setRecordingStatus('idle');
         } catch {
           setRecordingStatus('error');
@@ -1294,7 +1296,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         setRecordingStatus('starting');
         try {
           await startRecording();
-          setIsMuxRecording(true);
+          setIsRecordingActive(true);
           setRecordingStatus('recording');
         } catch {
           setRecordingStatus('error');
@@ -1309,12 +1311,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       return;
     }
 
-    if (isMuxRecording) {
+    if (isRecordingActive) {
       setRecordingStatus('stopping');
       try {
         await callObject.stopLiveStreaming();
         liveStreamStartedRef.current = false;
-        setIsMuxRecording(false);
+        setIsRecordingActive(false);
         setRecordingStatus('idle');
       } catch {
         setRecordingStatus('error');
@@ -1325,7 +1327,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       try {
         await callObject.startLiveStreaming({ rtmpUrl: liveStreamRtmpUrl, width: 1280, height: 720 });
         liveStreamStartedRef.current = true;
-        setIsMuxRecording(true);
+        setIsRecordingActive(true);
         setRecordingStatus('recording');
       } catch {
         setRecordingStatus('error');
@@ -1964,7 +1966,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </div>
 
               {/* Recording status badge */}
-              {isHost && enableRecording && (isMuxRecording || recordingStatus === 'starting') && (
+              {isHost && enableRecording && (isRecordingActive || recordingStatus === 'starting') && (
                 <Badge className={`flex items-center gap-1 text-white text-xs border-0 ${
                   recordingStatus === 'starting' ? 'bg-orange-500' : 'bg-red-600'
                 }`}>
@@ -2204,7 +2206,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <div className={`
                   w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
                   transition-all duration-200 transform group-hover:scale-105
-                  ${isMuxRecording
+                  ${isRecordingActive
                     ? 'bg-red-600 hover:bg-red-700 text-white'
                     : recordingStatus === 'starting' || recordingStatus === 'stopping'
                     ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
@@ -2214,7 +2216,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 `}>
                   {recordingStatus === 'starting' || recordingStatus === 'stopping' ? (
                     <Loader2 className="h-4 w-4 sm:h-7 sm:w-7 animate-spin" />
-                  ) : isMuxRecording ? (
+                  ) : isRecordingActive ? (
                     <Square className="h-5 w-5 sm:h-7 sm:w-7" />
                   ) : (
                     <Circle className="h-5 w-5 sm:h-7 sm:w-7" />
@@ -2224,7 +2226,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   {recordingStatus === 'starting' ? t('dailyVideoCall', 'startingEllipsis', 'Starting…')
                     : recordingStatus === 'stopping' ? t('dailyVideoCall', 'stoppingEllipsis', 'Stopping…')
                     : recordingStatus === 'error' ? t('dailyVideoCall', 'recError', 'Rec Error')
-                    : isMuxRecording ? t('dailyVideoCall', 'stopRec', 'Stop Rec')
+                    : isRecordingActive ? t('dailyVideoCall', 'stopRec', 'Stop Rec')
                     : t('dailyVideoCall', 'record', 'Record')}
                 </span>
               </button>
@@ -2257,7 +2259,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           participants={participantStates}
           waitingRoomParticipants={waitingRoomParticipants}
           meetingSettings={meetingSettings}
-          isRecording={isMuxRecording}
+          isRecording={isRecordingActive}
           spotlightedParticipantId={spotlightedParticipantId}
           isHost={isModerator}
           canRecord={isHost}

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rekindle/ui/dialog';
-import { getMeetingRecordings, MeetingRecording } from '../muxMeetingStream';
-import { muxDownloadUrl } from '../muxStream';
-import { MuxVodPlayer } from './MuxVodPlayer';
+import { getMeetingRecordings, MeetingRecording } from '../meetingStreamControl';
+import { muxDownloadUrl } from '../channelStreamControl';
+import { VodPlayer } from './VodPlayer';
 import { RecordingRetentionBadge } from './RecordingRetentionBadge';
 import { RECORDING_RETENTION_DAYS } from '../recordingRetention';
 import { Loader2, Video, Download } from 'lucide-react';
@@ -62,7 +62,7 @@ export const MeetingRecordings: React.FC<MeetingRecordingsProps> = ({ meetingId,
           <div className="space-y-3">
             {active && (
               <div className="aspect-video w-full bg-black rounded-lg overflow-hidden">
-                <MuxVodPlayer
+                <VodPlayer
                   key={active.uid}
                   src={active.hls || ''}
                   poster={active.thumbnail}

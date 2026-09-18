@@ -26,7 +26,7 @@ const COMPLETION_THRESHOLD = 90;
 
 /**
  * Plays a Pastor's Video Message (HLS, produced by the transcode worker).
- * Mirrors MuxVodPlayer's engine (hls.js / native HLS) but adds the fuller
+ * Mirrors VodPlayer's engine (hls.js / native HLS) but adds the fuller
  * media-platform experience the spec calls for: fullscreen, speed control,
  * captions, resume-from-last-position, reactions, and share — plus watch-time/
  * completion tracking against ministry_video_message_views, the same shape as

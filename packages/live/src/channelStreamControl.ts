@@ -1,11 +1,8 @@
 import { supabase } from '@rekindle/supabase';
 
 // Live-channel streaming, backed by self-hosted LiveKit (Ingress + Egress).
-// (Mux and the `manage-stream-input` edge function were removed once LiveKit was
-// the only backend. Exported names are kept — components import them — but the
-// implementations are now LiveKit-only.)
 
-export interface MuxProvision {
+export interface IngressCredentials {
   uid: string;
   streamKey: string;
   serverUrl: string;     // OBS "Server" field
@@ -34,7 +31,7 @@ function resolveStreamContext(idOrContext: string | StreamContext): StreamContex
 }
 
 /** OBS/encoder ingest creds via a LiveKit Ingress (serverUrl + streamKey). */
-async function ingress(action: 'create' | 'get' | 'delete', ctxInput: string | StreamContext): Promise<MuxProvision | null> {
+async function ingress(action: 'create' | 'get' | 'delete', ctxInput: string | StreamContext): Promise<IngressCredentials | null> {
   const ctx = resolveStreamContext(ctxInput);
   const isMeeting = ctx.kind !== 'channel'; // covers meeting / ministry_meeting / channel_meeting
   const body: any = {
@@ -45,7 +42,7 @@ async function ingress(action: 'create' | 'get' | 'delete', ctxInput: string | S
   };
   const { data, error } = await supabase.functions.invoke('livekit-ingress', { body });
   if (error || !data) return null;
-  if (action === 'delete') return data as MuxProvision;
+  if (action === 'delete') return data as IngressCredentials;
   const serverUrl = data.serverUrl ?? '';
   const streamKey = data.streamKey ?? '';
   return {
@@ -93,7 +90,7 @@ export async function reprovisionChannelStream(channelId: string, record: boolea
   return provisionChannelStream(channelId, record);
 }
 
-export interface MuxRecording {
+export interface ChannelRecording {
   uid: string;
   created: string;
   duration: number;
@@ -117,14 +114,14 @@ export function muxDownloadUrl(hls?: string | null, filename = 'recording'): str
 }
 
 /** List a channel's recorded broadcasts — LiveKit Egress outputs from
- *  livekit_recordings, in the shared MuxRecording shape. */
-export async function getChannelRecordings(channelId: string): Promise<MuxRecording[]> {
+ *  livekit_recordings, in the shared ChannelRecording shape. */
+export async function getChannelRecordings(channelId: string): Promise<ChannelRecording[]> {
   try {
     const { data, error } = await supabase.functions.invoke('livekit-egress', {
       body: { action: 'list-recordings', channelId },
     });
     if (error || !data?.recordings) return [];
-    return data.recordings as MuxRecording[];
+    return data.recordings as ChannelRecording[];
   } catch {
     return [];
   }

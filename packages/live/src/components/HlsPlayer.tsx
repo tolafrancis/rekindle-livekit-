@@ -389,7 +389,7 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
     // caption/dub-audio sync delay, not just the on-screen debug readout
     // (that UI stays gated behind showDebug below).
     // NOTE: this is EDGE lag only (player → HLS edge). True glass-to-glass adds
-    // the Daily→Mux encode/push pipeline on top, which the client can't see.
+    // the LiveKit Egress encode/write pipeline on top, which the client can't see.
     debugTimer = setInterval(() => {
       let lag: number | null = null;
       const h = hls as any;

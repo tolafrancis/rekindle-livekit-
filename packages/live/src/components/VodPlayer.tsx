@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 
-interface MuxVodPlayerProps {
+interface VodPlayerProps {
   src: string;        // HLS .m3u8 for a recorded asset (VOD) — Mux OR LiveKit Egress
   poster?: string;    // thumbnail image URL
   className?: string;
@@ -15,7 +15,7 @@ interface MuxVodPlayerProps {
  * finished recordings, so it lets the viewer move through the timeline freely.
  * Safari/iOS play HLS natively; everywhere else uses hls.js.
  */
-export const MuxVodPlayer: React.FC<MuxVodPlayerProps> = ({ src, poster, className }) => {
+export const VodPlayer: React.FC<VodPlayerProps> = ({ src, poster, className }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -47,4 +47,4 @@ export const MuxVodPlayer: React.FC<MuxVodPlayerProps> = ({ src, poster, classNa
   );
 };
 
-export default MuxVodPlayer;
+export default VodPlayer;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { getMeetingRecordings, MeetingRecording } from '@rekindle/live/muxMeetingStream';
-import { muxDownloadUrl } from '@rekindle/live/muxStream';
-import { MuxVodPlayer } from '@rekindle/live/components/MuxVodPlayer';
+import { getMeetingRecordings, MeetingRecording } from '@rekindle/live/meetingStreamControl';
+import { muxDownloadUrl } from '@rekindle/live/channelStreamControl';
+import { VodPlayer } from '@rekindle/live/components/VodPlayer';
 import { RecordingRetentionBadge } from '@rekindle/live/components/RecordingRetentionBadge';
 import { RECORDING_RETENTION_DAYS } from '@rekindle/live/recordingRetention';
 import { Loader2, Video, Download, Clock } from 'lucide-react';
@@ -113,7 +113,7 @@ export const MinistryRecordingsTab: React.FC<{
       {active && (
         <div className="space-y-2">
           <div className="aspect-video w-full bg-black rounded-lg overflow-hidden">
-            <MuxVodPlayer
+            <VodPlayer
               key={active.uid}
               src={active.hls || ''}
               poster={active.thumbnail}

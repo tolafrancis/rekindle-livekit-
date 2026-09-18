@@ -184,7 +184,7 @@ serve(async (req) => {
 
     const admin = createClient(SB_URL!, SB_SERVICE!);
 
-    // list-recordings is a read — no host check (VOD list). Returns MuxRecording shape.
+    // list-recordings is a read — no host check (VOD list). Returns the shared ChannelRecording/MeetingRecording shape.
     if (action === 'list-recordings') {
       let q = admin.from('livekit_recordings').select('*').order('started_at', { ascending: false });
       // meetingId is the stable identifier callers actually have (a meeting's DB
