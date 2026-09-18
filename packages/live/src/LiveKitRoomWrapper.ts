@@ -416,9 +416,24 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     this.callbacks.onTranslationTracksChanged?.(tracks);
   }
 
+  /** Set while a startScreenShare() attempt is acquiring getDisplayMedia, so the
+   *  MediaDevicesError listener above can tell a resulting failure apart from an
+   *  actual camera error. */
+  private acquiringScreenShare = false;
+
   async startScreenShare(): Promise<boolean> {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return false;
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      // Most mobile browsers (iOS Safari, and most Android browsers) don't support
+      // in-browser screen capture at all. Fail fast with an accurate message instead
+      // of letting the call below throw a generic, misleading error.
+      this.callbacks.onError?.(new Error("Screen sharing isn't supported in this browser. Try joining from a desktop browser instead."));
+      return false;
+    }
+
+    this.acquiringScreenShare = true;
     try {
       // `audio: true` is what makes the browser offer its native "Share tab
       // audio" / "Share system audio" checkbox (Zoom-style) on the
@@ -432,6 +447,8 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     } catch (e) {
       this.callbacks.onError?.(e);
       return false;
+    } finally {
+      this.acquiringScreenShare = false;
     }
   }
 
@@ -565,7 +582,15 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         const lp = this.room?.localParticipant;
         if (lp) this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
       })
-      .on(RoomEvent.MediaDevicesError, (e: Error) => this.callbacks.onCameraError?.(e))
+      .on(RoomEvent.MediaDevicesError, (e: Error) => {
+        // setScreenShareEnabled() failures (common on mobile browsers, which mostly
+        // lack getDisplayMedia) also fire this event. startScreenShare()'s own catch
+        // already reports those via onError — don't ALSO mislabel it here as a
+        // camera failure ("Camera Error: Failed to access camera" is confusing when
+        // the user was trying to share their screen, not their camera).
+        if (this.acquiringScreenShare) return;
+        this.callbacks.onCameraError?.(e);
+      })
       .on(RoomEvent.ConnectionStateChanged, (s: ConnectionState) => {
         if (s === ConnectionState.Disconnected) this.joined = false;
       })
