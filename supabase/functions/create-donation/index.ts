@@ -7,8 +7,14 @@
 // +Stripe donations go through ministry-donation-checkout instead (real
 // Stripe Connect destination charges) — this function's own Stripe branch
 // is effectively dead for ministries now but kept working for the
-// consumer path, which still goes through the fastrouter.io gateway (a
-// known, separately-flagged issue, out of scope here).
+// consumer path.
+//
+// CLEANED UP: the Stripe branch used to go through a third-party proxy
+// (stripe.gateway.fastrouter.io, GATEWAY_API_KEY) instead of calling Stripe
+// directly — the same unverified-gateway pattern already replaced this
+// session in ministry-checkout, stripe-subscription, create-billing-portal,
+// and cancel-subscription. Now calls api.stripe.com directly, matching the
+// rest of the codebase.
 //
 // Mirrored here from the untracked supabase/create-donation/index.sql
 // (never actually deployed via the CLI, which requires index.ts) so it's
@@ -26,7 +32,7 @@
 // pattern that caught it). Now builds a ministry_donations-specific object
 // with only real columns, and logs (not swallows) any insert error.
 //
-// Secrets: PAYSTACK_SECRET_KEY, GATEWAY_API_KEY (Stripe/consumer path only).
+// Secrets: PAYSTACK_SECRET_KEY, STRIPE_SECRET_KEY.
 // =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -36,13 +42,51 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
 
+function flattenForStripe(obj: Record<string, any>, prefix = ''): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}[${k}]` : k;
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      Object.assign(result, flattenForStripe(v, key));
+    } else if (Array.isArray(v)) {
+      v.forEach((item, i) => {
+        if (typeof item === 'object') Object.assign(result, flattenForStripe(item, `${key}[${i}]`));
+        else result[`${key}[${i}]`] = String(item);
+      });
+    } else {
+      result[key] = String(v);
+    }
+  }
+  return result;
+}
+
+async function stripeCall(method: string, path: string, secretKey: string, body?: Record<string, any>): Promise<any> {
+  const init: RequestInit = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${secretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Stripe-Version': '2024-06-20',
+    },
+  };
+  if (body) init.body = new URLSearchParams(flattenForStripe(body)).toString();
+  const res = await fetch(`https://api.stripe.com/v1${path}`, init);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message ?? `Stripe error ${res.status}`);
+  return data;
+}
+
+// Stripe metadata values cap at 500 chars — truncate defensively.
+const meta = (s: string | null | undefined) => (s ? String(s).slice(0, 500) : '');
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   const platformPaystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY");
-  const gatewayApiKey = Deno.env.get("GATEWAY_API_KEY");
+  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -151,7 +195,7 @@ Deno.serve(async (req) => {
   const paystackSecretKey = useMinistryPaystack ? ministryPaystackKey : platformPaystackSecretKey;
 
   if (provider === 'stripe') {
-    if (!gatewayApiKey) {
+    if (!stripeSecretKey) {
       return new Response(JSON.stringify({
         error: 'Stripe payments are temporarily unavailable. Please use Paystack.'
       }), {
@@ -160,37 +204,26 @@ Deno.serve(async (req) => {
     }
 
     try {
-      const response = await fetch('https://stripe.gateway.fastrouter.io/payments/payment-intents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': gatewayApiKey
+      const donorName = isAnonymous ? 'Anonymous' : (name || 'Anonymous');
+      const paymentIntent = await stripeCall('POST', '/payment_intents', stripeSecretKey, {
+        amount,
+        currency: 'usd',
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          type: 'donation',
+          user_id: meta(userId || 'guest'),
+          donor_name: meta(donorName),
+          donor_email: meta(email),
+          ministry_id: meta(ministryId),
+          campaign_id: meta(campaignId),
+          fund_allocation: meta(fundAllocation || 'General'),
+          message: meta(message),
         },
-        body: JSON.stringify({
-          amount,
-          currency: 'usd',
-          metadata: {
-            type: 'donation',
-            user_id: userId || 'guest',
-            donor_name: isAnonymous ? 'Anonymous' : (name || 'Anonymous'),
-            donor_email: email,
-            ministry_id: ministryId || '',
-            campaign_id: campaignId || '',
-            fund_allocation: fundAllocation || 'General',
-            message: message || ''
-          }
-        })
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create payment intent');
-      }
 
       if (supabase) {
         if (ministryId) {
-          await insertMinistryDonation({ paymentMethod: 'stripe', currency: 'USD', amountCents: amount, reference: data.id });
+          await insertMinistryDonation({ paymentMethod: 'stripe', currency: 'USD', amountCents: amount, reference: paymentIntent.id });
         } else {
           await supabase.from('donations').insert({
             user_id: userId || null,
@@ -198,8 +231,8 @@ Deno.serve(async (req) => {
             currency: 'USD',
             payment_method: 'stripe',
             payment_provider: 'stripe',
-            payment_reference: data.id,
-            donor_name: isAnonymous ? 'Anonymous' : (name || 'Anonymous'),
+            payment_reference: paymentIntent.id,
+            donor_name: donorName,
             donor_email: email,
             is_anonymous: isAnonymous,
             message: message || null,
@@ -209,8 +242,8 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({
-        clientSecret: data.clientSecret,
-        paymentIntentId: data.id,
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
         provider: 'stripe'
       }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 
