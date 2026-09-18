@@ -14,6 +14,10 @@
 // =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'cancel-subscription');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -156,6 +160,8 @@ Deno.serve(async (req) => {
 
   } catch (error: any) {
     console.error('Cancel subscription error:', error);
+    Sentry.captureException(error);
+    await Sentry.flush(2000);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });

@@ -42,6 +42,10 @@
 // =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'ministry-donation-webhook');
 
 const enc = new TextEncoder();
 
@@ -124,7 +128,10 @@ Deno.serve(async (req) => {
       const { error: updateError } = await db.from('ministry_donations')
         .update({ status })
         .eq('stripe_payment_id', obj.id);
-      if (updateError) console.error('ministry_donations update failed:', updateError.message, updateError.details);
+      if (updateError) {
+        console.error('ministry_donations update failed:', updateError.message, updateError.details);
+        Sentry.captureMessage(`ministry-donation-webhook: ministry_donations update failed — ${updateError.message}`, 'error');
+      }
 
       return new Response('ok', { status: 200 });
     }
@@ -133,6 +140,8 @@ Deno.serve(async (req) => {
 
   } catch (err: any) {
     console.error('Ministry donation webhook error:', err);
+    Sentry.captureException(err);
+    await Sentry.flush(2000);
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 });

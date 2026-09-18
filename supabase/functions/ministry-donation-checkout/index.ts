@@ -22,6 +22,10 @@
 // =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'ministry-donation-checkout');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -142,12 +146,17 @@ Deno.serve(async (req) => {
     // PaymentIntent and the donor's card may already be charged by the time
     // they confirm it client-side. Log loudly so a schema mismatch like this
     // is visible in function logs instead of silently losing the record.
-    if (insertError) console.error('ministry_donations insert failed:', insertError.message, insertError.details);
+    if (insertError) {
+      console.error('ministry_donations insert failed:', insertError.message, insertError.details);
+      Sentry.captureMessage(`ministry-donation-checkout: ministry_donations insert failed — ${insertError.message}`, 'error');
+    }
 
     return json({ clientSecret: paymentIntent.client_secret });
 
   } catch (error: any) {
     console.error('Ministry donation checkout error:', error);
+    Sentry.captureException(error);
+    await Sentry.flush(2000);
     return json({ error: error.message || 'An unexpected error occurred' }, 500);
   }
 });

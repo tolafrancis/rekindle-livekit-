@@ -3,8 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { initSentry } from '@rekindle/features/sentry';
 import App from './App.tsx'
 import './index.css'
+
+initSentry({ dsn: import.meta.env.VITE_SENTRY_DSN, appName: 'rekindle' });
 
 let callIsActive = false;
 let pendingPushNav: string | null = null;

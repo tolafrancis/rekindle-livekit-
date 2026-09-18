@@ -36,6 +36,10 @@
 // =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'create-donation');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -159,7 +163,10 @@ Deno.serve(async (req) => {
       fund_allocation: fundAllocation || 'General',
       campaign_id: campaignId || null,
     });
-    if (error) console.error('ministry_donations insert failed:', error.message, error.details);
+    if (error) {
+      console.error('ministry_donations insert failed:', error.message, error.details);
+      Sentry.captureMessage(`create-donation: ministry_donations insert failed — ${error.message}`, 'error');
+    }
   }
 
   let paymentSettings = null;
@@ -249,6 +256,8 @@ Deno.serve(async (req) => {
 
     } catch (err: any) {
       console.error('Stripe error:', err);
+      Sentry.captureException(err);
+      await Sentry.flush(2000);
       return new Response(JSON.stringify({
         error: 'Stripe payments are temporarily unavailable. Please use Paystack.'
       }), {
@@ -331,6 +340,8 @@ Deno.serve(async (req) => {
 
     } catch (err: any) {
       console.error('Paystack error:', err);
+      Sentry.captureException(err);
+      await Sentry.flush(2000);
       return new Response(JSON.stringify({ error: 'Paystack error occurred' }), {
         status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders }
       });

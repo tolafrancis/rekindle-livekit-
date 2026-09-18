@@ -13,6 +13,10 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import * as Sentry from 'npm:@sentry/deno@^10'
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 })
+Sentry.setTag('function', 'paystack-verify')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -159,6 +163,7 @@ serve(async (req) => {
 
       if (ministryUpdateError) {
         console.error('ministry_donations update failed:', ministryUpdateError.message, ministryUpdateError.details)
+        Sentry.captureMessage(`paystack-verify: ministry_donations update failed — ${ministryUpdateError.message}`, 'error')
       }
     }
 
@@ -180,6 +185,8 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Verification error:', error)
+    Sentry.captureException(error)
+    await Sentry.flush(2000)
     return new Response(
       JSON.stringify({
         success: false,

@@ -22,6 +22,10 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'ministry-billing-webhook');
 
 const enc = new TextEncoder();
 
@@ -105,6 +109,7 @@ async function upsert(sub: {
     : await db.from('ministry_subscriptions').insert(row);
   if (writeError) {
     console.error('[ministry-billing-webhook] ministry_subscriptions write failed:', writeError, { ministryId: sub.ministryId, plan: sub.plan });
+    Sentry.captureMessage(`ministry-billing-webhook: ministry_subscriptions write failed for ${sub.ministryId} — ${writeError.message}`, 'error');
   }
 
   // Reflect lifecycle on the tenant (subscriptionEnforcement/UI read this).
@@ -241,6 +246,8 @@ serve(async (req) => {
     return new Response('no signature', { status: 400 });
   } catch (error) {
     console.error('ministry-billing-webhook error:', error);
+    Sentry.captureException(error);
+    await Sentry.flush(2000);
     return new Response('error', { status: 500 });
   }
 });

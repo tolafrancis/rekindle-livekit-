@@ -3,8 +3,11 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { closeTopModal } from '@rekindle/ui/modal-stack';
+import { initSentry } from '@rekindle/features/sentry';
 import App from './App.tsx';
 import './index.css';
+
+initSentry({ dsn: import.meta.env.VITE_SENTRY_DSN, appName: 'ministry' });
 
 let callIsActive = false;
 let pendingPushNav: string | null = null;
