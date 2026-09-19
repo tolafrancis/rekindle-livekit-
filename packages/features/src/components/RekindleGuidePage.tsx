@@ -197,7 +197,7 @@ const RekindleGuidePage: React.FC = () => {
             how={[
               'Become a Ministry Partner first: tap your profile icon, then Billing (or go directly to Settings → Billing), and choose "Partner Your Ministry" to subscribe. Until this is active, the Create Ministry button won’t appear anywhere in the app.',
               'From the main navigation, tap Ministries — a Create Ministry button now appears at the top of the page.',
-              'Fill in the form: Ministry Name, Web Address (this becomes your subdomain — you can connect your own custom domain later), Description, a Logo and Featured Image, Category and Location, and Country (choosing United Kingdom is what unlocks Gift Aid later).',
+              'Fill in the form: Ministry Name, Web Address (this becomes your subdomain — you can connect your own custom domain later), Description, a Logo and Featured Image, Category and Location, and Country (choosing United Kingdom is what unlocks Gift Aid later). The Web Address auto-fills from your Ministry Name, so remember to edit it down to something short — left untouched, "Grace Community Church" becomes gracecommunitychurch.rekindlebc.com instead of a shorter, easier link like grace.rekindlebc.com.',
               'Add a Welcome Message for new members and pick a Theme Colour for your ministry’s branding.',
               'Choose your Join Method: Open (anyone can join immediately), Approval Required, or Invite Only.',
               'Tap Create Ministry. You land in your new ministry’s dashboard as its leader, ready to invite your team and set up devotionals, giving, QR self-registration and everything else in this guide.',
@@ -206,7 +206,7 @@ const RekindleGuidePage: React.FC = () => {
               'A church planting its first digital presence.',
               'A ministry network creating a dedicated space for a new campus, chapter or language group.',
             ]}
-            note="Country matters beyond display: it drives region-specific features like UK Gift Aid, so choose carefully — it isn't just a label."
+            note="Country matters beyond display: it drives region-specific features like UK Gift Aid, so choose carefully — it isn't just a label. Also double-check the Web Address before saving — it can't be changed as easily later, so a short, memorable slug now saves an awkward link forever."
           />
 
           <FeatureSection
