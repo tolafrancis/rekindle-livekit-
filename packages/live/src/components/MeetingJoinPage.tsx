@@ -112,6 +112,12 @@ import {
   Sparkles
 } from 'lucide-react';
 
+// Same env vars LandingPage.tsx's homepage download buttons read — each
+// app's own .env supplies its own release URL at build time, so this
+// resolves correctly whether the page was bundled into rekindle or ministry.
+const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL || '';
+const WINDOWS_INSTALLER_URL = import.meta.env.VITE_WINDOWS_INSTALLER_URL || '';
+
 interface MeetingData {
   id: string;
   title: string;
@@ -555,6 +561,27 @@ const MeetingJoinPage: React.FC = () => {
           <button type="button" onClick={() => setHandoffDismissed(true)} className="underline">
             {t('skeleton', 'continueInBrowserLower', 'continue in browser')}
           </button>
+          {/* "Didn't open?" most often means the app isn't installed at all,
+              not that the handoff glitched — offer the actual install, same
+              URLs as the homepage's download buttons, hidden independently
+              until each is configured. */}
+          {(ANDROID_APK_URL || WINDOWS_INSTALLER_URL) && (
+            <>
+              {' · '}
+              {t('skeleton', 'dontHaveApp', "don't have the app?")}{' '}
+              {ANDROID_APK_URL && (
+                <a href={ANDROID_APK_URL} download className="underline">
+                  {t('skeleton', 'downloadAndroid', 'download Android')}
+                </a>
+              )}
+              {ANDROID_APK_URL && WINDOWS_INSTALLER_URL && ' / '}
+              {WINDOWS_INSTALLER_URL && (
+                <a href={WINDOWS_INSTALLER_URL} download className="underline">
+                  {t('skeleton', 'downloadWindows', 'download Windows')}
+                </a>
+              )}
+            </>
+          )}
         </p>
       )}
     </div>
