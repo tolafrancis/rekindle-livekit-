@@ -11,7 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
-import { slugify, buildJoinUrl } from '@rekindle/features/qrCode';
+import { buildJoinUrl } from '@rekindle/features/qrCode';
 import {
   LayoutDashboard, Settings, Users, BookOpen, MessageSquare, CreditCard,
   Palette, Shield, Loader2, Save, Link as LinkIcon, Image, Upload
@@ -115,15 +115,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   // ── General Profile & Branding Form State ──
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  // Live availability hint as the admin types a new slug — same UX as the
-  // ministry-creation wizard (CreateMinistryWizard). The unique index at save
-  // time (ensureUniqueSlug) is still the authoritative guard; this is just
-  // feedback so they're not surprised by a silently appended "-2" on save.
-  const [slugAvailable, setSlugAvailable] = useState<null | boolean>(null);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [formData, setFormData] = useState({
     name: ministry.name || '',
-    slug: ministry.slug || '',
     description: ministry.description || '',
     location: ministry.location || '',
     country_code: ministry.country_code || '',
@@ -198,60 +192,13 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
     }
   };
 
-  useEffect(() => {
-    const candidate = formData.slug;
-    if (!candidate || candidate === (ministry.slug || '')) { setSlugAvailable(null); return; }
-    let active = true;
-    const timer = setTimeout(async () => {
-      const { data } = await supabase
-        .from('ministry_groups')
-        .select('id')
-        .eq('slug', candidate)
-        .neq('id', ministry.id)
-        .limit(1);
-      if (active) setSlugAvailable(!(data && data.length > 0));
-    }, 350);
-    return () => { active = false; clearTimeout(timer); };
-  }, [formData.slug, ministry.id, ministry.slug]);
-
-  // Same collision-avoidance as MinistryRegistrationSettings' own slug editor
-  // (append -2, -3, … on collision) — kept here too since the slug is now
-  // editable from both places and must never produce a duplicate.
-  const ensureUniqueSlug = async (candidate: string): Promise<string> => {
-    const base = slugify(candidate);
-    if (!base) return ministry.slug || '';
-    let tryName = base;
-    for (let i = 2; i < 50; i++) {
-      const { data } = await supabase
-        .from('ministry_groups')
-        .select('id')
-        .eq('slug', tryName)
-        .neq('id', ministry.id)
-        .maybeSingle();
-      if (!data) return tryName;
-      tryName = `${base}-${i}`;
-    }
-    return `${base}-${Date.now().toString().slice(-4)}`;
-  };
-
   const handleSaveGeneral = async () => {
     setSavingGeneral(true);
     try {
-      const finalSlug = formData.slug === (ministry.slug || '')
-        ? formData.slug
-        : await ensureUniqueSlug(formData.slug);
-      if (finalSlug !== formData.slug) {
-        setFormData(prev => ({ ...prev, slug: finalSlug }));
-        toast({
-          title: t('ministrySettingsHub', 'slugTakenTitle', 'That address was taken'),
-          description: t('ministrySettingsHub', 'slugTakenDesc', 'Saved as "{slug}" instead.').replace('{slug}', finalSlug),
-        });
-      }
       const { error } = await supabase
         .from('ministry_groups')
         .update({
           name: formData.name,
-          slug: finalSlug,
           description: formData.description,
           location: formData.location,
           country_code: formData.country_code || null,
@@ -347,26 +294,32 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
 
                 <div>
                   <Label>{t('ministrySettingsHub', 'ministrySlug', 'Ministry Slug')}</Label>
-                  <Input
-                    value={formData.slug}
-                    onChange={(e) => setFormData({ ...formData, slug: slugify(e.target.value) })}
-                    placeholder="grace-chapel"
-                  />
+                  {/* Read-only here on purpose — the editable slug (with live-availability
+                      checking, collision handling and its own Save button) lives in the
+                      Registration & Join Link section below. A second independent editable
+                      copy here — each with its own local state and its own Save button —
+                      previously let an edit made in one field get silently discarded if the
+                      OTHER section's Save button was clicked instead (real bug, hit in
+                      testing: edited here, saved down there, this field reverted). One
+                      editable field, one Save button — this one just links to it. */}
+                  <div className="flex items-center gap-2">
+                    <Input value={ministry.slug || ''} readOnly disabled className="bg-gray-50" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => document.getElementById('registration-join-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    >
+                      {t('ministrySettingsHub', 'changeSlug', 'Change')}
+                    </Button>
+                  </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Changing it updates the join link everywhere — old links using the previous address will stop working.')}
+                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Registration & Join Link below — changing it updates the join link everywhere; old links using the previous address will stop working.')}
                   </p>
-                  {formData.slug && formData.slug !== (ministry.slug || '') && (
-                    <p className={`text-xs mt-1 ${slugAvailable === false ? 'text-red-600' : 'text-gray-400'}`}>
-                      {slugAvailable === false
-                        ? t('ministrySettingsHub', 'slugTaken', 'That address is taken — a number will be appended on save.')
-                        : slugAvailable
-                        ? t('ministrySettingsHub', 'slugAvailable', 'Available')
-                        : t('ministrySettingsHub', 'slugChecking', 'Checking…')}
-                    </p>
-                  )}
-                  {formData.slug && (
+                  {ministry.slug && (
                     <p className="text-xs text-gray-400 mt-1 break-all">
-                      {buildJoinUrl(formData.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
+                      {buildJoinUrl(ministry.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
                     </p>
                   )}
                 </div>
@@ -742,7 +695,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
               </Button>
             </div>
 
-            <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+            <div id="registration-join-link">
+              <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+            </div>
             <CustomDomainSettings ministryId={ministry.id} />
           </div>
         )}
