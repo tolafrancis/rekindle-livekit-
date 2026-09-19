@@ -25,6 +25,9 @@ import {
 interface Ministry {
   id: string;
   name: string;
+  slug?: string;
+  invite_code?: string;
+  qr_code_version?: number;
   description: string;
   category: string;
   location: string;
