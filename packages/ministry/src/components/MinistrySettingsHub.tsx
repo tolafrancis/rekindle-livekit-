@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { slugify, buildJoinUrl } from '@rekindle/features/qrCode';
 import {
   LayoutDashboard, Settings, Users, BookOpen, MessageSquare, CreditCard,
   Palette, Shield, Loader2, Save, Link as LinkIcon, Image, Upload
@@ -42,6 +43,9 @@ import BillingSettings from './BillingSettings';
 interface Ministry {
   id: string;
   name: string;
+  slug?: string;
+  invite_code?: string;
+  qr_code_version?: number;
   description: string;
   category: string;
   location: string;
@@ -114,6 +118,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [formData, setFormData] = useState({
     name: ministry.name || '',
+    slug: ministry.slug || '',
     description: ministry.description || '',
     location: ministry.location || '',
     country_code: ministry.country_code || '',
@@ -188,13 +193,44 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
     }
   };
 
+  // Same collision-avoidance as MinistryRegistrationSettings' own slug editor
+  // (append -2, -3, … on collision) — kept here too since the slug is now
+  // editable from both places and must never produce a duplicate.
+  const ensureUniqueSlug = async (candidate: string): Promise<string> => {
+    const base = slugify(candidate);
+    if (!base) return ministry.slug || '';
+    let tryName = base;
+    for (let i = 2; i < 50; i++) {
+      const { data } = await supabase
+        .from('ministry_groups')
+        .select('id')
+        .eq('slug', tryName)
+        .neq('id', ministry.id)
+        .maybeSingle();
+      if (!data) return tryName;
+      tryName = `${base}-${i}`;
+    }
+    return `${base}-${Date.now().toString().slice(-4)}`;
+  };
+
   const handleSaveGeneral = async () => {
     setSavingGeneral(true);
     try {
+      const finalSlug = formData.slug === (ministry.slug || '')
+        ? formData.slug
+        : await ensureUniqueSlug(formData.slug);
+      if (finalSlug !== formData.slug) {
+        setFormData(prev => ({ ...prev, slug: finalSlug }));
+        toast({
+          title: t('ministrySettingsHub', 'slugTakenTitle', 'That address was taken'),
+          description: t('ministrySettingsHub', 'slugTakenDesc', 'Saved as "{slug}" instead.').replace('{slug}', finalSlug),
+        });
+      }
       const { error } = await supabase
         .from('ministry_groups')
         .update({
           name: formData.name,
+          slug: finalSlug,
           description: formData.description,
           location: formData.location,
           country_code: formData.country_code || null,
@@ -286,6 +322,23 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                       placeholder={t('ministrySettingsHub', 'cityCountryPlaceholder', 'City, Country')}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <Label>{t('ministrySettingsHub', 'ministrySlug', 'Ministry Slug')}</Label>
+                  <Input
+                    value={formData.slug}
+                    onChange={(e) => setFormData({ ...formData, slug: slugify(e.target.value) })}
+                    placeholder="grace-chapel"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Changing it updates the join link everywhere — old links using the previous address will stop working.')}
+                  </p>
+                  {formData.slug && (
+                    <p className="text-xs text-gray-400 mt-1 break-all">
+                      {buildJoinUrl(formData.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
