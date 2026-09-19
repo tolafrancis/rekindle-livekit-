@@ -51,6 +51,19 @@ if (Capacitor.isNativePlatform()) {
       }
     }
   });
+
+  // "Open in App" handoff (MeetingJoinPage.tsx) and any other
+  // rekindleministry:// deep link — see apps/rekindle/src/main.tsx's
+  // identical listener for the full explanation. Same pushNotificationNav
+  // pipeline, same cold-start readyState guard.
+  CapacitorApp.addListener('appUrlOpen', (event) => {
+    console.log('[DeepLink] appUrlOpen:', event.url);
+    if (document.readyState === 'complete') {
+      window.dispatchEvent(new CustomEvent('pushNotificationNav', { detail: { link: event.url } }));
+    } else {
+      pendingPushNav = event.url;
+    }
+  });
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
