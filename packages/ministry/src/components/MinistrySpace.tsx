@@ -218,9 +218,19 @@ interface MinistrySpaceProps {
   ministry: Ministry;
   membership?: MembershipInfo;
   onExit: () => void;
+  /** `ministry` is a snapshot handed down by the parent (MinistriesHub) — this
+   *  component has no way to update it itself. Settings saves (slug, name,
+   *  branding, …) write straight to ministry_groups and then call
+   *  loadMinistryData as their "refresh", but that only reloads THIS
+   *  component's own sub-collections (announcements, events, …), never the
+   *  ministry row itself — so a saved change silently never appeared on
+   *  screen until the ministry was re-entered. loadMinistryData now also
+   *  re-fetches the ministry row and, when this is provided, hands it back
+   *  up so the parent can refresh its snapshot. */
+  onMinistryUpdate?: (updated: Record<string, unknown>) => void;
 }
 
-const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onExit }) => {
+const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onExit, onMinistryUpdate }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
@@ -406,6 +416,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           .order('published_at', { ascending: false })
       ]);
 
+      // Best-effort, independent of the Promise.all above so a failure here never
+      // blocks the sub-collection loads that actually drive most of this page.
+      // See MinistrySpaceProps.onMinistryUpdate for why this exists.
+      if (onMinistryUpdate) {
+        supabase.from('ministry_groups').select('*').eq('id', ministry.id).maybeSingle()
+          .then(({ data }) => { if (data) onMinistryUpdate(data); }, () => {});
+      }
+
       setAnnouncements(announcementsRes.data || []);
       setEvents(eventsRes.data || []);
       setPrayerRequests(prayersRes.data || []);
@@ -490,7 +508,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     } finally {
       setLoading(false);
     }
-  }, [ministry.id]);
+  }, [ministry.id, onMinistryUpdate]);
 
   useEffect(() => {
     loadMinistryData();

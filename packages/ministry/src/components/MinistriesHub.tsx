@@ -436,6 +436,16 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     setSelectedMinistryId('', { replace: true });
   };
 
+  // MinistrySpace holds `ministry` as a plain prop and has no way to update it
+  // itself — a settings save (slug, name, branding, …) writes to the DB fine,
+  // but without this the on-screen value never changes until the ministry is
+  // exited and re-entered. Refreshes both the active snapshot and its entry
+  // in the list so re-entering later shows the same fresh data too.
+  const handleMinistryUpdate = useCallback((updated: Record<string, unknown>) => {
+    setSelectedMinistry(prev => (prev ? { ...prev, ...updated } as Ministry : prev));
+    setMyMinistries(prev => prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m)));
+  }, []);
+
   useEffect(() => {
     if (loading || activeView !== 'ministry-space' || selectedMinistry || !selectedMinistryId) return;
     const found = myMinistries.find(m => m.id === selectedMinistryId);
@@ -455,6 +465,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         ministry={selectedMinistry}
         membership={membership}
         onExit={handleExitMinistry}
+        onMinistryUpdate={handleMinistryUpdate}
       />
     );
   }
