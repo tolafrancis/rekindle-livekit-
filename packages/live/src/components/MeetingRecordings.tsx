@@ -75,7 +75,7 @@ export const MeetingRecordings: React.FC<MeetingRecordingsProps> = ({ meetingId,
                 dialog). Uses the recording's MP4 rendition. */}
             {active && (() => {
               const filename = `meeting-recording-${new Date(active.created).toISOString().slice(0, 10)}`;
-              const dl = (active as any).download || muxDownloadUrl(active.hls, filename);
+              const dl = active.download || muxDownloadUrl(active.hls, filename);
               return (
                 <div className="flex items-center justify-between gap-3">
                   <RecordingRetentionBadge createdAt={active.created} kind="meeting" retentionDaysOverride={retentionDaysOverride} />

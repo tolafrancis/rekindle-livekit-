@@ -111,7 +111,7 @@ export const MinistryRecordingsTab: React.FC<{
       </p>
 
       {active && (
-        <div className="space-y-2">
+        <div className="max-w-2xl space-y-2">
           <div className="aspect-video w-full bg-black rounded-lg overflow-hidden">
             <VodPlayer
               key={active.uid}
@@ -129,7 +129,7 @@ export const MinistryRecordingsTab: React.FC<{
               <RecordingRetentionBadge createdAt={active.created} kind="meeting" className="mt-1" retentionDaysOverride={retentionDaysOverride} />
             </div>
             {(() => {
-              const dl = (active as any).download || muxDownloadUrl(active.hls, `${active.meetingTitle}-${new Date(active.created).toISOString().slice(0, 10)}`);
+              const dl = active.download || muxDownloadUrl(active.hls, `${active.meetingTitle}-${new Date(active.created).toISOString().slice(0, 10)}`);
               return dl ? (
                 <a
                   href={dl}

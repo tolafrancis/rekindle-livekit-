@@ -29,7 +29,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { EgressClient, RoomServiceClient, SegmentedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -203,7 +203,11 @@ serve(async (req) => {
           duration: r.duration_seconds ?? 0,
           hls: r.playback_url,
           thumbnail: '',
-          download: r.playback_url,
+          // Real MP4 file, when this recording was made with the file output
+          // (see start-recording). Older rows have no download_url — omit the
+          // button rather than hand back the .m3u8 playlist, which isn't a
+          // downloadable file and just opens the browser's raw HLS handling.
+          download: r.download_url ?? null,
         }));
       return json({ recordings });
     }
@@ -263,8 +267,17 @@ serve(async (req) => {
         segmentDuration: 4,
         output: { case: 's3', value: s3 },
       });
-      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
+      // A single MP4 alongside the HLS segments, purely so "Download" has a real
+      // file to hand the browser — the .m3u8 playlist alone can't be downloaded
+      // (it's a manifest pointing at dozens of .ts segments, not one file).
+      // Same encode, no extra render pass — Egress just multiplexes both outputs.
+      const fileOutput = new EncodedFileOutput({
+        filepath: `${prefix}/recording.mp4`,
+        output: { case: 's3', value: s3 },
+      });
+      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output, file: fileOutput }, { layout: 'grid' });
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+      const downloadUrl = `${publicBase}/${prefix}/recording.mp4`;
 
       const { data: row, error: insertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
@@ -276,6 +289,7 @@ serve(async (req) => {
         status: 'recording',
         filepath: prefix,
         playback_url: playbackUrl,
+        download_url: downloadUrl,
       }).select('id').maybeSingle();
       // The Egress has already started billing on LiveKit's side even if this insert
       // fails — surface it loudly rather than silently losing the tracking row (as

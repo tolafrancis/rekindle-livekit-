@@ -81,6 +81,8 @@ export interface MeetingRecording {
   thumbnail: string;
   iframe?: string;
   hls?: string;
+  /** Direct MP4 download URL, when the server provides one. */
+  download?: string | null;
 }
 
 /** List a webinar's recordings — LiveKit Egress outputs (livekit_recordings),
