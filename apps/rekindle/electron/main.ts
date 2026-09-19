@@ -11,19 +11,63 @@ const PORT = 5180;
 
 let mainWindow: BrowserWindow | null = null;
 
+// ── Deep link (rekindle:// — the same "Open in App" handoff Android's
+// appUrlOpen listener now handles, see apps/rekindle/src/main.tsx) ────────
+// This is the OTHER half of that fix: it only works if the OS actually
+// knows this app owns the scheme (setAsDefaultProtocolClient, backed by
+// registry entries the installer writes from package.json's build.protocols
+// — see that field's own comment) AND something in the main process
+// extracts the URL and hands it to the renderer, neither of which existed
+// before. The renderer side needs nothing new: forwarding as the existing
+// 'pushNotificationNav' DOM event (see preload.ts) reaches the same
+// PushNotificationNavHandler in App.tsx that already turns a link into a
+// real in-app navigation.
+const DEEP_LINK_SCHEME = 'rekindle';
+app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
+
+const extractDeepLink = (argv: string[]): string | null =>
+  argv.find((a) => a.startsWith(`${DEEP_LINK_SCHEME}://`)) ?? null;
+
+// Queued if the OS launched us FRESH via the link (cold start) — argv is
+// available immediately, but there's no window/renderer to send it to yet.
+// Mirrors main.tsx's pendingPushNav guard for the identical race on mobile.
+let pendingDeepLink: string | null = extractDeepLink(process.argv);
+
+function sendDeepLink(url: string) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('deep-link', url);
+  } else {
+    pendingDeepLink = url;
+  }
+}
+
 // ── Single instance lock ────────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
     }
+    // The already-running instance is who actually receives the link when
+    // the app is launched a second time via the protocol — the new process
+    // (which carried it on its own argv) just quits itself right after this
+    // fires, per requestSingleInstanceLock's contract.
+    const url = extractDeepLink(commandLine);
+    if (url) sendDeepLink(url);
   });
 }
+
+// macOS delivers a protocol launch via this event instead of argv/second-instance
+// (harmless to register even though this app currently only ships a Windows
+// build — see package.json's build.win — costs nothing to be ready for it).
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  sendDeepLink(url);
+});
 
 // ── Encrypted local settings store (same shape as apps/desktop's) ──────
 const getStoreFilePath = () => path.join(app.getPath('userData'), 'rekindle-store.enc.json');
@@ -191,6 +235,18 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // Flush a deep link that arrived before the page could have any listener
+  // attached yet (a cold start launched BY the link, or one that raced the
+  // window's own creation) — did-finish-load is the Electron analogue of the
+  // renderer's document.readyState === 'complete' guard used for the same
+  // race on mobile/main.tsx.
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (pendingDeepLink) {
+      sendDeepLink(pendingDeepLink);
+      pendingDeepLink = null;
+    }
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {

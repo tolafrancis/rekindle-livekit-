@@ -121,6 +121,10 @@
     "directories": {
       "output": "release"
     },
+    "protocols": {
+      "name": "ReKindle Deep Link",
+      "schemes": ["rekindle"]
+    },
     "files": [
       "dist",
       "dist-electron",

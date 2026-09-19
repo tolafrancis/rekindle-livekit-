@@ -31,3 +31,10 @@ const api: ElectronAPI = {
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
+
+// Deep link handoff — see apps/rekindle/electron/preload.ts's identical
+// listener for the full explanation. Reuses 'pushNotificationNav' so
+// App.tsx's existing PushNotificationNavHandler handles this identically.
+ipcRenderer.on('deep-link', (_event, url: string) => {
+  window.dispatchEvent(new CustomEvent('pushNotificationNav', { detail: { link: url } }));
+});

@@ -58,6 +58,10 @@
     "directories": {
       "output": "release"
     },
+    "protocols": {
+      "name": "Rekindle Ministry Deep Link",
+      "schemes": ["rekindleministry"]
+    },
     "files": [
       "dist",
       "dist-electron",
