@@ -66,6 +66,7 @@ import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
 import { MeetingRecordings } from '@rekindle/live/components/MeetingRecordings';
+import { MeetingParticipantsPanel } from '@rekindle/live/components/MeetingParticipantsPanel';
 import { MinistryRecordingsTab } from './MinistryRecordingsTab';
 import { getEffectiveRecordingRetentionDays } from '@rekindle/features/ministryBilling';
 
@@ -1443,6 +1444,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const { call, startCall, endCall, maximize } = useActiveCall();
   const activeCallId = call?.id ?? null;
   const [recordingsMeeting, setRecordingsMeeting] = useState<MinistryVideoMeeting | null>(null);
+  const [participantsMeeting, setParticipantsMeeting] = useState<MinistryVideoMeeting | null>(null);
   const [subTab, setSubTab] = useState<'meetings' | 'recordings'>('meetings');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<MinistryVideoMeeting | null>(null);
@@ -2014,6 +2016,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             )}
                             <Button
                               variant="outline"
+                              size="sm"
+                              onClick={() => setParticipantsMeeting(meeting)}
+                              title={t('ministryInteractiveMeetings', 'viewParticipants', 'View participants')}
+                            >
+                              <Users className="h-4 w-4 mr-1" />
+                              {t('ministryInteractiveMeetings', 'participantsBtn', 'Participants')}
+                            </Button>
+                            <Button
+                              variant="outline"
                               size="icon"
                               onClick={() => handleDeleteMeeting(meeting.id)}
                               disabled={deletingMeetingId === meeting.id}
@@ -2187,6 +2198,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             )}
                             <Button
                               variant="outline"
+                              size="sm"
+                              onClick={() => setParticipantsMeeting(meeting)}
+                              title={t('ministryInteractiveMeetings', 'viewParticipants', 'View participants')}
+                            >
+                              <Users className="h-4 w-4 mr-1" />
+                              {t('ministryInteractiveMeetings', 'participantsBtn', 'Participants')}
+                            </Button>
+                            <Button
+                              variant="outline"
                               size="icon"
                               onClick={() => handleDeleteMeeting(meeting.id)}
                               disabled={deletingMeetingId === meeting.id}
@@ -2239,6 +2259,14 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         open={!!recordingsMeeting}
         onClose={() => setRecordingsMeeting(null)}
         retentionDaysOverride={retentionDaysOverride}
+      />
+
+      {/* Per-meeting attendance: total participants, names, join times */}
+      <MeetingParticipantsPanel
+        meetingId={participantsMeeting?.id || ''}
+        open={!!participantsMeeting}
+        onClose={() => setParticipantsMeeting(null)}
+        meetingKind="ministry_meeting"
       />
 
       {/* AI Insights Dialog - view post-session insights for any meeting */}

@@ -99,6 +99,59 @@ export async function getMeetingRecordings(meetingId: string): Promise<MeetingRe
   }
 }
 
+export interface MeetingParticipant {
+  userId: string;
+  userName: string;
+  isGuest: boolean;
+  joinedAt: string;
+  leftAt: string | null;
+  isActive: boolean;
+}
+
+/** Self-report this browser joining/leaving a meeting, for the host's later
+ *  attendance analytics (getMeetingParticipants). Best-effort — a failure here
+ *  shouldn't interrupt the call. */
+export async function trackMeetingParticipant(
+  meetingId: string,
+  participantId: string,
+  participantName: string,
+  isGuest: boolean,
+  event: 'join' | 'leave',
+  kind: MeetingKind = 'ministry_meeting',
+): Promise<void> {
+  try {
+    await supabase.functions.invoke('livekit-egress', {
+      body: {
+        action: 'track-participant',
+        event,
+        meetingId,
+        participantId,
+        participantName,
+        isGuest,
+        context: { kind },
+      },
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** Host-only: total participant count + who/when for a meeting. */
+export async function getMeetingParticipants(
+  meetingId: string,
+  kind: MeetingKind = 'ministry_meeting',
+): Promise<{ participants: MeetingParticipant[]; totalCount: number }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('livekit-egress', {
+      body: { action: 'list-participants', meetingId, context: { kind } },
+    });
+    if (error || !data?.participants) return { participants: [], totalCount: 0 };
+    return { participants: data.participants as MeetingParticipant[], totalCount: data.totalCount ?? 0 };
+  } catch {
+    return { participants: [], totalCount: 0 };
+  }
+}
+
 /** No RTMP stream to pause on LiveKit — null no-op. */
 export function stopMeetingStream(_meetingId: string): Promise<StreamProvision | null> {
   return Promise.resolve(null);

@@ -1418,13 +1418,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       recordingEgressIdRef.current = data?.egressId ?? null;
 
       setIsRecording(true);
-      setMeetingSettings(prev => ({ ...prev, recordingStatus: 'recording' }));
+      // updateMeetingSettings both applies this locally AND broadcasts it to every
+      // other participant (settings-update app message) — previously this called
+      // setMeetingSettings directly, which only ever updated the host's own browser,
+      // so nobody else in the call was ever told recording had started.
+      await updateMeetingSettings({ recordingStatus: 'recording' });
       toast({ title: 'Recording Started', description: 'Meeting is now being recorded' });
     } catch (error) {
       console.error('Failed to start recording:', error);
       toast({ title: 'Recording Failed', description: 'Could not start recording', variant: 'destructive' });
     }
-  }, [options.isHost, options.roomName, options.channelId, options.meetingId, roleContext]);
+  }, [options.isHost, options.roomName, options.channelId, options.meetingId, roleContext, updateMeetingSettings]);
 
   const stopRecording = useCallback(async () => {
     if (!options.isHost) return;
@@ -1441,22 +1445,22 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       recordingEgressIdRef.current = null;
 
       setIsRecording(false);
-      setMeetingSettings(prev => ({ ...prev, recordingStatus: 'processing' }));
+      await updateMeetingSettings({ recordingStatus: 'processing' });
       toast({ title: 'Recording Stopped', description: 'Recording has been stopped' });
     } catch (error) {
       console.error('Failed to stop recording:', error);
     }
-  }, [options.isHost, options.roomName, roleContext]);
+  }, [options.isHost, options.roomName, roleContext, updateMeetingSettings]);
 
   const pauseRecording = useCallback(async () => {
     if (!options.isHost) return;
-    setMeetingSettings(prev => ({ ...prev, recordingStatus: 'paused' }));
-  }, [options.isHost]);
+    await updateMeetingSettings({ recordingStatus: 'paused' });
+  }, [options.isHost, updateMeetingSettings]);
 
   const resumeRecording = useCallback(async () => {
     if (!options.isHost) return;
-    setMeetingSettings(prev => ({ ...prev, recordingStatus: 'recording' }));
-  }, [options.isHost]);
+    await updateMeetingSettings({ recordingStatus: 'recording' });
+  }, [options.isHost, updateMeetingSettings]);
 
   // Spotlight participant
   const spotlightParticipant = useCallback((participantId: string | null) => {

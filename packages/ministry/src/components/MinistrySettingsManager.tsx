@@ -17,6 +17,7 @@ import BillingSettings from './BillingSettings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { slugify, buildJoinUrl } from '@rekindle/features/qrCode';
 import {
   Settings, Palette, Globe, Bell, Shield, Loader2, Save, Link, Image, Upload, Radio, CreditCard, Receipt
 } from 'lucide-react';
@@ -58,6 +59,7 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [formData, setFormData] = useState({
     name: ministry.name || '',
+    slug: ministry.slug || '',
     description: ministry.description || '',
     location: ministry.location || '',
     country_code: ministry.country_code || '',
@@ -168,13 +170,44 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
     }
   };
 
+  // Same collision-avoidance as MinistryRegistrationSettings' own slug editor
+  // (append -2, -3, … on collision) — kept here too since the slug is now
+  // editable from both places and must never produce a duplicate.
+  const ensureUniqueSlug = async (candidate: string): Promise<string> => {
+    const base = slugify(candidate);
+    if (!base) return ministry.slug || '';
+    let tryName = base;
+    for (let i = 2; i < 50; i++) {
+      const { data } = await supabase
+        .from('ministry_groups')
+        .select('id')
+        .eq('slug', tryName)
+        .neq('id', ministry.id)
+        .maybeSingle();
+      if (!data) return tryName;
+      tryName = `${base}-${i}`;
+    }
+    return `${base}-${Date.now().toString().slice(-4)}`;
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      const finalSlug = formData.slug === (ministry.slug || '')
+        ? formData.slug
+        : await ensureUniqueSlug(formData.slug);
+      if (finalSlug !== formData.slug) {
+        setFormData(prev => ({ ...prev, slug: finalSlug }));
+        toast({
+          title: t('ministrySettingsManager', 'slugTakenTitle', 'That address was taken'),
+          description: t('ministrySettingsManager', 'slugTakenDesc', 'Saved as "{slug}" instead.').replace('{slug}', finalSlug),
+        });
+      }
       const { error } = await supabase
         .from('ministry_groups')
         .update({
           name: formData.name,
+          slug: finalSlug,
           description: formData.description,
           location: formData.location,
           country_code: formData.country_code || null,
@@ -251,6 +284,23 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
                   placeholder={t('ministrySettingsManager', 'cityCountryPlaceholder', 'City, Country')}
                 />
               </div>
+            </div>
+
+            <div>
+              <Label>{t('ministrySettingsManager', 'ministrySlug', 'Ministry Slug')}</Label>
+              <Input
+                value={formData.slug}
+                onChange={(e) => setFormData({ ...formData, slug: slugify(e.target.value) })}
+                placeholder="grace-chapel"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {t('ministrySettingsManager', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Changing it updates the join link everywhere — old links using the previous address will stop working.')}
+              </p>
+              {formData.slug && (
+                <p className="text-xs text-gray-400 mt-1 break-all">
+                  {buildJoinUrl(formData.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

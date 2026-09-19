@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -84,6 +84,17 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
 
   const dirtySlug = slug !== persistedSlug;
   const joinUrl = buildJoinUrl(slug, inviteCode, qrVersion);
+
+  // The Ministry Profile card can also edit the slug now. If it saves a new one
+  // while this panel is mounted, pick it up — but only when the user hasn't
+  // started typing their own edit here (don't clobber in-progress input).
+  const lastPersistedSlugRef = useRef(persistedSlug);
+  useEffect(() => {
+    if (persistedSlug !== lastPersistedSlugRef.current) {
+      setSlug(prev => (prev === lastPersistedSlugRef.current ? persistedSlug : prev));
+      lastPersistedSlugRef.current = persistedSlug;
+    }
+  }, [persistedSlug]);
 
   // (Re)generate the QR preview whenever the encoded URL changes.
   useEffect(() => {
@@ -271,20 +282,6 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
                   <RefreshCw className="h-4 w-4 mr-1" /> {t('ministryRegistrationSettings', 'regenerate', 'Regenerate')}
                 </Button>
               </div>
-              {inviteCode && (
-                <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-700">
-                    {t('ministryRegistrationSettings', 'codeLabel', 'Join code')}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="font-mono text-lg font-bold tracking-[0.18em] text-slate-900">{inviteCode}</span>
-                    <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 shadow-sm">v{qrVersion}</span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-600">
-                    {t('ministryRegistrationSettings', 'codeTip', 'Tip: share the QR code or join link above with members so they can join your ministry directly.')}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>

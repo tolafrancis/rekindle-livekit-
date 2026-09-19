@@ -4,6 +4,7 @@ import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
+import { trackMeetingParticipant } from '../meetingStreamControl';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
@@ -680,12 +681,9 @@ const ParticipantVideo: React.FC<{
   fill?: boolean;
   /** Hide the name/status overlay (the mini-player draws its own title bar). */
   hideOverlay?: boolean;
-  onParticipantJoin?: (participantId: string, userName: string) => void;
-  onParticipantLeave?: (participantId: string) => void;
-}> = ({ participant, isLarge = false, fill = false, hideOverlay = false, onParticipantJoin, onParticipantLeave }) => {
+}> = ({ participant, isLarge = false, fill = false, hideOverlay = false }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [hasJoined, setHasJoined] = useState(false);
   const [videoAttached, setVideoAttached] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   // A stale/broken uploaded photo shouldn't leave a blank hole forever — fall
@@ -774,19 +772,6 @@ const ParticipantVideo: React.FC<{
   // NOTE: audio is intentionally NOT played here. It's handled by the persistent
   // RemoteAudioLayer so it survives layout changes (screen share / pin / reflow)
   // that unmount these tiles. Playing it here too would double up.
-
-  // Track join/leave
-  useEffect(() => {
-    if (!participant.isLocal && participant.sessionId) {
-      if (participant.isInCall && !hasJoined) {
-        onParticipantJoin?.(participant.sessionId, participant.userName);
-        setHasJoined(true);
-      } else if (!participant.isInCall && hasJoined) {
-        onParticipantLeave?.(participant.sessionId);
-        setHasJoined(false);
-      }
-    }
-  }, [participant.isInCall, participant.sessionId, participant.userName, participant.isLocal, hasJoined, onParticipantJoin, onParticipantLeave]);
 
   // Determine if we should show video
   const showVideo = videoAttached || participant.hasVideo;
@@ -1046,65 +1031,29 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const activeCallCtx = useActiveCallOptional(); // present when hosted by ActiveCallHost
 
 
-  // Track participant join function
-  const trackParticipantJoin = async (participantId: string, participantUserName: string) => {
-    if (!meetingId) return;
-    
-    try {
-      const { data: existing } = await supabase
-        .from('meeting_participants')
-        .select('id')
-        .eq('meeting_id', meetingId)
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .maybeSingle();
+  const isGuestUser = !userId || userId.startsWith('guest-');
 
-      if (existing) {
-        await supabase
-          .from('meeting_participants')
-          .update({
-            is_active: true,
-            left_at: null
-          })
-          .eq('id', existing.id);
-      } else {
-        await supabase
-          .from('meeting_participants')
-          .insert({
-            meeting_id: meetingId,
-            user_id: userId,
-            user_name: participantUserName,
-            is_active: true,
-            joined_at: new Date().toISOString()
-          });
-      }
-      
-      console.log('[DailyVideoCall] Participant joined tracked:', participantId);
-    } catch (error) {
-      console.error('[DailyVideoCall] Error tracking participant join:', error);
-    }
+  // Self-reported attendance tracking for the host's participant analytics
+  // (MeetingParticipantsPanel). Previously this fired per REMOTE tile mount/
+  // unmount and wrote under the LOCAL viewer's own userId — every browser
+  // watching a participant wrote a row keyed by itself, not that participant,
+  // so rows ended up with the wrong name and the local user's own join was
+  // never recorded at all. Self-reporting (this browser reports itself, once,
+  // on connect/disconnect) is the only version where the row's identity is
+  // actually correct.
+  const trackParticipantJoin = async () => {
+    if (!meetingId || meetingKind === 'channel') return;
+    await trackMeetingParticipant(meetingId, userId, userName, isGuestUser, 'join', meetingKind);
   };
 
-  // Track participant leave function
-  const trackParticipantLeave = async (participantId: string) => {
-    if (!meetingId) return;
-    
-    try {
-      await supabase
-        .from('meeting_participants')
-        .update({
-          is_active: false,
-          left_at: new Date().toISOString()
-        })
-        .eq('meeting_id', meetingId)
-        .eq('user_id', userId)
-        .eq('is_active', true);
-      
-      console.log('[DailyVideoCall] Participant leave tracked:', participantId);
-    } catch (error) {
-      console.error('[DailyVideoCall] Error tracking participant leave:', error);
-    }
+  const trackParticipantLeave = async () => {
+    if (!meetingId || meetingKind === 'channel') return;
+    await trackMeetingParticipant(meetingId, userId, userName, isGuestUser, 'leave', meetingKind);
   };
+
+  // Fire join once per connection, leave on disconnect/unmount. isConnected is
+  // destructured from useDailyRoom below, so this effect is defined after that
+  // destructure (see the block starting `const { isConnected, ... } = useDailyRoom`).
 
   // All media control is handled by useDailyRoom - this is the SOLE source of truth
   const {
@@ -1208,6 +1157,36 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       });
     }
   }, [isConnected, toast, t]);
+
+  // Attendance tracking: report this participant joined once connected, and
+  // report them left on disconnect/unmount (tab-close won't fire the cleanup —
+  // an inherent limit of any client-side "leave" signal, same as presence
+  // elsewhere in this app; acceptable for attendance analytics).
+  useEffect(() => {
+    if (!isConnected) return;
+    trackParticipantJoin();
+    return () => { trackParticipantLeave(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, meetingId]);
+
+  // Notify every non-host participant the moment recording starts (the host gets
+  // their own toast synchronously from useDailyRoom's startRecording). Tracks the
+  // broadcast meetingSettings.recordingStatus rather than the host-local
+  // isRecordingActive/recordingStatus state, which non-hosts never set.
+  const recordingNoticeShownRef = useRef(false);
+  useEffect(() => {
+    if (isHost) return;
+    if (meetingSettings.recordingStatus === 'recording' && !recordingNoticeShownRef.current) {
+      recordingNoticeShownRef.current = true;
+      toast({
+        title: t('dailyVideoCall', 'meetingBeingRecorded', 'This meeting is being recorded'),
+        description: t('dailyVideoCall', 'meetingBeingRecordedDesc', 'The host has started recording this session.'),
+      });
+    } else if (meetingSettings.recordingStatus !== 'recording') {
+      // Reset so a later start (stop, then start again) notifies again.
+      recordingNoticeShownRef.current = false;
+    }
+  }, [isHost, meetingSettings.recordingStatus, toast, t]);
 
   // Raise-hand state/action live in useDailyRoom (internal to this component);
   // surface them to the parent so it can render its own Raise Hand button (e.g.
@@ -1692,8 +1671,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             participant={miniFeature}
             fill
             hideOverlay
-            onParticipantJoin={trackParticipantJoin}
-            onParticipantLeave={trackParticipantLeave}
           />
         ) : (
           <div className="text-xs text-white/50">{t('dailyVideoCall', 'connecting', 'Connecting…')}</div>
@@ -1759,8 +1736,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   <div key={p.sessionId} className="w-28 lg:w-full shrink-0">
                     <ParticipantVideo
                       participant={p}
-                      onParticipantJoin={trackParticipantJoin}
-                      onParticipantLeave={trackParticipantLeave}
                     />
                   </div>
                 ))}
@@ -1774,8 +1749,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <ParticipantVideo
                   participant={localParticipant}
                   isLarge
-                  onParticipantJoin={trackParticipantJoin}
-                  onParticipantLeave={trackParticipantLeave}
                 />
               ) : (
                 <div className="aspect-video bg-gray-800 rounded-xl flex items-center justify-center">
@@ -1796,8 +1769,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   key={featuredParticipant.sessionId}
                   participant={featuredParticipant}
                   isLarge
-                  onParticipantJoin={trackParticipantJoin}
-                  onParticipantLeave={trackParticipantLeave}
                 />
                 {/* Feature badge — spotlight (host, global) vs pin (this viewer).
                     Sits below the top status bar so it doesn't overlap it on entry. */}
@@ -1840,8 +1811,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     <ParticipantVideo
                       participant={participant}
                       isLarge
-                      onParticipantJoin={trackParticipantJoin}
-                      onParticipantLeave={trackParticipantLeave}
                     />
                     {renderTileControls(participant)}
                   </div>
@@ -1860,8 +1829,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <ParticipantVideo
                   participant={participant}
                   isLarge={remoteParticipants.length === 1}
-                  onParticipantJoin={trackParticipantJoin}
-                  onParticipantLeave={trackParticipantLeave}
                 />
                 {renderTileControls(participant)}
               </div>
@@ -1965,8 +1932,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <span className="font-mono">{formatDuration(sessionDuration)}</span>
               </div>
 
-              {/* Recording status badge */}
-              {isHost && enableRecording && (isRecordingActive || recordingStatus === 'starting') && (
+              {/* Recording status badge — visible to every participant, not just the
+                  host, since meetingSettings.recordingStatus is now broadcast (see
+                  useDailyRoom's startRecording/stopRecording). isRecordingActive /
+                  recordingStatus === 'starting' are the host's own optimistic local
+                  state (flips before the broadcast round-trips); everyone else relies
+                  on the shared meetingSettings value. */}
+              {enableRecording && (isRecordingActive || recordingStatus === 'starting' || meetingSettings.recordingStatus === 'recording') && (
                 <Badge className={`flex items-center gap-1 text-white text-xs border-0 ${
                   recordingStatus === 'starting' ? 'bg-orange-500' : 'bg-red-600'
                 }`}>

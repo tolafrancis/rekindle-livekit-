@@ -20,6 +20,9 @@
 //   { action:'start-recording', roomName, meetingId?, context? }   → { egressId, recordingId, playbackUrl }
 //   { action:'stop-recording',  roomName, egressId?, context? }
 //   { action:'list-recordings', channelId? , meetingId?, roomName? } → { recordings: [...] }
+//   { action:'track-participant', event:'join'|'leave', meetingId, participantId,
+//     participantName?, isGuest?, context? } → { success: true }
+//   { action:'list-participants', meetingId, context } → { participants: [...], totalCount }  (host only)
 //   6A broadcast: { action:'start-hls', roomName, channelId, context } → { egressId, playbackUrl }
 //                 { action:'stop-hls',  channelId, context }
 //   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, rtmpUrl, context }
@@ -228,6 +231,46 @@ serve(async (req) => {
       });
     }
 
+    // track-participant is a self-report (any current participant, including
+    // guests with no Supabase auth session — see meeting_participants' header
+    // comment) — no host check, and no egress/roomService needed.
+    if (action === 'track-participant') {
+      const { meetingId, participantId, participantName, isGuest, event } = body;
+      if (!meetingId || !participantId || !event) return json({ error: 'meetingId, participantId and event required' }, 400);
+      const meetingTable = HOST_TABLE[body.context?.kind ?? 'ministry_meeting'] ?? 'ministry_video_meetings';
+
+      if (event === 'join') {
+        const { data: existing } = await admin
+          .from('meeting_participants')
+          .select('id')
+          .eq('meeting_id', meetingId)
+          .eq('user_id', participantId)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (existing) {
+          await admin.from('meeting_participants').update({ is_active: true, left_at: null }).eq('id', existing.id);
+        } else {
+          await admin.from('meeting_participants').insert({
+            meeting_id: meetingId,
+            meeting_table: meetingTable,
+            user_id: participantId,
+            user_name: participantName || 'Guest',
+            is_guest: !!isGuest,
+            joined_at: new Date().toISOString(),
+            is_active: true,
+          });
+        }
+      } else {
+        await admin
+          .from('meeting_participants')
+          .update({ is_active: false, left_at: new Date().toISOString() })
+          .eq('meeting_id', meetingId)
+          .eq('user_id', participantId)
+          .eq('is_active', true);
+      }
+      return json({ success: true });
+    }
+
     // start/stop require an authenticated host.
     const userClient = createClient(SB_URL!, SB_ANON!, {
       global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
@@ -235,6 +278,35 @@ serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: 'Unauthorized' }, 401);
     if (!(await isDbHost(admin, user.id, body.context))) return json({ error: 'Only the host can record' }, 403);
+
+    // list-participants — per-meeting attendance analytics. Host-only (auth
+    // already checked above): names + join times are participant PII.
+    if (action === 'list-participants') {
+      const { data } = await admin
+        .from('meeting_participants')
+        .select('user_id, user_name, is_guest, joined_at, left_at, is_active')
+        .eq('meeting_id', body.meetingId)
+        .order('joined_at', { ascending: true });
+      const rows = data ?? [];
+      // A guest who reconnects gets a second row (their id is per-tab, not a
+      // stable identity) — a signed-in member's id is stable, so collapse
+      // theirs to first-joined/last-left for an accurate head count.
+      const byUser = new Map<string, { userId: string; userName: string; isGuest: boolean; joinedAt: string; leftAt: string | null; isActive: boolean }>();
+      for (const r of rows as any[]) {
+        const key = r.is_guest ? `${r.user_id}:${r.joined_at}` : r.user_id;
+        const cur = byUser.get(key);
+        if (!cur || new Date(r.joined_at) < new Date(cur.joinedAt)) {
+          byUser.set(key, {
+            userId: r.user_id, userName: r.user_name, isGuest: r.is_guest,
+            joinedAt: r.joined_at, leftAt: r.left_at, isActive: r.is_active,
+          });
+        }
+      }
+      const participants = Array.from(byUser.values()).sort(
+        (a, b) => new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime(),
+      );
+      return json({ participants, totalCount: participants.length });
+    }
 
     const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
     const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
