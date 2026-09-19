@@ -51,6 +51,17 @@ const FeatureSection: React.FC<FeatureSectionProps> = ({ id, eyebrow, title, wha
   </section>
 );
 
+// The quick-jump pills shown right under the subtitle — a curated subset of
+// TOC_ITEMS' ids, so they scroll to the same sections.
+const PILL_LINKS: Array<[string, string]> = [
+  ['prayer', 'Prayer'],
+  ['devotionals', 'Devotionals'],
+  ['live-channels', 'Live Channels'],
+  ['crm', 'Ministry CRM'],
+  ['small-groups', 'Small Groups'],
+  ['giving', 'Giving & Gift Aid'],
+];
+
 const TOC_ITEMS: Array<[string, string]> = [
   ['welcome', 'Welcome to Rekindle'],
   ['why', 'Why Rekindle fits a ministry'],
@@ -94,10 +105,11 @@ const RekindleGuidePage: React.FC = () => {
         .guide-body .note { margin-top: .8rem; padding: .9rem 1.05rem; background: rgba(167,139,250,.06); border: 1px solid rgba(167,139,250,.15); border-left: 3px solid #a78bfa; border-radius: 6px; font-size: .87rem; color: rgba(255,255,255,.6); line-height: 1.7; }
         .guide-section { padding-bottom: 2.6rem; margin-bottom: 2.6rem; border-bottom: 1px solid rgba(167,139,250,.1); }
         .guide-section:last-of-type { border-bottom: none; margin-bottom: 0; }
-        .guide-toc { display: grid; grid-template-columns: repeat(2, 1fr); gap: .35rem .9rem; }
-        .guide-toc a { font-size: .84rem; color: rgba(255,255,255,.5); text-decoration: none; }
-        .guide-toc a:hover { color: #a78bfa; }
-        .guide-pill { font-size: .78rem; font-weight: 600; padding: .35em .85em; border-radius: 999px; border: 1px solid rgba(167,139,250,.25); color: rgba(255,255,255,.7); }
+        .guide-toc { display: flex; flex-wrap: wrap; gap: .5rem; }
+        .guide-toc a { font-size: .82rem; font-weight: 600; padding: .4em .9em; border-radius: 999px; border: 1px solid rgba(167,139,250,.2); background: rgba(167,139,250,.05); color: rgba(255,255,255,.65); text-decoration: none; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+        .guide-toc a:hover { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.5); color: #fff; }
+        .guide-pill { font-size: .78rem; font-weight: 600; padding: .35em .85em; border-radius: 999px; border: 1px solid rgba(167,139,250,.25); color: rgba(255,255,255,.7); text-decoration: none; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+        .guide-pill:hover { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.5); color: #fff; }
         .guide-contact { margin-top: 1.6rem; padding: 1.3rem 1.5rem; background: rgba(255,255,255,.03); border: 1px solid rgba(167,139,250,.15); border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
         .guide-contact strong { display: block; font-family: 'Cormorant Garamond', serif; font-size: 1.05rem; color: #fff; }
         .guide-contact span { font-size: .85rem; color: rgba(255,255,255,.5); }
@@ -127,11 +139,11 @@ const RekindleGuidePage: React.FC = () => {
           <p style={{ fontSize: '.72rem', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#a78bfa', marginBottom: 10 }}>Guide &amp; proposal</p>
           <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '2.6rem', fontWeight: 700, color: '#fff', marginBottom: 12 }}>The Rekindle Guide</h1>
           <p style={{ fontSize: '.95rem', color: 'rgba(255,255,255,.55)', maxWidth: 560, lineHeight: 1.7 }}>
-            One platform to gather your people, grow them in the Word, broadcast your services, care for your members, and receive giving — with Gift Aid.
+            Connect your congregation. Disciple your members. Rekindle the fire.
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 20 }}>
-            {['Prayer', 'Devotionals', 'Live Channels', 'Ministry CRM', 'Small Groups', 'Giving & Gift Aid'].map((t) => (
-              <span key={t} className="guide-pill">{t}</span>
+            {PILL_LINKS.map(([id, label]) => (
+              <a key={id} href={`#${id}`} className="guide-pill">{label}</a>
             ))}
           </div>
         </div>
