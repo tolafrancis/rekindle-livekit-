@@ -115,6 +115,11 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   // ── General Profile & Branding Form State ──
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  // Live availability hint as the admin types a new slug — same UX as the
+  // ministry-creation wizard (CreateMinistryWizard). The unique index at save
+  // time (ensureUniqueSlug) is still the authoritative guard; this is just
+  // feedback so they're not surprised by a silently appended "-2" on save.
+  const [slugAvailable, setSlugAvailable] = useState<null | boolean>(null);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [formData, setFormData] = useState({
     name: ministry.name || '',
@@ -192,6 +197,22 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
       setUploadingBanner(false);
     }
   };
+
+  useEffect(() => {
+    const candidate = formData.slug;
+    if (!candidate || candidate === (ministry.slug || '')) { setSlugAvailable(null); return; }
+    let active = true;
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('ministry_groups')
+        .select('id')
+        .eq('slug', candidate)
+        .neq('id', ministry.id)
+        .limit(1);
+      if (active) setSlugAvailable(!(data && data.length > 0));
+    }, 350);
+    return () => { active = false; clearTimeout(timer); };
+  }, [formData.slug, ministry.id, ministry.slug]);
 
   // Same collision-avoidance as MinistryRegistrationSettings' own slug editor
   // (append -2, -3, … on collision) — kept here too since the slug is now
@@ -334,6 +355,15 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                   <p className="text-xs text-gray-500 mt-1">
                     {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Changing it updates the join link everywhere — old links using the previous address will stop working.')}
                   </p>
+                  {formData.slug && formData.slug !== (ministry.slug || '') && (
+                    <p className={`text-xs mt-1 ${slugAvailable === false ? 'text-red-600' : 'text-gray-400'}`}>
+                      {slugAvailable === false
+                        ? t('ministrySettingsHub', 'slugTaken', 'That address is taken — a number will be appended on save.')
+                        : slugAvailable
+                        ? t('ministrySettingsHub', 'slugAvailable', 'Available')
+                        : t('ministrySettingsHub', 'slugChecking', 'Checking…')}
+                    </p>
+                  )}
                   {formData.slug && (
                     <p className="text-xs text-gray-400 mt-1 break-all">
                       {buildJoinUrl(formData.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
