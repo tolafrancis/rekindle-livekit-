@@ -4,10 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@reki
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@rekindle/ui/dialog';
+import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3, Pencil, CopyPlus, Ban } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@rekindle/supabase';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import { publicAppOrigin } from '@rekindle/features/liveShare';
+import RegisterMeetingButton from '../components/RegisterMeetingButton';
 import { listMinistryWebinars, type MinistryWebinar, type WebinarStatus } from './webinarControl';
 import { CreateWebinarWizard } from './CreateWebinarWizard';
 import { WebinarAnalytics } from './WebinarAnalytics';
@@ -20,6 +25,9 @@ interface WebinarDashboardProps {
 const LIVE_STATUSES: WebinarStatus[] = ['live', 'ending', 'starting_soon'];
 const UPCOMING_STATUSES: WebinarStatus[] = ['scheduled', 'registration_open'];
 const PAST_STATUSES: WebinarStatus[] = ['ended', 'recording_processing', 'completed', 'cancelled'];
+// Editable/cancellable up to the moment a webinar actually goes live —
+// once it's live, ending, or already over, those settings are locked in.
+const MUTABLE_STATUSES: WebinarStatus[] = ['draft', 'scheduled', 'registration_open'];
 
 const statusBadge: Record<string, string> = {
   live: 'bg-red-50 text-red-700 border-red-200',
@@ -34,9 +42,14 @@ const statusBadge: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-400 border-gray-200',
 };
 
-function WebinarCard({ webinar, ministryId, isLeader }: { webinar: MinistryWebinar; ministryId: string; isLeader: boolean }) {
+function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
+  webinar: MinistryWebinar; ministryId: string; isLeader: boolean;
+  onEdit: (w: MinistryWebinar) => void; onChanged: () => void;
+}) {
   const navigate = useNavigate();
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
   const openWebinar = () => navigate(`/ministry/${ministryId}/webinar/${webinar.id}`);
   const copyLink = async () => {
     const link = `${publicAppOrigin()}/ministry/${ministryId}/webinar/${webinar.id}`;
@@ -44,6 +57,63 @@ function WebinarCard({ webinar, ministryId, isLeader }: { webinar: MinistryWebin
     toast.success('Webinar link copied');
   };
   const isPast = PAST_STATUSES.includes(webinar.status);
+  const isMutable = MUTABLE_STATUSES.includes(webinar.status);
+
+  const duplicate = async () => {
+    setBusy(true);
+    try {
+      const roomName = `webinar-${ministryId}-${Date.now()}`;
+      const { error } = await supabase.from('ministry_webinars').insert({
+        ministry_id: webinar.ministry_id,
+        host_id: webinar.host_id,
+        room_name: roomName,
+        status: 'draft',
+        title: `${webinar.title} (copy)`,
+        description: webinar.description,
+        cover_image_url: webinar.cover_image_url,
+        scheduled_start_at: null,
+        timezone: webinar.timezone,
+        duration_minutes: webinar.duration_minutes,
+        max_attendees: webinar.max_attendees,
+        registration_required: webinar.registration_required,
+        reminder_offsets: [],
+        is_public: webinar.is_public,
+        access_level: webinar.access_level,
+        enable_recording: webinar.enable_recording,
+        enable_chat: webinar.enable_chat,
+        enable_qa: webinar.enable_qa,
+        enable_polls: webinar.enable_polls,
+        enable_reactions: webinar.enable_reactions,
+        enable_captions: webinar.enable_captions,
+        enable_translation: webinar.enable_translation,
+        default_language: webinar.default_language,
+      });
+      if (error) throw error;
+      toast.success('Duplicated as a new draft');
+      onChanged();
+    } catch (err) {
+      console.error('[WebinarDashboard] duplicate failed:', err);
+      toast.error('Could not duplicate this webinar');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancel = async () => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('ministry_webinars').update({ status: 'cancelled' }).eq('id', webinar.id);
+      if (error) throw error;
+      toast.success('Webinar cancelled');
+      setShowCancelConfirm(false);
+      onChanged();
+    } catch (err) {
+      console.error('[WebinarDashboard] cancel failed:', err);
+      toast.error('Could not cancel this webinar');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={openWebinar}>
@@ -66,22 +136,59 @@ function WebinarCard({ webinar, ministryId, isLeader }: { webinar: MinistryWebin
           <Users className="h-3.5 w-3.5" /> Up to {webinar.max_attendees} attendees
           {webinar.attendee_count > 0 ? ` · ${webinar.attendee_count} attended` : ''}
         </p>
-        <div className="flex gap-2 pt-1">
+        <div className="flex flex-wrap gap-2 pt-1">
           <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); openWebinar(); }}>
             {LIVE_STATUSES.includes(webinar.status) ? <><Play className="h-3.5 w-3.5 mr-1" /> Join</> : 'Manage'}
           </Button>
-          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyLink(); }}>
+          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyLink(); }} title="Copy link">
             <Copy className="h-3.5 w-3.5" />
           </Button>
+          {isLeader && isMutable && (
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onEdit(webinar); }} title="Edit">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {isLeader && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={(e) => { e.stopPropagation(); duplicate(); }} title="Duplicate">
+              <CopyPlus className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {isLeader && webinar.registration_required && (
+            <div onClick={(e) => e.stopPropagation()}>
+              <RegisterMeetingButton meetingId={webinar.id} meetingKind="webinar" meetingTitle={webinar.title} isHost />
+            </div>
+          )}
           {isLeader && isPast && (
-            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowAnalytics(true); }}>
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowAnalytics(true); }} title="Analytics">
               <BarChart3 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {isLeader && isMutable && (
+            <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={busy}
+              onClick={(e) => { e.stopPropagation(); setShowCancelConfirm(true); }} title="Cancel">
+              <Ban className="h-3.5 w-3.5" />
             </Button>
           )}
         </div>
       </CardContent>
       {isLeader && isPast && (
         <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />
+      )}
+      {isLeader && (
+        <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+          <DialogContent onClick={(e) => e.stopPropagation()}>
+            <DialogHeader>
+              <DialogTitle>Cancel this webinar?</DialogTitle>
+              <DialogDescription>Attendees and registrants won't be able to join. This can't be undone.</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={(e) => { e.stopPropagation(); setShowCancelConfirm(false); }}>Keep it</Button>
+              <Button className="bg-red-600 hover:bg-red-700" disabled={busy} onClick={(e) => { e.stopPropagation(); cancel(); }}>
+                Cancel webinar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </Card>
   );
@@ -93,6 +200,7 @@ export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps
   const [webinars, setWebinars] = useState<MinistryWebinar[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingWebinar, setEditingWebinar] = useState<MinistryWebinar | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,7 +226,9 @@ export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps
       </div>
     ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {list.map((w) => <WebinarCard key={w.id} webinar={w} ministryId={ministryId} isLeader={isLeader} />)}
+        {list.map((w) => (
+          <WebinarCard key={w.id} webinar={w} ministryId={ministryId} isLeader={isLeader} onEdit={setEditingWebinar} onChanged={load} />
+        ))}
       </div>
     )
   );
@@ -152,9 +262,10 @@ export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps
 
       <CreateWebinarWizard
         ministryId={ministryId}
-        isOpen={showCreate}
-        onClose={() => setShowCreate(false)}
-        onSuccess={() => load()}
+        isOpen={showCreate || !!editingWebinar}
+        webinar={editingWebinar}
+        onClose={() => { setShowCreate(false); setEditingWebinar(null); }}
+        onSuccess={() => { setEditingWebinar(null); load(); }}
       />
     </div>
   );

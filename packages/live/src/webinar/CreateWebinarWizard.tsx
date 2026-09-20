@@ -15,7 +15,7 @@ import { Loader2, Plus, X, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
-import { zonedWallTimeToUtcISO, guessUserTimeZone, commonTimeZones } from '@rekindle/features/meetingTime';
+import { zonedWallTimeToUtcISO, utcISOToZonedInputValue, guessUserTimeZone, commonTimeZones } from '@rekindle/features/meetingTime';
 import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 import { FREE_TIER_MEETING_LIMITS } from '@rekindle/auth/subscriptionEnforcement';
 import { checkWebinarQuota, createWebinarSpeaker, type MinistryWebinar } from './webinarControl';
@@ -25,6 +25,9 @@ interface CreateWebinarWizardProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (webinar: MinistryWebinar) => void;
+  /** When set, edits this webinar in place instead of creating a new one —
+   *  room_name/host_id/status are left untouched. */
+  webinar?: MinistryWebinar | null;
 }
 
 interface DraftSpeaker {
@@ -41,11 +44,10 @@ const DEFAULT_LANGUAGES = [
   { value: 'sw', label: 'Swahili' },
 ];
 
-/** Phase 1 webinar creation — schema/toggles are already forward-compatible with
- *  Phase 2+ (chat/Q&A/polls/registration), but those toggles are marked "coming
- *  soon" here since only recording/captions/translation actually do anything yet. */
-export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: CreateWebinarWizardProps) {
+/** Webinar creation/edit wizard — a `webinar` prop switches this into edit mode. */
+export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, webinar }: CreateWebinarWizardProps) {
   const { user } = useAuth();
+  const isEditing = !!webinar;
   const [isLoading, setIsLoading] = useState(false);
   const [accessReason, setAccessReason] = useState<string | undefined>();
   const [isFreeTier, setIsFreeTier] = useState(false);
@@ -78,7 +80,10 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
           setAccessReason("This ministry's plan doesn't include live sessions — upgrade to enable webinars.");
           return;
         }
-        if (freePlan) {
+        // Quota only gates NEW webinars — re-checking it on every edit could
+        // block editing something that already exists just because the
+        // ministry has since used up its monthly free minutes elsewhere.
+        if (freePlan && !isEditing) {
           const quota = await checkWebinarQuota(ministryId);
           if (!quota.allowed) {
             setAccessReason(`This ministry has used its free webinar time this month. Upgrade for more, or wait until next month.`);
@@ -92,7 +97,33 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
         console.error('[CreateWebinarWizard] access check failed:', e);
       }
     })();
-  }, [isOpen, user?.id, ministryId]);
+  }, [isOpen, user?.id, ministryId, isEditing]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!webinar) {
+      // Reset to a blank form each time the create dialog re-opens.
+      setTitle(''); setDescription(''); setCoverImageUrl(''); setScheduledTime('');
+      setTimezone(guessUserTimeZone()); setDurationMinutes(60); setMaxAttendees(200);
+      setIsPublic(false); setRegistrationRequired(false); setEnableRecording(true);
+      setEnableCaptions(true); setEnableTranslation(false); setDefaultLanguage('en');
+      setSpeakers([]);
+      return;
+    }
+    setTitle(webinar.title);
+    setDescription(webinar.description ?? '');
+    setCoverImageUrl(webinar.cover_image_url ?? '');
+    setScheduledTime(webinar.scheduled_start_at ? utcISOToZonedInputValue(webinar.scheduled_start_at, webinar.timezone ?? guessUserTimeZone()) : '');
+    setTimezone(webinar.timezone ?? guessUserTimeZone());
+    setDurationMinutes(webinar.duration_minutes);
+    setMaxAttendees(webinar.max_attendees);
+    setIsPublic(webinar.is_public);
+    setRegistrationRequired(webinar.registration_required);
+    setEnableRecording(webinar.enable_recording);
+    setEnableCaptions(webinar.enable_captions);
+    setEnableTranslation(webinar.enable_translation);
+    setDefaultLanguage(webinar.default_language);
+  }, [isOpen, webinar]);
 
   const addSpeaker = () => {
     if (!newSpeakerEmail.trim()) return;
@@ -114,28 +145,56 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
 
     setIsLoading(true);
     try {
+      // No dedicated offset picker yet — a sensible default (24h/1h/15min,
+      // all already-supported REMINDER_OFFSET_OPTIONS values) whenever
+      // registration is required, matching the spec's 24h/1h/10-15min ask.
+      const reminderOffsets = registrationRequired ? [1440, 60, 15] : [];
+      const sharedFields = {
+        title: title.trim(),
+        description: description.trim() || null,
+        cover_image_url: coverImageUrl.trim() || null,
+        scheduled_start_at: scheduledUtc,
+        timezone: scheduledUtc ? timezone : null,
+        duration_minutes: durationMinutes,
+        max_attendees: maxAttendees,
+        registration_required: registrationRequired,
+        reminder_offsets: reminderOffsets,
+        is_public: isPublic,
+        access_level: isPublic ? 'public' : 'members',
+        enable_recording: isFreeTier ? false : enableRecording,
+        enable_captions: enableCaptions,
+        enable_translation: enableTranslation,
+        default_language: defaultLanguage,
+      };
+
+      if (isEditing && webinar) {
+        const { data, error } = await supabase
+          .from('ministry_webinars')
+          .update({ ...sharedFields, status: webinar.status === 'draft' && scheduledUtc ? 'scheduled' : webinar.status })
+          .eq('id', webinar.id)
+          .select()
+          .single();
+        if (error) throw error;
+
+        for (const s of speakers) {
+          await createWebinarSpeaker({ webinarId: webinar.id, invitedEmail: s.email, invitedName: s.name || null, role: s.role });
+        }
+
+        toast.success('Webinar updated');
+        onSuccess(data as MinistryWebinar);
+        onClose();
+        return;
+      }
+
       const roomName = `webinar-${ministryId}-${Date.now()}`;
       const { data, error } = await supabase
         .from('ministry_webinars')
         .insert({
           ministry_id: ministryId,
           host_id: user.id,
-          title: title.trim(),
-          description: description.trim() || null,
-          cover_image_url: coverImageUrl.trim() || null,
-          scheduled_start_at: scheduledUtc,
-          timezone: scheduledUtc ? timezone : null,
-          duration_minutes: durationMinutes,
           room_name: roomName,
-          max_attendees: maxAttendees,
-          registration_required: registrationRequired,
-          is_public: isPublic,
-          access_level: isPublic ? 'public' : 'members',
-          enable_recording: isFreeTier ? false : enableRecording,
-          enable_captions: enableCaptions,
-          enable_translation: enableTranslation,
-          default_language: defaultLanguage,
           status: scheduledUtc ? 'scheduled' : 'draft',
+          ...sharedFields,
         })
         .select()
         .single();
@@ -149,8 +208,8 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
       onSuccess(data as MinistryWebinar);
       onClose();
     } catch (err) {
-      console.error('[CreateWebinarWizard] create failed:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to create webinar');
+      console.error('[CreateWebinarWizard] save failed:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to save webinar');
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +219,9 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Radio className="h-5 w-5 text-purple-600" /> New Webinar</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Radio className="h-5 w-5 text-purple-600" /> {isEditing ? 'Edit Webinar' : 'New Webinar'}
+          </DialogTitle>
         </DialogHeader>
 
         {accessReason && (
@@ -231,9 +292,9 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
           <div className="flex items-center justify-between">
             <div>
               <Label>Require registration</Label>
-              <p className="text-xs text-gray-500">Coming soon — reminders/RSVP tracking ship in a later update.</p>
+              <p className="text-xs text-gray-500">Attendees must register before joining — they'll get reminders too.</p>
             </div>
-            <Switch checked={registrationRequired} onCheckedChange={setRegistrationRequired} disabled />
+            <Switch checked={registrationRequired} onCheckedChange={setRegistrationRequired} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -283,7 +344,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess }: 
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={isLoading || !!accessReason}>
               {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Create webinar
+              {isEditing ? 'Save changes' : 'Create webinar'}
             </Button>
           </DialogFooter>
         </form>

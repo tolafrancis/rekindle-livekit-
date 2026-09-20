@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@rekindle/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3 } from 'lucide-react';
@@ -8,7 +8,10 @@ import { trackMeetingParticipant } from '../meetingStreamControl';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { WebinarQAPanel } from './WebinarQAPanel';
 import { WebinarPollPanel } from './WebinarPollPanel';
+import { WebinarTranslationButton } from './WebinarTranslationButton';
 import type { MinistryWebinar } from './webinarControl';
+
+const HLS_TARGET_LATENCY_SECONDS = 6;
 
 interface WebinarAttendeeViewerProps {
   webinar: MinistryWebinar;
@@ -27,6 +30,9 @@ interface WebinarAttendeeViewerProps {
 export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLeave, onPromoted }: WebinarAttendeeViewerProps) {
   const speakerRequests = useWebinarSpeakerRequests(webinar.id, userId, userName, false);
   const myRequest = speakerRequests.myRequest;
+  const [hlsLatencySeconds, setHlsLatencySeconds] = useState(HLS_TARGET_LATENCY_SECONDS);
+  const [translationActive, setTranslationActive] = useState(false);
+  const showTranslation = webinar.enable_captions || webinar.enable_translation;
 
   useEffect(() => {
     trackMeetingParticipant(webinar.id, userId, userName, false, 'join', 'ministry_webinar');
@@ -42,7 +48,14 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
       <div className="relative sm:flex-1 min-h-0 flex flex-col">
         <div className="w-full aspect-video sm:flex-1 sm:aspect-auto sm:min-h-0">
           {webinar.hls_playback_url ? (
-            <HlsPlayer src={webinar.hls_playback_url} onEnded={onEnded} className="w-full h-full" />
+            <HlsPlayer
+              src={webinar.hls_playback_url}
+              onEnded={onEnded}
+              className="w-full h-full"
+              muted={translationActive}
+              targetLatencySeconds={HLS_TARGET_LATENCY_SECONDS}
+              onLatencyChange={setHlsLatencySeconds}
+            />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
               Waiting for the host to start the webinar…
@@ -76,7 +89,15 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
           )}
         </div>
 
-        <div className="absolute top-3 right-3 z-50">
+        <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
+          {showTranslation && (
+            <WebinarTranslationButton
+              webinarId={webinar.id}
+              roomName={webinar.room_name}
+              delaySeconds={hlsLatencySeconds}
+              onActiveChange={setTranslationActive}
+            />
+          )}
           <Button onClick={onLeave} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
             <PhoneOff className="h-4 w-4 mr-2" /> Leave
           </Button>

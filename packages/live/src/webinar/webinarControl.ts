@@ -138,6 +138,20 @@ export async function startWebinarBroadcast(webinarId: string, roomName: string)
   return result;
 }
 
+/** Ending finalization: locks in final poll results so a viewer looking back
+ *  at analytics/history never sees a poll stuck "open" forever. Pending Q&A
+ *  questions are deliberately left as-is — Q&A has no equivalent "must be
+ *  closed" lifecycle the way a poll's vote count does, and they still show up
+ *  in WebinarAnalytics' engagement counts regardless of status. */
+async function finalizeWebinarEngagement(webinarId: string): Promise<void> {
+  const { error } = await supabase
+    .from('webinar_polls')
+    .update({ status: 'closed', closed_at: new Date().toISOString() })
+    .eq('webinar_id', webinarId)
+    .eq('status', 'open');
+  if (error) console.error('[webinarControl] finalizeWebinarEngagement failed:', error.message);
+}
+
 /** Host action: end for everyone. Stops the Egress and moves through the ending
  *  states — 'recording_processing'/'completed' are set later by whatever polls the
  *  livekit_recordings row's own status (the webhook has already fired by the time a
@@ -145,6 +159,7 @@ export async function startWebinarBroadcast(webinarId: string, roomName: string)
 export async function stopWebinarBroadcast(webinarId: string, roomName: string): Promise<void> {
   await updateWebinarStatus(webinarId, 'ending');
   await stopMeetingBroadcast(webinarId, roomName, 'ministry_webinar');
+  await finalizeWebinarEngagement(webinarId);
   await updateWebinarStatus(webinarId, 'ended');
 }
 

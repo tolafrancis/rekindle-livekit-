@@ -7,6 +7,7 @@ import {
 } from '@rekindle/ui/dialog';
 import { PhoneOff, X, Hand, Settings2, HelpCircle, BarChart3 } from 'lucide-react';
 import DailyVideoCall from '../components/DailyVideoCall';
+import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
 import type { WebinarViewerRole } from './WebinarLobby';
@@ -32,6 +33,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
 
   const handleEndForEveryone = async () => {
     setEnding(true);
@@ -58,7 +60,20 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           showControls
           autoJoin
           enableRecording={webinar.enable_recording}
+          onTranslationControlsChange={setCallTranslation}
         />
+
+        {(webinar.enable_captions || webinar.enable_translation) && callTranslation && (
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50">
+            <FloatingTranslationButton
+              translation={callTranslation}
+              ministryId={webinar.ministry_id}
+              roomName={webinar.room_name}
+              isHost={isHost}
+              userId={userId}
+            />
+          </div>
+        )}
 
         <div className="absolute top-3 right-3 z-50 flex gap-2">
           {isHost && (
