@@ -8,6 +8,7 @@
     "./ActiveCallContext": "./src/ActiveCallContext.tsx",
     "./AudioOutputContext": "./src/AudioOutputContext.tsx",
     "./components/*": "./src/components/*.tsx",
+    "./webinar/*": ["./src/webinar/*.tsx", "./src/webinar/*.ts"],
     "./*": "./src/*.ts"
   },
   "dependencies": {

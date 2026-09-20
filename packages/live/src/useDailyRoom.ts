@@ -42,7 +42,7 @@ export interface DailyRoomOptions {
   meetingId?: string;
   /** LiveKit only: which DB table the `livekit-token` fn checks for host status.
    *  Defaults to 'channel' when a channelId is present, else 'meeting'. */
-  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling';
+  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling' | 'ministry_webinar';
 }
 
 export interface DailyParticipantInfo {

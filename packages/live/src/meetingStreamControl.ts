@@ -27,8 +27,9 @@ export function createMeetingStream(_meetingId: string, _record = true): Promise
 // the existing realtime subscription.
 
 /** Which meetings table holds this webinar (decides where hls_playback_url is written
- *  and which host_id proves you may start the Egress). */
-export type MeetingKind = 'channel_meeting' | 'ministry_meeting' | 'meeting';
+ *  and which host_id proves you may start the Egress). 'ministry_webinar' is the new,
+ *  separate Webinar meeting type (ministry_webinars table) — see packages/live/src/webinar. */
+export type MeetingKind = 'channel_meeting' | 'ministry_meeting' | 'meeting' | 'ministry_webinar';
 
 /** Start the webinar's HLS Egress. Returns the playback URL (also written to the meeting row). */
 export async function startMeetingBroadcast(

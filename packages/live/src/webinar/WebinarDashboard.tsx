@@ -1,0 +1,163 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
+import { Button } from '@rekindle/ui/button';
+import { Badge } from '@rekindle/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
+import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3 } from 'lucide-react';
+import { toast } from 'sonner';
+import { formatMeetingTime } from '@rekindle/features/meetingTime';
+import { publicAppOrigin } from '@rekindle/features/liveShare';
+import { listMinistryWebinars, type MinistryWebinar, type WebinarStatus } from './webinarControl';
+import { CreateWebinarWizard } from './CreateWebinarWizard';
+import { WebinarAnalytics } from './WebinarAnalytics';
+
+interface WebinarDashboardProps {
+  ministryId: string;
+  isLeader: boolean;
+}
+
+const LIVE_STATUSES: WebinarStatus[] = ['live', 'ending', 'starting_soon'];
+const UPCOMING_STATUSES: WebinarStatus[] = ['scheduled', 'registration_open'];
+const PAST_STATUSES: WebinarStatus[] = ['ended', 'recording_processing', 'completed', 'cancelled'];
+
+const statusBadge: Record<string, string> = {
+  live: 'bg-red-50 text-red-700 border-red-200',
+  ending: 'bg-red-50 text-red-700 border-red-200',
+  starting_soon: 'bg-amber-50 text-amber-700 border-amber-200',
+  scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
+  registration_open: 'bg-blue-50 text-blue-700 border-blue-200',
+  draft: 'bg-gray-100 text-gray-600 border-gray-200',
+  ended: 'bg-gray-100 text-gray-600 border-gray-200',
+  recording_processing: 'bg-gray-100 text-gray-600 border-gray-200',
+  completed: 'bg-gray-100 text-gray-600 border-gray-200',
+  cancelled: 'bg-gray-100 text-gray-400 border-gray-200',
+};
+
+function WebinarCard({ webinar, ministryId, isLeader }: { webinar: MinistryWebinar; ministryId: string; isLeader: boolean }) {
+  const navigate = useNavigate();
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const openWebinar = () => navigate(`/ministry/${ministryId}/webinar/${webinar.id}`);
+  const copyLink = async () => {
+    const link = `${publicAppOrigin()}/ministry/${ministryId}/webinar/${webinar.id}`;
+    await navigator.clipboard.writeText(link);
+    toast.success('Webinar link copied');
+  };
+  const isPast = PAST_STATUSES.includes(webinar.status);
+
+  return (
+    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={openWebinar}>
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-base line-clamp-2">{webinar.title}</CardTitle>
+          <Badge variant="outline" className={statusBadge[webinar.status] || 'bg-gray-100 text-gray-600'}>
+            {webinar.status.replace(/_/g, ' ')}
+          </Badge>
+        </div>
+        {webinar.description && <CardDescription className="line-clamp-2">{webinar.description}</CardDescription>}
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {webinar.scheduled_start_at && (
+          <p className="text-xs text-gray-500 flex items-center gap-1.5">
+            <Calendar className="h-3.5 w-3.5" /> {formatMeetingTime(webinar.scheduled_start_at, webinar.timezone)}
+          </p>
+        )}
+        <p className="text-xs text-gray-500 flex items-center gap-1.5">
+          <Users className="h-3.5 w-3.5" /> Up to {webinar.max_attendees} attendees
+          {webinar.attendee_count > 0 ? ` · ${webinar.attendee_count} attended` : ''}
+        </p>
+        <div className="flex gap-2 pt-1">
+          <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); openWebinar(); }}>
+            {LIVE_STATUSES.includes(webinar.status) ? <><Play className="h-3.5 w-3.5 mr-1" /> Join</> : 'Manage'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyLink(); }}>
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          {isLeader && isPast && (
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowAnalytics(true); }}>
+              <BarChart3 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </CardContent>
+      {isLeader && isPast && (
+        <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />
+      )}
+    </Card>
+  );
+}
+
+/** Ministry's webinar list — mirrors MinistryInteractiveMeetings' role in the
+ *  meetings tab, but scoped to ministry_webinars (a wholly separate table/UI). */
+export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps) {
+  const [webinars, setWebinars] = useState<MinistryWebinar[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await listMinistryWebinars(ministryId);
+    setWebinars(data);
+    setLoading(false);
+  }, [ministryId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const live = webinars.filter((w) => LIVE_STATUSES.includes(w.status));
+  const upcoming = webinars.filter((w) => UPCOMING_STATUSES.includes(w.status));
+  const past = webinars.filter((w) => PAST_STATUSES.includes(w.status));
+  const drafts = webinars.filter((w) => w.status === 'draft');
+
+  const renderGrid = (list: MinistryWebinar[], emptyLabel: string) => (
+    loading ? (
+      <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-purple-500" /></div>
+    ) : list.length === 0 ? (
+      <div className="text-center py-12 text-gray-400">
+        <Radio className="h-10 w-10 mx-auto mb-3 opacity-40" />
+        <p>{emptyLabel}</p>
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {list.map((w) => <WebinarCard key={w.id} webinar={w} ministryId={ministryId} isLeader={isLeader} />)}
+      </div>
+    )
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><Radio className="h-6 w-6 text-purple-600" /> Webinars</h2>
+          <p className="text-sm text-gray-500">Host/speakers broadcast to an audience, with controlled audience interaction.</p>
+        </div>
+        {isLeader && (
+          <Button onClick={() => setShowCreate(true)} className="bg-purple-600 hover:bg-purple-700">
+            <Plus className="h-4 w-4 mr-2" /> New webinar
+          </Button>
+        )}
+      </div>
+
+      <Tabs defaultValue="upcoming">
+        <TabsList>
+          <TabsTrigger value="live">Live{live.length > 0 ? ` (${live.length})` : ''}</TabsTrigger>
+          <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
+          <TabsTrigger value="past">Past</TabsTrigger>
+          {isLeader && <TabsTrigger value="drafts">Drafts</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="live">{renderGrid(live, 'No live webinars right now.')}</TabsContent>
+        <TabsContent value="upcoming">{renderGrid(upcoming, 'No upcoming webinars scheduled.')}</TabsContent>
+        <TabsContent value="past">{renderGrid(past, 'No past webinars yet.')}</TabsContent>
+        {isLeader && <TabsContent value="drafts">{renderGrid(drafts, 'No drafts.')}</TabsContent>}
+      </Tabs>
+
+      <CreateWebinarWizard
+        ministryId={ministryId}
+        isOpen={showCreate}
+        onClose={() => setShowCreate(false)}
+        onSuccess={() => load()}
+      />
+    </div>
+  );
+}
+
+export default WebinarDashboard;

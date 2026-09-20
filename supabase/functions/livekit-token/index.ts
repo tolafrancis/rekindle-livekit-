@@ -50,7 +50,7 @@ interface RequestBody {
   viewerOnly?: boolean;
   enableWaitingRoom?: boolean;
   context?: {
-    kind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling';
+    kind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling' | 'ministry_webinar';
     meetingId?: string;
     channelId?: string;
   };
@@ -80,6 +80,7 @@ const HOST_TABLE: Record<string, string> = {
   meeting: 'meetings',
   ministry_meeting: 'ministry_video_meetings',
   channel_meeting: 'live_channel_video_meetings',
+  ministry_webinar: 'ministry_webinars',
 };
 
 const json = (body: unknown, status = 200) =>
@@ -156,6 +157,32 @@ async function resolveRole(
     if (data) return 'speaker';
   }
 
+  // Webinar speaker: either pre-assigned and confirmed (webinar_speakers,
+  // set before the event) or live-promoted (webinar_speaker_requests, the
+  // request-to-speak handshake — see packages/live/src/webinar). Attendees
+  // never resolve past this to anything but 'attendee'/'viewer' — Phase 1
+  // never mints them a room-join token at all (they're HLS-only), but this
+  // still guards the case a client calls livekit-token directly anyway.
+  if (ctx.kind === 'ministry_webinar' && ctx.meetingId) {
+    const { data: confirmed } = await admin
+      .from('webinar_speakers')
+      .select('user_id')
+      .eq('webinar_id', ctx.meetingId)
+      .eq('user_id', userId)
+      .eq('status', 'confirmed')
+      .maybeSingle();
+    if (confirmed) return 'speaker';
+
+    const { data: accepted } = await admin
+      .from('webinar_speaker_requests')
+      .select('user_id')
+      .eq('webinar_id', ctx.meetingId)
+      .eq('user_id', userId)
+      .eq('status', 'accepted')
+      .maybeSingle();
+    if (accepted) return 'speaker';
+  }
+
   return body.viewerOnly ? 'viewer' : 'attendee';
 }
 
@@ -182,6 +209,27 @@ async function isEntitled(
     const { data: m } = await admin
       .from('ministry_video_meetings').select('ministry_id').eq('id', ctx.meetingId).maybeSingle();
     const mid = (m as { ministry_id?: string } | null)?.ministry_id;
+    if (!mid) return false;
+    const { data: mem } = await admin
+      .from('ministry_group_members').select('user_id')
+      .eq('ministry_id', mid).eq('user_id', userId).maybeSingle();
+    if (mem) return true;
+    const { data: g } = await admin
+      .from('ministry_groups').select('id')
+      .eq('id', mid).or(`owner_id.eq.${userId},leader_id.eq.${userId}`).maybeSingle();
+    return !!g;
+  }
+
+  // Ministry webinar — public webinars bypass membership (anyone can watch/
+  // join per its own is_public flag); private ones require membership like
+  // a ministry meeting. Only host/co-host/speakers ever reach this function
+  // in Phase 1 (attendees are HLS-only), but the same gate applies to them.
+  if (ctx.kind === 'ministry_webinar' && ctx.meetingId) {
+    const { data: w } = await admin
+      .from('ministry_webinars').select('ministry_id, is_public').eq('id', ctx.meetingId).maybeSingle();
+    const webinar = w as { ministry_id?: string; is_public?: boolean } | null;
+    if (webinar?.is_public) return true;
+    const mid = webinar?.ministry_id;
     if (!mid) return false;
     const { data: mem } = await admin
       .from('ministry_group_members').select('user_id')

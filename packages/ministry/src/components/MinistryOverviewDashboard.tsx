@@ -6,7 +6,7 @@ import { supabase } from '@rekindle/supabase';
 import {
   Users, BookOpen, Heart, Calendar, Gift, MessageSquare,
   TrendingUp, Eye, Share2, ThumbsUp, Plus, Loader2,
-  Megaphone, Star, Clock, CheckCircle, AlertCircle
+  Megaphone, Star, Clock, CheckCircle, AlertCircle, Radio
 } from 'lucide-react';
 
 interface MinistryOverviewDashboardProps {
@@ -22,6 +22,7 @@ interface DashboardMetrics {
   prayerRequestsNew: number;
   prayerRequestsAnswered: number;
   upcomingEvents: number;
+  upcomingWebinars: number;
   totalDonations: number;
   engagementLikes: number;
   engagementComments: number;
@@ -41,6 +42,7 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
     prayerRequestsNew: 0,
     prayerRequestsAnswered: 0,
     upcomingEvents: 0,
+    upcomingWebinars: 0,
     totalDonations: 0,
     engagementLikes: 0,
     engagementComments: 0,
@@ -84,6 +86,15 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
         .eq('ministry_id', ministryId)
         .gte('start_time', new Date().toISOString());
 
+      // Load upcoming webinars — a wholly separate meeting type from
+      // ministry_video_meetings (see packages/live/src/webinar).
+      const { count: upcomingWebinarsCount } = await supabase
+        .from('ministry_webinars')
+        .select('*', { count: 'exact', head: true })
+        .eq('ministry_id', ministryId)
+        .in('status', ['scheduled', 'registration_open', 'starting_soon'])
+        .gte('scheduled_start_at', new Date().toISOString());
+
       // Load donations total
       const { data: donationsData } = await supabase
         .from('ministry_donations')
@@ -116,6 +127,7 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
         prayerRequestsNew: newRequests,
         prayerRequestsAnswered: answeredRequests,
         upcomingEvents: eventsCount || 0,
+        upcomingWebinars: upcomingWebinarsCount || 0,
         totalDonations: totalDonations,
         engagementLikes: engagement.likes || Math.floor(Math.random() * 500),
         engagementComments: engagement.comments || Math.floor(Math.random() * 200),
@@ -283,6 +295,18 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
                 <p className="text-xl font-bold">{metrics.followers}</p>
               </div>
               <Star className="h-8 w-8 text-amber-500 opacity-50" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('webinars')}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Upcoming Webinars</p>
+                <p className="text-xl font-bold">{metrics.upcomingWebinars}</p>
+              </div>
+              <Radio className="h-8 w-8 text-purple-500 opacity-50" />
             </div>
           </CardContent>
         </Card>

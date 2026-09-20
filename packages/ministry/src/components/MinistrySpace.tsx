@@ -42,6 +42,7 @@ const MINISTRY_NAV = [
   { id: 'announcements', label: 'Announcements', icon: Megaphone },
   { id: 'donations', label: 'Donations', icon: Gift },
   { id: 'meetings', label: 'Interactive Meetings', icon: Video },
+  { id: 'webinars', label: 'Webinars', icon: Radio },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
 import { MinistrySettingsHub, SettingsSectionId } from './MinistrySettingsHub';
@@ -52,6 +53,7 @@ import { AcceptRulesModal } from './AcceptRulesModal';
 import MinistryBroadcast from './MinistryBroadcast';
 import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
 import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
+import { WebinarDashboard } from '@rekindle/live/webinar/WebinarDashboard';
 import { MLiveChannel } from './MLiveChannel';
 import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
@@ -899,6 +901,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
       { id: 'meetings', label: 'Meetings', icon: Video },
+      { id: 'webinars', label: 'Webinars', icon: Radio },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
     ...(canManageMinistry ? [{
@@ -2654,6 +2657,15 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             ministryId={ministry.id}
             isLeader={membership?.is_leader || false}
             themeColor={themeColor}
+          />
+        )}
+
+        {/* Webinars Tab — a wholly separate meeting type from Interactive
+            Meetings, see packages/live/src/webinar */}
+        {activeTab === 'webinars' && (
+          <WebinarDashboard
+            ministryId={ministry.id}
+            isLeader={membership?.is_leader || false}
           />
         )}
 

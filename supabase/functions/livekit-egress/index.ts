@@ -43,6 +43,7 @@ const HOST_TABLE: Record<string, string> = {
   meeting: 'meetings',
   ministry_meeting: 'ministry_video_meetings',
   channel_meeting: 'live_channel_video_meetings',
+  ministry_webinar: 'ministry_webinars',
 };
 
 const json = (body: unknown, status = 200) =>
@@ -74,6 +75,10 @@ async function resolveMinistryIdFromContext(
     if (!cId) return null;
     const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', cId).maybeSingle();
     return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (ctxKind === 'ministry_webinar' && meetingId) {
+    const { data } = await admin.from('ministry_webinars').select('ministry_id').eq('id', meetingId).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
   }
   return null;
 }
@@ -232,7 +237,7 @@ serve(async (req) => {
     }
 
     // track-participant is a self-report (any current participant, including
-    // guests with no Supabase auth session — see meeting_participants' header
+    // guests with no Supabase auth session — see meeting_attendance's header
     // comment) — no host check, and no egress/roomService needed.
     if (action === 'track-participant') {
       const { meetingId, participantId, participantName, isGuest, event } = body;
@@ -241,16 +246,16 @@ serve(async (req) => {
 
       if (event === 'join') {
         const { data: existing } = await admin
-          .from('meeting_participants')
+          .from('meeting_attendance')
           .select('id')
           .eq('meeting_id', meetingId)
           .eq('user_id', participantId)
           .eq('is_active', true)
           .maybeSingle();
         if (existing) {
-          await admin.from('meeting_participants').update({ is_active: true, left_at: null }).eq('id', existing.id);
+          await admin.from('meeting_attendance').update({ is_active: true, left_at: null }).eq('id', existing.id);
         } else {
-          await admin.from('meeting_participants').insert({
+          await admin.from('meeting_attendance').insert({
             meeting_id: meetingId,
             meeting_table: meetingTable,
             user_id: participantId,
@@ -262,7 +267,7 @@ serve(async (req) => {
         }
       } else {
         await admin
-          .from('meeting_participants')
+          .from('meeting_attendance')
           .update({ is_active: false, left_at: new Date().toISOString() })
           .eq('meeting_id', meetingId)
           .eq('user_id', participantId)
@@ -283,7 +288,7 @@ serve(async (req) => {
     // already checked above): names + join times are participant PII.
     if (action === 'list-participants') {
       const { data } = await admin
-        .from('meeting_participants')
+        .from('meeting_attendance')
         .select('user_id, user_name, is_guest, joined_at, left_at, is_active')
         .eq('meeting_id', body.meetingId)
         .order('joined_at', { ascending: true });
@@ -321,12 +326,17 @@ serve(async (req) => {
       const ctxKind = body.context?.kind ?? 'meeting';
       const meetingTable = HOST_TABLE[ctxKind]; // undefined for 'channel'
       const isChannelBroadcast = ctxKind === 'channel';
+      const isWebinar = ctxKind === 'ministry_webinar';
+      // A webinar is one-to-many like a channel broadcast, not a two-way
+      // meeting — meters against broadcast hours, same as a channel.
+      const recordingKind: 'meeting' | 'channel' | 'webinar' =
+        isChannelBroadcast ? 'channel' : isWebinar ? 'webinar' : 'meeting';
 
       const startMeetingId = body.context?.meetingId ?? body.meetingId ?? body.roomName;
       const startChannelId = isChannelBroadcast ? (body.context?.channelId ?? body.channelId ?? null) : null;
       const startMinistryId = await resolveMinistryIdFromContext(admin, ctxKind, startMeetingId, startChannelId);
       if (startMinistryId) {
-        const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast ? 'broadcast' : 'meeting');
+        const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast || isWebinar ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
       }
 
@@ -354,7 +364,7 @@ serve(async (req) => {
       const { data: row, error: insertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
         room_name: body.roomName,
-        kind: isChannelBroadcast ? 'channel' : 'meeting',
+        kind: recordingKind,
         channel_id: isChannelBroadcast ? (body.context?.channelId ?? body.channelId ?? null) : null,
         meeting_id: body.context?.meetingId ?? body.meetingId ?? body.roomName,
         meeting_table: meetingTable ?? null,
@@ -388,6 +398,7 @@ serve(async (req) => {
       if (!body.roomName) return json({ error: 'roomName required' }, 400);
       const ctxKind = body.context?.kind;
       const isChannel = ctxKind === 'channel';
+      const isWebinarHls = ctxKind === 'ministry_webinar';
       const meetingTable = HOST_TABLE[ctxKind ?? ''];
       const meetingId = body.context?.meetingId;
       const channelId = body.channelId ?? body.context?.channelId;
@@ -396,7 +407,7 @@ serve(async (req) => {
 
       const hlsMinistryId = await resolveMinistryIdFromContext(admin, ctxKind ?? '', meetingId, channelId);
       if (hlsMinistryId) {
-        const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel ? 'broadcast' : 'meeting');
+        const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel || isWebinarHls ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
       }
 
@@ -464,7 +475,7 @@ serve(async (req) => {
       const { error: hlsInsertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
         room_name: body.roomName,
-        kind: isChannel ? 'channel' : 'meeting',
+        kind: isChannel ? 'channel' : isWebinarHls ? 'webinar' : 'meeting',
         channel_id: isChannel ? channelId : null,
         meeting_id: meetingId ?? body.roomName,
         meeting_table: isChannel ? null : meetingTable,

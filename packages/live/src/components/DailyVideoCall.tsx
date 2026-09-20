@@ -37,7 +37,7 @@ interface DailyVideoCallProps {
   meetingId?: string;
   /** LiveKit role-derivation: which DB table holds this meeting's host_id.
    *  Defaults to 'meeting' (the `meetings` table). */
-  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel';
+  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'ministry_webinar';
   showParticipantList?: boolean;
   onAdmitParticipant?: (participantId: string) => void;
   onRemoveParticipant?: (participantId: string) => void;

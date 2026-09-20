@@ -189,6 +189,10 @@ async function resolveMinistryId(
     const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', channelId).maybeSingle();
     return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
   }
+  if (rec.meeting_table === 'ministry_webinars' && rec.meeting_id) {
+    const { data } = await admin.from('ministry_webinars').select('ministry_id').eq('id', rec.meeting_id).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
   return null;
 }
 
@@ -317,7 +321,9 @@ serve(async (req) => {
               p_ministry_id: ministryId,
               p_bytes_delta: bytes,
               p_meeting_minutes_delta: rec.kind === 'meeting' ? minutes : 0,
-              p_broadcast_minutes_delta: rec.kind === 'channel' ? minutes : 0,
+              // A webinar is one-to-many like a channel broadcast, not a
+              // two-way meeting — meters against broadcast hours.
+              p_broadcast_minutes_delta: rec.kind === 'channel' || rec.kind === 'webinar' ? minutes : 0,
             }).then(({ error }: { error: unknown }) => {
               if (error) console.error('[livekit-webhook] usage metering failed:', error);
             });
