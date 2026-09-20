@@ -482,7 +482,7 @@ const EnhancedVideoCallWrapper = ({
               <div className="flex flex-col items-center justify-center h-full text-gray-300 p-6 text-center gap-3">
                 <PhoneOff className="h-8 w-8 text-gray-400" />
                 <div>
-                  <p className="font-medium">{t('ministryInteractiveMeetings', 'webinarEnded', 'The webinar has ended')}</p>
+                  <p className="font-medium">{t('ministryInteractiveMeetings', 'presentationEnded', 'The presentation has ended')}</p>
                   <p className="text-sm text-gray-500">{t('ministryInteractiveMeetings', 'thanksForJoining', 'Thanks for joining.')}</p>
                 </div>
               </div>
@@ -490,7 +490,7 @@ const EnhancedVideoCallWrapper = ({
               <HlsPlayer src={hlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
-                {t('ministryInteractiveMeetings', 'waitingForHostWebinar', 'Waiting for the host to start the webinar…')}
+                {t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
               </div>
             )}
           </div>
@@ -1275,7 +1275,35 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
             </Select>
           </div>
 
-          {/* Mode: Meeting vs Webinar */}
+          <div className="space-y-2">
+            <Label htmlFor="max-participants">{t('ministryInteractiveMeetings', 'maxParticipantsLabel', 'Expected number of participants')}</Label>
+            <Input
+              id="max-participants"
+              type="number"
+              min={1}
+              max={isFreeTier ? FREE_TIER_MEETING_LIMITS.maxParticipants : undefined}
+              value={formData.max_participants}
+              onChange={(e) => setFormData({ ...formData, max_participants: Math.max(1, parseInt(e.target.value) || 1) })}
+            />
+            <p className="text-xs text-gray-500">
+              {t('ministryInteractiveMeetings', 'maxParticipantsTip', "This decides whether Meeting or Presentation mode is auto-selected below — it's not a hard cap, just an estimate.")}
+            </p>
+            {formData.max_participants > 500 && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+                <p className="text-xs text-amber-800">
+                  {t('ministryInteractiveMeetings', 'suggestWebinarTip', "For 500+ people, a dedicated Webinar (under the ministry's Webinars tab) is a better fit — it's built for large audiences, with registration, reminders, Q&A, polls, and analytics this meeting mode doesn't have.")}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Mode: Meeting vs Presentation (an Interactive-Meetings-native large-group
+              sub-mode — distinct from the separate, dedicated Webinar meeting type
+              under the Webinars tab, which has its own roster, Q&A, polls, registration
+              and analytics. Label kept as "Presentation" specifically so hosts don't
+              confuse the two; the underlying mode value stays 'webinar' unchanged
+              (ministry_video_meetings.mode — renaming the stored value would be a much
+              bigger, unnecessary schema-wide change for a label-only distinction). */}
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -1292,8 +1320,8 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
                 onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'webinar' }); }}
                 className={`rounded-lg border p-3 text-left transition ${formData.mode === 'webinar' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
               >
-                <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modeWebinar', 'Webinar')}</p>
-                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modeWebinarDesc', 'Host presents, audience watches.')}</p>
+                <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modePresentation', 'Presentation')}</p>
+                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modePresentationDesc', 'Host presents, audience watches.')}</p>
               </button>
             </div>
 
@@ -1892,7 +1920,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <h4 className="text-lg font-semibold">{meeting.title}</h4>
                           {meeting.mode === 'webinar' && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'webinarBadge', 'Webinar')}</Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Presentation')}</Badge>
                           )}
                           <Badge className="bg-green-500 text-white border-0">
                             <span className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse" />
@@ -2067,7 +2095,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <h4 className="text-lg font-semibold">{meeting.title}</h4>
                           {meeting.mode === 'webinar' && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'webinarBadge', 'Webinar')}</Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Presentation')}</Badge>
                           )}
                           <Badge variant="outline" className="border-gray-300">
                             <Globe className="h-3 w-3 mr-1" />
