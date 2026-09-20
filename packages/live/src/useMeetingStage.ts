@@ -24,7 +24,7 @@ export function useMeetingStage(
   userId: string,
   userName: string,
   isHost: boolean,
-  maxSeats: number = 8
+  maxSeats: number = 100
 ) {
   const [presenters, setPresenters] = useState<Presenter[]>([]);
   const [raisedHands, setRaisedHands] = useState<RaisedHand[]>([]);

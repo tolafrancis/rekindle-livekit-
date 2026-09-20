@@ -1296,11 +1296,6 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
                 <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modeWebinarDesc', 'Host presents, audience watches.')}</p>
               </button>
             </div>
-            {!modeTouched && formData.mode === 'webinar' && formData.max_participants >= WEBINAR_AUTO_THRESHOLD && (
-              <p className="text-xs text-amber-600">
-                {t('ministryInteractiveMeetings', 'autoSelectedWebinar', 'Auto-selected Webinar because this session allows {count} people. Switch to Meeting if you want everyone on camera.').replace('{count}', String(formData.max_participants))}
-              </p>
-            )}
 
             {formData.mode === 'webinar' && (
               <div className="rounded-lg bg-purple-50 border border-purple-100 p-3 mt-2">
