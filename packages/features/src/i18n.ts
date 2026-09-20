@@ -6940,7 +6940,6 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "modeMeetingDesc": "Everyone on camera. Best for small groups.",
     "modeWebinar": "Webinar",
     "modeWebinarDesc": "Host presents, audience watches.",
-    "autoSelectedWebinar": "Auto-selected Webinar because this session allows {count} people. Switch to Meeting if you want everyone on camera.",
     "liveStreamingAuto": "Live streaming is handled automatically. When you go live, the audience watches the stream and can raise a hand to be invited up. No setup needed.",
     "meetingFeatures": "Meeting Features",
     "enableRecording": "Enable Recording",
