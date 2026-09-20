@@ -55,6 +55,9 @@ export interface DailyParticipantInfo {
   hasVideo: boolean;
   hasScreenShare: boolean;
   isInCall: boolean;
+  /** LiveKit's own speech-detection — undefined on the Daily wrapper. Drives
+   *  the auto active-speaker layout in DailyVideoCall.tsx. */
+  isSpeaking?: boolean;
   joinedAt: Date;
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;

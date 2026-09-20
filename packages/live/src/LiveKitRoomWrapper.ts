@@ -570,6 +570,15 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       })
       .on(RoomEvent.ParticipantMetadataChanged, (_prev, p: Participant) =>
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal)))
+      // Drives isSpeaking (normalize(), above) — onParticipantUpdated's payload
+      // is ignored by the hook (it just triggers a full re-normalize off
+      // getParticipants(), see useDailyRoom.ts), so which participant we pass
+      // here doesn't matter, only that this fires. LiveKit already throttles
+      // this event itself, no extra debouncing needed at this layer.
+      .on(RoomEvent.ActiveSpeakersChanged, () => {
+        const lp = this.room?.localParticipant;
+        if (lp) this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
+      })
       .on(RoomEvent.TrackMuted, (_pub, p: Participant) => {
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
         // Keep the control buttons in lockstep with the tile when OUR track is
@@ -704,6 +713,13 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       hasAudio: !!audioTrack && !mic?.isMuted,
       hasVideo: !!videoTrack && !camera?.isMuted,
       hasScreenShare: !!screenVideoTrack,
+      // Drives the auto active-speaker layout (DailyVideoCall.tsx) — featuring
+      // whoever's talking, instead of an always-on full grid, is what actually
+      // keeps bandwidth down for ordinary meetings: it pushes more tiles small
+      // (adaptiveStream already lowers resolution for small tiles, but only
+      // gets the chance to if something's making them small in the first
+      // place). LiveKit's own built-in speech detection — no extra API call.
+      isSpeaking: p.isSpeaking,
       isInCall: true,
       joinedAt: p.joinedAt ?? new Date(),
       audioTrack,

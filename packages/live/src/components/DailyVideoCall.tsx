@@ -1372,6 +1372,55 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     prevParticipantCountRef.current = participants.length;
   }, [participants.length, isHost, spotlightedParticipantId, spotlightParticipant]);
 
+  // Auto active-speaker layout: when nobody has explicitly pinned or spotlighted
+  // anyone, feature whoever's currently talking instead of always showing the
+  // full grid. This is a real cost lever, not just UX polish — LiveKit bills by
+  // downstream bandwidth, and adaptiveStream (LiveKitRoomWrapper.ts's Room
+  // config) only lowers a tile's resolution once something has actually made
+  // that tile small; a flat, unfeatured grid never gives it the chance to. Two
+  // debounces avoid flicker: a candidate must lead for 1.2s before becoming
+  // featured (skips brief interjections), and once someone's featured they stay
+  // featured for 3s of silence before falling back to the grid (skips gaps
+  // between sentences). Only kicks in once the grid would actually have enough
+  // tiles for it to matter — a 1:1 or 3-person call is already cheap either way.
+  const [autoSpeakerId, setAutoSpeakerId] = useState<string | null>(null);
+  const autoSpeakerCandidateRef = useRef<string | null>(null);
+  const autoSpeakerPromoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSpeakerClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (remoteParticipants.length < 4) {
+      autoSpeakerCandidateRef.current = null;
+      if (autoSpeakerPromoteTimerRef.current) { clearTimeout(autoSpeakerPromoteTimerRef.current); autoSpeakerPromoteTimerRef.current = null; }
+      if (autoSpeakerClearTimerRef.current) { clearTimeout(autoSpeakerClearTimerRef.current); autoSpeakerClearTimerRef.current = null; }
+      setAutoSpeakerId(null);
+      return;
+    }
+    const speaking = (remoteParticipants as any[]).find((p) => p.isSpeaking);
+    if (speaking) {
+      if (autoSpeakerClearTimerRef.current) { clearTimeout(autoSpeakerClearTimerRef.current); autoSpeakerClearTimerRef.current = null; }
+      if (autoSpeakerCandidateRef.current !== speaking.sessionId) {
+        autoSpeakerCandidateRef.current = speaking.sessionId;
+        if (autoSpeakerPromoteTimerRef.current) clearTimeout(autoSpeakerPromoteTimerRef.current);
+        autoSpeakerPromoteTimerRef.current = setTimeout(() => {
+          setAutoSpeakerId(speaking.sessionId);
+        }, 1200);
+      }
+    } else {
+      autoSpeakerCandidateRef.current = null;
+      if (autoSpeakerPromoteTimerRef.current) { clearTimeout(autoSpeakerPromoteTimerRef.current); autoSpeakerPromoteTimerRef.current = null; }
+      if (autoSpeakerId && !autoSpeakerClearTimerRef.current) {
+        autoSpeakerClearTimerRef.current = setTimeout(() => {
+          setAutoSpeakerId(null);
+          autoSpeakerClearTimerRef.current = null;
+        }, 3000);
+      }
+    }
+  }, [remoteParticipants, autoSpeakerId]);
+  useEffect(() => () => {
+    if (autoSpeakerPromoteTimerRef.current) clearTimeout(autoSpeakerPromoteTimerRef.current);
+    if (autoSpeakerClearTimerRef.current) clearTimeout(autoSpeakerClearTimerRef.current);
+  }, []);
+
   // Monitor audio track state from Daily SDK
   useEffect(() => {
     if (!callObject || !isConnected) {
@@ -1590,14 +1639,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
 
   // The main stage features ONE participant. A personal PIN (local to this viewer)
-  // takes priority over the host's SPOTLIGHT (broadcast to everyone). The featured
+  // takes priority over the host's SPOTLIGHT (broadcast to everyone), which takes
+  // priority over the automatic active-speaker guess (see autoSpeakerId above) —
+  // an explicit choice always wins over the ambient default. The featured
   // participant is found among ALL participants, so it can be the local host (who
   // is spotlighted by default).
-  const featuredId = pinnedParticipantId || spotlightedParticipantId;
+  const featuredId = pinnedParticipantId || spotlightedParticipantId || autoSpeakerId;
   const featuredParticipant = featuredId
     ? participants.find((p: any) => p.sessionId === featuredId)
     : null;
-  const featuredIsSpotlight = !!featuredParticipant && !pinnedParticipantId;
+  const featuredIsSpotlight = !!featuredParticipant && !pinnedParticipantId && !!spotlightedParticipantId;
+  // Nothing to unpin/un-spotlight for an auto-selected speaker — no badge, no
+  // control, same as Zoom/Meet don't announce their own active-speaker view.
+  const featuredIsAuto = !!featuredParticipant && !pinnedParticipantId && !spotlightedParticipantId;
   const featuredIsLocal = !!featuredParticipant && featuredParticipant.isLocal;
   const filmstripParticipants = featuredParticipant
     ? remoteParticipants.filter((p: any) => p.sessionId !== featuredParticipant.sessionId)
@@ -1771,37 +1825,44 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   isLarge
                 />
                 {/* Feature badge — spotlight (host, global) vs pin (this viewer).
-                    Sits below the top status bar so it doesn't overlap it on entry. */}
-                <div className="absolute top-12 sm:top-14 left-2 z-10">
-                  {featuredIsSpotlight ? (
-                    <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
-                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-xs font-medium bg-purple-600 text-white px-2 py-1 rounded-md shadow">
-                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'pinned', 'Pinned')}
-                    </span>
-                  )}
-                </div>
+                    Sits below the top status bar so it doesn't overlap it on entry.
+                    Nothing shown for an auto-selected active speaker — it's an
+                    ambient default, not a deliberate choice, so there's nothing to
+                    label or a control to unpin/un-spotlight. */}
+                {!featuredIsAuto && (
+                  <div className="absolute top-12 sm:top-14 left-2 z-10">
+                    {featuredIsSpotlight ? (
+                      <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
+                        <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs font-medium bg-purple-600 text-white px-2 py-1 rounded-md shadow">
+                        <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'pinned', 'Pinned')}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {/* Remove control: anyone can unpin their own pin; only a moderator
                     (host or co-host) can clear a spotlight. Below the top bar. */}
-                <div className="absolute top-12 sm:top-14 right-2 z-10">
-                  {!featuredIsSpotlight ? (
-                    <button
-                      onClick={() => pinParticipant(null)}
-                      className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
-                    >
-                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
-                    </button>
-                  ) : isModerator ? (
-                    <button
-                      onClick={() => spotlightParticipant(null)}
-                      className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
-                    >
-                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight')}
-                    </button>
-                  ) : null}
-                </div>
+                {!featuredIsAuto && (
+                  <div className="absolute top-12 sm:top-14 right-2 z-10">
+                    {!featuredIsSpotlight ? (
+                      <button
+                        onClick={() => pinParticipant(null)}
+                        className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
+                      >
+                        <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
+                      </button>
+                    ) : isModerator ? (
+                      <button
+                        onClick={() => spotlightParticipant(null)}
+                        className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
+                      >
+                        <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight')}
+                      </button>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
             {filmstripParticipants.length > 0 && (
