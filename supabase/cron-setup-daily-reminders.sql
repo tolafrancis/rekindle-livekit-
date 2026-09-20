@@ -10,11 +10,19 @@
 -- REQUIREMENTS
 --   1. pg_cron + pg_net extensions enabled (Dashboard → Database → Extensions).
 --   2. Edge function deployed and named exactly: process-daily-reminders.
---   3. Its secrets set: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (already project-wide).
+--   3. Its secrets set: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CRON_SHARED_SECRET
+--      (already project-wide).
 --
 -- Cadence: every 15 minutes. The worker only fires reminders whose LOCAL set time
 -- passed within the last GRACE_MINUTES (30), so a single missed tick still delivers,
 -- and daily_reminder_sends dedups so a user never gets the same reminder twice a day.
+--
+-- FIXED BUG: this file originally sent an `Authorization: Bearer <anon key>`
+-- header, but the function checks `x-cron-secret` against the CRON_SHARED_SECRET
+-- function secret (no Bearer/anon fallback) — so the job registered by an
+-- earlier run of this file was silently 401'ing on every tick since it was
+-- first scheduled. Replace <CRON_SHARED_SECRET> below with the real value
+-- (Supabase Dashboard → Edge Functions → Secrets) before running this.
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;
@@ -32,7 +40,7 @@ SELECT cron.schedule(
       url     := 'https://vpnpembyqbbaaiynfvli.supabase.co/functions/v1/process-daily-reminders',
       headers := jsonb_build_object(
         'Content-Type',  'application/json',
-        'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwbnBlbWJ5cWJiYWFpeW5mdmxpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5MDQ1NTYsImV4cCI6MjA4MDQ4MDU1Nn0.Ij4KhYKntuAmCthL2dGJk4pfWa2gIq3QER4wt6oExd8'
+        'x-cron-secret', '<CRON_SHARED_SECRET>'
       ),
       body    := '{}'::jsonb
     );
