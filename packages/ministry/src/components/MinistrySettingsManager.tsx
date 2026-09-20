@@ -82,7 +82,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
       secondary: '#4f46e5',
       accent: '#f59e0b'
     },
-    white_label_domain: ministry.white_label_domain || '',
     settings: ministry.settings || {
       allow_broadcasts: true,
       public_join: true,
@@ -192,7 +191,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
           is_public: formData.is_public,
           social_links: formData.social_links,
           brand_colors: formData.brand_colors,
-          white_label_domain: formData.white_label_domain,
           settings: formData.settings,
           updated_at: new Date().toISOString()
         })
@@ -493,12 +491,17 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
 
             <div>
               <Label>{t('ministrySettingsManager', 'customDomain', 'Custom Domain (White Label)')}</Label>
-              <Input
-                value={formData.white_label_domain}
-                onChange={(e) => setFormData({ ...formData, white_label_domain: e.target.value })}
-                placeholder="ministry.yourdomain.com"
-              />
-              <p className="text-xs text-gray-500 mt-1">{t('ministrySettingsManager', 'customDomainHint', 'Contact support to configure custom domains')}</p>
+              {/* Read-only pointer — see MinistrySettingsHub's identical field for why
+                  (two editors on one column produced a live ministry with
+                  white_label_domain silently set to its own rekindlebc.com subdomain). */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById('custom-domain-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              >
+                {t('ministrySettingsManager', 'manageCustomDomain', 'Manage custom domain below')}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -664,7 +667,9 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
         </div>
 
         {/* Custom Domain Settings */}
-        <CustomDomainSettings ministryId={ministry.id} />
+        <div id="custom-domain-settings">
+          <CustomDomainSettings ministryId={ministry.id} />
+        </div>
       </TabsContent>
 
       {/* Tab 2 — Live & Translation */}

@@ -138,7 +138,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
       secondary: '#4f46e5',
       accent: '#f59e0b'
     },
-    white_label_domain: ministry.white_label_domain || '',
     settings: ministry.settings || {
       allow_broadcasts: true,
       public_join: true,
@@ -209,7 +208,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
           is_public: formData.is_public,
           social_links: formData.social_links,
           brand_colors: formData.brand_colors,
-          white_label_domain: formData.white_label_domain,
           settings: formData.settings,
           updated_at: new Date().toISOString()
         })
@@ -530,12 +528,24 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
 
                 <div>
                   <Label>{t('ministrySettingsHub', 'customDomain', 'Custom Domain (White Label)')}</Label>
-                  <Input
-                    value={formData.white_label_domain}
-                    onChange={(e) => setFormData({ ...formData, white_label_domain: e.target.value })}
-                    placeholder="ministry.yourdomain.com"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('ministrySettingsHub', 'customDomainHint', 'Contact support to configure custom domains')}</p>
+                  {/* This used to be a free-text input that wrote white_label_domain
+                      directly — no validation, no Cloudflare provisioning, nothing
+                      reading it back except its own placeholder text ("Contact support
+                      to configure custom domains"). The REAL custom-domain flow
+                      (provision -> DNS records -> verify -> live) is the Custom domain
+                      card below, which reads/writes this same column through Cloudflare.
+                      Two editors on one column produced exactly the bad state you'd
+                      expect: a live ministry had white_label_domain silently set to its
+                      own rekindlebc.com subdomain — not a real custom domain — with no
+                      Cloudflare hostname ever provisioned for it. One editor now. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById('custom-domain-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  >
+                    {t('ministrySettingsHub', 'manageCustomDomain', 'Manage custom domain below')}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -698,7 +708,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <div id="registration-join-link">
               <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
             </div>
-            <CustomDomainSettings ministryId={ministry.id} />
+            <div id="custom-domain-settings">
+              <CustomDomainSettings ministryId={ministry.id} />
+            </div>
           </div>
         )}
 
