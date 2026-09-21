@@ -56,6 +56,18 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   private viewerOnly = false;
   private localAudioEnabled = false;
   private localVideoEnabled = false;
+  // Host video priority (2026-09-22): with dynacast, a simulcast layer that
+  // has zero subscribers is paused; the moment a second participant joins
+  // and subscribes to the host's camera, that layer has to resume/ramp up,
+  // producing a brief lower-quality blip (reported live, joining
+  // participant's screen). videoEncoding.priority is a real WebRTC encoder
+  // hint (RTCPriorityType) — doesn't eliminate the ramp-up, but gives the
+  // host's encoder first claim on local bandwidth if anything else (e.g.
+  // screen share) is competing for it. maxBitrate matches h720
+  // (1280x720 @ 1.7Mbps) — LiveKit's own default for this capture
+  // resolution (buildVideoConstraints below), not a new cap.
+  private isHost = false;
+  private static readonly HOST_VIDEO_ENCODING = { maxBitrate: 1_700_000, priority: 'high' as RTCPriorityType };
 
   private previewState: PreviewState = {
     isActive: false,
@@ -123,10 +135,12 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     token: string,
     userName: string,
     viewerOnly = false,
+    isHost = false,
   ): Promise<boolean> {
     if (this.previewState.isActive) await this.stopAllPreviews();
     this.joining = true;
     this.viewerOnly = viewerOnly;
+    this.isHost = isHost;
 
     // room.connect() has no built-in timeout: if the WebSocket handshake is
     // silently dropped (bad/unreachable url, a proxy that swallows the
@@ -257,7 +271,11 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return this.localVideoEnabled;
     try {
-      await lp.setCameraEnabled(on);
+      await lp.setCameraEnabled(
+        on,
+        undefined,
+        this.isHost ? { videoEncoding: LiveKitRoomWrapper.HOST_VIDEO_ENCODING } : undefined,
+      );
       // The camera track is fresh each time it turns on, so re-apply any chosen
       // virtual background to the new track.
       if (on && this.cameraBackground !== 'none') await this.applyCameraBackground();

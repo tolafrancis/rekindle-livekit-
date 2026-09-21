@@ -72,7 +72,7 @@ export interface IVideoRoomWrapper {
   stopMicrophonePreview(): Promise<void>;
   stopAllPreviews(): Promise<void>;
 
-  joinMeeting(url: string, token: string, userName: string, viewerOnly?: boolean): Promise<boolean>;
+  joinMeeting(url: string, token: string, userName: string, viewerOnly?: boolean, isHost?: boolean): Promise<boolean>;
   leaveMeeting(): Promise<void>;
   destroy(): Promise<void>;
 

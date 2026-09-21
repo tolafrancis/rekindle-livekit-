@@ -856,7 +856,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       if (options.viewerOnlyMode && !options.isHost) {
         console.log('[Daily] Joining in VIEWER-ONLY mode (no mic/camera access)');
         // Pass true as boolean — wrapper signature expects boolean, not options object
-        await wrapper.joinMeeting(roomInfo.url, roomInfo.token, options.userName, true);
+        await wrapper.joinMeeting(roomInfo.url, roomInfo.token, options.userName, true, options.isHost);
 
         // Ensure local tracks are hard-disabled after join (backend-agnostic).
         await wrapper.setAudio(false);
@@ -865,7 +865,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         console.log('[Daily] Viewer-only mode: Joined without media access');
       } else {
         // Normal join for hosts or when viewer-only mode is disabled
-        await wrapper.joinMeeting(roomInfo.url, roomInfo.token, options.userName, false);
+        await wrapper.joinMeeting(roomInfo.url, roomInfo.token, options.userName, false, options.isHost);
       }
 
       return true;

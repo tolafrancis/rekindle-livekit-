@@ -1818,7 +1818,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         ) : featuredParticipant ? (
           <div className="flex flex-col h-full gap-2 p-1 sm:p-2">
             <div className="relative flex-1 min-h-0 flex items-center justify-center">
-              <div className="relative w-full max-w-4xl">
+              {/* max-w-3xl (2026-09-22, moderately reduced from max-w-4xl): a
+                  smaller featured frame lets adaptiveStream (LiveKitRoomWrapper.ts)
+                  request a resolution that actually matches what's rendered,
+                  instead of stretching a still-ramping-up bitrate (dynacast
+                  resuming a layer for a newly-joined subscriber) across a
+                  larger area, which is what made it look soft. */}
+              <div className="relative w-full max-w-3xl">
                 <ParticipantVideo
                   key={featuredParticipant.sessionId}
                   participant={featuredParticipant}
