@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@rekindle/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3 } from 'lucide-react';
+import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3, Loader2 } from 'lucide-react';
 import { HlsPlayer } from '../components/HlsPlayer';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { trackMeetingParticipant } from '../meetingStreamControl';
@@ -57,8 +57,15 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
               onLatencyChange={setHlsLatencySeconds}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
-              Waiting for the host to start the webinar…
+            // This only ever renders once the webinar is already live (the
+            // parent gates on webinar.status === 'live' before mounting this
+            // component) — hls_playback_url is null only during the Egress's
+            // own cold-start window (a few seconds, shorter since Track
+            // Composite Egress was extended to webinars). "Waiting for the
+            // host" was misleading here: the host already started.
+            <div className="flex flex-col items-center justify-center gap-3 h-full text-gray-300 p-6 text-center">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              <span>Stream is starting…</span>
             </div>
           )}
         </div>

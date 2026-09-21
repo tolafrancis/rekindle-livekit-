@@ -31,17 +31,27 @@ export function createMeetingStream(_meetingId: string, _record = true): Promise
  *  separate Webinar meeting type (ministry_webinars table) — see packages/live/src/webinar. */
 export type MeetingKind = 'channel_meeting' | 'ministry_meeting' | 'meeting' | 'ministry_webinar';
 
-/** Start the webinar's HLS Egress. Returns the playback URL (also written to the meeting row). */
+/** Start the webinar's HLS Egress. Returns the playback URL (also written to the meeting row).
+ *  `expectVideo` (2026-09-21, 'ministry_webinar' kind only — see livekit-egress's
+ *  start-hls handler): whether this broadcast is expected to have video, same flag
+ *  channel broadcasts already send. Without it, Track Composite Egress's
+ *  video-required fallback-to-Room-Composite check is bypassed entirely and a host
+ *  whose camera isn't on yet when this fires locks the broadcast to audio-only
+ *  forever (Track Composite never picks up a track published after it starts) —
+ *  the exact bug channel broadcasts already hit and fixed. */
 export async function startMeetingBroadcast(
   meetingId: string,
   roomName: string,
   kind: MeetingKind,
   channelId?: string,
+  expectVideo?: boolean,
 ): Promise<{ playbackUrl: string } | null> {
   const { data, error } = await supabase.functions.invoke('livekit-egress', {
     body: {
       action: 'start-hls',
       roomName,
+      channelId,
+      expectVideo,
       context: { kind, meetingId, channelId },
     },
   });

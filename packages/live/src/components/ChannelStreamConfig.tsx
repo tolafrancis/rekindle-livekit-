@@ -20,7 +20,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 export interface ChannelStreamConfigProps {
   channel?: any;
   meeting?: any;
-  contextKind?: 'channel' | 'meeting' | 'ministry_meeting' | 'channel_meeting';
+  contextKind?: 'channel' | 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'ministry_webinar';
   open: boolean;
   onClose: () => void;
 }

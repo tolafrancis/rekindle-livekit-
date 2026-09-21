@@ -68,7 +68,7 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
             {canStart ? (
               <Button onClick={handleStart} disabled={starting} className="w-full bg-purple-600 hover:bg-purple-700">
                 {starting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                Start webinar
+                Start Webinar
               </Button>
             ) : (
               <p className="text-sm text-gray-500 text-center">Waiting for the host to start…</p>

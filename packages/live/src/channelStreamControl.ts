@@ -15,7 +15,7 @@ export interface IngressCredentials {
 const channelRoom = (channelId: string) => `channel-${channelId}`;
 
 export interface StreamContext {
-  kind: 'channel' | 'meeting' | 'ministry_meeting' | 'channel_meeting';
+  kind: 'channel' | 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'ministry_webinar';
   id: string;
   roomName?: string;
 }

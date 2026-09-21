@@ -130,6 +130,29 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     if (!slugEdited) setFormData(prev => ({ ...prev, slug: slugify(prev.name) }));
   }, [formData.name, slugEdited]);
 
+  // Land directly in a specific ministry after a real navigation round-trip
+  // (e.g. WebinarJoinPage's "Back home" after a webinar ends) — mirrors
+  // MinistrySpace.tsx's ?connect=return pattern. selectedMinistry itself is
+  // resolved from myMinistries by the restore effect below once it loads; this
+  // just seeds selectedMinistryId/activeView, same as handleEnterMinistry.
+  // Leaves any other query params (e.g. `tab`, read by MinistrySpace) in place.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const enterId = params.get('ministry');
+    if (enterId) {
+      setSelectedMinistryId(enterId, { replace: true });
+      setActiveView('ministry-space');
+      params.delete('ministry');
+      const query = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const is_ministry_Leader = isPartner || authIsAdmin;
   const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
 

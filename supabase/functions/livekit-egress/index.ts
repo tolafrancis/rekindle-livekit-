@@ -421,32 +421,36 @@ serve(async (req) => {
         output: { case: 's3', value: s3 },
       });
 
-      // Cold-start fix (2026-08-19), channel broadcasts only: Room Composite
-      // Egress spins up a full compositor (a headless browser rendering a
-      // grid layout) — real, measured cost on top of an already-slow first
-      // segment. A channel broadcast is realistically one active speaker
-      // (the host) at a time, so Track Composite Egress — encoding their
-      // raw published tracks directly, no layout render step — should
-      // cold-start faster. `user.id` IS the host here (isDbHost already
-      // confirmed it for this exact request), so their track SIDs are
-      // resolved directly rather than trusting any client-supplied ID.
-      // Meeting webinars keep Room Composite (unchanged below) — multiple
-      // simultaneous speakers are a more central case there, and Track
+      // Cold-start fix (2026-08-19, channel broadcasts; extended 2026-09-21 to
+      // webinars): Room Composite Egress spins up a full compositor (a
+      // headless browser rendering a grid layout) — real, measured cost on
+      // top of an already-slow first segment, and the direct cause of a
+      // production 404 an attendee hit joining a webinar right as it went
+      // live (the .m3u8 didn't exist yet). A channel broadcast or webinar is
+      // realistically one active speaker (the host) at a time, so Track
+      // Composite Egress — encoding their raw published tracks directly, no
+      // layout render step — cold-starts faster. `user.id` IS the host here
+      // (isDbHost already confirmed it for this exact request), so their
+      // track SIDs are resolved directly rather than trusting any
+      // client-supplied ID. Interactive Meetings' own webinar mode
+      // (ctxKind='ministry_meeting') keeps Room Composite (unchanged below) —
+      // co-hosted/multi-speaker is a more central case there, and Track
       // Composite can't automatically pick up whoever's on screen the way
-      // Room Composite does.
+      // Room Composite does; a webinar with real co-hosts still gets the
+      // Room Composite fallback below whenever a video track isn't resolved.
       //
-      // Regression fix (2026-08-19, same day): a channel broadcast's `expectVideo`
-      // flag (set by the client from its own video-mode toggle) says whether a
-      // video track is actually expected. If it is, and resolveHostTracks never
-      // finds one (host tapped camera late, or its publish hadn't round-tripped
-      // yet), Track Composite would otherwise lock onto audio-only forever —
-      // Track Composite never picks up a track published after it starts, unlike
-      // Room Composite. That was the "participant can no longer see host video"
-      // bug: audio played, video never appeared. Fall back to Room Composite in
-      // that case so video isn't silently lost.
+      // Regression fix (2026-08-19, same day): the caller's `expectVideo` flag
+      // (client's own video-mode toggle) says whether a video track is
+      // actually expected. If it is, and resolveHostTracks never finds one
+      // (host tapped camera late, or its publish hadn't round-tripped yet),
+      // Track Composite would otherwise lock onto audio-only forever — Track
+      // Composite never picks up a track published after it starts, unlike
+      // Room Composite. That was the "participant can no longer see host
+      // video" bug: audio played, video never appeared. Fall back to Room
+      // Composite in that case so video isn't silently lost.
       const expectVideo = !!body.expectVideo;
       let info: Awaited<ReturnType<typeof egressClient.startRoomCompositeEgress>>;
-      if (isChannel) {
+      if (isChannel || isWebinarHls) {
         const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
         const canUseTrackComposite = (audioTrackId || videoTrackId) && (!expectVideo || videoTrackId);
 
@@ -461,8 +465,10 @@ serve(async (req) => {
           // video broadcast and the video track specifically never showed up
           // after retrying — Room Composite doesn't need one upfront and will
           // pick up tracks as they appear, so video is never silently lost.
+          // For a webinar this also correctly covers real co-hosted/multi-
+          // speaker cases (no single "the host's" tracks to lock onto).
           console.warn(
-            `[livekit-egress] channel broadcast falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
+            `[livekit-egress] ${isChannel ? 'channel broadcast' : 'webinar'} falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
           );
           info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
         }

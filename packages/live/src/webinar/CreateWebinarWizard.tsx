@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -48,16 +47,15 @@ const DEFAULT_LANGUAGES = [
 /** Webinar creation/edit wizard — a `webinar` prop switches this into edit mode. */
 export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, webinar }: CreateWebinarWizardProps) {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const isEditing = !!webinar;
   const [isLoading, setIsLoading] = useState(false);
   const [accessReason, setAccessReason] = useState<string | undefined>();
   const [isFreeTier, setIsFreeTier] = useState(false);
 
-  // 'now' skips the date/time fields entirely and, on create, drops the host
-  // straight into the webinar's Lobby (Start webinar button) instead of back
-  // onto the dashboard where an unscheduled webinar used to be easy to lose
-  // track of (it only ever showed under a separate Drafts tab).
+  // 'now' just skips the date/time fields (saves as an unscheduled draft,
+  // start it whenever from Manage Webinar); 'schedule' requires picking one
+  // (saves as 'scheduled'). Saving never navigates anywhere in either case —
+  // starting is always a separate, deliberate action (see handleSubmit).
   const [startMode, setStartMode] = useState<'now' | 'schedule'>('now');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -214,16 +212,15 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         await createWebinarSpeaker({ webinarId: data.id, invitedEmail: s.email, invitedName: s.name || null, role: s.role });
       }
 
+      // Saving never navigates anywhere (2026-09-21, superseding the previous
+      // "Start now" auto-jump into the Lobby) — Save Webinar just persists the
+      // config; starting it is always a separate, deliberate action reached via
+      // the dashboard's "Manage Webinar" confirm or the Lobby's "Start Webinar"
+      // button. Drafts (startMode 'now') still show under Upcoming for leaders
+      // (see WebinarDashboard.tsx), so it's easy to find either way.
+      toast.success('Webinar saved');
       onSuccess(data as MinistryWebinar);
       onClose();
-      if (startMode === 'now') {
-        // Go straight to the Lobby's "Start webinar" button rather than back
-        // to the dashboard, where the host would have to find this webinar
-        // again (it's unscheduled, so it only shows under Upcoming/Drafts).
-        navigate(`/ministry/${ministryId}/webinar/${data.id}`);
-      } else {
-        toast.success('Webinar created');
-      }
     } catch (err) {
       console.error('[CreateWebinarWizard] save failed:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to save webinar');
@@ -283,7 +280,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
             </div>
             {startMode === 'now' && (
               <p className="text-xs text-gray-500">
-                {isEditing ? "Saving clears this webinar's scheduled time." : "You'll land on the Start webinar screen right after saving."}
+                {isEditing ? "Saving clears this webinar's scheduled time." : "Saved without a scheduled time — start it whenever you're ready from Manage Webinar."}
               </p>
             )}
           </div>
@@ -388,7 +385,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={isLoading || !!accessReason}>
               {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {isEditing ? 'Save changes' : startMode === 'now' ? 'Create & go to start screen' : 'Schedule webinar'}
+              Save Webinar
             </Button>
           </DialogFooter>
         </form>

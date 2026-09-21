@@ -44,6 +44,7 @@ const HOST_TABLE: Record<string, string> = {
   meeting: 'meetings',
   ministry_meeting: 'ministry_video_meetings',
   channel_meeting: 'live_channel_video_meetings',
+  ministry_webinar: 'ministry_webinars',
 };
 
 async function isHost(admin: ReturnType<typeof createClient>, userId: string, ctx: any): Promise<boolean> {

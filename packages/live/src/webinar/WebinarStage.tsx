@@ -6,8 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@rekindle/ui/dialog';
-import { PhoneOff, X, Hand, Settings2, HelpCircle, BarChart3 } from 'lucide-react';
+import { PhoneOff, X, Hand, Settings2, HelpCircle, BarChart3, Radio } from 'lucide-react';
 import DailyVideoCall from '../components/DailyVideoCall';
+import { useActiveCallOptional } from '../ActiveCallContext';
+import { ChannelStreamConfig } from '../components/ChannelStreamConfig';
 import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
@@ -34,8 +36,18 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   const speakerRequests = useWebinarSpeakerRequests(webinar.id, userId, userName, isHost);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
+  const [streamConfigOpen, setStreamConfigOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+  // Minimized mini-player awareness (2026-09-21) — mirrors
+  // MinistryInteractiveMeetings.tsx's isPiP: this component is now mounted by
+  // WebinarJoinPage via startCall()/ActiveCallHost (see that file), the same
+  // persistent render surface Interactive Meetings uses, instead of rendering
+  // inline. Without this, the frame kept forcing full viewport height even
+  // inside ActiveCallHost's small mini-player frame, and the minimize button
+  // itself only renders when this context is actually present (DailyVideoCall's
+  // own logic) — both silently broken before this file ever wired in.
+  const isPiP = useActiveCallOptional()?.minimized ?? false;
 
   // Start the audience-facing HLS Egress once the host is actually here —
   // this component (with DailyVideoCall autoJoin) is where the host's LiveKit
@@ -46,7 +58,11 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // just a console warning.
   useEffect(() => {
     if (!isHost) return;
-    startMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar').then((result) => {
+    // expectVideo=true: webinars are overwhelmingly presentations with video,
+    // and this is what makes livekit-egress's Track Composite fallback (added
+    // below for the cold-start fix) actually fall back to Room Composite if
+    // the host's camera isn't on yet, instead of silently locking audio-only.
+    startMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar', undefined, true).then((result) => {
       if (!result) toast.error("The stream couldn't start — attendees won't see anything yet. Try ending and restarting the webinar.");
     });
     return () => { stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar'); };
@@ -65,7 +81,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   };
 
   return (
-    <div className="min-h-[100dvh] h-full flex flex-col">
+    <div className={isPiP ? 'h-full w-full flex flex-col' : 'min-h-[100dvh] h-full flex flex-col'}>
       <div className="relative flex-1 min-h-0">
         <DailyVideoCall
           roomName={webinar.room_name}
@@ -81,7 +97,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           onTranslationControlsChange={setCallTranslation}
         />
 
-        {(webinar.enable_captions || webinar.enable_translation) && callTranslation && (
+        {!isPiP && (webinar.enable_captions || webinar.enable_translation) && callTranslation && (
           <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50">
             <FloatingTranslationButton
               translation={callTranslation}
@@ -93,56 +109,70 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           </div>
         )}
 
-        <div className="absolute top-3 right-3 z-50 flex gap-2">
-          {isHost && (
-            <Button
-              onClick={() => setShowRequests((v) => !v)}
-              size="sm"
-              variant="secondary"
-              className="bg-white/90 text-gray-900 hover:bg-white shadow-lg relative"
-            >
-              <Settings2 className="h-4 w-4 mr-2" />
-              Manage
-              {speakerRequests.pendingRequests.length > 0 && (
-                <Badge className="ml-2 bg-purple-600 text-white">{speakerRequests.pendingRequests.length}</Badge>
-              )}
-            </Button>
-          )}
-          {isHost ? (
-            <Button onClick={() => setShowEndConfirm(true)} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
-              <PhoneOff className="h-4 w-4 mr-2" /> End webinar
-            </Button>
-          ) : (
-            <Button onClick={onLeave} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
-              <PhoneOff className="h-4 w-4 mr-2" /> Leave
-            </Button>
-          )}
-        </div>
+        {!isPiP && (
+          <div className="absolute top-3 right-3 z-50 flex gap-2">
+            {isHost && (
+              <Button
+                onClick={() => setStreamConfigOpen(true)}
+                size="sm"
+                variant="secondary"
+                className="h-10 px-4 text-sm bg-white/90 text-gray-900 hover:bg-white shadow-lg"
+                title="OBS / restream setup"
+              >
+                <Radio className="h-5 w-5 sm:mr-2" />
+                <span className="hidden sm:inline">Stream</span>
+              </Button>
+            )}
+            {isHost && (
+              <Button
+                onClick={() => setShowRequests((v) => !v)}
+                size="sm"
+                variant="secondary"
+                className="h-10 px-4 text-sm bg-white/90 text-gray-900 hover:bg-white shadow-lg relative"
+              >
+                <Settings2 className="h-5 w-5 mr-2" />
+                Manage
+                {speakerRequests.pendingRequests.length > 0 && (
+                  <Badge className="ml-2 bg-purple-600 text-white">{speakerRequests.pendingRequests.length}</Badge>
+                )}
+              </Button>
+            )}
+            {isHost ? (
+              <Button onClick={() => setShowEndConfirm(true)} size="sm" className="h-10 px-4 text-sm bg-red-600 hover:bg-red-700 text-white shadow-lg">
+                <PhoneOff className="h-5 w-5 mr-2" /> End webinar
+              </Button>
+            ) : (
+              <Button onClick={onLeave} size="sm" className="h-10 px-4 text-sm bg-red-600 hover:bg-red-700 text-white shadow-lg">
+                <PhoneOff className="h-5 w-5 mr-2" /> Leave
+              </Button>
+            )}
+          </div>
+        )}
 
-        {isHost && showRequests && (
-          <div className="absolute top-16 right-3 z-50 w-80 max-w-[85vw] bg-gray-900/95 backdrop-blur-sm rounded-lg text-white max-h-[70vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-              <span className="text-sm font-medium flex items-center gap-1.5"><Settings2 className="h-4 w-4" /> Manage webinar</span>
-              <button onClick={() => setShowRequests(false)}><X className="h-4 w-4 text-gray-400 hover:text-white" /></button>
+        {!isPiP && isHost && showRequests && (
+          <div className="absolute top-16 right-3 z-50 w-96 max-w-[90vw] bg-gray-900/95 backdrop-blur-sm rounded-lg text-white max-h-[75vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <span className="text-base font-medium flex items-center gap-2"><Settings2 className="h-5 w-5" /> Manage webinar</span>
+              <button onClick={() => setShowRequests(false)} className="p-1.5 -m-1.5 rounded hover:bg-white/10"><X className="h-5 w-5 text-gray-400 hover:text-white" /></button>
             </div>
             <Tabs defaultValue="speakers" className="flex-1 flex flex-col min-h-0">
               <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-white/10 h-auto p-0 px-2">
-                <TabsTrigger value="speakers" className="gap-1.5 text-xs data-[state=active]:bg-white/10 py-2"><Hand className="h-3.5 w-3.5" /> Speakers</TabsTrigger>
-                <TabsTrigger value="qa" className="gap-1.5 text-xs data-[state=active]:bg-white/10 py-2"><HelpCircle className="h-3.5 w-3.5" /> Q&amp;A</TabsTrigger>
-                <TabsTrigger value="polls" className="gap-1.5 text-xs data-[state=active]:bg-white/10 py-2"><BarChart3 className="h-3.5 w-3.5" /> Polls</TabsTrigger>
+                <TabsTrigger value="speakers" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><Hand className="h-4 w-4" /> Speakers</TabsTrigger>
+                <TabsTrigger value="qa" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><HelpCircle className="h-4 w-4" /> Q&amp;A</TabsTrigger>
+                <TabsTrigger value="polls" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><BarChart3 className="h-4 w-4" /> Polls</TabsTrigger>
               </TabsList>
-              <div className="p-3 overflow-y-auto">
-                <TabsContent value="speakers" className="m-0 space-y-3">
+              <div className="p-4 overflow-y-auto">
+                <TabsContent value="speakers" className="m-0 space-y-4">
                   <div>
-                    <p className="text-xs font-medium text-gray-300 mb-1">Requesting to speak</p>
+                    <p className="text-sm font-medium text-gray-300 mb-2">Requesting to speak</p>
                     {speakerRequests.pendingRequests.length === 0 ? (
-                      <p className="text-xs text-gray-500">No pending requests.</p>
+                      <p className="text-sm text-gray-500">No pending requests.</p>
                     ) : (
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {speakerRequests.pendingRequests.map((r) => (
                           <div key={r.id} className="flex items-center justify-between gap-2">
                             <span className="text-sm truncate">{r.user_name || 'Attendee'}</span>
-                            <Button size="sm" className="h-7 px-2 bg-purple-600 hover:bg-purple-700" onClick={() => speakerRequests.hostInvite(r.user_id, r.user_name)}>
+                            <Button size="sm" className="h-9 px-3 bg-purple-600 hover:bg-purple-700" onClick={() => speakerRequests.hostInvite(r.user_id, r.user_name)}>
                               Invite up
                             </Button>
                           </div>
@@ -151,16 +181,16 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                     )}
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-300 mb-1">On stage</p>
+                    <p className="text-sm font-medium text-gray-300 mb-2">On stage</p>
                     {speakerRequests.requests.filter((r) => r.status === 'accepted').length === 0 ? (
-                      <p className="text-xs text-gray-500">No promoted speakers yet.</p>
+                      <p className="text-sm text-gray-500">No promoted speakers yet.</p>
                     ) : (
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         {speakerRequests.requests.filter((r) => r.status === 'accepted').map((r) => (
                           <div key={r.id} className="flex items-center justify-between gap-2">
                             <span className="text-sm truncate">{r.user_name || 'Attendee'}</span>
-                            <Button size="icon" variant="ghost" className="h-7 w-7 text-gray-400 hover:text-white" title="Send back to viewer" onClick={() => speakerRequests.revoke(r.user_id)}>
-                              <X className="h-4 w-4" />
+                            <Button size="icon" variant="ghost" className="h-9 w-9 text-gray-400 hover:text-white" title="Send back to viewer" onClick={() => speakerRequests.revoke(r.user_id)}>
+                              <X className="h-5 w-5" />
                             </Button>
                           </div>
                         ))}
@@ -204,6 +234,18 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* OBS / Restream config — same shared dialog Interactive Meetings uses
+          (MinistryInteractiveMeetings.tsx), contextKind='ministry_webinar'
+          routes livekit-ingress's auth check to ministry_webinars. */}
+      {isHost && (
+        <ChannelStreamConfig
+          meeting={webinar}
+          contextKind="ministry_webinar"
+          open={streamConfigOpen}
+          onClose={() => setStreamConfigOpen(false)}
+        />
+      )}
     </div>
   );
 }

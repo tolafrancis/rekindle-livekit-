@@ -274,6 +274,26 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Land on a specific tab after a real navigation round-trip (e.g.
+  // WebinarJoinPage's "Back home" after a webinar ends, which seeds
+  // ?tab=webinars) — same reasoning as the ?connect=return effect above,
+  // kept separate since it's a different, more general concern (any tab id,
+  // not just Settings > Finance & Billing).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab) {
+      setActiveTab(tab, { replace: true });
+      params.delete('tab');
+      const query = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
   const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);
@@ -887,12 +907,22 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     // the group's own id ('live') so goToGroup's default-to-first-child
     // behavior lands on the live channel, unchanged from before this had
     // children at all.
-    ...(ministryEntitlements.caps.liveChannels
-      ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600', children: [
-          { id: 'live', label: 'Live Channel', icon: Radio },
-          ...(canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
-        ] }]
-      : []),
+    // 'webinars' moved here from the 'admin' group (2026-09-21, per the user's
+    // request) — it's a live/broadcast feature, not ministry-admin housekeeping,
+    // and belongs beside Live Channel/Live Translation. Kept unconditional (not
+    // gated behind caps.liveChannels, unlike 'live'/'live-tech' below) — webinar
+    // access is gated separately/deeper (CreateWebinarWizard's own entitlement
+    // check), and it was ungated at this nav level before the move too, so
+    // gating it on liveChannels here would newly hide it for ministries that
+    // have webinars but not live channels.
+    {
+      id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600',
+      children: [
+        ...(ministryEntitlements.caps.liveChannels ? [{ id: 'live', label: 'Live Channel', icon: Radio }] : []),
+        { id: 'webinars', label: 'Webinars', icon: Radio },
+        ...(ministryEntitlements.caps.liveChannels && canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
+      ],
+    },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
       ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
@@ -901,7 +931,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
       { id: 'meetings', label: 'Meetings', icon: Video },
-      { id: 'webinars', label: 'Webinars', icon: Radio },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
     ...(canManageMinistry ? [{

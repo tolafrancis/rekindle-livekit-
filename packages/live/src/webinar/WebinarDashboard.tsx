@@ -49,8 +49,16 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   const navigate = useNavigate();
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showManageConfirm, setShowManageConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const isLive = LIVE_STATUSES.includes(webinar.status);
   const openWebinar = () => navigate(`/ministry/${ministryId}/webinar/${webinar.id}`);
+  // Rejoining something already live needs no confirmation; a leader opening a
+  // not-yet-live webinar (they could start it from there) goes through a
+  // "Manage Webinar" confirm first (2026-09-21) so a stray tap doesn't drop
+  // them straight into it. Attendees can't start anything either way, so they
+  // go straight through — nothing to confirm.
+  const handleCardOpen = () => { if (isLive || !isLeader) openWebinar(); else setShowManageConfirm(true); };
   const copyLink = async () => {
     const link = `${publicAppOrigin()}/ministry/${ministryId}/webinar/${webinar.id}`;
     await navigator.clipboard.writeText(link);
@@ -116,7 +124,7 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   };
 
   return (
-    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={openWebinar}>
+    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={handleCardOpen}>
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base line-clamp-2">{webinar.title}</CardTitle>
@@ -137,8 +145,8 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
           {webinar.attendee_count > 0 ? ` · ${webinar.attendee_count} attended` : ''}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); openWebinar(); }}>
-            {LIVE_STATUSES.includes(webinar.status) ? <><Play className="h-3.5 w-3.5 mr-1" /> Join</> : 'Manage'}
+          <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); handleCardOpen(); }}>
+            {isLive ? <><Play className="h-3.5 w-3.5 mr-1" /> Join</> : isLeader ? 'Manage Webinar' : 'View'}
           </Button>
           <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyLink(); }} title="Copy link">
             <Copy className="h-3.5 w-3.5" />
@@ -174,6 +182,20 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
       {isLeader && isPast && (
         <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />
       )}
+      <Dialog open={showManageConfirm} onOpenChange={setShowManageConfirm}>
+        <DialogContent onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Manage {webinar.title}?</DialogTitle>
+            <DialogDescription>You'll be taken to its start screen, where you can review settings and start it when ready.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={(e) => { e.stopPropagation(); setShowManageConfirm(false); }}>Cancel</Button>
+            <Button className="bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); setShowManageConfirm(false); openWebinar(); }}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {isLeader && (
         <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
           <DialogContent onClick={(e) => e.stopPropagation()}>

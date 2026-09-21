@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useActiveCall } from '../ActiveCallContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -86,7 +87,65 @@ export function WebinarJoinPage() {
     return () => { try { supabase.removeChannel(channel); } catch { /* noop */ } };
   }, [webinarId]);
 
-  const handleHome = useCallback(() => navigate(ministryId ? `/ministries/${ministryId}` : '/'), [navigate, ministryId]);
+  // 'ministries/:id' isn't a real route in this app (only 'ministries/:id/live'
+  // is) — it fell through to the app's catch-all "*" -> "/" redirect, which
+  // loses everything including which ministry/tab to land on, so this landed
+  // wherever MinistriesHub's own history state last happened to be. Query
+  // params on '/' (a real route) survive that and mirror the existing
+  // ?connect=return pattern MinistrySpace.tsx already uses to restore a tab
+  // after a real navigation round-trip — MinistriesHub reads `ministry`,
+  // MinistrySpace reads `tab`.
+  const handleHome = useCallback(
+    () => navigate(ministryId ? `/?ministry=${ministryId}&tab=webinars` : '/'),
+    [navigate, ministryId],
+  );
+
+  // Host/co-host/speaker (or a just-promoted attendee) get a real LiveKit
+  // connection via WebinarStage — handed to the app's persistent
+  // ActiveCallHost (packages/live/src/components/ActiveCallHost.tsx) instead
+  // of being rendered inline here, the same way MinistryInteractiveMeetings
+  // does for every meeting call. WebinarStage rendered inline (the old
+  // behavior) never had an ActiveCallContext ancestor, so its minimize button
+  // never appeared and its frame never got ActiveCallHost's tuned full-screen/
+  // mini-player sizing — both fixed just by going through startCall() here.
+  const { call, startCall, endCall } = useActiveCall();
+  const isSpeakerRole = role === 'host' || role === 'co-host' || role === 'speaker';
+  const isOnStage = !!webinar && webinar.status === 'live' && (isSpeakerRole || promoted);
+
+  useEffect(() => {
+    if (!isOnStage || !webinar || !user) return;
+    if (call?.id === webinar.id) return; // already started for this webinar
+    const leaveAndGoHome = () => { endCall(); handleHome(); };
+    // load() (which flips webinar.status away from 'live') runs BEFORE
+    // endCall() clears the active call — reversed, there'd be a render where
+    // call is null but webinar.status is still stale 'live', re-passing the
+    // `call?.id === webinar.id` guard below and restarting the just-ended
+    // broadcast.
+    const endedAndReload = async () => { await load(); endCall(); };
+    startCall({
+      id: webinar.id,
+      title: webinar.title,
+      onLeave: leaveAndGoHome,
+      node: (
+        <WebinarStage
+          webinar={webinar}
+          userId={user.id}
+          userName={userName}
+          role={isSpeakerRole ? role! : 'speaker'}
+          onEnded={endedAndReload}
+          onLeave={leaveAndGoHome}
+        />
+      ),
+    });
+    // Intentionally narrow deps — webinar/role/userName are captured in the
+    // closure at start time (same trade-off MinistryInteractiveMeetings.tsx
+    // already accepts: the mounted call gets a frozen snapshot, not live
+    // prop updates — WebinarStage's own realtime hooks (speaker requests,
+    // Q&A, polls) still update live regardless).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnStage, webinar?.id, call?.id]);
+
+  if (isOnStage) return null;
 
   if (authLoading || loading) {
     return (
@@ -148,21 +207,8 @@ export function WebinarJoinPage() {
     );
   }
 
-  const isSpeakerRole = role === 'host' || role === 'co-host' || role === 'speaker';
-
-  if (webinar.status === 'live' && (isSpeakerRole || promoted)) {
-    return (
-      <WebinarStage
-        webinar={webinar}
-        userId={user.id}
-        userName={userName}
-        role={isSpeakerRole ? role : 'speaker'}
-        onEnded={load}
-        onLeave={handleHome}
-      />
-    );
-  }
-
+  // isOnStage (host/co-host/speaker/promoted-attendee, live) is handled above
+  // via startCall()/ActiveCallHost — this branch only reaches plain attendees.
   if (webinar.status === 'live' && !isSpeakerRole) {
     return (
       <WebinarAttendeeViewer
