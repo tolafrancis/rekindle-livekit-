@@ -12,7 +12,11 @@ import { WebinarPollPanel } from './WebinarPollPanel';
 import { WebinarTranslationButton } from './WebinarTranslationButton';
 import type { MinistryWebinar } from './webinarControl';
 
-const HLS_TARGET_LATENCY_SECONDS = 6;
+// 4s (2026-09-22, reduced from 6s): livekit-egress's start-hls segment
+// duration was just halved to 2s specifically so this could come down too —
+// hlsLatencySeconds (below) re-syncs to the real measured value once
+// playing, so this is just the starting target, not a hard floor.
+const HLS_TARGET_LATENCY_SECONDS = 4;
 
 interface WebinarAttendeeViewerProps {
   webinar: MinistryWebinar;

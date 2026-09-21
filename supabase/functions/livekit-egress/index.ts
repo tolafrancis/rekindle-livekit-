@@ -450,10 +450,17 @@ serve(async (req) => {
       const ts = Date.now();
       const prefix = `broadcasts/${isChannel ? channelId : meetingId}/${ts}`;
       const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
+      // segmentDuration halved to 2s (2026-09-22, live-watched path only —
+      // start-recording's plain VOD output above is untouched, latency is
+      // irrelevant there). A segment can't be handed to a viewer until it's
+      // fully written and uploaded, so shorter segments are the actual lever
+      // for how close to real-time playback can safely sit — this directly
+      // lowers the floor HlsPlayer's targetLatencySeconds is bounded by,
+      // for both channel broadcasts and webinars (this action is shared).
       const output = new SegmentedFileOutput({
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
-        segmentDuration: 4,
+        segmentDuration: 2,
         output: { case: 's3', value: s3 },
       });
 
