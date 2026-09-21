@@ -318,6 +318,19 @@ const SharedContentDeepLinkHandler = () => {
   return null;
 };
 
+// Temporary diagnostic (2026-09-22) — traces every route change with a
+// timestamp, to find what's navigating away from /ministry/:id/webinar/:id
+// right after it mounts (confirmed via WebinarJoinPage's own mount/unmount
+// trace: it unmounts almost instantly, before load() even finishes its
+// first fetch). Remove once root-caused.
+const LocationChangeLogger = () => {
+  const location = useLocation();
+  useEffect(() => {
+    console.log('[LocationChangeLogger]', new Date().toISOString(), location.pathname + location.search);
+  }, [location.pathname, location.search]);
+  return null;
+};
+
 export default function App() {
   useEffect(() => {
     const handler = (e: Event) => {
@@ -348,6 +361,7 @@ export default function App() {
               <BrowserRouter>
                 <PushNotificationNavHandler />
                 <SharedContentDeepLinkHandler />
+                <LocationChangeLogger />
                 <AppRoutes />
                 {/* Persistent meeting layer — keeps a live call mounted across
                     navigation and shows the minimized mini-player. */}
