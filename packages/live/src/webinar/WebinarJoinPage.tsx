@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useActiveCall } from '../ActiveCallContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
@@ -112,26 +112,10 @@ export function WebinarJoinPage() {
   const isSpeakerRole = role === 'host' || role === 'co-host' || role === 'speaker';
   const isOnStage = !!webinar && webinar.status === 'live' && (isSpeakerRole || promoted);
   const callIsThisWebinar = !!webinar && call?.id === webinar.id;
-  const navigatedAwayRef = useRef(false);
 
   useEffect(() => {
     if (!isOnStage || !webinar || !user) return;
-
-    if (callIsThisWebinar) {
-      // The call is live and ActiveCallHost is already rendering it full-
-      // screen — leave this route once, for real background content behind
-      // the mini-player if minimized. Unlike MinistryInteractiveMeetings
-      // (where the call is started from the meetings LIST page, which stays
-      // mounted the whole time), this page has nothing else to show once the
-      // call exists, and returning null here left minimizing showing a blank
-      // white page. ActiveCallHost renders independent of the route, so
-      // navigating away doesn't affect the ongoing call.
-      if (!navigatedAwayRef.current) {
-        navigatedAwayRef.current = true;
-        navigate(ministryId ? `/?ministry=${ministryId}&tab=webinars` : '/', { replace: true });
-      }
-      return;
-    }
+    if (callIsThisWebinar) return; // already started for this webinar
 
     const leaveAndGoHome = () => { endCall(); handleHome(); };
     // load() (which flips webinar.status away from 'live') runs BEFORE
@@ -174,7 +158,23 @@ export function WebinarJoinPage() {
       </div>
     );
   }
-  if (isOnStage) return null;
+  // The call itself is rendered by ActiveCallHost (fixed, full-screen,
+  // z-[70]) — this only becomes visible if the host minimizes it, so it just
+  // needs to be real content, not blank. Previously navigated away to the
+  // Webinars tab instead of rendering this, but that forced a real route
+  // change (unmounting/remounting MinistriesHub/MinistrySpace) that turned
+  // out to interfere with the call actually showing — reverted in favor of
+  // this simpler, no-navigation fix.
+  if (isOnStage) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4 text-center">
+        <div className="text-gray-400">
+          <p className="text-sm">You're live in</p>
+          <p className="text-lg font-medium text-white">{webinar?.title}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (authLoading || loading) {
     return (
