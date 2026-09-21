@@ -61,15 +61,40 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   // Attendees can't start anything either way, so they go straight through.
   const handleCardOpen = () => { if (isLive || !isLeader) openWebinar(); else setShowManageConfirm(true); };
   const [starting, setStarting] = useState(false);
+  // Root cause of "Start Webinar doesn't drop into the call" (found live,
+  // 2026-09-22, via a history.pushState/replaceState interceptor + full
+  // console trace): Dialog (packages/ui/src/dialog.tsx) pushes a history
+  // entry while open so the browser Back button closes it instead of
+  // navigating away (packages/ui/src/modal-stack.ts), and closing it queues
+  // a SELF-INFLICTED history.back() that resolves asynchronously on the next
+  // popstate. Calling openWebinar() (navigate(), a synchronous pushState)
+  // immediately after setShowManageConfirm(false) raced that pending back():
+  // our new /ministry/.../webinar/... entry landed on top BEFORE the modal's
+  // own back() fired, so that back() popped OUR entry instead, bouncing
+  // straight back to '/' — confirmed via TRUE MOUNT immediately followed by
+  // TRUE UNMOUNT with no pushState/replaceState logged for the trip back
+  // (proving it was a popstate-driven back(), not a route change). Waiting
+  // for that real popstate (or a safety timeout, in case this dialog wasn't
+  // registered as a modal for some reason) before navigating fixes it.
+  const waitForModalCloseHistoryOp = () => new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('popstate', onPop);
+      resolve();
+    };
+    const onPop = () => finish();
+    window.addEventListener('popstate', onPop);
+    setTimeout(finish, 300);
+  });
   const handleConfirmManage = async () => {
-    console.log('[WebinarDashboard] handleConfirmManage: starting', webinar.id);
     setStarting(true);
     try {
       await startWebinarNow(webinar.id);
-      console.log('[WebinarDashboard] handleConfirmManage: startWebinarNow resolved, navigating to', `/ministry/${ministryId}/webinar/${webinar.id}`);
       setShowManageConfirm(false);
+      await waitForModalCloseHistoryOp();
       openWebinar();
-      console.log('[WebinarDashboard] handleConfirmManage: navigate() called');
     } catch (err) {
       console.error('[WebinarDashboard] start failed:', err);
       toast.error("Couldn't start the webinar.");
