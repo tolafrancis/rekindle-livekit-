@@ -207,6 +207,12 @@ serve(async (req) => {
     // time — duplicated here (not shared) same as HOST_TABLE already is
     // across these two functions; no shared module between edge functions.
     const STAGED_SEAT_CAP = 100;
+    // TEMPORARY test override (2026-09-21) — mirrors livekit-token's own
+    // override, same reasoning (see that file). REMOVE after the test.
+    const TEST_ROOM_SEAT_CAP_OVERRIDES: Record<string, number> = {
+      'ministry-a17204e6-1a36-4afa-9e15-e6c5b0613a7e-1789834678980': 2,
+    };
+    const seatCapFor = (roomName: string): number => TEST_ROOM_SEAT_CAP_OVERRIDES[roomName] ?? STAGED_SEAT_CAP;
 
     // list-recordings is a read — no host check (VOD list). Returns the shared ChannelRecording/MeetingRecording shape.
     if (action === 'list-recordings') {
@@ -340,7 +346,7 @@ serve(async (req) => {
         const participants = await roomService.listParticipants(body.roomName);
         realCount = participants.length;
       } catch { /* room not up yet on LiveKit's side → 0 real participants */ }
-      if (realCount < STAGED_SEAT_CAP) {
+      if (realCount < seatCapFor(body.roomName)) {
         return json({ error: 'not_at_capacity' }, 409);
       }
 

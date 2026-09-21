@@ -57,6 +57,18 @@ type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
 // that; it's the technical/cost ceiling on real seats, same for every tier.
 const STAGED_SEAT_CAP = 100;
 
+// TEMPORARY test override (2026-09-21) — lets a real, ToS-compliant handful of
+// human test accounts trigger overflow without needing ~100 real connections
+// or a synthetic load test (LiveKit Cloud's AUP requires written consent for
+// load testing, which wasn't obtained). Scoped to ONE specific room so no
+// concurrent real meeting on the platform is affected. REMOVE after the test.
+const TEST_ROOM_SEAT_CAP_OVERRIDES: Record<string, number> = {
+  'ministry-a17204e6-1a36-4afa-9e15-e6c5b0613a7e-1789834678980': 2,
+};
+function seatCapFor(roomName: string): number {
+  return TEST_ROOM_SEAT_CAP_OVERRIDES[roomName] ?? STAGED_SEAT_CAP;
+}
+
 interface RequestBody {
   action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room' | 'room-capacity';
   roomName: string;
@@ -334,7 +346,7 @@ serve(async (req) => {
       try {
         const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
         const count = participants.length;
-        return json({ count, atCapacity: count >= STAGED_SEAT_CAP });
+        return json({ count, atCapacity: count >= seatCapFor(body.roomName) });
       } catch {
         // Room not up yet on LiveKit's side — nobody real is in it.
         return json({ count: 0, atCapacity: false });
@@ -468,7 +480,7 @@ serve(async (req) => {
         realCount = participants.length;
       } catch { /* room not up yet → 0 real participants, no overflow possible */ }
 
-      if (realCount >= STAGED_SEAT_CAP) {
+      if (realCount >= seatCapFor(body.roomName)) {
         return json({ hlsFallback: true });
       }
     }

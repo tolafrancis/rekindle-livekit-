@@ -75,6 +75,13 @@ interface DailyVideoCallProps {
     currentLanguage: string | null;
     setLanguage: (language: string | null, originalSpeakerIdentity?: string) => void;
   }) => void;
+  /** Dynamic meeting overflow (2026-09-20): fires if the room hit its real-
+   *  participant ceiling between the caller's own pre-check and this actual
+   *  join attempt (a race — see meetingStreamControl.ts's checkMeetingCapacity/
+   *  useDailyRoom's 'hls-fallback' connectionError). The caller should swap
+   *  this component out for its own HLS audience view; this component does
+   *  NOT retry or render any fallback UI itself. */
+  onHlsFallback?: () => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -990,6 +997,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRaiseHandStateChange,
   onBackgroundStateChange,
   onTranslationControlsChange,
+  onHlsFallback,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1143,6 +1151,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       }
     }
   });
+
+  // Dynamic meeting overflow (2026-09-20): the room hit its real-participant
+  // ceiling between the caller's own pre-check and this actual join attempt.
+  // Lift-to-parent, same pattern as onTranslationControlsChange etc. — this
+  // component renders no fallback UI itself, it just tells the caller so
+  // THEY can swap in their own HLS audience view.
+  const hlsFallbackFiredRef = useRef(false);
+  useEffect(() => {
+    if (connectionError === 'hls-fallback' && !hlsFallbackFiredRef.current) {
+      hlsFallbackFiredRef.current = true;
+      onHlsFallback?.();
+    }
+  }, [connectionError, onHlsFallback]);
 
   // One-time nudge: the room joins MUTED (mic + camera OFF) to avoid the auto-
   // enable timing race, so tell the user to turn them on. Restores the pre-

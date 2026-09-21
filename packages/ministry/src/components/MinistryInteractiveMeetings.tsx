@@ -370,6 +370,17 @@ const EnhancedVideoCallWrapper = ({
     return () => { cancelled = true; };
   }, [isWebinar, isHost, isGuest, meeting.id, meeting.room_name]);
 
+  // Closes the race the pre-check above can't: DailyVideoCall itself hit the
+  // overflow gate at actual token-issuance time (someone else filled the last
+  // seat between our pre-check and this join). Same fallback, just triggered
+  // from a different signal.
+  const handleHlsFallback = useCallback(async () => {
+    setIsOverflowing(true);
+    if (overflowHlsUrl) return;
+    const url = await startOverflowHls(meeting.room_name, meeting.id);
+    if (url) setOverflowHlsUrl(url);
+  }, [overflowHlsUrl, meeting.room_name, meeting.id]);
+
   // Real bug found live (2026-08-18): ending a meeting never stopped its
   // translation bot(s) — they just stayed connected to the now-dead room
   // indefinitely, and a later "+ Add language" for the SAME room (e.g. a
@@ -626,6 +637,7 @@ const EnhancedVideoCallWrapper = ({
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
         onTranslationControlsChange={setCallTranslation}
+        onHlsFallback={handleHlsFallback}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
