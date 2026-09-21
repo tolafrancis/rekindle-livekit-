@@ -310,6 +310,25 @@ serve(async (req) => {
           await admin.from('live_channels').update({ is_hls_live: false, is_live: false }).eq('id', rec.channel_id);
         }
 
+        // Same backstop as the channel one above, extended to webinars
+        // (2026-09-21) — found live: a webinar left open in another tab with
+        // no explicit "End webinar" click (browser closed, crash, lost
+        // connection — anything short of that button) still makes LiveKit
+        // end the egress and fire this webhook, but nothing was flipping
+        // ministry_webinars.status off 'live', so it stayed "live" and
+        // joinable indefinitely even though nothing was actually streaming.
+        // Only touches rows still stuck in 'live'/'ending' — never overwrites
+        // an explicit 'cancelled', or a status this same webhook/client
+        // already finished transitioning.
+        if (ended && rec?.kind === 'webinar' && rec.meeting_id) {
+          await admin.from('webinar_polls')
+            .update({ status: 'closed', closed_at: new Date().toISOString() })
+            .eq('webinar_id', rec.meeting_id).eq('status', 'open');
+          await admin.from('ministry_webinars')
+            .update({ status: 'ended', ended_at: new Date().toISOString() })
+            .eq('id', rec.meeting_id).in('status', ['live', 'ending']);
+        }
+
         if (ended && !failed && rec) {
           const ministryId = await resolveMinistryId(admin, rec);
           if (ministryId) {
