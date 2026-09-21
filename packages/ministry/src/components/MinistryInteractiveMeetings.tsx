@@ -54,7 +54,7 @@ import { ChannelStreamConfig } from '@rekindle/live/components/ChannelStreamConf
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from '@rekindle/live/components/DailyVideoCall';
 import { HlsPlayer } from '@rekindle/live/components/HlsPlayer';
-import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast, checkMeetingCapacity, startOverflowHls } from '@rekindle/live/meetingStreamControl';
+import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
@@ -83,6 +83,14 @@ import {
 // canHostInteractiveMeeting used to gate this off the wrong (legacy,
 // individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
 import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@rekindle/auth/ministryEntitlements';
+
+// Flat, platform-wide ceiling on real participants a single Interactive
+// Meeting may ever have (2026-09-21) — same value livekit-token/index.ts
+// enforces authoritatively (MEETING_PARTICIPANT_CAP there). No per-tier
+// variation. A host expecting more must create a Webinar instead (its own,
+// separate product with its own, much larger audience cap — audience never
+// touches LiveKit there, so it isn't this same cost/capacity constraint).
+const MEETING_PARTICIPANT_CAP = 100;
 
 // Minutes -> a trimmed hours string for the free-tier notice (e.g. 90 -> "1.5", 600 -> "10").
 const formatHours = (minutes: number): string => {
@@ -199,6 +207,10 @@ const EnhancedVideoCallWrapper = ({
   const isGuest = !userId || userId.startsWith('guest-');
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [streamConfigOpen, setStreamConfigOpen] = useState(false);
+  // Preventive, host-only tip (2026-09-21): meetings cannot be converted to
+  // Webinar mode once live and cannot exceed MEETING_PARTICIPANT_CAP — this
+  // just helps a host plan the NEXT one correctly, dismissible per session.
+  const [showCapTip, setShowCapTip] = useState(true);
   // Live audience roster (everyone announces presence; host invites people up).
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
   const [meetingEnded, setMeetingEnded] = useState(false);
@@ -337,50 +349,6 @@ const EnhancedVideoCallWrapper = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, isWebinar, meeting.id, userId]);
 
-  // ── Dynamic meeting overflow (2026-09-20) ──
-  // A plain (non-webinar) meeting doesn't pre-provision an HLS stream the way
-  // webinar mode does above — most meetings never come close to the fixed
-  // 100-seat ceiling, so starting one eagerly for every meeting would pay for
-  // Egress nobody needs. Instead: a non-host, non-guest joiner checks once,
-  // on join, whether the room is already full of real participants
-  // (livekit-token's own STAGED_SEAT_CAP, re-checked authoritatively at
-  // token-issuance regardless of this pre-check); if so, reactively start
-  // (or reuse) the overflow HLS stream and fall back to the same audience
-  // view webinar mode already uses below — never blocks/kicks anyone already
-  // connected, only applies to who's arriving now. Guests skip the pre-check
-  // (the room-capacity action requires a session) and rely on the
-  // authoritative token-time gate instead — same outcome, just without the
-  // pre-connect UX smoothing.
-  const [overflowChecked, setOverflowChecked] = useState(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const [overflowHlsUrl, setOverflowHlsUrl] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (isWebinar || isHost || isGuest) { setOverflowChecked(true); return; }
-    let cancelled = false;
-    (async () => {
-      const atCapacity = await checkMeetingCapacity(meeting.room_name);
-      if (cancelled) return;
-      if (atCapacity) {
-        const url = await startOverflowHls(meeting.room_name, meeting.id);
-        if (cancelled) return;
-        if (url) { setOverflowHlsUrl(url); setIsOverflowing(true); }
-      }
-      setOverflowChecked(true);
-    })();
-    return () => { cancelled = true; };
-  }, [isWebinar, isHost, isGuest, meeting.id, meeting.room_name]);
-
-  // Closes the race the pre-check above can't: DailyVideoCall itself hit the
-  // overflow gate at actual token-issuance time (someone else filled the last
-  // seat between our pre-check and this join). Same fallback, just triggered
-  // from a different signal.
-  const handleHlsFallback = useCallback(async () => {
-    setIsOverflowing(true);
-    if (overflowHlsUrl) return;
-    const url = await startOverflowHls(meeting.room_name, meeting.id);
-    if (url) setOverflowHlsUrl(url);
-  }, [overflowHlsUrl, meeting.room_name, meeting.id]);
-
   // Real bug found live (2026-08-18): ending a meeting never stopped its
   // translation bot(s) — they just stayed connected to the now-dead room
   // indefinitely, and a later "+ Add language" for the SAME room (e.g. a
@@ -515,22 +483,8 @@ const EnhancedVideoCallWrapper = ({
     }
   };
 
-  // Non-host/non-guest joiner of a plain (non-webinar) meeting, still waiting
-  // on the once-per-join capacity pre-check — avoids a flash of the real call
-  // UI for the rare joiner about to be redirected into overflow.
-  if (!isWebinar && !isHost && !isGuest && !overflowChecked) {
-    return (
-      <div className="min-h-screen h-full bg-black flex items-center justify-center">
-        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-      </div>
-    );
-  }
-
-  // Webinar attendees, OR a plain meeting that's hit its 100-seat overflow
-  // ceiling (not yet a presenter either way): watch the HLS stream, chat, and
-  // can raise a hand.
-  if ((isWebinar || isOverflowing) && !isPresenter) {
-    const effectiveHlsUrl = overflowHlsUrl ?? hlsUrl;
+  // Webinar attendees (not yet a presenter) watch the HLS stream, chat, and can raise a hand
+  if (isWebinar && !isPresenter) {
     return (
       <div className="min-h-screen h-full bg-black flex flex-col sm:flex-row">
         {/* Video area */}
@@ -544,13 +498,11 @@ const EnhancedVideoCallWrapper = ({
                   <p className="text-sm text-gray-500">{t('ministryInteractiveMeetings', 'thanksForJoining', 'Thanks for joining.')}</p>
                 </div>
               </div>
-            ) : effectiveHlsUrl ? (
-              <HlsPlayer src={effectiveHlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
+            ) : hlsUrl ? (
+              <HlsPlayer src={hlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
-                {isOverflowing
-                  ? t('ministryInteractiveMeetings', 'connectingOverflowStream', 'This meeting is full — connecting you to the live stream…')
-                  : t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
+                {t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
               </div>
             )}
           </div>
@@ -637,7 +589,6 @@ const EnhancedVideoCallWrapper = ({
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
         onTranslationControlsChange={setCallTranslation}
-        onHlsFallback={handleHlsFallback}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
@@ -648,6 +599,26 @@ const EnhancedVideoCallWrapper = ({
           one row). */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
+      {!isPiP && isHost && showCapTip && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-md">
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50/95 backdrop-blur-sm border border-amber-200 px-3 py-2 shadow-lg">
+            <p className="text-xs text-amber-800 flex-1">
+              {t(
+                'ministryInteractiveMeetings',
+                'meetingCapLiveTip',
+                "Meetings are capped at {cap} participants and can't switch to Webinar mode once live. Expecting a bigger crowd next time? Create it as a Webinar instead.",
+              ).replace('{cap}', String(MEETING_PARTICIPANT_CAP))}
+            </p>
+            <button
+              onClick={() => setShowCapTip(false)}
+              className="shrink-0 text-amber-600 hover:text-amber-800"
+              title={t('ministryInteractiveMeetings', 'dismiss', 'Dismiss')}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
       {!isPiP && (
         <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
           {callBackground && (
@@ -1033,6 +1004,19 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
       return;
     }
 
+    // Meetings cannot exceed MEETING_PARTICIPANT_CAP real participants under
+    // any circumstance (2026-09-21) — no overflow/livestream fallback exists
+    // for this anymore. Block creation here, before the room ever exists,
+    // rather than let a host discover it live.
+    if (formData.max_participants > MEETING_PARTICIPANT_CAP) {
+      toast.error(t(
+        'ministryInteractiveMeetings',
+        'meetingCapExceeded',
+        "Meetings are limited to {cap} participants. For a larger audience, create a Webinar instead — it's built for that.",
+      ).replace('{cap}', String(MEETING_PARTICIPANT_CAP)));
+      return;
+    }
+
     // A scheduled meeting stores a real UTC instant computed from the host's
     // wall-clock time in the chosen zone. Instant meetings carry no schedule.
     const isScheduled = formData.meeting_type === 'scheduled';
@@ -1347,12 +1331,16 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
               onChange={(e) => setFormData({ ...formData, max_participants: Math.max(1, parseInt(e.target.value) || 1) })}
             />
             <p className="text-xs text-gray-500">
-              {t('ministryInteractiveMeetings', 'maxParticipantsTip', "This decides whether Meeting or Presentation mode is auto-selected below — it's not a hard cap, just an estimate.")}
+              {t('ministryInteractiveMeetings', 'maxParticipantsTip', 'This decides whether Meeting or Presentation mode is auto-selected below.')}
             </p>
-            {formData.max_participants > 500 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-                <p className="text-xs text-amber-800">
-                  {t('ministryInteractiveMeetings', 'suggestWebinarTip', "For 500+ people, a dedicated Webinar (under the ministry's Webinars tab) is a better fit — it's built for large audiences, with registration, reminders, Q&A, polls, and analytics this meeting mode doesn't have.")}
+            {formData.max_participants > MEETING_PARTICIPANT_CAP && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="text-xs text-red-800">
+                  {t(
+                    'ministryInteractiveMeetings',
+                    'meetingCapBlockTip',
+                    "Meetings are limited to {cap} participants — this can't be created as a meeting. For a larger audience, use the ministry's Webinars tab instead: it's built for that, with registration, reminders, Q&A, polls, and analytics this meeting mode doesn't have.",
+                  ).replace('{cap}', String(MEETING_PARTICIPANT_CAP))}
                 </p>
               </div>
             )}

@@ -27,8 +27,6 @@
 //       → { success: true }
 //   { action: 'delete-room',  roomName, context? }          // endMeetingForAll (§1E)
 //   { action: 'create-room',  roomName, maxParticipants?, emptyTimeout?, context? }  // presets (§1E)
-//   { action: 'room-capacity', roomName }                    // dynamic meeting overflow pre-check
-//       → { count, atCapacity }
 //
 //   context = { kind?: 'meeting'|'ministry_meeting'|'channel_meeting'|'channel',
 //               meetingId?, channelId? }  — used ONLY for server-side role derivation.
@@ -45,32 +43,20 @@ const corsHeaders = {
 
 type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
 
-// Dynamic meeting overflow (2026-09-20): a fixed, platform-wide ceiling on
-// real ("staged") LiveKit participants any single ministry meeting can have
-// at once. Below this, everyone gets a real seat as today. At/above it, a
-// non-host joiner is denied a publish-capable token and falls back to
-// watching the meeting's HLS stream instead (see the 'token' handler below
-// and livekit-egress's 'start-overflow-hls' action, which reactively starts
-// that stream on the first overflow join). Per-tier `meeting_participant_cap`
-// on ministry_partner_plans (migration 0360) is the separate, larger TOTAL
-// attendance ceiling (staged + overflow combined) — this constant is not
-// that; it's the technical/cost ceiling on real seats, same for every tier.
-const STAGED_SEAT_CAP = 100;
-
-// TEMPORARY test override (2026-09-21) — lets a real, ToS-compliant handful of
-// human test accounts trigger overflow without needing ~100 real connections
-// or a synthetic load test (LiveKit Cloud's AUP requires written consent for
-// load testing, which wasn't obtained). Scoped to ONE specific room so no
-// concurrent real meeting on the platform is affected. REMOVE after the test.
-const TEST_ROOM_SEAT_CAP_OVERRIDES: Record<string, number> = {
-  'ministry-a17204e6-1a36-4afa-9e15-e6c5b0613a7e-1789834678980': 2,
-};
-function seatCapFor(roomName: string): number {
-  return TEST_ROOM_SEAT_CAP_OVERRIDES[roomName] ?? STAGED_SEAT_CAP;
-}
+// Meeting participant cap (2026-09-21): a flat, platform-wide ceiling on real
+// LiveKit participants any single ministry meeting may ever have. A meeting
+// expecting more than this must be created as a Webinar instead — enforced
+// at creation time in the UI (CreateMeetingForm) and, authoritatively, here
+// at token-issuance. No fallback of any kind past this cap: the 101st join
+// is simply denied with 'meeting_full', not redirected anywhere. (An earlier
+// version of this reactively redirected overflow joiners to an HLS stream of
+// the meeting — removed 2026-09-21: too fragile in practice or a real broadcast
+// event, and the product decision is now "Webinar is the only path for 100+
+// attendance," not a fallback a plain meeting degrades into.)
+const MEETING_PARTICIPANT_CAP = 100;
 
 interface RequestBody {
-  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room' | 'room-capacity';
+  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room';
   roomName: string;
   userName?: string;
   viewerOnly?: boolean;
@@ -336,23 +322,6 @@ serve(async (req) => {
     // random one so LiveKit never collapses two guests into one participant.
     const identity = user?.id ?? `guest-${crypto.randomUUID()}`;
 
-    // Lightweight pre-join capacity check (dynamic meeting overflow) — lets the
-    // client decide whether to render the real video-call UI or the HLS
-    // audience view BEFORE attempting to connect, rather than connecting then
-    // discovering it should fall back. Just a headcount, no host/entitlement
-    // check needed beyond "signed in" (already enforced above for non-'token'
-    // actions).
-    if (action === 'room-capacity') {
-      try {
-        const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
-        const count = participants.length;
-        return json({ count, atCapacity: count >= seatCapFor(body.roomName) });
-      } catch {
-        // Room not up yet on LiveKit's side — nobody real is in it.
-        return json({ count: 0, atCapacity: false });
-      }
-    }
-
     const role: Role = isGuest
       ? (body.viewerOnly ? 'viewer' : 'attendee')
       : await resolveRole(admin, user!.id, body);
@@ -466,22 +435,22 @@ serve(async (req) => {
       // admitted → continue to mint the token below.
     }
 
-    // Gate: dynamic meeting overflow — the authoritative check (the client's
-    // earlier 'room-capacity' pre-check is just a UX optimization; a race
-    // between two joiners, or a client that skipped it, still needs to be
-    // caught here). Host always gets a real seat regardless of headcount.
+    // Gate: meeting participant cap — a meeting may never exceed
+    // MEETING_PARTICIPANT_CAP real participants. Host always gets a real seat
+    // regardless of headcount (so the meeting can always be ended/managed).
     // Scoped to ministry_meeting only — channels/counselling/webinars have
     // their own, different capacity models (webinars are HLS-only for
-    // attendees from the start; see packages/live/src/webinar).
+    // attendees from the start; see packages/live/src/webinar). No fallback:
+    // the join is simply denied.
     if (!isHost && body.context?.kind === 'ministry_meeting') {
       let realCount = 0;
       try {
         const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
         realCount = participants.length;
-      } catch { /* room not up yet → 0 real participants, no overflow possible */ }
+      } catch { /* room not up yet → 0 real participants */ }
 
-      if (realCount >= seatCapFor(body.roomName)) {
-        return json({ hlsFallback: true });
+      if (realCount >= MEETING_PARTICIPANT_CAP) {
+        return json({ error: 'meeting_full' }, 403);
       }
     }
 

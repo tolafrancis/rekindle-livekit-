@@ -623,18 +623,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           setConnectionError('waiting-room');
           return null;
         }
-        if (data?.hlsFallback) {
-          // Dynamic meeting overflow (2026-09-20) — the room hit its real-
-          // participant ceiling between this caller's own pre-check
-          // (meetingStreamControl.ts's checkMeetingCapacity, which decides
-          // whether to mount this component at all) and this actual token
-          // request — a real race, not an error. Graceful, same shape as the
-          // waiting-room case above: no token, no throw, just a state the
-          // caller can react to (see onHlsFallback).
-          setConnectionError('hls-fallback');
-          return null;
+        if (data?.error) {
+          // Meeting participant cap (2026-09-21) — a plain "meeting is full"
+          // rejection, no fallback of any kind. A meeting expecting 100+
+          // attendees should have been created as a Webinar instead (see the
+          // creation-time block + the in-meeting tip that both point hosts
+          // there ahead of time).
+          if (data.error === 'meeting_full') throw new Error('This meeting is full (100 participants) — create a Webinar for larger audiences.');
+          throw new Error(data.error === 'locked' ? 'This meeting is locked' : data.error);
         }
-        if (data?.error) throw new Error(data.error === 'locked' ? 'This meeting is locked' : data.error);
         if (!data?.url || !data?.token) throw new Error('Invalid response from livekit-token');
         // Debug: log token info for guest name validation
         if (!options.isHost) {
