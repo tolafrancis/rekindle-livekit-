@@ -190,3 +190,14 @@ export async function seatConfirmedWebinarSpeakers(webinarId: string): Promise<v
   const { error } = await supabase.from('meeting_presenters').upsert(rows, { onConflict: 'meeting_id,user_id' });
   if (error) console.error('[webinarControl] seatConfirmedWebinarSpeakers failed:', error.message);
 }
+
+/** Host action: go live — shared by WebinarLobby's own "Start Webinar" button
+ *  and WebinarDashboard's "Manage Webinar" confirm dialog (2026-09-21), so
+ *  confirming there actually starts the webinar instead of just navigating to
+ *  a page with yet another separate Start button to click. Only flips status
+ *  (mounts WebinarStage/DailyVideoCall, which is where the Egress itself
+ *  starts — see the comment in WebinarLobby.tsx for why it can't start here). */
+export async function startWebinarNow(webinarId: string): Promise<void> {
+  await seatConfirmedWebinarSpeakers(webinarId);
+  await updateWebinarStatus(webinarId, 'live');
+}

@@ -6,7 +6,7 @@ import { Loader2, Radio, Users, Calendar, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
-import { seatConfirmedWebinarSpeakers, updateWebinarStatus, type MinistryWebinar } from './webinarControl';
+import { startWebinarNow, type MinistryWebinar } from './webinarControl';
 
 export type WebinarViewerRole = 'host' | 'co-host' | 'speaker' | 'attendee';
 
@@ -34,8 +34,7 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
   const handleStart = async () => {
     setStarting(true);
     try {
-      await seatConfirmedWebinarSpeakers(webinar.id);
-      await updateWebinarStatus(webinar.id, 'live');
+      await startWebinarNow(webinar.id);
       onLive();
     } catch (e) {
       console.error('[WebinarLobby] start failed:', e);

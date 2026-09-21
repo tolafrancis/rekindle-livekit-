@@ -13,7 +13,7 @@ import { supabase } from '@rekindle/supabase';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import { publicAppOrigin } from '@rekindle/features/liveShare';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
-import { listMinistryWebinars, type MinistryWebinar, type WebinarStatus } from './webinarControl';
+import { listMinistryWebinars, startWebinarNow, type MinistryWebinar, type WebinarStatus } from './webinarControl';
 import { CreateWebinarWizard } from './CreateWebinarWizard';
 import { WebinarAnalytics } from './WebinarAnalytics';
 
@@ -54,11 +54,26 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   const isLive = LIVE_STATUSES.includes(webinar.status);
   const openWebinar = () => navigate(`/ministry/${ministryId}/webinar/${webinar.id}`);
   // Rejoining something already live needs no confirmation; a leader opening a
-  // not-yet-live webinar (they could start it from there) goes through a
-  // "Manage Webinar" confirm first (2026-09-21) so a stray tap doesn't drop
-  // them straight into it. Attendees can't start anything either way, so they
-  // go straight through — nothing to confirm.
+  // not-yet-live webinar goes through a "Manage Webinar" confirm first
+  // (2026-09-21), which itself starts the webinar (same as the webinar page's
+  // own Start Webinar button) before navigating in — so confirming actually
+  // begins it in one step, rather than landing on yet another Start button.
+  // Attendees can't start anything either way, so they go straight through.
   const handleCardOpen = () => { if (isLive || !isLeader) openWebinar(); else setShowManageConfirm(true); };
+  const [starting, setStarting] = useState(false);
+  const handleConfirmManage = async () => {
+    setStarting(true);
+    try {
+      await startWebinarNow(webinar.id);
+      setShowManageConfirm(false);
+      openWebinar();
+    } catch (err) {
+      console.error('[WebinarDashboard] start failed:', err);
+      toast.error("Couldn't start the webinar.");
+    } finally {
+      setStarting(false);
+    }
+  };
   const copyLink = async () => {
     const link = `${publicAppOrigin()}/ministry/${ministryId}/webinar/${webinar.id}`;
     await navigator.clipboard.writeText(link);
@@ -182,16 +197,17 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
       {isLeader && isPast && (
         <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />
       )}
-      <Dialog open={showManageConfirm} onOpenChange={setShowManageConfirm}>
+      <Dialog open={showManageConfirm} onOpenChange={(open) => { if (!starting) setShowManageConfirm(open); }}>
         <DialogContent onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle>Manage {webinar.title}?</DialogTitle>
-            <DialogDescription>You'll be taken to its start screen, where you can review settings and start it when ready.</DialogDescription>
+            <DialogTitle>Start {webinar.title}?</DialogTitle>
+            <DialogDescription>This starts the webinar now — attendees will be able to join. Is this correct?</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={(e) => { e.stopPropagation(); setShowManageConfirm(false); }}>Cancel</Button>
-            <Button className="bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); setShowManageConfirm(false); openWebinar(); }}>
-              Continue
+            <Button variant="outline" disabled={starting} onClick={(e) => { e.stopPropagation(); setShowManageConfirm(false); }}>Cancel</Button>
+            <Button className="bg-purple-600 hover:bg-purple-700" disabled={starting} onClick={(e) => { e.stopPropagation(); handleConfirmManage(); }}>
+              {starting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {starting ? 'Starting…' : 'Start Webinar'}
             </Button>
           </DialogFooter>
         </DialogContent>
