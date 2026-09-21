@@ -70,14 +70,28 @@ export async function getEngagementSummary(webinarId: string): Promise<WebinarEn
   const [questions, polls, chat] = await Promise.all([
     supabase.from('webinar_questions').select('status').eq('webinar_id', webinarId),
     supabase.from('webinar_polls').select('id').eq('webinar_id', webinarId),
-    supabase.from('meeting_chat').select('id', { count: 'exact', head: true }).eq('meeting_id', webinarId),
+    // meeting_table filter (2026-09-22): defensive, matching how
+    // meeting_attendance queries elsewhere pair meeting_id with meeting_table
+    // — meeting_id alone is already unambiguous (UUIDs), but this was also
+    // structurally dead before meeting_chat's webinar FK was fixed (every
+    // webinar chat insert failed outright, so this always counted zero real
+    // rows regardless of the filter).
+    supabase.from('meeting_chat').select('id', { count: 'exact', head: true }).eq('meeting_id', webinarId).eq('meeting_table', 'ministry_webinars'),
   ]);
+
+  // Errors here were previously swallowed silently — a failed query and a
+  // genuinely empty webinar both just rendered as zero, with no way to tell
+  // them apart when debugging a report of "analytics looks empty."
+  if (questions.error) console.error('[webinarAnalyticsService] questions query failed:', questions.error.message);
+  if (polls.error) console.error('[webinarAnalyticsService] polls query failed:', polls.error.message);
+  if (chat.error) console.error('[webinarAnalyticsService] chat count failed:', chat.error.message);
 
   const questionRows = (questions.data ?? []) as { status: string }[];
   const pollIds = ((polls.data ?? []) as { id: string }[]).map((p) => p.id);
   const pollVotes = pollIds.length
     ? await supabase.from('webinar_poll_votes').select('id', { count: 'exact', head: true }).in('poll_id', pollIds)
     : { count: 0 };
+  if ('error' in pollVotes && pollVotes.error) console.error('[webinarAnalyticsService] poll votes count failed:', pollVotes.error.message);
 
   return {
     questionsAsked: questionRows.length,

@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
+import { Label } from '@rekindle/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { PhoneOff, Clock, BarChart3 } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@rekindle/supabase';
 import { WebinarAnalytics } from './WebinarAnalytics';
 import type { MinistryWebinar } from './webinarControl';
 
@@ -18,9 +22,26 @@ interface WebinarEndScreenProps {
  *  host's own end confirmation dialog lives in WebinarStage.tsx. */
 export function WebinarEndScreen({ webinar, onHome, isHost = false }: WebinarEndScreenProps) {
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [visibility, setVisibility] = useState<'public' | 'private'>(webinar.recording_visibility ?? 'private');
+  const [savingVisibility, setSavingVisibility] = useState(false);
   const durationMinutes = webinar.started_at && webinar.ended_at
     ? Math.round((new Date(webinar.ended_at).getTime() - new Date(webinar.started_at).getTime()) / 60000)
     : null;
+
+  const changeVisibility = async (next: 'public' | 'private') => {
+    setVisibility(next);
+    setSavingVisibility(true);
+    try {
+      const { error } = await supabase.from('ministry_webinars').update({ recording_visibility: next }).eq('id', webinar.id);
+      if (error) throw error;
+    } catch (err) {
+      console.error('[WebinarEndScreen] recording visibility update failed:', err);
+      toast.error("Couldn't update recording visibility.");
+      setVisibility(webinar.recording_visibility ?? 'private');
+    } finally {
+      setSavingVisibility(false);
+    }
+  };
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4 text-center">
@@ -45,6 +66,18 @@ export function WebinarEndScreen({ webinar, onHome, isHost = false }: WebinarEnd
             <a href={webinar.recording_url} target="_blank" rel="noreferrer" className="text-sm text-purple-600 hover:underline block">
               Watch the recording
             </a>
+          )}
+          {isHost && webinar.recording_url && (
+            <div className="text-left space-y-1">
+              <Label className="text-xs">Recording visibility</Label>
+              <Select value={visibility} onValueChange={(v) => changeVisibility(v as 'public' | 'private')} disabled={savingVisibility}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">Private — host &amp; admins only</SelectItem>
+                  <SelectItem value="public">Public — in the ministry's Recordings tab</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           )}
           {isHost && (
             <Button onClick={() => setShowAnalytics(true)} variant="outline" className="w-full">

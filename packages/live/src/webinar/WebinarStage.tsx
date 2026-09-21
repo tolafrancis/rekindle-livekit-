@@ -6,11 +6,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@rekindle/ui/dialog';
-import { PhoneOff, X, Hand, Settings2, HelpCircle, BarChart3, Radio } from 'lucide-react';
+import { PhoneOff, X, Hand, Settings2, HelpCircle, BarChart3, Radio, MessageSquare } from 'lucide-react';
 import DailyVideoCall from '../components/DailyVideoCall';
 import { useActiveCallOptional } from '../ActiveCallContext';
 import { ChannelStreamConfig } from '../components/ChannelStreamConfig';
+import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
+import { useMeetingPresence } from '../useMeetingPresence';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
 import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamControl';
@@ -34,6 +36,13 @@ interface WebinarStageProps {
 export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave }: WebinarStageProps) {
   const isHost = role === 'host' || role === 'co-host';
   const speakerRequests = useWebinarSpeakerRequests(webinar.id, userId, userName, isHost);
+  // Live "who's actually watching" roster — same realtime presence channel
+  // WebinarAttendeeViewer announces into, and the same hook
+  // MinistryInteractiveMeetings already uses for its own webinar/presentation
+  // mode. Only attendees join this channel from the audience side, but the
+  // host/co-host/speakers on this page announce themselves too so anyone
+  // checking presenceMembers elsewhere sees a complete picture.
+  const presenceMembers = useMeetingPresence(webinar.id, userId, userName, false, true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
   const [streamConfigOpen, setStreamConfigOpen] = useState(false);
@@ -158,6 +167,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
             <Tabs defaultValue="speakers" className="flex-1 flex flex-col min-h-0">
               <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-white/10 h-auto p-0 px-2">
                 <TabsTrigger value="speakers" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><Hand className="h-4 w-4" /> Speakers</TabsTrigger>
+                <TabsTrigger value="chat" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><MessageSquare className="h-4 w-4" /> Chat</TabsTrigger>
                 <TabsTrigger value="qa" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><HelpCircle className="h-4 w-4" /> Q&amp;A</TabsTrigger>
                 <TabsTrigger value="polls" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><BarChart3 className="h-4 w-4" /> Polls</TabsTrigger>
               </TabsList>
@@ -197,6 +207,42 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                       </div>
                     )}
                   </div>
+                  {(() => {
+                    const onStageIds = new Set(speakerRequests.requests.filter((r) => r.status === 'accepted').map((r) => r.user_id));
+                    const audience = presenceMembers.filter((m) => m.userId !== userId && !onStageIds.has(m.userId));
+                    return (
+                      <div>
+                        <p className="text-sm font-medium text-gray-300 mb-2">Audience ({audience.length})</p>
+                        {audience.length === 0 ? (
+                          <p className="text-sm text-gray-500">No one watching yet.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {audience.map((m) => {
+                              const requested = speakerRequests.pendingRequests.some((r) => r.user_id === m.userId);
+                              return (
+                                <div key={m.userId} className="flex items-center justify-between gap-2">
+                                  <span className="text-sm truncate">
+                                    {requested && <Hand className="inline h-3.5 w-3.5 text-purple-300 mr-1" />}
+                                    {m.userName}
+                                  </span>
+                                  <Button size="sm" className="h-9 px-3 bg-purple-600 hover:bg-purple-700" onClick={() => speakerRequests.hostInvite(m.userId, m.userName)}>
+                                    Invite up
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </TabsContent>
+                <TabsContent value="chat" className="m-0 h-96 -m-4 p-0">
+                  {webinar.enable_chat ? (
+                    <MeetingChatPanel meetingId={webinar.id} userId={userId} userName={userName} isGuest={false} meetingTable="ministry_webinars" />
+                  ) : (
+                    <p className="text-xs text-gray-500 p-4">Chat is disabled for this webinar.</p>
+                  )}
                 </TabsContent>
                 <TabsContent value="qa" className="m-0">
                   {webinar.enable_qa ? (

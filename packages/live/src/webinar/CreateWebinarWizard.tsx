@@ -69,6 +69,14 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
   const [enableRecording, setEnableRecording] = useState(true);
   const [enableCaptions, setEnableCaptions] = useState(true);
   const [enableTranslation, setEnableTranslation] = useState(false);
+  // Default checked (2026-09-22) — previously these three columns were never
+  // included in sharedFields at all, so every webinar was created with them
+  // stuck at their DB default of false and no way to ever turn them on: the
+  // Chat/Q&A/Polls tabs weren't buggy, they were just permanently disabled.
+  const [enableChat, setEnableChat] = useState(true);
+  const [enableQA, setEnableQA] = useState(true);
+  const [enablePolls, setEnablePolls] = useState(true);
+  const [recordingVisibility, setRecordingVisibility] = useState<'public' | 'private'>('private');
   const [defaultLanguage, setDefaultLanguage] = useState('en');
   const [speakers, setSpeakers] = useState<DraftSpeaker[]>([]);
   const [newSpeakerEmail, setNewSpeakerEmail] = useState('');
@@ -113,6 +121,8 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
       setTimezone(guessUserTimeZone()); setDurationMinutes(60); setMaxAttendees(200);
       setIsPublic(false); setRegistrationRequired(false); setEnableRecording(true);
       setEnableCaptions(true); setEnableTranslation(false); setDefaultLanguage('en');
+      setEnableChat(true); setEnableQA(true); setEnablePolls(true);
+      setRecordingVisibility('private');
       setSpeakers([]);
       return;
     }
@@ -129,6 +139,10 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     setEnableRecording(webinar.enable_recording);
     setEnableCaptions(webinar.enable_captions);
     setEnableTranslation(webinar.enable_translation);
+    setEnableChat(webinar.enable_chat);
+    setEnableQA(webinar.enable_qa);
+    setEnablePolls(webinar.enable_polls);
+    setRecordingVisibility(webinar.recording_visibility ?? 'private');
     setDefaultLanguage(webinar.default_language);
   }, [isOpen, webinar]);
 
@@ -172,6 +186,10 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         enable_recording: isFreeTier ? false : enableRecording,
         enable_captions: enableCaptions,
         enable_translation: enableTranslation,
+        enable_chat: enableChat,
+        enable_qa: enableQA,
+        enable_polls: enablePolls,
+        recording_visibility: recordingVisibility,
         default_language: defaultLanguage,
       };
 
@@ -343,6 +361,18 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
               <Label className="text-sm">Recording</Label>
               <Switch checked={enableRecording} onCheckedChange={setEnableRecording} disabled={isFreeTier} />
             </div>
+            {enableRecording && (
+              <div className="space-y-1">
+                <Label className="text-xs">Recording visibility</Label>
+                <Select value={recordingVisibility} onValueChange={(v) => setRecordingVisibility(v as 'public' | 'private')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="private">Private — host &amp; admins only</SelectItem>
+                    <SelectItem value="public">Public — in the ministry's Recordings tab</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-md border p-3">
               <Label className="text-sm">Captions</Label>
               <Switch checked={enableCaptions} onCheckedChange={setEnableCaptions} />
@@ -359,6 +389,24 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
                   {DEFAULT_LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Audience interaction</Label>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <Label className="text-sm">Chat</Label>
+                <Switch checked={enableChat} onCheckedChange={setEnableChat} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <Label className="text-sm">Q&amp;A</Label>
+                <Switch checked={enableQA} onCheckedChange={setEnableQA} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <Label className="text-sm">Polls</Label>
+                <Switch checked={enablePolls} onCheckedChange={setEnablePolls} />
+              </div>
             </div>
           </div>
 

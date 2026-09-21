@@ -20,6 +20,10 @@ import { WebinarAnalytics } from './WebinarAnalytics';
 interface WebinarDashboardProps {
   ministryId: string;
   isLeader: boolean;
+  /** Renders a "Recordings" tab when provided — injected by the caller
+   *  (packages/ministry's MinistrySpace.tsx) with MinistryRecordingsTab,
+   *  since packages/live can't depend on packages/ministry directly. */
+  renderRecordingsTab?: (webinars: MinistryWebinar[]) => React.ReactNode;
 }
 
 const LIVE_STATUSES: WebinarStatus[] = ['live', 'ending', 'starting_soon'];
@@ -262,7 +266,7 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
 
 /** Ministry's webinar list — mirrors MinistryInteractiveMeetings' role in the
  *  meetings tab, but scoped to ministry_webinars (a wholly separate table/UI). */
-export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps) {
+export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: WebinarDashboardProps) {
   const [webinars, setWebinars] = useState<MinistryWebinar[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -325,11 +329,20 @@ export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps
           <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
           <TabsTrigger value="past">Past</TabsTrigger>
           {isLeader && <TabsTrigger value="drafts">Drafts</TabsTrigger>}
+          {renderRecordingsTab && <TabsTrigger value="recordings">Recordings</TabsTrigger>}
         </TabsList>
         <TabsContent value="live">{renderGrid(live, 'No live webinars right now.')}</TabsContent>
         <TabsContent value="upcoming">{renderGrid(upcoming, 'No upcoming webinars scheduled.')}</TabsContent>
         <TabsContent value="past">{renderGrid(past, 'No past webinars yet.')}</TabsContent>
         {isLeader && <TabsContent value="drafts">{renderGrid(drafts, 'No drafts.')}</TabsContent>}
+        {/* Same shared recordings library Interactive Meetings uses
+            (MinistryRecordingsTab, in packages/ministry — injected from
+            MinistrySpace.tsx since packages/live can't depend on
+            packages/ministry). livekit-egress's list-recordings action
+            enforces recording_visibility server-side for webinar rows, so a
+            regular member here simply won't see private ones back; no extra
+            filtering needed here. */}
+        {renderRecordingsTab && <TabsContent value="recordings">{renderRecordingsTab(webinars)}</TabsContent>}
       </Tabs>
 
       <CreateWebinarWizard

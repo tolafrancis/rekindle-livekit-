@@ -13,6 +13,9 @@ interface MeetingChatPanelProps {
   userName: string;
   isGuest?: boolean;
   onClose?: () => void;
+  /** Which meetings table meetingId belongs to — see useMeetingChat's own doc
+   *  comment. Defaults to 'ministry_video_meetings' (every existing caller). */
+  meetingTable?: string;
 }
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -33,8 +36,9 @@ export const MeetingChatPanel: React.FC<MeetingChatPanelProps> = ({
   userName,
   isGuest,
   onClose,
+  meetingTable,
 }) => {
-  const { messages, sendMessage } = useMeetingChat(meetingId, userId, userName);
+  const { messages, sendMessage } = useMeetingChat(meetingId, userId, userName, meetingTable);
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);

@@ -49,6 +49,7 @@ export interface MinistryWebinar {
   recording_duration_seconds: number | null;
   recording_started_at: string | null;
   recording_ended_at: string | null;
+  recording_visibility: 'public' | 'private';
   attendee_count: number;
   started_at: string | null;
   ended_at: string | null;

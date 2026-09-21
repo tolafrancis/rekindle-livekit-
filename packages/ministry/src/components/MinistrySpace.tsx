@@ -54,6 +54,7 @@ import MinistryBroadcast from './MinistryBroadcast';
 import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
 import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
 import { WebinarDashboard } from '@rekindle/live/webinar/WebinarDashboard';
+import { MinistryRecordingsTab } from './MinistryRecordingsTab';
 import { MLiveChannel } from './MLiveChannel';
 import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
@@ -2695,6 +2696,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           <WebinarDashboard
             ministryId={ministry.id}
             isLeader={membership?.is_leader || false}
+            renderRecordingsTab={(webinars) => <MinistryRecordingsTab meetings={webinars} />}
           />
         )}
 

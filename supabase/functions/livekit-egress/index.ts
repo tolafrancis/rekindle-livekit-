@@ -192,7 +192,12 @@ serve(async (req) => {
 
     const admin = createClient(SB_URL!, SB_SERVICE!);
 
-    // list-recordings is a read — no host check (VOD list). Returns the shared ChannelRecording/MeetingRecording shape.
+    // list-recordings is a read — no host check for meetings/channels (VOD
+    // list, unchanged, see the config.toml note this was intentional there).
+    // Webinar rows get real enforcement below (2026-09-22) — a webinar's
+    // recording can be marked private, and the URL itself must not be handed
+    // back to anyone who merely knows the webinar's id. Returns the shared
+    // ChannelRecording/MeetingRecording shape.
     if (action === 'list-recordings') {
       let q = admin.from('livekit_recordings').select('*').order('started_at', { ascending: false });
       // meetingId is the stable identifier callers actually have (a meeting's DB
@@ -203,20 +208,51 @@ serve(async (req) => {
       else if (body.meetingId) q = q.eq('meeting_id', body.meetingId);
       else if (body.roomName) q = q.eq('room_name', body.roomName);
       const { data } = await q;
-      const recordings = (data ?? [])
-        .filter((r: any) => r.status !== 'failed')
-        .map((r: any) => ({
-          uid: r.id,
-          created: r.started_at,
-          duration: r.duration_seconds ?? 0,
-          hls: r.playback_url,
-          thumbnail: '',
-          // Real MP4 file, when this recording was made with the file output
-          // (see start-recording). Older rows have no download_url — omit the
-          // button rather than hand back the .m3u8 playlist, which isn't a
-          // downloadable file and just opens the browser's raw HLS handling.
-          download: r.download_url ?? null,
-        }));
+      let rows = (data ?? []).filter((r: any) => r.status !== 'failed');
+
+      const webinarRows = rows.filter((r: any) => r.kind === 'webinar' && r.meeting_id);
+      if (webinarRows.length > 0) {
+        const webinarIds = [...new Set(webinarRows.map((r: any) => r.meeting_id))];
+        const { data: webinars } = await admin
+          .from('ministry_webinars')
+          .select('id, ministry_id, recording_visibility')
+          .in('id', webinarIds);
+        const byId = new Map((webinars ?? []).map((w: any) => [w.id, w]));
+        const privateIds = webinarIds.filter((id) => byId.get(id)?.recording_visibility === 'private');
+
+        if (privateIds.length > 0) {
+          const userClient = createClient(SB_URL!, SB_ANON!, {
+            global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+          });
+          const { data: { user: caller } } = await userClient.auth.getUser();
+          const authorized = new Set<string>();
+          if (caller) {
+            for (const webinarId of privateIds) {
+              const w = byId.get(webinarId);
+              if (!w) continue;
+              const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+                admin.rpc('is_webinar_manager', { p_webinar_id: webinarId, p_user_id: caller.id }),
+                admin.rpc('is_group_admin', { p_ministry_id: w.ministry_id, p_user_id: caller.id }),
+              ]);
+              if (isManager || isAdmin) authorized.add(webinarId);
+            }
+          }
+          rows = rows.filter((r: any) => r.kind !== 'webinar' || !privateIds.includes(r.meeting_id) || authorized.has(r.meeting_id));
+        }
+      }
+
+      const recordings = rows.map((r: any) => ({
+        uid: r.id,
+        created: r.started_at,
+        duration: r.duration_seconds ?? 0,
+        hls: r.playback_url,
+        thumbnail: '',
+        // Real MP4 file, when this recording was made with the file output
+        // (see start-recording). Older rows have no download_url — omit the
+        // button rather than hand back the .m3u8 playlist, which isn't a
+        // downloadable file and just opens the browser's raw HLS handling.
+        download: r.download_url ?? null,
+      }));
       return json({ recordings });
     }
 

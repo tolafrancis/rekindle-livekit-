@@ -5,6 +5,7 @@ import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3, Loader2 } from 'l
 import { HlsPlayer } from '../components/HlsPlayer';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { trackMeetingParticipant } from '../meetingStreamControl';
+import { useMeetingPresence } from '../useMeetingPresence';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { WebinarQAPanel } from './WebinarQAPanel';
 import { WebinarPollPanel } from './WebinarPollPanel';
@@ -38,6 +39,12 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
     trackMeetingParticipant(webinar.id, userId, userName, false, 'join', 'ministry_webinar');
     return () => { trackMeetingParticipant(webinar.id, userId, userName, false, 'leave', 'ministry_webinar'); };
   }, [webinar.id, userId, userName]);
+
+  // Announces this attendee into the webinar's realtime presence channel so the
+  // host's Manage panel can show a live "who's here" roster and invite them up —
+  // same mechanism MinistryInteractiveMeetings already uses for its own webinar/
+  // presentation mode (attendees never join LiveKit there either).
+  useMeetingPresence(webinar.id, userId, userName, false, true);
 
   useEffect(() => {
     if (myRequest?.status === 'accepted') onPromoted();
@@ -125,7 +132,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
             </TabsTrigger>
           </TabsList>
           <TabsContent value="chat" className="flex-1 min-h-0 m-0">
-            {webinar.enable_chat && <MeetingChatPanel meetingId={webinar.id} userId={userId} userName={userName} isGuest={false} />}
+            {webinar.enable_chat && <MeetingChatPanel meetingId={webinar.id} userId={userId} userName={userName} isGuest={false} meetingTable="ministry_webinars" />}
           </TabsContent>
           <TabsContent value="qa" className="flex-1 min-h-0 m-0">
             {webinar.enable_qa && <WebinarQAPanel webinarId={webinar.id} userId={userId} userName={userName} />}
