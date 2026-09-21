@@ -429,7 +429,15 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
             )}
           </div>
 
-          <DialogFooter>
+          {/* sticky (2026-09-22, real report: "can no longer see the Save
+              button, it's not scrolling downward") — the form grew taller
+              with the audience-interaction/recording-visibility fields
+              added this session, and relying on scrolling all the way to a
+              footer at the natural end of a long form inside a dialog was
+              fragile. Pinning it to the bottom of the dialog's own scroll
+              area means Save is always visible without needing to scroll
+              at all, regardless of how tall the form gets. */}
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-4 bg-background border-t">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={isLoading || !!accessReason}>
               {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}

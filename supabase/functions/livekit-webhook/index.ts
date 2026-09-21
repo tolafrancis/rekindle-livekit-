@@ -278,12 +278,31 @@ serve(async (req) => {
           { kind?: string; channel_id?: string; meeting_table?: string; meeting_id?: string; playback_url?: string } | undefined;
 
         if (ended && !failed && rec?.meeting_table && rec.meeting_id) {
-          await admin.from(rec.meeting_table).update({
-            recording_url: rec.playback_url,
-            recording_status: 'completed',
-            recording_duration_seconds: duration,
-            recording_ended_at: new Date().toISOString(),
-          }).eq('id', rec.meeting_id);
+          // Webinar-only gate (2026-09-22, real bug reported live: toggling
+          // Recording off at creation still showed "Watch the recording"
+          // after the webinar ended). A webinar's HLS Egress (start-hls) is
+          // what the AUDIENCE watches live — it always runs and always
+          // doubles as a VOD in livekit_recordings, regardless of
+          // enable_recording (there's no separate "live but not recorded"
+          // mode for webinars the way a plain meeting's manual Record
+          // button is fully optional). That's fine for the underlying
+          // livekit_recordings row (service-role-only, not host-facing) —
+          // but the HOST-FACING signal on ministry_webinars must respect
+          // the toggle they actually chose, so skip exposing it there when
+          // they turned recording off.
+          let shouldExpose = true;
+          if (rec.kind === 'webinar') {
+            const { data: w } = await admin.from('ministry_webinars').select('enable_recording').eq('id', rec.meeting_id).maybeSingle();
+            shouldExpose = (w as { enable_recording?: boolean } | null)?.enable_recording !== false;
+          }
+          if (shouldExpose) {
+            await admin.from(rec.meeting_table).update({
+              recording_url: rec.playback_url,
+              recording_status: 'completed',
+              recording_duration_seconds: duration,
+              recording_ended_at: new Date().toISOString(),
+            }).eq('id', rec.meeting_id);
+          }
         }
 
         // Real bug found live (2026-08-21): a channel broadcast's live status
