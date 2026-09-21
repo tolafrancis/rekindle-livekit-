@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -13,6 +13,7 @@ import { ChannelStreamConfig } from '../components/ChannelStreamConfig';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
+import { useMeetingChat } from '../useMeetingChat';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { useWebinarQuestions } from './useWebinarQuestions';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
@@ -48,6 +49,43 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // no reason to open this tab at all. Fixed both: migration 0364 adds the
   // missing publication entries, and this badge gives a reason to look.
   const qa = useWebinarQuestions(webinar.id, userId, userName, isHost);
+  // Same reason as qa above — instantiated unconditionally so a toast can
+  // fire for a new chat message from the audience even while the Manage
+  // popover is closed (real report, 2026-09-22: chat/Q&A/polls confirmed
+  // reaching the database and passing RLS correctly, but the host never saw
+  // them — a small badge on a button isn't a strong enough signal during a
+  // live call; an active toast is).
+  const { messages: chatMessages } = useMeetingChat(webinar.id, userId, userName, 'ministry_webinars');
+
+  // Active notifications for new audience Q&A/chat (2026-09-22) — see the
+  // comment above chatMessages for why a passive badge wasn't enough. Skips
+  // the very first load of each (mount-time seed, not "new" activity) and
+  // never toasts the host's own chat messages back at themselves.
+  const seenQuestionIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!isHost) return;
+    const ids = new Set(qa.pendingQuestions.map((q) => q.id));
+    if (seenQuestionIdsRef.current === null) { seenQuestionIdsRef.current = ids; return; }
+    for (const q of qa.pendingQuestions) {
+      if (!seenQuestionIdsRef.current.has(q.id)) {
+        toast(`New question from ${q.user_name || 'an attendee'}`, { description: q.question });
+      }
+    }
+    seenQuestionIdsRef.current = ids;
+  }, [isHost, qa.pendingQuestions]);
+
+  const seenChatIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!isHost) return;
+    const ids = new Set(chatMessages.map((m) => m.id));
+    if (seenChatIdsRef.current === null) { seenChatIdsRef.current = ids; return; }
+    for (const m of chatMessages) {
+      if (m.user_id !== userId && !seenChatIdsRef.current.has(m.id)) {
+        toast(`${m.user_name || 'An attendee'}: ${m.content}`);
+      }
+    }
+    seenChatIdsRef.current = ids;
+  }, [isHost, chatMessages, userId]);
   // Live "who's actually watching" roster — same realtime presence channel
   // WebinarAttendeeViewer announces into, and the same hook
   // MinistryInteractiveMeetings already uses for its own webinar/presentation
