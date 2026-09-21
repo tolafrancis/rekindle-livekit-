@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -47,11 +48,17 @@ const DEFAULT_LANGUAGES = [
 /** Webinar creation/edit wizard — a `webinar` prop switches this into edit mode. */
 export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, webinar }: CreateWebinarWizardProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isEditing = !!webinar;
   const [isLoading, setIsLoading] = useState(false);
   const [accessReason, setAccessReason] = useState<string | undefined>();
   const [isFreeTier, setIsFreeTier] = useState(false);
 
+  // 'now' skips the date/time fields entirely and, on create, drops the host
+  // straight into the webinar's Lobby (Start webinar button) instead of back
+  // onto the dashboard where an unscheduled webinar used to be easy to lose
+  // track of (it only ever showed under a separate Drafts tab).
+  const [startMode, setStartMode] = useState<'now' | 'schedule'>('now');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [coverImageUrl, setCoverImageUrl] = useState('');
@@ -103,6 +110,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     if (!isOpen) return;
     if (!webinar) {
       // Reset to a blank form each time the create dialog re-opens.
+      setStartMode('now');
       setTitle(''); setDescription(''); setCoverImageUrl(''); setScheduledTime('');
       setTimezone(guessUserTimeZone()); setDurationMinutes(60); setMaxAttendees(200);
       setIsPublic(false); setRegistrationRequired(false); setEnableRecording(true);
@@ -110,6 +118,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
       setSpeakers([]);
       return;
     }
+    setStartMode(webinar.scheduled_start_at ? 'schedule' : 'now');
     setTitle(webinar.title);
     setDescription(webinar.description ?? '');
     setCoverImageUrl(webinar.cover_image_url ?? '');
@@ -140,8 +149,9 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     if (accessReason) { toast.error(accessReason); return; }
     if (!title.trim()) { toast.error('Give the webinar a title'); return; }
 
-    const scheduledUtc = scheduledTime ? zonedWallTimeToUtcISO(scheduledTime, timezone) : null;
-    if (scheduledTime && !scheduledUtc) { toast.error('Please pick a valid date/time'); return; }
+    if (startMode === 'schedule' && !scheduledTime) { toast.error('Pick a date and time, or switch to Start now'); return; }
+    const scheduledUtc = startMode === 'schedule' && scheduledTime ? zonedWallTimeToUtcISO(scheduledTime, timezone) : null;
+    if (startMode === 'schedule' && scheduledTime && !scheduledUtc) { toast.error('Please pick a valid date/time'); return; }
 
     setIsLoading(true);
     try {
@@ -204,9 +214,16 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         await createWebinarSpeaker({ webinarId: data.id, invitedEmail: s.email, invitedName: s.name || null, role: s.role });
       }
 
-      toast.success('Webinar created');
       onSuccess(data as MinistryWebinar);
       onClose();
+      if (startMode === 'now') {
+        // Go straight to the Lobby's "Start webinar" button rather than back
+        // to the dashboard, where the host would have to find this webinar
+        // again (it's unscheduled, so it only shows under Upcoming/Drafts).
+        navigate(`/ministry/${ministryId}/webinar/${data.id}`);
+      } else {
+        toast.success('Webinar created');
+      }
     } catch (err) {
       console.error('[CreateWebinarWizard] save failed:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to save webinar');
@@ -246,21 +263,48 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
             <Input id="webinar-cover" value={coverImageUrl} onChange={(e) => setCoverImageUrl(e.target.value)} placeholder="https://…" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="webinar-time">Date &amp; time</Label>
-              <Input id="webinar-time" type="datetime-local" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
+          <div className="space-y-2">
+            <Label>When</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button" variant={startMode === 'now' ? 'default' : 'outline'}
+                className={startMode === 'now' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                onClick={() => { setStartMode('now'); setScheduledTime(''); }}
+              >
+                Start now
+              </Button>
+              <Button
+                type="button" variant={startMode === 'schedule' ? 'default' : 'outline'}
+                className={startMode === 'schedule' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                onClick={() => setStartMode('schedule')}
+              >
+                Schedule for later
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label>Timezone</Label>
-              <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {commonTimeZones().map((tz) => <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {startMode === 'now' && (
+              <p className="text-xs text-gray-500">
+                {isEditing ? "Saving clears this webinar's scheduled time." : "You'll land on the Start webinar screen right after saving."}
+              </p>
+            )}
           </div>
+
+          {startMode === 'schedule' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="webinar-time">Date &amp; time</Label>
+                <Input id="webinar-time" type="datetime-local" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Timezone</Label>
+                <Select value={timezone} onValueChange={setTimezone}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {commonTimeZones().map((tz) => <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -344,7 +388,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={isLoading || !!accessReason}>
               {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {isEditing ? 'Save changes' : 'Create webinar'}
+              {isEditing ? 'Save changes' : startMode === 'now' ? 'Create & go to start screen' : 'Schedule webinar'}
             </Button>
           </DialogFooter>
         </form>

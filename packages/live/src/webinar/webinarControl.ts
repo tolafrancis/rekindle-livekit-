@@ -1,6 +1,6 @@
 import { supabase } from '@rekindle/supabase';
 import { FREE_TIER_MEETING_LIMITS } from '@rekindle/auth/subscriptionEnforcement';
-import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamControl';
+import { stopMeetingBroadcast } from '../meetingStreamControl';
 
 // Data layer for the Webinar meeting type (packages/live/src/webinar) — a
 // wholly separate table (ministry_webinars) from Interactive Meetings'
@@ -8,7 +8,9 @@ import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamCon
 // recording reuse startMeetingBroadcast/stopMeetingBroadcast unchanged
 // (MeetingKind widened to include 'ministry_webinar' — see
 // meetingStreamControl.ts) since a webinar's HLS Egress IS its recording,
-// same as Interactive Meetings' existing webinar mode.
+// same as Interactive Meetings' existing webinar mode. startMeetingBroadcast
+// itself is now called directly from WebinarStage.tsx, not from here — see
+// its useEffect and the comment in WebinarLobby.handleStart for why.
 
 export type WebinarStatus =
   | 'draft' | 'scheduled' | 'registration_open' | 'starting_soon'
@@ -127,15 +129,6 @@ export async function updateWebinarStatus(webinarId: string, status: WebinarStat
   if (status === 'ended') patch.ended_at = new Date().toISOString();
   const { error } = await supabase.from('ministry_webinars').update(patch).eq('id', webinarId);
   if (error) console.error('[webinarControl] updateWebinarStatus failed:', error.message);
-}
-
-/** Host action: go live. Starts the HLS Egress (reused, unchanged — see file header)
- *  and flips status. The Egress's own webhook (livekit-webhook/index.ts) finalizes
- *  recording_status/recording_url on it own; this just starts the stream itself. */
-export async function startWebinarBroadcast(webinarId: string, roomName: string): Promise<{ playbackUrl: string } | null> {
-  const result = await startMeetingBroadcast(webinarId, roomName, 'ministry_webinar');
-  if (result) await updateWebinarStatus(webinarId, 'live');
-  return result;
 }
 
 /** Ending finalization: locks in final poll results so a viewer looking back

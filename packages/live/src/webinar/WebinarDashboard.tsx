@@ -212,7 +212,13 @@ export function WebinarDashboard({ ministryId, isLeader }: WebinarDashboardProps
   useEffect(() => { load(); }, [load]);
 
   const live = webinars.filter((w) => LIVE_STATUSES.includes(w.status));
-  const upcoming = webinars.filter((w) => UPCOMING_STATUSES.includes(w.status));
+  // Leaders also see their drafts under Upcoming (2026-09-21): creating a
+  // webinar with no scheduled date/time saves it as 'draft' — meant for
+  // "start it right now" — and it was only reachable via the separate Drafts
+  // tab, so a newly created start-now webinar appeared to vanish after
+  // saving. Members never see drafts here (or at all) — they're unfinished/
+  // unannounced, unlike 'scheduled', which is an intentional announcement.
+  const upcoming = webinars.filter((w) => UPCOMING_STATUSES.includes(w.status) || (isLeader && w.status === 'draft'));
   const past = webinars.filter((w) => PAST_STATUSES.includes(w.status));
   const drafts = webinars.filter((w) => w.status === 'draft');
 

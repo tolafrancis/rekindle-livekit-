@@ -6,7 +6,7 @@ import { Loader2, Radio, Users, Calendar, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
-import { seatConfirmedWebinarSpeakers, startWebinarBroadcast, type MinistryWebinar } from './webinarControl';
+import { seatConfirmedWebinarSpeakers, updateWebinarStatus, type MinistryWebinar } from './webinarControl';
 
 export type WebinarViewerRole = 'host' | 'co-host' | 'speaker' | 'attendee';
 
@@ -23,15 +23,19 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
   const [starting, setStarting] = useState(false);
   const canStart = role === 'host' || role === 'co-host';
 
+  // The HLS Egress (startWebinarBroadcast) used to be started from here, but
+  // that's before the host has ever connected to the LiveKit room (that only
+  // happens once WebinarStage mounts, below) — LiveKit auto-creates a room on
+  // the host's first real connection, not on token issuance, so Egress was
+  // reliably targeting a room that didn't exist yet and failing with a 500.
+  // Fixed by only flipping status here (which mounts WebinarStage/DailyVideoCall)
+  // and starting the Egress from WebinarStage itself, once the host is actually
+  // in the room.
   const handleStart = async () => {
     setStarting(true);
     try {
       await seatConfirmedWebinarSpeakers(webinar.id);
-      const result = await startWebinarBroadcast(webinar.id, webinar.room_name);
-      if (!result) {
-        toast.error("Couldn't start the webinar — try again in a moment.");
-        return;
-      }
+      await updateWebinarStatus(webinar.id, 'live');
       onLive();
     } catch (e) {
       console.error('[WebinarLobby] start failed:', e);

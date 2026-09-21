@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
@@ -10,6 +11,7 @@ import DailyVideoCall from '../components/DailyVideoCall';
 import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
+import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamControl';
 import type { WebinarViewerRole } from './WebinarLobby';
 import { WebinarQAModerationPanel } from './WebinarQAModerationPanel';
 import { WebinarPollHostPanel } from './WebinarPollHostPanel';
@@ -34,6 +36,22 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   const [showRequests, setShowRequests] = useState(false);
   const [ending, setEnding] = useState(false);
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+
+  // Start the audience-facing HLS Egress once the host is actually here —
+  // this component (with DailyVideoCall autoJoin) is where the host's LiveKit
+  // room connection happens, so the room genuinely exists by the time this
+  // fires (see the comment in WebinarLobby.handleStart for why it used to
+  // 500 when started earlier). Attendees are HLS-only viewers (Phase 1), so a
+  // failure here means the audience sees nothing — worth a visible toast, not
+  // just a console warning.
+  useEffect(() => {
+    if (!isHost) return;
+    startMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar').then((result) => {
+      if (!result) toast.error("The stream couldn't start — attendees won't see anything yet. Try ending and restarting the webinar.");
+    });
+    return () => { stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar'); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, webinar.id, webinar.room_name]);
 
   const handleEndForEveryone = async () => {
     setEnding(true);
