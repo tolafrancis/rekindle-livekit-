@@ -154,6 +154,18 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           autoJoin
           enableRecording={webinar.enable_recording}
           onTranslationControlsChange={setCallTranslation}
+          // Real bug found live (2026-09-22, screenshotted): DailyVideoCall's
+          // own generic Chat and Host Controls ("Manage") buttons were
+          // showing in the control bar alongside this page's OWN correctly-
+          // wired "Manage webinar" panel (top-right) — two same-labeled
+          // buttons, only one of them actually connected to the webinar's
+          // real audience-facing chat/roster. The built-in ones open a
+          // disconnected RoomChatSidebar and a waiting-room admit UI neither
+          // of which apply to webinars (audience never has a waiting room —
+          // they're HLS-only viewers). Suppressed here; this Manage webinar
+          // panel is the one true chat/roster/Q&A/polls surface.
+          showChatButton={false}
+          showHostControlsButton={false}
         />
 
         {!isPiP && (webinar.enable_captions || webinar.enable_translation) && callTranslation && (

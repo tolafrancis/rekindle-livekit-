@@ -41,6 +41,19 @@ interface DailyVideoCallProps {
   showParticipantList?: boolean;
   onAdmitParticipant?: (participantId: string) => void;
   onRemoveParticipant?: (participantId: string) => void;
+  /** Hide the control bar's own built-in Chat button (real bug found live,
+   *  2026-09-22: WebinarStage.tsx has its OWN correctly-wired Chat/Q&A/Polls/
+   *  Speakers "Manage webinar" panel, but this component's generic Chat
+   *  button/RoomChatSidebar renders regardless and is a SEPARATE,
+   *  disconnected conversation — a host could send a message here that the
+   *  webinar's real audience-facing chat never shows at all. Defaults to
+   *  true (shown) so every existing plain-meeting caller is unaffected. */
+  showChatButton?: boolean;
+  /** Same reasoning as showChatButton, for the "Manage"/Host Controls button
+   *  (waiting-room admit/deny — a regular-meeting concept webinars don't
+   *  use; audience never has a waiting room, they're HLS-only viewers).
+   *  Defaults to true. */
+  showHostControlsButton?: boolean;
   /** Whether the meeting was created with recording enabled (subscription-gated) */
   enableRecording?: boolean;
   /** When set (webinar mode, host only), push an RTMP stream to this URL so attendees can watch via HLS */
@@ -983,6 +996,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   showParticipantList = false,
   onAdmitParticipant,
   onRemoveParticipant,
+  showChatButton = true,
+  showHostControlsButton = true,
   enableRecording = false,
   liveStreamRtmpUrl,
   onSidePanelToggle,
@@ -2186,6 +2201,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
             {/* Chat button — opening chat closes Host Controls so only one side
                 panel shows at a time (they otherwise overlap on the right edge). */}
+            {showChatButton && (
             <button
               onClick={() => { setShowChat((v) => !v); setShowHostControls(false); }}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
@@ -2193,8 +2209,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               <div className={`
                 w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
-                ${showChat 
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                ${showChat
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
                 <MessageSquare className="h-5 w-5 sm:h-7 sm:w-7" />
@@ -2208,9 +2224,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 {t('dailyVideoCall', 'chat', 'Chat')}
               </span>
             </button>
+            )}
 
             {/* Host Controls button (host or co-host) */}
-            {isModerator && (
+            {isModerator && showHostControlsButton && (
               <button
                 onClick={() => { setShowHostControls((v) => !v); setShowChat(false); }}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
