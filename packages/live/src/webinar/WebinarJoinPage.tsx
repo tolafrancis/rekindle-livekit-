@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useActiveCall } from '../ActiveCallContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
@@ -111,16 +111,33 @@ export function WebinarJoinPage() {
   const { call, startCall, endCall } = useActiveCall();
   const isSpeakerRole = role === 'host' || role === 'co-host' || role === 'speaker';
   const isOnStage = !!webinar && webinar.status === 'live' && (isSpeakerRole || promoted);
+  const callIsThisWebinar = !!webinar && call?.id === webinar.id;
+  const navigatedAwayRef = useRef(false);
 
   useEffect(() => {
     if (!isOnStage || !webinar || !user) return;
-    if (call?.id === webinar.id) return; // already started for this webinar
+
+    if (callIsThisWebinar) {
+      // The call is live and ActiveCallHost is already rendering it full-
+      // screen — leave this route once, for real background content behind
+      // the mini-player if minimized. Unlike MinistryInteractiveMeetings
+      // (where the call is started from the meetings LIST page, which stays
+      // mounted the whole time), this page has nothing else to show once the
+      // call exists, and returning null here left minimizing showing a blank
+      // white page. ActiveCallHost renders independent of the route, so
+      // navigating away doesn't affect the ongoing call.
+      if (!navigatedAwayRef.current) {
+        navigatedAwayRef.current = true;
+        navigate(ministryId ? `/?ministry=${ministryId}&tab=webinars` : '/', { replace: true });
+      }
+      return;
+    }
+
     const leaveAndGoHome = () => { endCall(); handleHome(); };
     // load() (which flips webinar.status away from 'live') runs BEFORE
     // endCall() clears the active call — reversed, there'd be a render where
     // call is null but webinar.status is still stale 'live', re-passing the
-    // `call?.id === webinar.id` guard below and restarting the just-ended
-    // broadcast.
+    // `callIsThisWebinar` guard above and restarting the just-ended broadcast.
     const endedAndReload = async () => { await load(); endCall(); };
     startCall({
       id: webinar.id,
@@ -143,8 +160,20 @@ export function WebinarJoinPage() {
     // prop updates — WebinarStage's own realtime hooks (speaker requests,
     // Q&A, polls) still update live regardless).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnStage, webinar?.id, call?.id]);
+  }, [isOnStage, webinar?.id, callIsThisWebinar]);
 
+  // While isOnStage is true but the call hasn't actually started yet (the
+  // startCall() above runs in an effect, one tick after this render), return
+  // null here would paint nothing at all for a frame — a genuine blank/white
+  // flash (reported live: "showed a white page"). Keep showing the spinner
+  // until ActiveCallHost actually has something on screen.
+  if (isOnStage && !callIsThisWebinar) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+      </div>
+    );
+  }
   if (isOnStage) return null;
 
   if (authLoading || loading) {
