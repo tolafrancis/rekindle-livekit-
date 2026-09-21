@@ -54,7 +54,7 @@ import { ChannelStreamConfig } from '@rekindle/live/components/ChannelStreamConf
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from '@rekindle/live/components/DailyVideoCall';
 import { HlsPlayer } from '@rekindle/live/components/HlsPlayer';
-import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
+import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast, checkMeetingCapacity, startOverflowHls } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
@@ -337,6 +337,39 @@ const EnhancedVideoCallWrapper = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, isWebinar, meeting.id, userId]);
 
+  // ── Dynamic meeting overflow (2026-09-20) ──
+  // A plain (non-webinar) meeting doesn't pre-provision an HLS stream the way
+  // webinar mode does above — most meetings never come close to the fixed
+  // 100-seat ceiling, so starting one eagerly for every meeting would pay for
+  // Egress nobody needs. Instead: a non-host, non-guest joiner checks once,
+  // on join, whether the room is already full of real participants
+  // (livekit-token's own STAGED_SEAT_CAP, re-checked authoritatively at
+  // token-issuance regardless of this pre-check); if so, reactively start
+  // (or reuse) the overflow HLS stream and fall back to the same audience
+  // view webinar mode already uses below — never blocks/kicks anyone already
+  // connected, only applies to who's arriving now. Guests skip the pre-check
+  // (the room-capacity action requires a session) and rely on the
+  // authoritative token-time gate instead — same outcome, just without the
+  // pre-connect UX smoothing.
+  const [overflowChecked, setOverflowChecked] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [overflowHlsUrl, setOverflowHlsUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (isWebinar || isHost || isGuest) { setOverflowChecked(true); return; }
+    let cancelled = false;
+    (async () => {
+      const atCapacity = await checkMeetingCapacity(meeting.room_name);
+      if (cancelled) return;
+      if (atCapacity) {
+        const url = await startOverflowHls(meeting.room_name, meeting.id);
+        if (cancelled) return;
+        if (url) { setOverflowHlsUrl(url); setIsOverflowing(true); }
+      }
+      setOverflowChecked(true);
+    })();
+    return () => { cancelled = true; };
+  }, [isWebinar, isHost, isGuest, meeting.id, meeting.room_name]);
+
   // Real bug found live (2026-08-18): ending a meeting never stopped its
   // translation bot(s) — they just stayed connected to the now-dead room
   // indefinitely, and a later "+ Add language" for the SAME room (e.g. a
@@ -471,8 +504,22 @@ const EnhancedVideoCallWrapper = ({
     }
   };
 
-  // Webinar attendees (not yet a presenter) watch the HLS stream, chat, and can raise a hand
-  if (isWebinar && !isPresenter) {
+  // Non-host/non-guest joiner of a plain (non-webinar) meeting, still waiting
+  // on the once-per-join capacity pre-check — avoids a flash of the real call
+  // UI for the rare joiner about to be redirected into overflow.
+  if (!isWebinar && !isHost && !isGuest && !overflowChecked) {
+    return (
+      <div className="min-h-screen h-full bg-black flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+      </div>
+    );
+  }
+
+  // Webinar attendees, OR a plain meeting that's hit its 100-seat overflow
+  // ceiling (not yet a presenter either way): watch the HLS stream, chat, and
+  // can raise a hand.
+  if ((isWebinar || isOverflowing) && !isPresenter) {
+    const effectiveHlsUrl = overflowHlsUrl ?? hlsUrl;
     return (
       <div className="min-h-screen h-full bg-black flex flex-col sm:flex-row">
         {/* Video area */}
@@ -486,11 +533,13 @@ const EnhancedVideoCallWrapper = ({
                   <p className="text-sm text-gray-500">{t('ministryInteractiveMeetings', 'thanksForJoining', 'Thanks for joining.')}</p>
                 </div>
               </div>
-            ) : hlsUrl ? (
-              <HlsPlayer src={hlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
+            ) : effectiveHlsUrl ? (
+              <HlsPlayer src={effectiveHlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
-                {t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
+                {isOverflowing
+                  ? t('ministryInteractiveMeetings', 'connectingOverflowStream', 'This meeting is full — connecting you to the live stream…')
+                  : t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
               </div>
             )}
           </div>

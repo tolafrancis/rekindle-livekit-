@@ -21,6 +21,44 @@ export function createMeetingStream(_meetingId: string, _record = true): Promise
   return Promise.resolve(null);
 }
 
+// ── Dynamic meeting overflow (2026-09-20) ───────────────────────────────────
+// A ministry meeting gracefully degrades past a fixed real-participant ("staged")
+// ceiling instead of requiring a separate Webinar to be planned up front — see
+// livekit-token's STAGED_SEAT_CAP / 'room-capacity' action and livekit-egress's
+// 'start-overflow-hls' action.
+
+/** Pre-join capacity check — lets the caller decide whether to render the real
+ *  call UI or the HLS audience view BEFORE attempting to connect. Best-effort:
+ *  any failure is treated as "not at capacity" (fall through to a normal join
+ *  attempt, which re-checks authoritatively at token-issuance time anyway). */
+export async function checkMeetingCapacity(roomName: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.functions.invoke('livekit-token', {
+      body: { action: 'room-capacity', roomName },
+    });
+    if (error) return false;
+    return !!data?.atCapacity;
+  } catch {
+    return false;
+  }
+}
+
+/** Reactively starts (or reuses) the meeting's overflow HLS stream once the
+ *  room is genuinely at capacity. Returns null on any failure — the caller's
+ *  own fallback UI already handles "no stream yet" the same way it does for
+ *  a webinar host who hasn't gone live yet. */
+export async function startOverflowHls(roomName: string, meetingId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('livekit-egress', {
+      body: { action: 'start-overflow-hls', roomName, context: { kind: 'ministry_meeting', meetingId } },
+    });
+    if (error || !data?.playbackUrl) return null;
+    return data.playbackUrl as string;
+  } catch {
+    return null;
+  }
+}
+
 // ── LiveKit webinar broadcast (§6A) ─────────────────────────────────────────
 // The host publishes into the room and an HLS Egress composites it. The edge fn
 // writes the playback URL onto the meeting row, which the audience picks up via

@@ -25,6 +25,10 @@
 //   { action:'list-participants', meetingId, context } → { participants: [...], totalCount }  (host only)
 //   6A broadcast: { action:'start-hls', roomName, channelId, context } → { egressId, playbackUrl }
 //                 { action:'stop-hls',  channelId, context }
+//   Dynamic meeting overflow: { action:'start-overflow-hls', roomName, context:{meetingId} }
+//                 → { playbackUrl, reused } | 409 { error:'not_at_capacity' }
+//                 Self-authorizing (any ministry member, not host-gated) —
+//                 see livekit-token's STAGED_SEAT_CAP / 'room-capacity'.
 //   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, rtmpUrl, context }
 //                 { action:'remove-simulcast', channelId, platform, context }
 //                 { action:'list-simulcast',   channelId }
@@ -191,6 +195,18 @@ serve(async (req) => {
     const action = body.action as string;
 
     const admin = createClient(SB_URL!, SB_SERVICE!);
+    // Moved up from just before the host-gated actions (2026-09-20) so the
+    // new self-authorizing 'start-overflow-hls' action — exempt from the
+    // isDbHost check below, like track-participant/list-recordings — can use
+    // them too. Harmless for every existing action; these are just client
+    // handles, construction has no side effects.
+    const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+    const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+
+    // Same fixed ceiling livekit-token/index.ts enforces at token-issuance
+    // time — duplicated here (not shared) same as HOST_TABLE already is
+    // across these two functions; no shared module between edge functions.
+    const STAGED_SEAT_CAP = 100;
 
     // list-recordings is a read — no host check (VOD list). Returns the shared ChannelRecording/MeetingRecording shape.
     if (action === 'list-recordings') {
@@ -276,6 +292,87 @@ serve(async (req) => {
       return json({ success: true });
     }
 
+    // Dynamic meeting overflow (2026-09-20): reactively starts the same
+    // Room-Composite HLS Egress start-hls uses for ministry meetings, but
+    // triggered by an OVERFLOWING ATTENDEE the moment livekit-token denies
+    // them a real seat — not the host, so this is deliberately exempt from
+    // the isDbHost gate below. Self-authorizes two ways instead: (1) the
+    // caller must be a real member of the meeting's own ministry (same check
+    // livekit-token's isEntitled applies for a plain attendee joining), and
+    // (2) the room's real participant count is re-verified server-side,
+    // never trusted from the client — an authenticated member can't use this
+    // to spin up billed Egress for a meeting that isn't actually full.
+    // Idempotent: if hls_playback_url is already set (an earlier overflow
+    // already started it, or two joiners crossed the threshold at once),
+    // just returns that instead of starting a second Egress.
+    if (action === 'start-overflow-hls') {
+      const overflowUserClient = createClient(SB_URL!, SB_ANON!, {
+        global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+      });
+      const { data: { user: overflowUser } } = await overflowUserClient.auth.getUser();
+      if (!overflowUser) return json({ error: 'Unauthorized' }, 401);
+
+      const meetingId = body.context?.meetingId;
+      if (!body.roomName || !meetingId) return json({ error: 'roomName and meetingId required' }, 400);
+
+      const { data: meetingRow } = await admin
+        .from('ministry_video_meetings')
+        .select('hls_playback_url, ministry_id')
+        .eq('id', meetingId)
+        .maybeSingle();
+      if (!meetingRow) return json({ error: 'Meeting not found' }, 404);
+      const existingUrl = (meetingRow as { hls_playback_url?: string | null }).hls_playback_url;
+      if (existingUrl) return json({ playbackUrl: existingUrl, reused: true });
+
+      const ministryId = (meetingRow as { ministry_id?: string }).ministry_id;
+      const { data: mem } = await admin
+        .from('ministry_group_members').select('user_id')
+        .eq('ministry_id', ministryId).eq('user_id', overflowUser.id).maybeSingle();
+      if (!mem) {
+        const { data: g } = await admin
+          .from('ministry_groups').select('id')
+          .eq('id', ministryId).or(`owner_id.eq.${overflowUser.id},leader_id.eq.${overflowUser.id}`).maybeSingle();
+        if (!g) return json({ error: 'not_entitled' }, 403);
+      }
+
+      let realCount = 0;
+      try {
+        const participants = await roomService.listParticipants(body.roomName);
+        realCount = participants.length;
+      } catch { /* room not up yet on LiveKit's side → 0 real participants */ }
+      if (realCount < STAGED_SEAT_CAP) {
+        return json({ error: 'not_at_capacity' }, 409);
+      }
+
+      const ts = Date.now();
+      const prefix = `meetings/${meetingId}/${ts}`;
+      const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
+      const output = new SegmentedFileOutput({
+        filenamePrefix: `${prefix}/seg`,
+        playlistName: `${prefix}/index.m3u8`,
+        segmentDuration: 4,
+        output: { case: 's3', value: s3 },
+      });
+      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
+      const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+
+      const { error: overflowInsertError } = await admin.from('livekit_recordings').insert({
+        egress_id: info.egressId,
+        room_name: body.roomName,
+        kind: 'meeting',
+        meeting_id: meetingId,
+        meeting_table: 'ministry_video_meetings',
+        status: 'recording',
+        filepath: prefix,
+        playback_url: playbackUrl,
+      });
+      if (overflowInsertError) console.error('[livekit-egress] failed to insert livekit_recordings row (start-overflow-hls):', overflowInsertError);
+
+      await admin.from('ministry_video_meetings').update({ hls_playback_url: playbackUrl }).eq('id', meetingId);
+
+      return json({ playbackUrl, reused: false });
+    }
+
     // start/stop require an authenticated host.
     const userClient = createClient(SB_URL!, SB_ANON!, {
       global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
@@ -312,9 +409,6 @@ serve(async (req) => {
       );
       return json({ participants, totalCount: participants.length });
     }
-
-    const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
-    const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
 
     if (action === 'start-recording') {
       if (!body.roomName) return json({ error: 'roomName required' }, 400);
