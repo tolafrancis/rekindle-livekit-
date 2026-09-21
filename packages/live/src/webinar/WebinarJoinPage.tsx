@@ -48,6 +48,11 @@ export function WebinarJoinPage() {
 
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Guest';
 
+  useEffect(() => {
+    console.log('[WebinarJoinPage] TRUE MOUNT', webinarId);
+    return () => console.log('[WebinarJoinPage] TRUE UNMOUNT', webinarId);
+  }, [webinarId]);
+
   const load = useCallback(async () => {
     if (!webinarId || !user?.id) return;
     const w = await getWebinar(webinarId);
