@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@rekindle/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3, Loader2 } from 'lucide-react';
+import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3, Loader2, Volume2, VolumeX } from 'lucide-react';
 import { HlsPlayer } from '../components/HlsPlayer';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { trackMeetingParticipant } from '../meetingStreamControl';
@@ -38,6 +38,18 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   const [hlsLatencySeconds, setHlsLatencySeconds] = useState(HLS_TARGET_LATENCY_SECONDS);
   const [translationActive, setTranslationActive] = useState(false);
   const showTranslation = webinar.enable_captions || webinar.enable_translation;
+  // Starts muted (2026-09-22, real bug reported live: "always starts with
+  // tap to enable sound and it does nothing"). Root cause: HlsPlayer tries
+  // to autoplay WITH sound the instant the manifest parses — before any real
+  // user gesture — which browsers reliably block, so the full-screen "Tap to
+  // enable sound" overlay showed up on literally every load; tapping it
+  // called play() again, which could still fail silently if the stream was
+  // also mid cold-start, giving no feedback at all. Muted autoplay is always
+  // allowed (no gesture needed), so HlsPlayer's block never triggers in the
+  // first place — a small, always-visible, non-blocking mute toggle below
+  // lets the viewer opt into sound whenever they want it, same pattern
+  // YouTube/Twitch use instead of a blocking prompt.
+  const [audioMuted, setAudioMuted] = useState(true);
 
   useEffect(() => {
     trackMeetingParticipant(webinar.id, userId, userName, false, 'join', 'ministry_webinar');
@@ -71,7 +83,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
               src={webinar.hls_playback_url}
               onEnded={onEnded}
               className="w-full h-full"
-              muted={translationActive}
+              muted={audioMuted || translationActive}
               targetLatencySeconds={HLS_TARGET_LATENCY_SECONDS}
               onLatencyChange={setHlsLatencySeconds}
             />
@@ -89,6 +101,17 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
           )}
           </div>
         </div>
+
+        {!translationActive && (
+          <button
+            type="button"
+            onClick={() => setAudioMuted((m) => !m)}
+            title={audioMuted ? 'Unmute' : 'Mute'}
+            className="absolute top-3 left-3 z-50 flex items-center justify-center h-9 w-9 rounded-full bg-black/60 hover:bg-black/80 text-white shadow-lg"
+          >
+            {audioMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </button>
+        )}
 
         {myRequest?.status === 'invited' && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-gray-900/95 text-white rounded-lg px-4 py-3 flex items-center gap-3 shadow-lg">
