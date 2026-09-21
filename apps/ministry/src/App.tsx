@@ -47,6 +47,25 @@ import AuthScreen from './screens/AuthScreen';
 // entry, an auth gate, self-onboarding for members with no ministry, and an authed
 // area (current-ministry context) hosting the hub + ministry settings.
 
+// Temporary diagnostic (2026-09-22) — LocationChangeLogger below proved
+// something calls history.pushState('/') within ~70ms of landing on
+// /ministry/:id/webinar/:id, but not which caller. Patching the native
+// history APIs directly captures the real call stack, since React Router's
+// own navigate() ultimately calls one of these. Remove once root-caused.
+if (typeof window !== 'undefined' && !(window as any).__navPatched) {
+  (window as any).__navPatched = true;
+  const origPush = window.history.pushState.bind(window.history);
+  const origReplace = window.history.replaceState.bind(window.history);
+  window.history.pushState = function (...args: Parameters<typeof origPush>) {
+    console.log('[history.pushState]', args[2], new Error('trace').stack);
+    return origPush(...args);
+  };
+  window.history.replaceState = function (...args: Parameters<typeof origReplace>) {
+    console.log('[history.replaceState]', args[2], new Error('trace').stack);
+    return origReplace(...args);
+  };
+}
+
 function LoadingScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
