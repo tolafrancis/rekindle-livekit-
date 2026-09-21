@@ -25,6 +25,7 @@ import RekindleGuidePage from "@rekindle/features/components/RekindleGuidePage";
 import UnsubscribePage from "@rekindle/features/components/UnsubscribePage";
 import Skeleton from "./components/Skeleton";
 import WebinarJoinShim from "./components/WebinarJoinShim";
+import WebinarSpeakerInviteShim from "./components/WebinarSpeakerInviteShim";
 import NotFound from "./pages/NotFound";
 import { BackToTop } from "./components/BackToTop";
 // Import the wrapper component that renders MLiveChannel (same architecture as LiveChannels)
@@ -126,6 +127,7 @@ const App = () => {
                   {/* Webinar join route — a wholly separate meeting type from
                       Interactive Meetings, see packages/live/src/webinar */}
                   <Route path="/ministry/:ministryId/webinar/:webinarId" element={<WebinarJoinShim />} />
+                  <Route path="/webinar-invite/:token" element={<WebinarSpeakerInviteShim />} />
 
                   {/* Public live-broadcast watch link (channel Share builds /channels/:id).
                       Renders LiveChannelViewer directly — guests can watch without signing in. */}

@@ -157,6 +157,12 @@ export async function stopWebinarBroadcast(webinarId: string, roomName: string):
   await updateWebinarStatus(webinarId, 'ended');
 }
 
+/** Inserts the pre-assigned speaker row and, when invited by email, fires
+ *  off the invite email (best-effort — a failed send doesn't roll back the
+ *  row; the host can re-send from the Speakers manage panel). The email
+ *  itself carries a /webinar-invite/:token link (see migration 0365 +
+ *  WebinarSpeakerInvitePage.tsx) that lets the invitee claim the row once
+ *  signed in, without which the row was previously a permanent dead end. */
 export async function createWebinarSpeaker(params: {
   webinarId: string;
   userId?: string | null;
@@ -164,14 +170,21 @@ export async function createWebinarSpeaker(params: {
   invitedName?: string | null;
   role?: WebinarSpeakerRole;
 }): Promise<void> {
-  const { error } = await supabase.from('webinar_speakers').insert({
+  const { data, error } = await supabase.from('webinar_speakers').insert({
     webinar_id: params.webinarId,
     user_id: params.userId ?? null,
     invited_email: params.invitedEmail ?? null,
     invited_name: params.invitedName ?? null,
     role: params.role ?? 'speaker',
-  });
-  if (error) console.error('[webinarControl] createWebinarSpeaker failed:', error.message);
+  }).select('id').single();
+  if (error) { console.error('[webinarControl] createWebinarSpeaker failed:', error.message); return; }
+
+  if (params.invitedEmail && data?.id) {
+    const { error: sendErr } = await supabase.functions.invoke('send-webinar-speaker-invite', {
+      body: { speakerId: data.id },
+    });
+    if (sendErr) console.error('[webinarControl] send-webinar-speaker-invite failed:', sendErr.message);
+  }
 }
 
 /** Bulk-seats every confirmed pre-assigned speaker directly into
