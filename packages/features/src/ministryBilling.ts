@@ -38,6 +38,12 @@ export interface MinistryPartnerPlan {
   memberOverageBlockSize: number | null;
   memberOveragePriceUsd: number | null;
   giftAidAddonPriceUsd: number | null;
+  /** Billing-page participant cap (100/150/300/500 etc.) — a marketing
+   *  number covering BOTH Meetings and Webinars, not the technical
+   *  enforcement cap (that's the flat MEETING_PARTICIPANT_CAP in
+   *  livekit-token/index.ts, same for every tier). Repurposes the
+   *  webinar_audience_cap column (2026-09-21). null = not shown. */
+  participantCap: number | null;
   features: string[];
   isActive: boolean;
   displayOrder: number;
@@ -65,6 +71,7 @@ function mapPlanRow(row: Record<string, unknown>): MinistryPartnerPlan {
     memberOverageBlockSize: (row.member_overage_block_size as number | null) ?? null,
     memberOveragePriceUsd: row.member_overage_price_usd != null ? Number(row.member_overage_price_usd) : null,
     giftAidAddonPriceUsd: row.gift_aid_addon_price_usd != null ? Number(row.gift_aid_addon_price_usd) : null,
+    participantCap: row.webinar_audience_cap != null ? Number(row.webinar_audience_cap) : null,
     features: Array.isArray(row.features) ? (row.features as string[]) : [],
     isActive: Boolean(row.is_active),
     displayOrder: Number(row.display_order ?? 0),
@@ -142,22 +149,30 @@ export async function openMinistryBillingPortal(ministryId: string): Promise<{ u
 
 export interface MinistryAddonCatalogItem {
   id: string;
-  addonType: 'storage_pack' | 'member_block' | 'gift_aid' | 'live_translation';
+  addonType: 'storage_pack' | 'member_block' | 'gift_aid' | 'live_translation' | 'participant_block';
   label: string;
   unitGb: number | null;
   unitMembers: number | null;
   unitHours: number | null;
+  /** Extra participants this add-on grants, stacked on top of the plan's
+   *  own participantCap (billing-page cap, not the technical one). */
+  unitParticipants: number | null;
   priceUsd: number;
+  /** Nigeria (Paystack) price — null on older rows that predate this
+   *  (2026-09-21); callers should fall back to a USD display in that case. */
+  priceNgn: number | null;
 }
 
 export interface MinistryAddon {
   id: string;
-  addonType: 'storage_pack' | 'member_block' | 'gift_aid' | 'live_translation';
+  addonType: 'storage_pack' | 'member_block' | 'gift_aid' | 'live_translation' | 'participant_block';
   quantity: number;
   unitGb: number | null;
   unitMembers: number | null;
   unitHours: number | null;
+  unitParticipants: number | null;
   priceUsd: number;
+  priceNgn: number | null;
   status: 'active' | 'cancelled';
   purchasedAt: string;
 }
@@ -170,7 +185,9 @@ function mapCatalogRow(row: Record<string, unknown>): MinistryAddonCatalogItem {
     unitGb: (row.unit_gb as number | null) ?? null,
     unitMembers: (row.unit_members as number | null) ?? null,
     unitHours: (row.unit_hours as number | null) ?? null,
+    unitParticipants: (row.unit_participants as number | null) ?? null,
     priceUsd: Number(row.price_usd),
+    priceNgn: row.price_ngn != null ? Number(row.price_ngn) : null,
   };
 }
 
@@ -182,7 +199,9 @@ function mapAddonRow(row: Record<string, unknown>): MinistryAddon {
     unitGb: (row.unit_gb as number | null) ?? null,
     unitMembers: (row.unit_members as number | null) ?? null,
     unitHours: (row.unit_hours as number | null) ?? null,
+    unitParticipants: (row.unit_participants as number | null) ?? null,
     priceUsd: Number(row.price_usd),
+    priceNgn: row.price_ngn != null ? Number(row.price_ngn) : null,
     status: row.status as MinistryAddon['status'],
     purchasedAt: row.purchased_at as string,
   };
@@ -197,6 +216,15 @@ export function totalTranslationHoursPurchased(addons: MinistryAddon[]): number 
   return addons
     .filter((a) => a.addonType === 'live_translation')
     .reduce((sum, a) => sum + a.quantity * (a.unitHours ?? 0), 0);
+}
+
+/** Sum of active participant_block add-on participants this ministry has
+ *  bought (quantity * unitParticipants across all active rows) — add to a
+ *  plan's own participantCap for the ministry's effective billing-page cap. */
+export function totalParticipantsPurchased(addons: MinistryAddon[]): number {
+  return addons
+    .filter((a) => a.addonType === 'participant_block')
+    .reduce((sum, a) => sum + a.quantity * (a.unitParticipants ?? 0), 0);
 }
 
 /** Active, purchasable add-on catalog. Public read (no auth required). */
