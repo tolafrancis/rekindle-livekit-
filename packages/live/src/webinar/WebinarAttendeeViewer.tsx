@@ -53,7 +53,15 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   return (
     <div className="min-h-[100dvh] h-full bg-black flex flex-col sm:flex-row">
       <div className="relative sm:flex-1 min-h-0 flex flex-col">
-        <div className="w-full aspect-video sm:flex-1 sm:aspect-auto sm:min-h-0">
+        {/* max-w-3xl (2026-09-22, moderately reduced): sm:flex-1 sm:aspect-auto
+            previously let the frame stretch to fill all remaining vertical
+            space with no aspect-ratio cap, which on a normal desktop screen
+            made it look oversized rather than a properly proportioned player.
+            Centering an aspect-video box with a moderate max-width instead —
+            same cap DailyVideoCall.tsx's featured tile now uses, for a
+            consistent frame size across Meetings and Webinar. */}
+        <div className="w-full aspect-video sm:flex-1 sm:aspect-auto sm:min-h-0 sm:flex sm:items-center sm:justify-center">
+          <div className="w-full aspect-video sm:max-w-3xl">
           {webinar.hls_playback_url ? (
             <HlsPlayer
               src={webinar.hls_playback_url}
@@ -75,6 +83,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
               <span>Stream is starting…</span>
             </div>
           )}
+          </div>
         </div>
 
         {myRequest?.status === 'invited' && (

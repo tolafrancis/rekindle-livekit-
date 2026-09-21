@@ -14,6 +14,7 @@ import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
+import { useWebinarQuestions } from './useWebinarQuestions';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
 import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamControl';
 import type { WebinarViewerRole } from './WebinarLobby';
@@ -36,6 +37,17 @@ interface WebinarStageProps {
 export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave }: WebinarStageProps) {
   const isHost = role === 'host' || role === 'co-host';
   const speakerRequests = useWebinarSpeakerRequests(webinar.id, userId, userName, isHost);
+  // Called here (not just inside WebinarQAModerationPanel, which only exists
+  // while the Manage popover happens to be open) so the Manage button can
+  // show a pending-question badge unconditionally — same reason
+  // speakerRequests is instantiated up here rather than inside its own tab.
+  // Real bug found live (2026-09-22): webinar_questions/webinar_polls/etc
+  // were never added to the supabase_realtime publication, so this hook's
+  // 5s polling fallback (see useWebinarQuestions.ts) was the ONLY thing ever
+  // delivering updates — and only while mounted. With no badge, a host had
+  // no reason to open this tab at all. Fixed both: migration 0364 adds the
+  // missing publication entries, and this badge gives a reason to look.
+  const qa = useWebinarQuestions(webinar.id, userId, userName, isHost);
   // Live "who's actually watching" roster — same realtime presence channel
   // WebinarAttendeeViewer announces into, and the same hook
   // MinistryInteractiveMeetings already uses for its own webinar/presentation
@@ -141,8 +153,8 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
               >
                 <Settings2 className="h-5 w-5 mr-2" />
                 Manage
-                {speakerRequests.pendingRequests.length > 0 && (
-                  <Badge className="ml-2 bg-purple-600 text-white">{speakerRequests.pendingRequests.length}</Badge>
+                {(speakerRequests.pendingRequests.length + qa.pendingQuestions.length) > 0 && (
+                  <Badge className="ml-2 bg-purple-600 text-white">{speakerRequests.pendingRequests.length + qa.pendingQuestions.length}</Badge>
                 )}
               </Button>
             )}
@@ -168,7 +180,12 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
               <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-white/10 h-auto p-0 px-2">
                 <TabsTrigger value="speakers" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><Hand className="h-4 w-4" /> Speakers</TabsTrigger>
                 <TabsTrigger value="chat" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><MessageSquare className="h-4 w-4" /> Chat</TabsTrigger>
-                <TabsTrigger value="qa" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><HelpCircle className="h-4 w-4" /> Q&amp;A</TabsTrigger>
+                <TabsTrigger value="qa" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3 relative">
+                  <HelpCircle className="h-4 w-4" /> Q&amp;A
+                  {qa.pendingQuestions.length > 0 && (
+                    <Badge className="h-4 min-w-4 px-1 bg-purple-600 text-white text-[10px]">{qa.pendingQuestions.length}</Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="polls" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><BarChart3 className="h-4 w-4" /> Polls</TabsTrigger>
               </TabsList>
               <div className="p-4 overflow-y-auto">
@@ -246,7 +263,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                 </TabsContent>
                 <TabsContent value="qa" className="m-0">
                   {webinar.enable_qa ? (
-                    <WebinarQAModerationPanel webinarId={webinar.id} userId={userId} userName={userName} />
+                    <WebinarQAModerationPanel qa={qa} />
                   ) : (
                     <p className="text-xs text-gray-500">Q&amp;A is disabled for this webinar.</p>
                   )}

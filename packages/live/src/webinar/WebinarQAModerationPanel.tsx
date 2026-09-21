@@ -1,19 +1,21 @@
 import React from 'react';
 import { Button } from '@rekindle/ui/button';
 import { Check, X, Pin, PinOff, CheckCircle2 } from 'lucide-react';
-import { useWebinarQuestions } from './useWebinarQuestions';
+import type { useWebinarQuestions } from './useWebinarQuestions';
 
 interface WebinarQAModerationPanelProps {
-  webinarId: string;
-  userId: string;
-  userName: string;
+  /** Lifted from WebinarStage (2026-09-22) instead of calling
+   *  useWebinarQuestions here directly — WebinarStage already needs its own
+   *  instance for the Manage button's pending-count badge, which has to
+   *  exist whether or not this panel is currently mounted (it's gated
+   *  behind the popover being open); a second instance here would just be a
+   *  redundant realtime subscription + polling interval for the same data. */
+  qa: ReturnType<typeof useWebinarQuestions>;
 }
 
 /** Host-facing Q&A moderation: pending queue (approve/reject), approved/
  *  answered list (pin/mark-answered). Mounted inside WebinarStage's popover. */
-export function WebinarQAModerationPanel({ webinarId, userId, userName }: WebinarQAModerationPanelProps) {
-  const qa = useWebinarQuestions(webinarId, userId, userName, true);
-
+export function WebinarQAModerationPanel({ qa }: WebinarQAModerationPanelProps) {
   return (
     <div className="space-y-3">
       <div>
