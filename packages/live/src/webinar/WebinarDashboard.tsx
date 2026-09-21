@@ -62,11 +62,14 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   const handleCardOpen = () => { if (isLive || !isLeader) openWebinar(); else setShowManageConfirm(true); };
   const [starting, setStarting] = useState(false);
   const handleConfirmManage = async () => {
+    console.log('[WebinarDashboard] handleConfirmManage: starting', webinar.id);
     setStarting(true);
     try {
       await startWebinarNow(webinar.id);
+      console.log('[WebinarDashboard] handleConfirmManage: startWebinarNow resolved, navigating to', `/ministry/${ministryId}/webinar/${webinar.id}`);
       setShowManageConfirm(false);
       openWebinar();
+      console.log('[WebinarDashboard] handleConfirmManage: navigate() called');
     } catch (err) {
       console.error('[WebinarDashboard] start failed:', err);
       toast.error("Couldn't start the webinar.");

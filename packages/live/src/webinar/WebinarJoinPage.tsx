@@ -37,6 +37,7 @@ export function WebinarJoinPage() {
   const { ministryId, webinarId } = useParams<{ ministryId: string; webinarId: string }>();
   const navigate = useNavigate();
   const { user, profile, isLoading: authLoading } = useAuth();
+  console.log('[WebinarJoinPage] mounted/rendered', { ministryId, webinarId, hasUser: !!user, authLoading });
 
   const [webinar, setWebinar] = useState<MinistryWebinar | null>(null);
   const [role, setRole] = useState<WebinarViewerRole | null>(null);
@@ -51,8 +52,10 @@ export function WebinarJoinPage() {
     if (!webinarId || !user?.id) return;
     const w = await getWebinar(webinarId);
     if (!w) { setError("This webinar doesn't exist or you don't have access."); setLoading(false); return; }
+    console.log('[WebinarJoinPage] load(): got webinar', { id: w.id, status: w.status, hostId: w.host_id });
     setWebinar(w);
     const r = await resolveRole(webinarId, w.host_id, user.id);
+    console.log('[WebinarJoinPage] load(): resolved role', r, 'for user', user.id);
     setRole(r);
 
     // Only plain attendees are gated on registration — host/co-host/speaker
@@ -113,9 +116,12 @@ export function WebinarJoinPage() {
   const isOnStage = !!webinar && webinar.status === 'live' && (isSpeakerRole || promoted);
   const callIsThisWebinar = !!webinar && call?.id === webinar.id;
 
+  console.log('[WebinarJoinPage] render', { isOnStage, callIsThisWebinar, webinarStatus: webinar?.status, role, promoted, loading });
+
   useEffect(() => {
     if (!isOnStage || !webinar || !user) return;
     if (callIsThisWebinar) return; // already started for this webinar
+    console.log('[WebinarJoinPage] effect: calling startCall() for', webinar.id);
 
     const leaveAndGoHome = () => { endCall(); handleHome(); };
     // load() (which flips webinar.status away from 'live') runs BEFORE
