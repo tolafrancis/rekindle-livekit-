@@ -19,6 +19,19 @@ interface CaptionLine {
 type CaptionMode = 'off' | 'original' | string;
 type AudioStatus = 'idle' | 'connecting' | 'live' | 'error';
 
+// Same per-error copy TranslationDisplayPage.tsx already has for these exact
+// codes (translation-listener-token's documented error responses) — this
+// component never had it (2026-09-23, captions pipeline review F-CAP-9
+// follow-up: verifying the existing TRANSLATION_LISTENER_CAP mechanism
+// surfaced that hitting it here just showed a generic "could not connect,"
+// giving no indication the room was actually full vs. genuinely broken).
+const AUDIO_ERROR_COPY: Record<string, string> = {
+  not_found: 'This session is no longer available.',
+  not_ready: "The translation hasn't started yet — try again in a moment.",
+  ended: 'This session has ended.',
+  at_capacity: "This session's listener limit is full right now — try again shortly.",
+};
+
 /** translation-listener-token's 200 response — same shape TranslationDisplayPage.tsx uses. */
 interface ListenerToken {
   url: string;
@@ -718,7 +731,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
           </div>
           {audioStatus === 'error' && (
             <p className="text-xs text-red-600 px-2.5 pt-1.5">
-              {audioError === 'not_found' ? 'This session is no longer available.' : 'Could not connect — try again.'}
+              {AUDIO_ERROR_COPY[audioError ?? ''] ?? 'Could not connect — try again.'}
             </p>
           )}
 
