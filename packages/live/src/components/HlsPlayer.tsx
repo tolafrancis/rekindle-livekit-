@@ -283,8 +283,24 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (Hls.isSupported()) {
         // Where to START, in seconds behind the edge. hls.js holds this position
         // and corrects drift by playback rate, not by seeking.
-        const target = Math.min(Math.max(targetLatencySeconds, 2), 10);
-        const maxLatency = Math.max(target + 8, 12);
+        //
+        // Tightened (2026-09-22, real bug: audience stuck "frozen"/repeatedly
+        // reconnecting even AFTER switching to LiveKit's bounded live
+        // playlist — see livekit-egress's start-hls comment). Root cause:
+        // LiveKit's live_playlist_name output has NO configurable window
+        // size (confirmed against the protocol definition — only
+        // segment_duration exists) and was observed keeping just ~5
+        // segments (10s of history at our 2s segment duration). The OLD
+        // target+8/12 formula could ask hls.js to tolerate sitting up to
+        // 12s behind the edge — MORE than the window even holds — so any
+        // ordinary jitter that pushed the player toward that "tolerable"
+        // 12s mark meant the segment it needed to catch up had ALREADY
+        // rolled out of the manifest: a 404 hls.js can't recover from in
+        // place, forcing the exact fatal-error/rebuild cycle this was
+        // supposed to prevent. Sitting close to the edge and resyncing
+        // early is now strictly safer AND lower-latency than before.
+        const target = Math.min(Math.max(targetLatencySeconds, 2), 4);
+        const maxLatency = target + 3;
         hls = new Hls({
           // lowLatencyMode intentionally OFF: Mux isn't serving usable LL-HLS
           // parts here (we measure ~10s), so it bought no latency and only made
@@ -297,7 +313,12 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
           // Only let hls.js re-seek if we fall WELL behind — a generous ceiling so
           // ordinary jitter is absorbed by the 1.1x catch-up, not a jarring seek.
           liveMaxLatencyDuration: maxLatency,
-          maxLiveSyncPlaybackRate: 1.1,
+          // 1.1 -> 1.3 alongside the tighter target/maxLatency above — with a
+          // small, non-configurable server-side window, correcting drift
+          // faster matters more than it did against the old ever-growing
+          // manifest (where falling behind cost nothing but latency, never
+          // a missing segment).
+          maxLiveSyncPlaybackRate: 1.3,
           backBufferLength: 10,
           // While the audience waits for the host to go live, Mux returns 412
           // (stream not active) until RTMP starts. Poll STEADILY (linear, ~1.5s
