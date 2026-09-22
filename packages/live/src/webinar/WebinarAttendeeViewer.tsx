@@ -12,6 +12,17 @@ import { WebinarPollPanel } from './WebinarPollPanel';
 import { WebinarTranslationButton } from './WebinarTranslationButton';
 import type { MinistryWebinar } from './webinarControl';
 
+// 4s -> 2s (2026-09-23, real report: "works fine but latency is around 16
+// sec, tighten a little"). Safe to lower further than before specifically
+// BECAUSE segment_duration is back at 4s (see the still-accurate history
+// below) — the live window is ~20s, so sitting only 2s behind the edge
+// (HlsPlayer's own floor — Math.max(targetLatencySeconds, 2) — so this is
+// already the lowest value this prop can actually achieve) still leaves
+// ~15s of margin before hls.js would ever need a segment the window has
+// already dropped. Only the CLIENT-side sync target moved; segment_duration
+// itself is untouched — that's the parameter that actually caused the
+// reconnect-loop bug when it was reduced, this one didn't.
+//
 // 4s — just the starting target, not a hard floor (hlsLatencySeconds below
 // re-syncs to the real measured value once playing). HlsPlayer itself caps
 // this at 4s regardless of what's passed in (see its own comment on why:
@@ -19,7 +30,7 @@ import type { MinistryWebinar } from './webinarControl';
 // start-hls's segment duration back at 4s — reverted from a same-day 2s
 // experiment that halved the window to a too-tight 10s and caused periodic
 // breaks — that's ~20s of real margin behind the edge).
-const HLS_TARGET_LATENCY_SECONDS = 4;
+const HLS_TARGET_LATENCY_SECONDS = 2;
 
 interface WebinarAttendeeViewerProps {
   webinar: MinistryWebinar;
