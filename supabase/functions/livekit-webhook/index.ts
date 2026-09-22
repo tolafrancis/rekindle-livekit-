@@ -98,15 +98,25 @@ async function autoStartHlsBroadcast(
   const ts = Date.now();
   const prefix = `broadcasts/${channelId}/${ts}`;
   const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
+  // livePlaylistName (2026-09-22, same fix as livekit-egress's start-hls
+  // action — see its comment for the full root cause): without this,
+  // playlistName alone is an ever-growing EVENT manifest that never trims
+  // old segments, which for a long OBS broadcast eventually made periodic
+  // playlist refreshes slow/heavy enough to intermittently trip hls.js's
+  // load-time budgets — showing up live as repeated "disconnecting and
+  // reconnecting". live.m3u8 is a proper bounded sliding-window manifest;
+  // playlistName is kept unchanged as the eventual VOD/recording source.
   const output = new SegmentedFileOutput({
     filenamePrefix: `${prefix}/seg`,
     playlistName: `${prefix}/index.m3u8`,
+    livePlaylistName: `${prefix}/live.m3u8`,
     segmentDuration: 4,
     output: { case: 's3', value: s3 },
   });
 
   const info = await egressClient.startRoomCompositeEgress(roomName, { segments: output }, { layout: 'grid' });
   const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+  const livePlaybackUrl = `${publicBase}/${prefix}/live.m3u8`;
 
   const { error: hlsInsertError } = await admin.from('livekit_recordings').insert({
     egress_id: info.egressId,
@@ -128,7 +138,7 @@ async function autoStartHlsBroadcast(
 
   // Set is_live = true and update HLS playback URL
   await admin.from('live_channels').update({
-    hls_playback_url: playbackUrl,
+    hls_playback_url: livePlaybackUrl,
     is_hls_live: true,
     is_live: true,
   }).eq('id', channelId);

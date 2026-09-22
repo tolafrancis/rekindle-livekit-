@@ -457,9 +457,31 @@ serve(async (req) => {
       // for how close to real-time playback can safely sit — this directly
       // lowers the floor HlsPlayer's targetLatencySeconds is bounded by,
       // for both channel broadcasts and webinars (this action is shared).
+      // livePlaylistName added (2026-09-22, real bug: audience reported
+      // repeated "disconnecting and reconnecting" — ?hlsdebug=1 showed
+      // status genuinely cycling playing -> recovering -> playing several
+      // times over a session, while the underlying recording (checked
+      // directly via HEAD requests across the whole file) was perfectly
+      // healthy throughout, and CORS checked out too). Root cause: without
+      // this field, LiveKit's SegmentedFileOutput only produces `playlistName`
+      // — an EVENT-type manifest that NEVER trims old segments, growing
+      // unboundedly for the entire life of the broadcast. hls.js still
+      // treats it as "live" (no ENDLIST) and correctly targets the live
+      // edge, but every periodic playlist refresh re-downloads and re-parses
+      // the ENTIRE ever-growing file — for a long-running session this
+      // eventually made refreshes slow/heavy enough to intermittently blow
+      // past hls.js's own load-time budgets, escalating into fatal errors
+      // and full rebuilds (exactly what showed up as "disconnecting and
+      // reconnecting"). `livePlaylistName` is LiveKit's own purpose-built
+      // second output for this: a proper bounded sliding-window manifest
+      // that only lists recent segments, the same shape as any normal live
+      // HLS stream. `playlistName` (the full, ever-growing EVENT manifest)
+      // is kept unchanged — it's what eventually becomes the VOD/recording
+      // once the broadcast ends, which legitimately needs every segment.
       const output = new SegmentedFileOutput({
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
+        livePlaylistName: `${prefix}/live.m3u8`,
         segmentDuration: 2,
         output: { case: 's3', value: s3 },
       });
@@ -518,7 +540,14 @@ serve(async (req) => {
       } else {
         info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       }
+      // `playbackUrl` is the full, ever-growing EVENT manifest — kept as the
+      // livekit_recordings tracking row's URL since that's what becomes the
+      // VOD/recording link once the broadcast ends (needs every segment).
+      // `livePlaybackUrl` is the new bounded sliding-window manifest — this
+      // is what actually gets handed to the audience while the stream is
+      // ongoing (see the SegmentedFileOutput comment above for why).
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+      const livePlaybackUrl = `${publicBase}/${prefix}/live.m3u8`;
 
       // The live HLS doubles as the VOD (§12) — track it as a recording too.
       const { error: hlsInsertError } = await admin.from('livekit_recordings').insert({
@@ -539,11 +568,11 @@ serve(async (req) => {
           { channel_id: channelId, hls_egress_id: info.egressId, updated_at: new Date().toISOString() },
           { onConflict: 'channel_id' },
         );
-        await admin.from('live_channels').update({ hls_playback_url: playbackUrl, is_hls_live: true }).eq('id', channelId);
+        await admin.from('live_channels').update({ hls_playback_url: livePlaybackUrl, is_hls_live: true }).eq('id', channelId);
       } else {
-        await admin.from(meetingTable).update({ hls_playback_url: playbackUrl }).eq('id', meetingId);
+        await admin.from(meetingTable).update({ hls_playback_url: livePlaybackUrl }).eq('id', meetingId);
       }
-      return json({ egressId: info.egressId, playbackUrl });
+      return json({ egressId: info.egressId, playbackUrl: livePlaybackUrl });
     }
 
     if (action === 'stop-hls') {
