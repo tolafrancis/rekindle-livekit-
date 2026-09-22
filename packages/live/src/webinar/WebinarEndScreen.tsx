@@ -7,6 +7,7 @@ import { PhoneOff, Clock, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@rekindle/supabase';
 import { WebinarAnalytics } from './WebinarAnalytics';
+import { WebinarTranscriptPanel } from './WebinarTranscriptPanel';
 import type { MinistryWebinar } from './webinarControl';
 
 interface WebinarEndScreenProps {
@@ -85,6 +86,7 @@ export function WebinarEndScreen({ webinar, onHome, isHost = false }: WebinarEnd
             </Button>
           )}
           <Button onClick={onHome} variant="outline" className="w-full">Back home</Button>
+          <WebinarTranscriptPanel webinarId={webinar.id} roomName={webinar.room_name} />
         </CardContent>
       </Card>
       {isHost && <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />}
