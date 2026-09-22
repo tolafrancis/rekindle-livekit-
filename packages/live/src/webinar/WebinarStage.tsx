@@ -154,6 +154,24 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // just a console warning.
   useEffect(() => {
     if (!isHost) return;
+    // Guard against starting a REDUNDANT egress (2026-09-22, real bug: an
+    // audience member reported frequent quick breaks over several minutes
+    // watching one webinar — confirmed directly against the DB that there
+    // were actually THREE separate, cleanly-started-and-stopped egress
+    // sessions for that single webinar in that window, each producing a
+    // BRAND NEW hls_playback_url. Every time this component (re)mounts for
+    // the host — a tab getting discarded and reloaded under memory
+    // pressure is the most likely trigger, but any remount has the same
+    // effect — this effect unconditionally started a fresh broadcast, even
+    // when `webinar` (freshly reloaded from the DB by WebinarJoinPage's own
+    // load()) already shows one in progress. Each restart handed the
+    // audience a whole new URL to reconnect to — a real, disruptive break,
+    // not a client-side false alarm. If a broadcast already appears to be
+    // live for this webinar, reconnecting the host's own LiveKit room
+    // (autoJoin, above) is all that's needed — skip re-starting the Egress.
+    if (webinar.status === 'live' && webinar.hls_playback_url) {
+      return () => { stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar'); };
+    }
     // expectVideo=true: webinars are overwhelmingly presentations with video,
     // and this is what makes livekit-egress's Track Composite fallback (added
     // below for the cold-start fix) actually fall back to Room Composite if
