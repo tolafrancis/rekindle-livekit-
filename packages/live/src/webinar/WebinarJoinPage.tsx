@@ -218,6 +218,30 @@ export function WebinarJoinPage() {
     return <WebinarEndScreen webinar={webinar} onHome={handleHome} isHost={role === 'host' || role === 'co-host'} />;
   }
 
+  // Real gap found live (2026-09-22): 'ending' (set the instant the host
+  // confirms "End webinar", BEFORE the egress is even told to stop — see
+  // stopWebinarBroadcast) wasn't in ENDED_STATUSES and wasn't 'live' either,
+  // so an attendee here fell all the way through to WebinarLobby's "Waiting
+  // for the host to start" — jarring and wrong for a webinar that had
+  // already happened. Worse: while nothing handled 'ending' explicitly, a
+  // slow-to-react client just kept rendering WebinarAttendeeViewer's HLS
+  // player, which kept faithfully playing LiveKit's own Egress shutdown
+  // grace period — confirmed directly in the recorded segments: real
+  // near-silent, near-blank filler content for ~20s while the egress
+  // finalizes, not a client bug. Cutting away from the live view the
+  // INSTANT status flips to 'ending' (not waiting for the eventual 'ended')
+  // is what actually shortens that dead-air window for the audience.
+  if (webinar.status === 'ending' && !isSpeakerRole) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4 text-center">
+        <div className="text-gray-400">
+          <Loader2 className="h-8 w-8 animate-spin text-purple-500 mx-auto mb-3" />
+          <p className="text-sm">The webinar is ending…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (webinar.registration_required && role === 'attendee' && isRegistered === false) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4">
