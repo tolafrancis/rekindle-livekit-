@@ -84,6 +84,11 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
     try { localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode); } catch { /* private-browsing / quota — non-fatal */ }
   };
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
+  // Near-real-time interim text (2026-09-23, captions pipeline review Phase
+  // 3, F-CAP-1) — mirrors FloatingTranslationButton.tsx's interimText.
+  // translation_sessions.interim_text now updates for every session
+  // (same-language AND translated — see AudioPipeline.ts's own comment).
+  const [interimText, setInterimText] = useState('');
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [captionsStarting, setCaptionsStarting] = useState(false);
   const [captionsError, setCaptionsError] = useState<string | null>(null);
@@ -319,6 +324,7 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
       captionChannelRef.current = null;
     }
     setCaptionLines([]);
+    setInterimText('');
 
     const sessionId = sessionIdForCaptionMode(captionMode);
     const hadSessionForThisMode = hadSessionForModeRef.current.mode === captionMode && hadSessionForModeRef.current.had;
@@ -355,10 +361,25 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
           const apply = () => {
             if (cancelled) return;
             setCaptionLines((prev) => [...prev, line].slice(-2));
+            setInterimText(''); // a final line supersedes whatever was growing
           };
           const captionDelayMs = Math.max((delaySecondsRef.current - CAPTION_LEAD_SECONDS) * 1000, 0);
           if (captionDelayMs > 0) pendingTimers.push(setTimeout(apply, captionDelayMs));
           else apply();
+        })
+      // F-CAP-1 (2026-09-23, captions pipeline review Phase 3): the bot now
+      // publishes the growing, not-yet-finalized line for EVERY session,
+      // not just same-language ones — see AudioPipeline.ts. No caption-sync
+      // delay applied here (unlike final lines above) — an interim preview
+      // is explicitly labeled "still being heard" below, so it's shown as
+      // soon as it arrives rather than held back to line up with delayed
+      // audio (it's a live status indicator, not in-sync dialogue).
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
+        (payload) => {
+          if (cancelled) return;
+          const row = payload.new as { interim_text: string | null };
+          setInterimText(row.interim_text || '');
         })
       .subscribe();
     captionChannelRef.current = channel;
@@ -376,11 +397,11 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
   // screen forever through any pause. Resets on every new line so an
   // actively-talking speaker never gets cut off mid-flow.
   useEffect(() => {
-    if (captionLines.length === 0) return;
+    if (captionLines.length === 0 && !interimText) return;
     const CLEAR_AFTER_SILENCE_MS = 8000;
-    const timer = setTimeout(() => setCaptionLines([]), CLEAR_AFTER_SILENCE_MS);
+    const timer = setTimeout(() => { setCaptionLines([]); setInterimText(''); }, CLEAR_AFTER_SILENCE_MS);
     return () => clearTimeout(timer);
-  }, [captionLines]);
+  }, [captionLines, interimText]);
 
   const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors';
   const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
@@ -408,22 +429,41 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
             }`}
           >
             {/* aria-live="polite" (2026-09-23, real gap flagged in a
-                captions pipeline review): announces each final caption line
-                to screen readers. */}
+                captions pipeline review): announces each final caption
+                line to screen readers. interimText is kept out of this
+                region (aria-hidden below) — it updates on nearly every
+                Deepgram chunk while someone's talking. */}
             <div className="flex-1 min-w-0 space-y-1" aria-live="polite" aria-atomic="false">
-              {captionLines.length === 0 ? (
+              {captionLines.length === 0 && !interimText ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
               ) : (
-                captionLines.map((line, i) => (
-                  <p
-                    key={line.id}
-                    className={`text-center leading-relaxed ${
-                      i === captionLines.length - 1 ? 'text-base sm:text-xl font-medium' : 'text-sm sm:text-base text-white/50'
-                    }`}
-                  >
-                    {line.text}
-                  </p>
-                ))
+                <>
+                  {captionLines.map((line, i) => (
+                    <p
+                      key={line.id}
+                      className={`text-center leading-relaxed ${
+                        i === captionLines.length - 1 && !interimText ? 'text-base sm:text-xl font-medium' : 'text-sm sm:text-base text-white/50'
+                      }`}
+                    >
+                      {line.text}
+                    </p>
+                  ))}
+                  {/* F-CAP-1 (2026-09-23, captions pipeline review Phase 3):
+                      the bot now publishes interim text for translated
+                      sessions too — labeled "Hearing:" and dimmer/italic so
+                      it can't be mistaken for the real translated line. */}
+                  {interimText && (
+                    captionMode === 'original' ? (
+                      <p aria-hidden="true" className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
+                        {interimText}
+                      </p>
+                    ) : (
+                      <p aria-hidden="true" className="text-sm text-center leading-relaxed text-white/40 italic">
+                        Hearing: {interimText}
+                      </p>
+                    )
+                  )}
+                </>
               )}
             </div>
             <button type="button" onClick={() => setCaptionMode('off')} title="Turn off captions" className="shrink-0 text-white/60 hover:text-white mt-0.5">

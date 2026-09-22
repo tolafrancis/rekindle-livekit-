@@ -521,10 +521,28 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                       {line.text}
                     </p>
                   ))}
+                  {/* F-CAP-1 (2026-09-23, captions pipeline review Phase 3):
+                      the bot now publishes interim text for translated
+                      sessions too, not just same-language "Show Captions"
+                      — several real seconds of blank space while GPT-4o/
+                      ElevenLabs are still working, previously. Deliberately
+                      labeled "Hearing:" and styled dimmer/italic in
+                      translated mode specifically so it can't be mistaken
+                      for the actual translated line (the whole reason this
+                      was gated off originally) — this IS the source
+                      language, not a translation. 'original' mode keeps its
+                      existing unlabeled, full-weight treatment (it already
+                      IS the thing being captioned, no ambiguity to avoid). */}
                   {interimText && (
-                    <p aria-hidden="true" className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
-                      {interimText}
-                    </p>
+                    captionMode === 'original' ? (
+                      <p aria-hidden="true" className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
+                        {interimText}
+                      </p>
+                    ) : (
+                      <p aria-hidden="true" className="text-sm text-center leading-relaxed text-white/40 italic">
+                        Hearing: {interimText}
+                      </p>
+                    )
                   )}
                 </>
               )}
