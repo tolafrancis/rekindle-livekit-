@@ -103,7 +103,18 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // In-meeting captions (real first-class option, not just the "copy link
   // to /display" workaround) — same translation_logs Realtime feed
   // TranslationDisplayPage.tsx reads, just condensed for an in-call overlay.
-  const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
+  // Persisted per room (2026-09-23, real gap flagged in a captions pipeline
+  // review: every reload/reconnect lost the viewer's caption choice — Meet/
+  // Zoom/YouTube all remember it). Scoped by roomName since that's the
+  // stable identifier already available here across reconnects.
+  const CAPTION_MODE_STORAGE_KEY = `rk-caption-mode-${roomName}`;
+  const [captionMode, setCaptionModeState] = useState<CaptionMode>(() => {
+    try { return (localStorage.getItem(CAPTION_MODE_STORAGE_KEY) as CaptionMode) || 'off'; } catch { return 'off'; }
+  });
+  const setCaptionMode = (mode: CaptionMode) => {
+    setCaptionModeState(mode);
+    try { localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode); } catch { /* private-browsing / quota — non-fatal */ }
+  };
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   // Near-real-time captions (2026-09-13) — the growing, not-yet-finalized
   // line, updated every ~150ms while the speaker is still talking (migration
@@ -208,6 +219,18 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionMode, tracks]);
+
+  // Clear stale captions after silence (2026-09-23, real gap flagged in a
+  // captions pipeline review): without this, the last spoken line(s) sat on
+  // screen forever through any pause — reading as frozen/broken rather than
+  // "no one's talking right now". Resets on every new final line OR interim
+  // update, so an actively-talking speaker never gets cut off mid-flow.
+  useEffect(() => {
+    if (captionLines.length === 0 && !interimText) return;
+    const CLEAR_AFTER_SILENCE_MS = 8000;
+    const timer = setTimeout(() => { setCaptionLines([]); setInterimText(''); }, CLEAR_AFTER_SILENCE_MS);
+    return () => clearTimeout(timer);
+  }, [captionLines, interimText]);
 
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
@@ -470,7 +493,14 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
-            <div className="flex-1 min-w-0 space-y-1">
+            {/* aria-live="polite" (2026-09-23, real gap flagged in a
+                captions pipeline review): announces each FINAL caption line
+                to screen readers. interimText is deliberately kept OUT of
+                this region (aria-hidden below) — it updates every ~150ms
+                while someone's talking, and including it would spam a
+                screen reader with a new announcement on every keystroke-
+                like update instead of once per settled sentence. */}
+            <div className="flex-1 min-w-0 space-y-1" aria-live="polite" aria-atomic="false">
               {captionLines.length === 0 && !interimText ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
               ) : (
@@ -492,7 +522,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                     </p>
                   ))}
                   {interimText && (
-                    <p className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
+                    <p aria-hidden="true" className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
                       {interimText}
                     </p>
                   )}

@@ -150,9 +150,39 @@ async function finalizeWebinarEngagement(webinarId: string): Promise<void> {
  *  states — 'recording_processing'/'completed' are set later by whatever polls the
  *  livekit_recordings row's own status (the webhook has already fired by the time a
  *  human clicks through the confirmation dialog in most cases, but not guaranteed). */
+/** Stops any live translation/captions session(s) still running in this
+ *  webinar's room (2026-09-23, real cost-leak flagged in a captions
+ *  pipeline review: MinistryInteractiveMeetings.tsx already has this exact
+ *  helper wired into its own end-meeting flow — webinars had no equivalent,
+ *  so ending a webinar left any active bot session, and its STT/translate/
+ *  TTS billing, running until someone manually stopped it or the bot's own
+ *  multi-hour self-healing eventually caught it). Best-effort: a failed
+ *  stop_bot_session call is logged, not thrown — it must never block the
+ *  webinar from actually ending. */
+async function stopTranslationForRoom(roomName: string): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('translation_sessions')
+      .select('id')
+      .eq('livekit_room_name', roomName)
+      .in('status', ['initialising', 'joining', 'active', 'paused']);
+    if (!data || data.length === 0) return;
+    await Promise.all(
+      data.map((s: { id: string }) =>
+        supabase.rpc('stop_bot_session', { p_session_id: s.id }).then(({ error }) => {
+          if (error) console.error(`[webinarControl] stop_bot_session failed for session ${s.id}:`, error.message);
+        }),
+      ),
+    );
+  } catch (err) {
+    console.error('[webinarControl] stopTranslationForRoom failed:', err);
+  }
+}
+
 export async function stopWebinarBroadcast(webinarId: string, roomName: string): Promise<void> {
   await updateWebinarStatus(webinarId, 'ending');
   await stopMeetingBroadcast(webinarId, roomName, 'ministry_webinar');
+  await stopTranslationForRoom(roomName);
   await finalizeWebinarEngagement(webinarId);
   await updateWebinarStatus(webinarId, 'ended');
 }

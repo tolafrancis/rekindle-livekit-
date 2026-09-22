@@ -72,7 +72,17 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
   const delaySecondsRef = useRef(delaySeconds);
   delaySecondsRef.current = delaySeconds;
 
-  const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
+  // Persisted per webinar (2026-09-23, real gap flagged in a captions
+  // pipeline review): every reload/reconnect lost the viewer's caption
+  // choice — Meet/Zoom/YouTube all remember it.
+  const CAPTION_MODE_STORAGE_KEY = `rk-caption-mode-${webinarId}`;
+  const [captionMode, setCaptionModeState] = useState<CaptionMode>(() => {
+    try { return (localStorage.getItem(CAPTION_MODE_STORAGE_KEY) as CaptionMode) || 'off'; } catch { return 'off'; }
+  });
+  const setCaptionMode = (mode: CaptionMode) => {
+    setCaptionModeState(mode);
+    try { localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode); } catch { /* private-browsing / quota — non-fatal */ }
+  };
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [captionsStarting, setCaptionsStarting] = useState(false);
@@ -361,6 +371,17 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionMode, sessions]);
 
+  // Clear stale captions after silence (2026-09-23, real gap flagged in a
+  // captions pipeline review): without this, the last spoken line(s) sat on
+  // screen forever through any pause. Resets on every new line so an
+  // actively-talking speaker never gets cut off mid-flow.
+  useEffect(() => {
+    if (captionLines.length === 0) return;
+    const CLEAR_AFTER_SILENCE_MS = 8000;
+    const timer = setTimeout(() => setCaptionLines([]), CLEAR_AFTER_SILENCE_MS);
+    return () => clearTimeout(timer);
+  }, [captionLines]);
+
   const row = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-left transition-colors';
   const sel = (on: boolean) => (on ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100');
   const placeholderText = captionsStarting
@@ -386,7 +407,10 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
               captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
-            <div className="flex-1 min-w-0 space-y-1">
+            {/* aria-live="polite" (2026-09-23, real gap flagged in a
+                captions pipeline review): announces each final caption line
+                to screen readers. */}
+            <div className="flex-1 min-w-0 space-y-1" aria-live="polite" aria-atomic="false">
               {captionLines.length === 0 ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
               ) : (

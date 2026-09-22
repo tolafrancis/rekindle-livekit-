@@ -79,7 +79,17 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   const delaySecondsRef = useRef(delaySeconds);
   delaySecondsRef.current = delaySeconds;
 
-  const [captionMode, setCaptionMode] = useState<CaptionMode>('off');
+  // Persisted per channel (2026-09-23, real gap flagged in a captions
+  // pipeline review): every reload/reconnect lost the viewer's caption
+  // choice — Meet/Zoom/YouTube all remember it.
+  const CAPTION_MODE_STORAGE_KEY = `rk-caption-mode-${channelId}`;
+  const [captionMode, setCaptionModeState] = useState<CaptionMode>(() => {
+    try { return (localStorage.getItem(CAPTION_MODE_STORAGE_KEY) as CaptionMode) || 'off'; } catch { return 'off'; }
+  });
+  const setCaptionMode = (mode: CaptionMode) => {
+    setCaptionModeState(mode);
+    try { localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode); } catch { /* private-browsing / quota — non-fatal */ }
+  };
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   const captionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   // "Show Captions" (standalone from Live Translate, 2026-08-22) — dispatches
@@ -596,6 +606,17 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionMode, sessions]);
 
+  // Clear stale captions after silence (2026-09-23, real gap flagged in a
+  // captions pipeline review): without this, the last spoken line(s) sat on
+  // screen forever through any pause. Resets on every new line so an
+  // actively-talking speaker never gets cut off mid-flow.
+  useEffect(() => {
+    if (captionLines.length === 0) return;
+    const CLEAR_AFTER_SILENCE_MS = 8000;
+    const timer = setTimeout(() => setCaptionLines([]), CLEAR_AFTER_SILENCE_MS);
+    return () => clearTimeout(timer);
+  }, [captionLines]);
+
   // Real bug found live (2026-08-19), the same one already fixed once for
   // the meeting picker: hiding this entirely when there's nothing running
   // yet makes a STATE ("no translation started") look exactly like a
@@ -632,7 +653,12 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
               captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
-            <div className="flex-1 min-w-0 space-y-1">
+            {/* aria-live="polite" (2026-09-23, real gap flagged in a
+                captions pipeline review): announces each final caption line
+                to screen readers, one discrete update per line (not the
+                per-keystroke spam a growing interim line would cause — this
+                surface only ever gets finalized lines). */}
+            <div className="flex-1 min-w-0 space-y-1" aria-live="polite" aria-atomic="false">
               {captionLines.length === 0 ? (
                 <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
               ) : (

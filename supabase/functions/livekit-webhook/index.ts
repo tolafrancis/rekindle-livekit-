@@ -430,6 +430,33 @@ serve(async (req) => {
           .update({ status: 'ended', ended_at: new Date().toISOString() })
           .eq('room_name', roomName).in('status', ['live', 'ending']);
       }
+
+      // Server-side backstop for translation/captions cost leak (2026-09-23,
+      // captions pipeline review, F-CAP-5) — the client-side
+      // stopTranslationForRoom (webinarControl.ts / MinistryInteractiveMeetings.tsx)
+      // is the primary path and already covers a clean end-meeting/end-webinar
+      // click; this catches the case that has none of that client code run
+      // at all (crash, force-quit, killed tab). room_finished only fires once
+      // LiveKit itself confirms the room is genuinely empty and closed, so
+      // this can't fire while a session is still legitimately in progress.
+      // Room-agnostic (not scoped to webinar- rooms) since any room kind can
+      // carry an active translation session.
+      if (roomName) {
+        const { data: liveSessions } = await admin
+          .from('translation_sessions')
+          .select('id')
+          .eq('livekit_room_name', roomName)
+          .in('status', ['initialising', 'joining', 'active', 'paused']);
+        if (liveSessions && liveSessions.length > 0) {
+          await Promise.all(
+            liveSessions.map((s: { id: string }) =>
+              admin.rpc('stop_bot_session', { p_session_id: s.id }).then(({ error }) => {
+                if (error) console.error(`[livekit-webhook] room_finished stop_bot_session failed for ${s.id}:`, error.message);
+              }),
+            ),
+          );
+        }
+      }
     }
 
     // ── 3. Developer API Meeting Participants (usage metering) ──────────────

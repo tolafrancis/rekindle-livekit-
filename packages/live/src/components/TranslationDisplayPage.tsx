@@ -93,9 +93,30 @@ export const TranslationDisplayPage: React.FC = () => {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Display preferences — local to this visitor's browser only, no account
-  // to save them to.
-  const [fontSize, setFontSize] = useState<FontSize>('large');
-  const [bilingual, setBilingual] = useState(false);
+  // to save them to. Persisted (2026-09-23, real gap flagged in a captions
+  // pipeline review): these are device-level accessibility choices (text
+  // size especially), not session-specific, so every /display link this
+  // visitor opens remembers them instead of resetting to defaults each time.
+  const [fontSize, setFontSizeState] = useState<FontSize>(() => {
+    try { return (localStorage.getItem('rk-display-font-size') as FontSize) || 'large'; } catch { return 'large'; }
+  });
+  const setFontSize = (updater: FontSize | ((prev: FontSize) => FontSize)) => {
+    setFontSizeState((prev) => {
+      const next = typeof updater === 'function' ? (updater as (p: FontSize) => FontSize)(prev) : updater;
+      try { localStorage.setItem('rk-display-font-size', next); } catch { /* private-browsing / quota — non-fatal */ }
+      return next;
+    });
+  };
+  const [bilingual, setBilingualState] = useState(() => {
+    try { return localStorage.getItem('rk-display-bilingual') === 'true'; } catch { return false; }
+  });
+  const setBilingual = (updater: boolean | ((prev: boolean) => boolean)) => {
+    setBilingualState((prev) => {
+      const next = typeof updater === 'function' ? (updater as (p: boolean) => boolean)(prev) : updater;
+      try { localStorage.setItem('rk-display-bilingual', String(next)); } catch { /* non-fatal */ }
+      return next;
+    });
+  };
   const [presenterMode, setPresenterMode] = useState(false);
   // Joining LiveKit needs an explicit tap — browsers block unmuted
   // autoplay, and the build plan calls for a "Listen" gesture anyway
@@ -203,6 +224,19 @@ export const TranslationDisplayPage: React.FC = () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
   }, [session, sessionId]);
+
+  // Clear stale captions after silence (2026-09-23, real gap flagged in a
+  // captions pipeline review): without this, the last spoken line(s) sat on
+  // screen forever through any pause. Resets on every new line so an
+  // actively-talking speaker never gets cut off mid-flow. Skipped once the
+  // session has ended — that state already swaps to its own "no longer
+  // available" screen below, this would just be fighting that transition.
+  useEffect(() => {
+    if (lines.length === 0 || session?.status === 'ended') return;
+    const CLEAR_AFTER_SILENCE_MS = 8000;
+    const timer = setTimeout(() => setLines([]), CLEAR_AFTER_SILENCE_MS);
+    return () => clearTimeout(timer);
+  }, [lines, session?.status]);
 
   // WebRTC-only audio (see docs/rlt-build-checklist.md's "WebRTC-only
   // /display" plan): join the LiveKit room directly as a subscribe-only
@@ -558,7 +592,15 @@ export const TranslationDisplayPage: React.FC = () => {
         </button>
       )}
 
-      <main className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}>
+      {/* aria-live="polite" (2026-09-23, real gap flagged in a captions
+          pipeline review): announces each final caption line to screen
+          readers — this page has no growing interim text, only finalized
+          lines, so nothing extra to gate out of the live region. */}
+      <main
+        aria-live="polite"
+        aria-atomic="false"
+        className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
+      >
         {visibleLines.length === 0 ? (
           // session.status === 'ended' never reaches here — the early
           // return above swaps to the "no longer available" page first.
