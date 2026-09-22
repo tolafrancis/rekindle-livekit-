@@ -34,6 +34,10 @@ export interface TranslationControls {
   tracks: Array<{ language: string; botIdentity: string }>;
   currentLanguage: string | null;
   setLanguage: (language: string | null) => void;
+  /** Every other real participant currently in the room — for the host-only
+   *  "Now captioning" picker (2026-09-23, captions pipeline review Phase 3,
+   *  "Option C": live speaker hand-off instead of one bot per speaker). */
+  participants: Array<{ identity: string; name: string }>;
 }
 
 interface FloatingTranslationButtonProps {
@@ -78,13 +82,44 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   userId,
 }) => {
   const { user } = useAuth();
-  const { tracks, currentLanguage, setLanguage } = translation;
+  const { tracks, currentLanguage, setLanguage, participants } = translation;
   const [stoppingLanguage, setStoppingLanguage] = useState<string | null>(null);
   const [showAddLanguage, setShowAddLanguage] = useState(false);
   const [sourceLanguage, setSourceLanguage] = useState('en');
   const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
   const [newLanguage, setNewLanguage] = useState('');
   const [starting, setStarting] = useState(false);
+  // Live speaker hand-off (2026-09-23, captions pipeline review Phase 3,
+  // "Option C"): retargets EVERY currently-active translation/captions
+  // session for this room at once — a ministry running several target
+  // languages simultaneously wants them all pointed at the same new speaker
+  // together, not switched one language at a time. Local/optimistic (not
+  // read back from translation_sessions) — same "advisory host control"
+  // trade-off already accepted elsewhere in this file (isHost's own doc
+  // comment), reasonable for a control the host just set themselves.
+  const [nowCaptioning, setNowCaptioning] = useState<{ identity: string; name: string } | null>(null);
+  const [retargeting, setRetargeting] = useState(false);
+  const retargetAllSessions = async (identity: string, name: string) => {
+    const sessionIds = Array.from(new Set(tracks.map((t) => sessionIdFromBotIdentity(t.botIdentity))));
+    if (sessionIds.length === 0) return;
+    setRetargeting(true);
+    try {
+      await Promise.all(
+        sessionIds.map((sessionId) =>
+          supabase.rpc('retarget_bot_session', {
+            p_session_id: sessionId,
+            p_speaker_identity: identity,
+            p_speaker_name: name,
+          }).then(({ error }) => {
+            if (error) console.error(`[FloatingTranslationButton] retarget_bot_session failed for ${sessionId}:`, error.message);
+          }),
+        ),
+      );
+      setNowCaptioning({ identity, name });
+    } finally {
+      setRetargeting(false);
+    }
+  };
 
   // "Ask a question" (bidirectional Q&A — build plan) — a participant
   // push-to-talks a REVERSE translation (their language -> sourceLanguage,
@@ -577,6 +612,35 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             <p className="text-xs text-muted-foreground px-2.5 py-2">
               No live translation running yet — ask the host to start one, and it'll show up here automatically.
             </p>
+          )}
+          {/* Now captioning (2026-09-23, captions pipeline review Phase 3,
+              "Option C") — live speaker hand-off. Only worth showing once
+              there's an active session to retarget AND someone else in the
+              room to switch to. Every started language/captions session for
+              this room is retargeted together — see retargetAllSessions. */}
+          {isHost && tracks.length > 0 && participants.length > 0 && (
+            <div className="px-2.5 pb-2 mb-1 border-b">
+              <p className="text-xs font-semibold text-gray-700 mb-1">Now captioning</p>
+              <Select
+                value={nowCaptioning?.identity ?? '__auto__'}
+                onValueChange={(v) => {
+                  if (v === '__auto__') return;
+                  const p = participants.find((p) => p.identity === v);
+                  if (p) retargetAllSessions(p.identity, p.name);
+                }}
+                disabled={retargeting}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__auto__" disabled>
+                    {nowCaptioning ? nowCaptioning.name : 'Auto (first speaker)'}
+                  </SelectItem>
+                  {participants.map((p) => (
+                    <SelectItem key={p.identity} value={p.identity}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1">Audio</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">

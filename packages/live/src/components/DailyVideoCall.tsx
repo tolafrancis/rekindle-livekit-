@@ -97,6 +97,13 @@ interface DailyVideoCallProps {
     tracks: Array<{ language: string; botIdentity: string }>;
     currentLanguage: string | null;
     setLanguage: (language: string | null, originalSpeakerIdentity?: string) => void;
+    /** Every other real (non-bot, non-local) participant currently in the
+     *  room — for FloatingTranslationButton's host-only "Now captioning"
+     *  picker (2026-09-23, captions pipeline review Phase 3, "Option C":
+     *  live speaker hand-off). Reuses this same lift-state-to-parent
+     *  pattern as tracks/currentLanguage above rather than threading a new
+     *  prop through every caller individually. */
+    participants: Array<{ identity: string; name: string }>;
   }) => void;
 }
 
@@ -1281,8 +1288,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       tracks: translationTracks,
       currentLanguage: translationLanguage,
       setLanguage: setTranslationLanguage,
+      participants: remoteParticipants
+        .filter((p) => !p.isLocal && p.hasAudio)
+        .map((p) => ({ identity: p.id, name: p.userName })),
     });
-  }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange, remoteParticipants]);
 
   // Legacy Daily-engine RTMP push path, superseded by the LiveKit migration
   // (see isLiveKitBackend() below, hardcoded true — that path records/
