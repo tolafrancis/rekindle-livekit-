@@ -1198,6 +1198,36 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   }, [isConnected, toast, t]);
 
+  // Token-expiry warning (2026-09-23, real gap flagged in a pre-test
+  // pipeline review): livekit-token mints every JWT with a hardcoded 2h TTL
+  // and there is no refresh mechanism anywhere in this connection path — a
+  // session running longer than 2h gets everyone silently disconnected the
+  // instant their token expires, with zero warning. A true seamless hot-swap
+  // (reconnect with a fresh token without dropping published tracks) needs
+  // deeper changes to LiveKitRoomWrapper's join path than is safe to make
+  // without a live session to verify against — this closes the worse half
+  // of the gap first: at least warn before it happens, so the drop is
+  // expected instead of a mystery, and the existing "You've been
+  // disconnected — Rejoin" screen (below) is what recovers it. Timer keyed
+  // off the connection actually being established, not mount, so it's
+  // accurate regardless of how long the pre-join screen took.
+  const TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // must match livekit-token/index.ts's `ttl: '2h'`
+  const TOKEN_WARNING_LEAD_MS = 5 * 60 * 1000;
+  const tokenWarningShownRef = useRef(false);
+  useEffect(() => {
+    if (!isConnected) return;
+    tokenWarningShownRef.current = false;
+    const timer = setTimeout(() => {
+      if (tokenWarningShownRef.current) return;
+      tokenWarningShownRef.current = true;
+      toast({
+        title: "Your session will reconnect soon",
+        description: "This call has been running a while and will briefly disconnect in about 5 minutes to refresh — just rejoin if it does.",
+      });
+    }, Math.max(TOKEN_TTL_MS - TOKEN_WARNING_LEAD_MS, 0));
+    return () => clearTimeout(timer);
+  }, [isConnected, toast]);
+
   // Attendance tracking: report this participant joined once connected, and
   // report them left on disconnect/unmount (tab-close won't fire the cleanup —
   // an inherent limit of any client-side "leave" signal, same as presence

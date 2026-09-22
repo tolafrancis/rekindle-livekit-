@@ -126,16 +126,24 @@ serve(async (req) => {
         return json({ ingressId: existingRow.ingress_id, serverUrl: existingRow.ingress_url ?? '', streamKey: existingRow.ingress_stream_key ?? '' });
       }
 
-      // NOTE: field names (ingressId/url/streamKey) match livekit-server-sdk@2's
-      // documented IngressInfo shape but aren't exercised against a live create
-      // call in this environment — verify against the actual response before
-      // relying on this in production, same caveat as egress's bytes_used note.
       const info = await ingressClient.createIngress(IngressInput.RTMP_INPUT, {
         name: `${isMeeting ? 'meeting' : 'channel'}-${targetId}`,
         roomName: body.roomName,
         participantIdentity: `host-${targetId}`,
         participantName: 'Host',
       });
+
+      // Real risk flagged in a pre-test pipeline review (2026-09-23): the
+      // field names below match livekit-server-sdk@2's documented
+      // IngressInfo shape but this call was never exercised against a live
+      // create in this environment. If the actual response nests these
+      // differently (SDK version drift, etc.), the host would silently be
+      // handed `undefined` for the RTMP URL/key — no exception, just OBS
+      // never connecting with no error anywhere. Fail loudly instead.
+      if (!info.ingressId || !info.url || !info.streamKey) {
+        console.error('[livekit-ingress] unexpected createIngress response shape:', JSON.stringify(info));
+        return json({ error: 'Ingress was created but the server response was malformed — check function logs' }, 500);
+      }
 
       const { error: upsertError } = await admin.from(streamsTable).upsert(
         {
