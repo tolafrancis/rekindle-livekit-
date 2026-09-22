@@ -1032,6 +1032,20 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const [audioStatus, setAudioStatus] = useState<'detecting' | 'active' | 'blocked' | 'inactive'>('inactive');
   const [hostHasJoined, setHostHasJoined] = useState(isHost);
   const [meetingEnded, setMeetingEnded] = useState(false);
+  // Real bug found live (2026-09-22): a webinar host's LiveKit connection
+  // silently dropped mid-broadcast (RoomEvent.Disconnected -> isConnected
+  // false) with ZERO visible feedback — no banner, no frozen indicator,
+  // nothing. The host's own camera preview kept rendering (it's drawn from
+  // the raw local MediaStream, independent of whether the room connection
+  // is actually alive), so "the host screen looked completely normal the
+  // whole time" while the room had, in fact, gone empty from LiveKit's side
+  // — confirmed via the Egress API reporting "Source closed" on the Room
+  // Composite feed the audience was watching. The auto-join effect below
+  // only ever runs once (mount-only deps), so nothing ever re-attempted the
+  // connection either; only a manual page reload would have recovered it.
+  // Track whether we've EVER connected so a later drop can be told apart
+  // from the normal initial-connect spinner, and surface it explicitly.
+  const [wasEverConnected, setWasEverConnected] = useState(false);
   const [waitingParticipants, setWaitingParticipants] = useState<DailyParticipantInfo[]>([]);
   const [recordingStatus, setRecordingStatus] = useState<'idle' | 'starting' | 'recording' | 'stopping' | 'error'>('idle');
   // True while this meeting is being recorded — on the live LiveKit path (see
@@ -1600,6 +1614,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => { if (isConnected) setWasEverConnected(true); }, [isConnected]);
 
   // Show meeting ended screen
   if (meetingEnded) {
@@ -1638,6 +1653,35 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   }
 
 
+
+  // Connection lost mid-call — was connected before, isn't now, and nothing
+  // is actively retrying (the mount-only auto-join effect above never fires
+  // again on its own). Without this branch the component silently fell
+  // through to rendering the last-known, now-stale participant grid — the
+  // local host's own camera tile kept looking perfectly normal (it's the
+  // raw local MediaStream, not dependent on the room connection), so there
+  // was no visible sign anything had gone wrong, while the room had, in
+  // fact, gone empty from LiveKit's side (confirmed live via the Egress API:
+  // the audience's HLS feed ended with "Source closed" — the room was empty
+  // this whole time even though the host's screen looked fine).
+  if (wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-6">
+            <AlertCircle className="h-10 w-10 text-red-600" />
+          </div>
+          <h3 className="text-xl font-semibold mb-2">You've been disconnected</h3>
+          <p className="text-gray-500 mb-6">
+            Your connection to the call dropped. {isHost ? 'Attendees stop seeing you until you rejoin.' : "Rejoin to get back in."}
+          </p>
+          <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
+            Rejoin
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Connecting screen
   if (isConnecting || isJoining) {
