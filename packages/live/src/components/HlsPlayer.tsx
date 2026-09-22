@@ -127,6 +127,23 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
     return () => clearInterval(interval);
   }, [status]);
 
+  // Same idea, for 'waiting' (real report, 2026-09-22: a host's tab closed
+  // mid-webinar — LiveKit's own Egress took ~5 minutes to fully finalize
+  // ("Source closed" -> EGRESS_ENDING -> EGRESS_COMPLETE) before our webhook
+  // ever flipped the meeting row to 'ended'. For that whole window this
+  // component kept silently rebuilding every ~8s (armRecoveryEscalate) with
+  // the SAME "Reconnecting…" text the entire time — indistinguishable from
+  // something being broken. This doesn't change the retry behavior itself
+  // (a genuine transient blip should still just quietly recover), only the
+  // message once it's been going on long enough to stop reading as normal.
+  const [waitingElapsedSec, setWaitingElapsedSec] = useState(0);
+  useEffect(() => {
+    if (status !== 'waiting') return;
+    setWaitingElapsedSec(0);
+    const interval = setInterval(() => setWaitingElapsedSec((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [status]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -505,7 +522,14 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
           ) : status === 'waiting' ? (
             <>
               <Loader2 className="h-8 w-8 animate-spin mb-2 text-purple-400" />
-              <p className="text-sm">Reconnecting…</p>
+              <p className="text-sm">
+                {waitingElapsedSec < 20 ? 'Reconnecting…' : "Having trouble reaching the host…"}
+              </p>
+              {waitingElapsedSec >= 20 && (
+                <p className="text-xs text-gray-400 mt-1 max-w-[220px]">
+                  This can take a few minutes to resolve if the host lost connection — hang tight, or check back shortly.
+                </p>
+              )}
             </>
           ) : (
             <>
