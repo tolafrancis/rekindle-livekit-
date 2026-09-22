@@ -12,10 +12,13 @@ import { WebinarPollPanel } from './WebinarPollPanel';
 import { WebinarTranslationButton } from './WebinarTranslationButton';
 import type { MinistryWebinar } from './webinarControl';
 
-// 4s (2026-09-22, reduced from 6s): livekit-egress's start-hls segment
-// duration was just halved to 2s specifically so this could come down too —
-// hlsLatencySeconds (below) re-syncs to the real measured value once
-// playing, so this is just the starting target, not a hard floor.
+// 4s — just the starting target, not a hard floor (hlsLatencySeconds below
+// re-syncs to the real measured value once playing). HlsPlayer itself caps
+// this at 4s regardless of what's passed in (see its own comment on why:
+// LiveKit's live playlist keeps a fixed ~5-segment window, and with
+// start-hls's segment duration back at 4s — reverted from a same-day 2s
+// experiment that halved the window to a too-tight 10s and caused periodic
+// breaks — that's ~20s of real margin behind the edge).
 const HLS_TARGET_LATENCY_SECONDS = 4;
 
 interface WebinarAttendeeViewerProps {

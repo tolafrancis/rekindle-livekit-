@@ -450,13 +450,24 @@ serve(async (req) => {
       const ts = Date.now();
       const prefix = `broadcasts/${isChannel ? channelId : meetingId}/${ts}`;
       const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
-      // segmentDuration halved to 2s (2026-09-22, live-watched path only —
-      // start-recording's plain VOD output above is untouched, latency is
-      // irrelevant there). A segment can't be handed to a viewer until it's
-      // fully written and uploaded, so shorter segments are the actual lever
-      // for how close to real-time playback can safely sit — this directly
-      // lowers the floor HlsPlayer's targetLatencySeconds is bounded by,
-      // for both channel broadcasts and webinars (this action is shared).
+      // segmentDuration reverted 2s -> 4s (2026-09-22, same day as the 2s
+      // change, live-watched path only). The 2s experiment (for lower
+      // latency) turned out to directly cause a WORSE bug once combined with
+      // livePlaylistName below: LiveKit's live playlist keeps a FIXED
+      // SEGMENT COUNT, not a fixed time window (confirmed: "generate a
+      // playlist containing only the last few segments" — LiveKit's own
+      // egress output docs; observed directly as exactly 5 segments in
+      // production) — so shorter segments meant a much SMALLER total time
+      // window (5 x 2s = 10s), leaving barely any margin before hls.js's
+      // live-sync logic asked for a segment that had already rolled out of
+      // the playlist. Real report: a broadcast that ran cleanly for a few
+      // minutes then started breaking "at interval" — periodic, not random,
+      // consistent with routinely bumping against that tight 10s ceiling
+      // rather than occasional network jitter. 4s segments double the
+      // window to ~20s (same segment count), which is what channel OBS
+      // broadcasts (livekit-webhook's autoStartHlsBroadcast) already use
+      // without this complaint. Reliability over shaving a couple more
+      // seconds of latency.
       // livePlaylistName added (2026-09-22, real bug: audience reported
       // repeated "disconnecting and reconnecting" — ?hlsdebug=1 showed
       // status genuinely cycling playing -> recovering -> playing several
@@ -482,7 +493,7 @@ serve(async (req) => {
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
         livePlaylistName: `${prefix}/live.m3u8`,
-        segmentDuration: 2,
+        segmentDuration: 4,
         output: { case: 's3', value: s3 },
       });
 
