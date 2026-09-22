@@ -2,9 +2,12 @@
 // =====================================================================
 // Enforces the free/bundled-storage retention policy: ministries with NO
 // active storage_pack add-on (ministry_addons) get their meeting recordings
-// auto-deleted after 7 days and their broadcast recordings + pastoral video
-// messages auto-deleted after 30 days, with a "download before it's gone"
-// notice 2 days before deletion. Ministries WITH an active storage_pack are
+// auto-deleted after 7 days and their broadcast recordings (live channel
+// AND webinar — both `kind`s other than 'meeting' fall into the broadcast
+// bucket, see resolveMinistryId's ministry_webinars branch, added 2026-09-23
+// after webinar recordings were found to never expire at all) + pastoral
+// video messages auto-deleted after 30 days, with a "download before it's
+// gone" notice 2 days before deletion. Ministries WITH an active storage_pack are
 // exempt entirely — see the storage add-on architecture memo: they get
 // capacity-based enforcement (storage-full blocking) instead, which isn't
 // built yet (that's Phase 4, upload-time gating — this function only ever
@@ -75,6 +78,15 @@ async function resolveMinistryId(
     if (!channelId) return null;
     const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', channelId).maybeSingle();
     return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  // Real gap found 2026-09-23: webinar recordings never matched any branch
+  // above, so this always returned null for them and the sweep's own
+  // `if (!ministryId) continue;` silently skipped every webinar recording
+  // forever, regardless of age — meaning webinar recordings never expired
+  // at all, unlike meeting/channel-broadcast recordings which already did.
+  if (rec.meeting_table === 'ministry_webinars' && rec.meeting_id) {
+    const { data } = await admin.from('ministry_webinars').select('ministry_id').eq('id', rec.meeting_id).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
   }
   return null;
 }

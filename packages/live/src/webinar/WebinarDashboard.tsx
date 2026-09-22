@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@rekindle/ui/dialog';
-import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3, Pencil, CopyPlus, Ban } from 'lucide-react';
+import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3, Pencil, CopyPlus, Ban, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@rekindle/supabase';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
@@ -54,6 +54,8 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showManageConfirm, setShowManageConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   const isLive = LIVE_STATUSES.includes(webinar.status);
   const openWebinar = () => navigate(`/ministry/${ministryId}/webinar/${webinar.id}`);
@@ -170,6 +172,33 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
     }
   };
 
+  // Real request (2026-09-23): past webinars had no delete path at all —
+  // junk/test entries (and anything a host genuinely wants gone) just
+  // accumulated forever. Goes through livekit-egress's delete-webinar action
+  // rather than a plain table delete (unlike Interactive Meetings' own
+  // handleDeleteMeeting) because a webinar's recording is a real S3/R2 file
+  // that needs removing too, plus several other tables (attendance, chat,
+  // translation sessions) reference it without a formal foreign key.
+  const deleteWebinar = async () => {
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('livekit-egress', {
+        body: { action: 'delete-webinar', webinarId: webinar.id },
+      });
+      if (error || (data as { error?: string } | null)?.error) {
+        throw new Error((data as { error?: string } | null)?.error || error?.message || 'Delete failed');
+      }
+      toast.success('Webinar deleted');
+      setShowDeleteConfirm(false);
+      onChanged();
+    } catch (err) {
+      console.error('[WebinarDashboard] delete failed:', err);
+      toast.error('Could not delete this webinar');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={handleCardOpen}>
       <CardHeader className="pb-2">
@@ -224,6 +253,12 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
               <Ban className="h-3.5 w-3.5" />
             </Button>
           )}
+          {isLeader && isPast && (
+            <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={deleting}
+              onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }} title="Delete">
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </CardContent>
       {isLeader && isPast && (
@@ -255,6 +290,25 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
               <Button variant="outline" onClick={(e) => { e.stopPropagation(); setShowCancelConfirm(false); }}>Keep it</Button>
               <Button className="bg-red-600 hover:bg-red-700" disabled={busy} onClick={(e) => { e.stopPropagation(); cancel(); }}>
                 Cancel webinar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+      {isLeader && isPast && (
+        <Dialog open={showDeleteConfirm} onOpenChange={(open) => { if (!deleting) setShowDeleteConfirm(open); }}>
+          <DialogContent onClick={(e) => e.stopPropagation()}>
+            <DialogHeader>
+              <DialogTitle>Delete "{webinar.title}"?</DialogTitle>
+              <DialogDescription>
+                Permanently deletes this webinar, its recording, chat, attendance, and analytics. This can't be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" disabled={deleting} onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(false); }}>Keep it</Button>
+              <Button className="bg-red-600 hover:bg-red-700" disabled={deleting} onClick={(e) => { e.stopPropagation(); deleteWebinar(); }}>
+                {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                {deleting ? 'Deleting…' : 'Delete webinar'}
               </Button>
             </DialogFooter>
           </DialogContent>

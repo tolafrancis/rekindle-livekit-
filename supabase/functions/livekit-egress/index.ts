@@ -20,6 +20,8 @@
 //   { action:'start-recording', roomName, meetingId?, context? }   → { egressId, recordingId, playbackUrl }
 //   { action:'stop-recording',  roomName, egressId?, context? }
 //   { action:'list-recordings', channelId? , meetingId?, roomName? } → { recordings: [...] }
+//   { action:'delete-webinar', webinarId } → { success: true }  (webinar manager/ministry admin only —
+//                                              deletes S3 recording files + every dependent row)
 //   { action:'track-participant', event:'join'|'leave', meetingId, participantId,
 //     participantName?, isGuest?, context? } → { success: true }
 //   { action:'list-participants', meetingId, context } → { participants: [...], totalCount }  (host only)
@@ -33,6 +35,44 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { AwsClient } from 'https://esm.sh/aws4fetch@1';
+
+// Plain S3 REST delete helpers (2026-09-23, delete-webinar action) — S3Upload
+// above is livekit-server-sdk's egress-output config, not a general client;
+// deleting arbitrary keys needs real REST calls. Mirrored from
+// ministry-retention-sweep/index.ts rather than imported — each edge
+// function here is deployed independently, no shared module between them in
+// this repo (see that function's own resolveMinistryId comment for the same
+// convention).
+interface S3DeleteConfig {
+  accessKey: string;
+  secret: string;
+  bucket: string;
+  region: string;
+  endpoint: string;
+}
+function bucketRootUrl(cfg: S3DeleteConfig): string {
+  const trimmed = cfg.endpoint.replace(/\/+$/, '');
+  return trimmed.endsWith(`/${cfg.bucket}`) ? trimmed : `${trimmed}/${cfg.bucket}`;
+}
+async function listKeys(client: AwsClient, cfg: S3DeleteConfig, prefix: string): Promise<string[]> {
+  const url = `${bucketRootUrl(cfg)}?list-type=2&prefix=${encodeURIComponent(prefix)}`;
+  const res = await client.fetch(url);
+  if (!res.ok) {
+    console.error('[livekit-egress] delete-webinar: S3 list failed:', res.status, await res.text());
+    return [];
+  }
+  const xml = await res.text();
+  return [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]);
+}
+async function deleteKey(client: AwsClient, cfg: S3DeleteConfig, key: string): Promise<void> {
+  const res = await client.fetch(`${bucketRootUrl(cfg)}/${key}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) console.error(`[livekit-egress] delete-webinar: S3 delete failed for ${key}:`, res.status);
+}
+async function deletePrefix(client: AwsClient, cfg: S3DeleteConfig, prefix: string): Promise<void> {
+  const keys = await listKeys(client, cfg, prefix);
+  for (const key of keys) await deleteKey(client, cfg, key);
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -254,6 +294,80 @@ serve(async (req) => {
         download: r.download_url ?? null,
       }));
       return json({ recordings });
+    }
+
+    // Host/admin self-service webinar deletion (2026-09-23, real request —
+    // webinar rows had no delete path at all, and their recordings were
+    // separately found to never be covered by ministry-retention-sweep's
+    // auto-cleanup, so junk/test webinars just accumulated with no way to
+    // clear them short of a manual DB operation). Same webinar-manager-or-
+    // group-admin check as the private-recording gate above. Deletes the S3
+    // recording files FIRST, then every row that references this webinar —
+    // most of that is by a meeting_id/meeting_table (or meeting_kind, or
+    // room_name) discriminator rather than a real foreign key, since one
+    // column can't FK several tables, so it has to be done explicitly here.
+    // webinar_speaker_requests/webinar_speakers/webinar_questions/webinar_polls
+    // all cascade-delete via a real FK — no explicit cleanup needed for those.
+    if (action === 'delete-webinar') {
+      const webinarId = body.webinarId as string | undefined;
+      if (!webinarId) return json({ error: 'webinarId is required' }, 400);
+
+      const { data: webinar } = await admin
+        .from('ministry_webinars')
+        .select('id, ministry_id, room_name')
+        .eq('id', webinarId)
+        .maybeSingle();
+      if (!webinar) return json({ error: 'not_found' }, 404);
+
+      const userClient = createClient(SB_URL!, SB_ANON!, {
+        global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+      });
+      const { data: { user: caller } } = await userClient.auth.getUser();
+      if (!caller) return json({ error: 'Not authenticated' }, 401);
+      const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+        admin.rpc('is_webinar_manager', { p_webinar_id: webinarId, p_user_id: caller.id }),
+        admin.rpc('is_group_admin', { p_ministry_id: (webinar as any).ministry_id, p_user_id: caller.id }),
+      ]);
+      if (!isManager && !isAdmin) return json({ error: 'Not authorized to delete this webinar' }, 403);
+
+      const { data: recordings } = await admin
+        .from('livekit_recordings')
+        .select('id, filepath')
+        .eq('meeting_table', 'ministry_webinars')
+        .eq('meeting_id', webinarId)
+        .not('filepath', 'is', null);
+
+      if (recordings && recordings.length > 0) {
+        const s3 = new AwsClient({ accessKeyId: s3cfg.accessKey, secretAccessKey: s3cfg.secret, region: s3cfg.region, service: 's3' });
+        for (const rec of recordings as { id: string; filepath: string }[]) {
+          await deletePrefix(s3, s3cfg, rec.filepath).catch((err) =>
+            console.error(`[livekit-egress] delete-webinar: S3 cleanup failed for recording ${rec.id}:`, err));
+        }
+      }
+
+      await admin.from('livekit_recordings').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);
+      await admin.from('meeting_attendance').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);
+      await admin.from('meeting_chat').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);
+      await admin.from('meeting_registrations').delete().eq('meeting_kind', 'webinar').eq('meeting_id', webinarId);
+
+      const roomName = (webinar as any).room_name as string | null;
+      if (roomName) {
+        const { data: sessions } = await admin
+          .from('translation_sessions')
+          .select('id')
+          .eq('livekit_room_name', roomName);
+        const sessionIds = ((sessions ?? []) as { id: string }[]).map((s) => s.id);
+        if (sessionIds.length > 0) {
+          await admin.from('translation_logs').delete().in('session_id', sessionIds);
+          await admin.from('translation_bot_instances').delete().in('session_id', sessionIds);
+          await admin.from('translation_sessions').delete().in('id', sessionIds);
+        }
+      }
+
+      const { error: delErr } = await admin.from('ministry_webinars').delete().eq('id', webinarId);
+      if (delErr) return json({ error: delErr.message }, 500);
+
+      return json({ success: true });
     }
 
     if (action === 'list-simulcast') {
