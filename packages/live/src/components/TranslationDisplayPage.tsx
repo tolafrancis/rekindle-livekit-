@@ -136,6 +136,19 @@ export const TranslationDisplayPage: React.FC = () => {
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const roomRef = useRef<Room | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  // Silent token refresh (2026-09-23, captions pipeline review F-CAP-10) —
+  // translation-listener-token mints a 4h JWT; LiveKit doesn't revoke an
+  // already-connected session at TTL expiry, but a reconnect attempted after
+  // that point (a network blip, the SFU restarting the connection) reuses
+  // this same token and fails outright, leaving a long-running /display
+  // visitor silently dead with the "Listening" UI still showing. Bumping
+  // this nonce a bit before actual expiry re-runs the connect effect below
+  // exactly as a fresh "Listen" tap would — same teardown+reconnect path,
+  // fetching a new token. Brief (sub-second) audio/caption gap once every
+  // ~3h45m for anyone listening that long continuously, instead of going
+  // permanently silent.
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSession = async (): Promise<SessionInfo | null> => {
     const { data } = await supabase
@@ -248,6 +261,10 @@ export const TranslationDisplayPage: React.FC = () => {
 
     let cancelled = false;
     const teardown = () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
       audioElRef.current?.pause();
       if (audioElRef.current) audioElRef.current.srcObject = null;
       audioElRef.current = null;
@@ -270,6 +287,16 @@ export const TranslationDisplayPage: React.FC = () => {
         return;
       }
       const { url, token, trackName } = data as ListenerToken;
+
+      // Schedule the silent refresh (see refreshNonce's doc comment above)
+      // from THIS token's actual mint time, not from when the effect
+      // started, so the schedule stays accurate regardless of how long the
+      // token fetch itself took.
+      const TOKEN_TTL_MS = 4 * 60 * 60 * 1000; // matches translation-listener-token's ttl: '4h'
+      const REFRESH_MARGIN_MS = 15 * 60 * 1000; // refresh 15 min before actual expiry
+      refreshTimerRef.current = setTimeout(() => {
+        if (!cancelled) setRefreshNonce((n) => n + 1);
+      }, TOKEN_TTL_MS - REFRESH_MARGIN_MS);
 
       const room = new Room({ adaptiveStream: true });
       roomRef.current = room;
@@ -341,7 +368,11 @@ export const TranslationDisplayPage: React.FC = () => {
       cancelled = true;
       teardown();
     };
-  }, [listening, sessionId]);
+    // refreshNonce is the silent-refresh mechanism above — bumping it
+    // deliberately re-runs this same effect to reconnect with a fresh token,
+    // without needing `listening` itself to change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listening, sessionId, refreshNonce]);
 
   // Session ended while listening — drop the LiveKit connection instead of
   // leaving a dead room joined in the background.

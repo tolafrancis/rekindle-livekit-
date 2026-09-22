@@ -208,7 +208,28 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
   // switched languages can never act on stale state.
   const generationRef = useRef(0);
 
+  // Silent token refresh (2026-09-23, captions pipeline review F-CAP-10):
+  // translation-listener-token mints a 4h JWT. LiveKit doesn't revoke an
+  // already-connected session when that TTL passes, but a reconnect
+  // attempted AFTER expiry (a network blip, the SFU restarting the
+  // connection, anything) reuses this same token and fails outright — a
+  // listener who's had translated audio/captions on for 4+ continuous hours
+  // would silently go dead with no error and no way back in short of
+  // manually reselecting the language. Bumping this nonce a bit before the
+  // token actually expires re-runs the connect effect below exactly as if
+  // the underlying session had changed — the same teardown+reconnect path
+  // already proven safe for that case — fetching a fresh token and rebuilding
+  // the WebRTC/audio graph from scratch. Trade-off, explicit: a brief (sub-
+  // second) audio/caption gap once every ~3h45m for anyone listening that
+  // long continuously, in exchange for never going permanently silent.
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const teardownAudio = () => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
     roomRef.current?.disconnect().catch(() => {});
     roomRef.current = null;
     const ctx = audioCtxRef.current;
@@ -270,6 +291,16 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
       }
       markTiming('token received — opening WebRTC connection');
       const { url, token, trackName } = data as ListenerToken;
+
+      // Schedule the silent refresh (see refreshNonce's doc comment above)
+      // from THIS token's actual mint time, not from when the surrounding
+      // effect started — keeps the schedule accurate even though fetching
+      // the token itself took some (small, variable) amount of time.
+      const TOKEN_TTL_MS = 4 * 60 * 60 * 1000; // matches translation-listener-token's ttl: '4h'
+      const REFRESH_MARGIN_MS = 15 * 60 * 1000; // refresh 15 min before actual expiry
+      refreshTimerRef.current = setTimeout(() => {
+        if (!stale()) setRefreshNonce((n) => n + 1);
+      }, TOKEN_TTL_MS - REFRESH_MARGIN_MS);
 
       const room = new Room({ adaptiveStream: true });
       roomRef.current = room;
@@ -377,8 +408,10 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
     };
     // currentSessionId, not currentLanguage — see the comment above this
     // effect for why the session identity has to be what re-triggers it.
+    // refreshNonce is the silent-refresh mechanism above — bumping it
+    // deliberately re-runs this same effect to reconnect with a fresh token.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSessionId]);
+  }, [currentSessionId, refreshNonce]);
 
   useEffect(() => () => teardownAudio(), []);
 
@@ -440,15 +473,25 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
     const field = captionMode === 'original' ? 'source_text' : 'translated_text';
     let cancelled = false;
 
-    // Caption/audio-video sync (2026-08-19, corrected 2026-08-22) — hold
-    // each new caption line back by roughly the same lag its reference (dub
-    // audio or HLS video) is under, minus a small lead so captions read a
-    // beat ahead of audio rather than well ahead. Same delay applies to
-    // both Original and translated modes — the HLS video itself runs
-    // delaySeconds behind real time either way. Computed FRESH per line
-    // (not once per effect run) from the ref above, so a live latency
-    // update changes how long the NEXT line waits without tearing down
-    // anything already on screen.
+    // Caption/audio-video sync (2026-08-19, corrected 2026-08-22, refined
+    // 2026-09-23 for F-CAP-2) — hold each new caption line back by roughly
+    // the same lag its reference (dub audio or HLS video) is under, minus a
+    // small lead so captions read a beat ahead of audio rather than well
+    // ahead. Computed FRESH per line (not once per effect run) from the ref
+    // above, so a live latency update changes how long the NEXT line waits
+    // without tearing down anything already on screen.
+    //
+    // F-CAP-2 fix: the video-latency hold-back alone assumes the caption
+    // TEXT had ~zero latency relative to when the words were spoken — true
+    // for Original mode (Deepgram's near-instant STT), false for a real
+    // translation (the bot's translate+TTS relay measurably takes real
+    // time — see AudioPipeline.ts). pipeline_latency_ms (migration 0370) is
+    // the bot's own MEASURED elapsed time for that specific utterance
+    // (Deepgram UtteranceEnd -> about to write the row), not a guessed
+    // constant, so subtracting it here corrects the hold-back per line
+    // instead of assuming a fixed amount. Null/undefined (older rows, or an
+    // engine that doesn't measure it) falls back to 0 — today's behavior,
+    // no regression.
     const CAPTION_LEAD_SECONDS = 0.4;
     const pendingTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -470,14 +513,18 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
         (payload) => {
-          const row = payload.new as { id: string; source_text: string; translated_text: string };
+          const row = payload.new as { id: string; source_text: string; translated_text: string; pipeline_latency_ms: number | null };
           const line = { id: row.id, text: field === 'source_text' ? row.source_text : row.translated_text };
           const apply = () => {
             if (cancelled) return;
             setCaptionLines((prev) => [...prev, line].slice(-2));
             setInterimText(''); // a final line supersedes whatever was growing
           };
-          const captionDelayMs = Math.max((delaySecondsRef.current - CAPTION_LEAD_SECONDS) * 1000, 0);
+          const pipelineLatencyMs = row.pipeline_latency_ms ?? 0;
+          const captionDelayMs = Math.max(
+            delaySecondsRef.current * 1000 - pipelineLatencyMs - CAPTION_LEAD_SECONDS * 1000,
+            0,
+          );
           if (captionDelayMs > 0) pendingTimers.push(setTimeout(apply, captionDelayMs));
           else apply();
         })
