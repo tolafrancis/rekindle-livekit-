@@ -3,17 +3,20 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Switch } from '@rekindle/ui/switch';
 import { Plus, X, Play, Square } from 'lucide-react';
-import { useWebinarPolls } from './useWebinarPolls';
+import type { useWebinarPolls } from './useWebinarPolls';
 
 interface WebinarPollHostPanelProps {
-  webinarId: string;
-  userId: string;
+  /** Lifted from WebinarStage (2026-09-22), same reasoning as
+   *  WebinarQAModerationPanel's qa prop — WebinarStage needs its own
+   *  instance for the control bar's Polls button badge (new-votes count),
+   *  which has to exist whether or not this panel is currently mounted. */
+  polls: ReturnType<typeof useWebinarPolls>;
 }
 
 /** Host-facing polls: create-poll form + open/close controls + live tallies.
  *  Mounted inside WebinarStage's popover. */
-export function WebinarPollHostPanel({ webinarId, userId }: WebinarPollHostPanelProps) {
-  const { polls, activePoll, createPoll, openPoll, closePoll } = useWebinarPolls(webinarId, userId, true);
+export function WebinarPollHostPanel({ polls: pollsState }: WebinarPollHostPanelProps) {
+  const { polls, activePoll, createPoll, openPoll, closePoll } = pollsState;
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState(['', '']);
   const [multi, setMulti] = useState(false);

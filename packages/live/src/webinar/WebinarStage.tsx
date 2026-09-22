@@ -16,6 +16,7 @@ import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingChat } from '../useMeetingChat';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { useWebinarQuestions } from './useWebinarQuestions';
+import { useWebinarPolls } from './useWebinarPolls';
 import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
 import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamControl';
 import type { WebinarViewerRole } from './WebinarLobby';
@@ -56,6 +57,43 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // them — a small badge on a button isn't a strong enough signal during a
   // live call; an active toast is).
   const { messages: chatMessages } = useMeetingChat(webinar.id, userId, userName, 'ministry_webinars');
+  // Same reasoning — lifted so the control bar's Polls button can show a
+  // new-votes badge without a second realtime subscription duplicating the
+  // one WebinarPollHostPanel would otherwise open on its own.
+  const polls = useWebinarPolls(webinar.id, userId, isHost);
+
+  // Declared here (rather than beside the other UI-state below) because the
+  // unread-watermark effect right after this needs it. Manage popover
+  // open/closed + which tab it's on.
+  const [showRequests, setShowRequests] = useState(false);
+  const [activeManageTab, setActiveManageTab] = useState('speakers');
+
+  // Unread tracking for the control-bar Chat/Polls badges (2026-09-22 — real
+  // report: "the webinar chat icon is absent in the control button and...
+  // aside from the push notification you can't know if a message entered
+  // until you click manage and go to chats"). Q&A already has a natural
+  // "needs attention" count (qa.pendingQuestions, unanswered questions) and
+  // needs no watermark. Chat and Polls don't have a status field like that,
+  // so unread here means "count since the tab was last actually viewed" —
+  // the watermark advances whenever the popover is open AND that tab is
+  // active, not merely on toast (a toast can fire while the host is looking
+  // at Speakers or has the popover closed entirely).
+  const audienceChatCount = chatMessages.filter((m) => m.user_id !== userId).length;
+  const [chatSeenCount, setChatSeenCount] = useState(0);
+  const chatUnread = Math.max(0, audienceChatCount - chatSeenCount);
+
+  const activePollVotes = polls.activePoll
+    ? polls.activePoll.options.reduce((sum, o) => sum + o.vote_count, 0)
+    : 0;
+  const [pollsSeenVotes, setPollsSeenVotes] = useState(0);
+  const pollsUnread = Math.max(0, activePollVotes - pollsSeenVotes);
+
+  useEffect(() => {
+    if (!showRequests) return;
+    if (activeManageTab === 'chat') setChatSeenCount(audienceChatCount);
+    if (activeManageTab === 'polls') setPollsSeenVotes(activePollVotes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRequests, activeManageTab, audienceChatCount, activePollVotes]);
 
   // Active notifications for new audience Q&A/chat (2026-09-22) — see the
   // comment above chatMessages for why a passive badge wasn't enough. Skips
@@ -94,7 +132,6 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // checking presenceMembers elsewhere sees a complete picture.
   const presenceMembers = useMeetingPresence(webinar.id, userId, userName, false, true);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  const [showRequests, setShowRequests] = useState(false);
   const [streamConfigOpen, setStreamConfigOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
@@ -127,6 +164,51 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
     return () => { stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar'); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, webinar.id, webinar.room_name]);
+
+  const openManageTab = (tab: string) => { setActiveManageTab(tab); setShowRequests(true); };
+
+  // Chat/Q&A/Polls buttons for the REAL control bar (2026-09-22 — see the
+  // showChatButton={false} comment above for why the built-in ones are
+  // suppressed here). Each opens the Manage popover straight to its tab and
+  // carries its own unread badge, matching the built-in Chat button's visual
+  // style exactly (w-12/16 circle, same badge shape) so they read as native
+  // controls, not a bolted-on extra.
+  const controlBarButton = (
+    key: string, icon: React.ReactNode, label: string, unread: number, active: boolean, onClick: () => void,
+  ) => (
+    <button key={key} onClick={onClick} className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+      <div className={`
+        relative w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+        transition-all duration-200 transform group-hover:scale-105
+        ${active ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}
+      `}>
+        {icon}
+        {unread > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </div>
+      <span className="hidden sm:block text-xs font-medium text-gray-300">{label}</span>
+    </button>
+  );
+
+  const extraControlButtons = isHost && (
+    <>
+      {webinar.enable_chat && controlBarButton(
+        'chat', <MessageSquare className="h-5 w-5 sm:h-7 sm:w-7" />, 'Chat', chatUnread,
+        showRequests && activeManageTab === 'chat', () => openManageTab('chat'),
+      )}
+      {webinar.enable_qa && controlBarButton(
+        'qa', <HelpCircle className="h-5 w-5 sm:h-7 sm:w-7" />, 'Q&A', qa.pendingQuestions.length,
+        showRequests && activeManageTab === 'qa', () => openManageTab('qa'),
+      )}
+      {webinar.enable_polls && controlBarButton(
+        'polls', <BarChart3 className="h-5 w-5 sm:h-7 sm:w-7" />, 'Polls', pollsUnread,
+        showRequests && activeManageTab === 'polls', () => openManageTab('polls'),
+      )}
+    </>
+  );
 
   const handleEndForEveryone = async () => {
     setEnding(true);
@@ -166,6 +248,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           // panel is the one true chat/roster/Q&A/polls surface.
           showChatButton={false}
           showHostControlsButton={false}
+          extraControlButtons={extraControlButtons}
         />
 
         {!isPiP && (webinar.enable_captions || webinar.enable_translation) && callTranslation && (
@@ -203,8 +286,10 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
               >
                 <Settings2 className="h-5 w-5 mr-2" />
                 Manage
-                {(speakerRequests.pendingRequests.length + qa.pendingQuestions.length) > 0 && (
-                  <Badge className="ml-2 bg-purple-600 text-white">{speakerRequests.pendingRequests.length + qa.pendingQuestions.length}</Badge>
+                {(speakerRequests.pendingRequests.length + qa.pendingQuestions.length + chatUnread + pollsUnread) > 0 && (
+                  <Badge className="ml-2 bg-purple-600 text-white">
+                    {speakerRequests.pendingRequests.length + qa.pendingQuestions.length + chatUnread + pollsUnread}
+                  </Badge>
                 )}
               </Button>
             )}
@@ -226,17 +311,27 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
               <span className="text-base font-medium flex items-center gap-2"><Settings2 className="h-5 w-5" /> Manage webinar</span>
               <button onClick={() => setShowRequests(false)} className="p-1.5 -m-1.5 rounded hover:bg-white/10"><X className="h-5 w-5 text-gray-400 hover:text-white" /></button>
             </div>
-            <Tabs defaultValue="speakers" className="flex-1 flex flex-col min-h-0">
+            <Tabs value={activeManageTab} onValueChange={setActiveManageTab} className="flex-1 flex flex-col min-h-0">
               <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-white/10 h-auto p-0 px-2">
                 <TabsTrigger value="speakers" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><Hand className="h-4 w-4" /> Speakers</TabsTrigger>
-                <TabsTrigger value="chat" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><MessageSquare className="h-4 w-4" /> Chat</TabsTrigger>
+                <TabsTrigger value="chat" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3 relative">
+                  <MessageSquare className="h-4 w-4" /> Chat
+                  {chatUnread > 0 && (
+                    <Badge className="h-4 min-w-4 px-1 bg-purple-600 text-white text-[10px]">{chatUnread}</Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="qa" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3 relative">
                   <HelpCircle className="h-4 w-4" /> Q&amp;A
                   {qa.pendingQuestions.length > 0 && (
                     <Badge className="h-4 min-w-4 px-1 bg-purple-600 text-white text-[10px]">{qa.pendingQuestions.length}</Badge>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="polls" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><BarChart3 className="h-4 w-4" /> Polls</TabsTrigger>
+                <TabsTrigger value="polls" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3 relative">
+                  <BarChart3 className="h-4 w-4" /> Polls
+                  {pollsUnread > 0 && (
+                    <Badge className="h-4 min-w-4 px-1 bg-purple-600 text-white text-[10px]">{pollsUnread}</Badge>
+                  )}
+                </TabsTrigger>
               </TabsList>
               <div className="p-4 overflow-y-auto">
                 <TabsContent value="speakers" className="m-0 space-y-4">
@@ -320,7 +415,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                 </TabsContent>
                 <TabsContent value="polls" className="m-0">
                   {webinar.enable_polls ? (
-                    <WebinarPollHostPanel webinarId={webinar.id} userId={userId} />
+                    <WebinarPollHostPanel polls={polls} />
                   ) : (
                     <p className="text-xs text-gray-500">Polls are disabled for this webinar.</p>
                   )}

@@ -54,6 +54,16 @@ interface DailyVideoCallProps {
    *  use; audience never has a waiting room, they're HLS-only viewers).
    *  Defaults to true. */
   showHostControlsButton?: boolean;
+  /** Extra buttons rendered inline in the real control bar, styled like the
+   *  built-in ones (same circular button/icon/label shape) — for a caller
+   *  like WebinarStage.tsx that suppresses the generic, disconnected Chat/
+   *  Host Controls buttons above but still needs its OWN correctly-wired
+   *  Chat/Q&A/Polls buttons to live among the actual controls, not buried in
+   *  a separate top-right overlay a host has no reason to open (real report,
+   *  2026-09-22: "you can't know if a message entered until you click
+   *  manage and go to chats"). Rendered after Screen Share, before whichever
+   *  of the built-in Chat/Host Controls/Recording/End buttons are enabled. */
+  extraControlButtons?: React.ReactNode;
   /** Whether the meeting was created with recording enabled (subscription-gated) */
   enableRecording?: boolean;
   /** When set (webinar mode, host only), push an RTMP stream to this URL so attendees can watch via HLS */
@@ -998,6 +1008,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRemoveParticipant,
   showChatButton = true,
   showHostControlsButton = true,
+  extraControlButtons,
   enableRecording = false,
   liveStreamRtmpUrl,
   onSidePanelToggle,
@@ -2198,6 +2209,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 {isScreenSharing ? t('dailyVideoCall', 'stopShare', 'Stop Share') : t('dailyVideoCall', 'shareScreen', 'Share Screen')}
               </span>
             </button>
+
+            {extraControlButtons}
 
             {/* Chat button — opening chat closes Host Controls so only one side
                 panel shows at a time (they otherwise overlap on the right edge). */}
