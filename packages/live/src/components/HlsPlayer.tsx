@@ -115,6 +115,12 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
   const onLatencyChangeRef = useRef(onLatencyChange);
   useEffect(() => { onLatencyChangeRef.current = onLatencyChange; }, [onLatencyChange]);
+  // The main setup effect below only runs once per `src` change (its own
+  // deps are [src, showDebug]) — a ref lets the stall watchdog it sets up
+  // read the LATEST status on every tick instead of the value frozen at
+  // effect-creation time.
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   // Ticks once a second for as long as we're in the initial 'loading' state
   // — resets fresh each time we (re-)enter it. Drives the graduated message
@@ -420,6 +426,42 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (lag !== null && isFinite(lag) && lag > 0) onLatencyChangeRef.current?.(lag);
     }, 1000);
 
+    // Stall watchdog (real report, 2026-09-22: audience playback went
+    // completely silent AND frozen — both audio and video stopped, at the
+    // exact same time confirmed independently that (a) the host was still
+    // genuinely live and their own preview was moving normally, and (b) the
+    // HLS manifest itself was still growing normally, one new segment every
+    // 2s, right through the freeze. So hls.js was fetching fine; the
+    // <video> element's playback position simply stopped advancing. The
+    // ERROR handler above only reacts to FATAL hls.js errors — a buffer
+    // stall is normally NON-fatal (hls.js tries to silently self-recover by
+    // nudging the playhead), and when that quietly fails there is no fatal
+    // event, no error, nothing — this component had no way to ever notice.
+    // Polls video.currentTime directly (ground truth, independent of any
+    // hls.js event) and forces a full rebuild if it hasn't moved in ~8s
+    // while we believe playback is healthy and the element isn't
+    // legitimately paused/ended.
+    let lastCurrentTime = -1;
+    let stalledTicks = 0;
+    const stallWatchdog = setInterval(() => {
+      if (cancelled || statusRef.current !== 'playing' || video.paused || video.ended) {
+        lastCurrentTime = -1; stalledTicks = 0; return;
+      }
+      if (video.currentTime === lastCurrentTime) {
+        stalledTicks += 1;
+        if (stalledTicks >= 4) { // ~8s of zero progress at this 2s poll
+          console.warn('[HlsPlayer] playback stalled (currentTime not advancing despite fresh segments) — forcing a full rebuild');
+          stalledTicks = 0;
+          markRecovering();
+          if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
+          setup();
+        }
+      } else {
+        stalledTicks = 0;
+      }
+      lastCurrentTime = video.currentTime;
+    }, 2000);
+
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
@@ -427,6 +469,7 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (recoverTimer) clearTimeout(recoverTimer);
       if (recoveryEscalateTimer) clearTimeout(recoveryEscalateTimer);
       if (debugTimer) clearInterval(debugTimer);
+      clearInterval(stallWatchdog);
       if (hls) hls.destroy();
     };
   }, [src, showDebug]);
