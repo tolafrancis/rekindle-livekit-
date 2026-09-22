@@ -7,7 +7,7 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
-import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus } from 'lucide-react';
+import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2 } from 'lucide-react';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
 
@@ -74,6 +74,53 @@ export const SpeakerPage: React.FC = () => {
   const analyserCleanupRef = useRef<(() => Promise<void>) | null>(null);
   const levelRafRef = useRef<number | null>(null);
   const captionsChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const captionsScrollRef = useRef<HTMLDivElement | null>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
+
+  // Full screen (2026-09-23, real report: speaker at a podium wants browser
+  // chrome/notification bars out of the way so the caption text reads as
+  // large as possible from a distance). Native Fullscreen API on the whole
+  // page container, not just the captions box, so Mute/Stop stay reachable
+  // too. Not every browser supports it (notably iOS Safari has none for
+  // arbitrary elements, only <video>) — detect support up front and simply
+  // don't render the button rather than offering something that'll silently
+  // no-op or throw.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenSupported = typeof document !== 'undefined' && !!document.fullscreenEnabled;
+
+  useEffect(() => {
+    if (!fullscreenSupported) return;
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, [fullscreenSupported]);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await pageRef.current?.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error('[SpeakerPage] fullscreen toggle failed:', err);
+    }
+  };
+
+  // Real bug found live (2026-09-23): "the scroll is always stuck and
+  // speaker dont see what's below" — new caption lines were appended to
+  // this box (overflow-y-auto) with nothing ever moving the scroll position,
+  // so once there was enough text to scroll at all, the newest (biggest,
+  // most important) line could sit below the visible area with no way to
+  // reveal it short of the speaker manually scrolling mid-sentence. Always
+  // snap to the bottom whenever the caption list changes — this box is a
+  // short trailing live-glance window (MAX_CAPTIONS), not something meant
+  // for scrolling back through, so there's no "was the user reviewing
+  // history" case to preserve.
+  useEffect(() => {
+    const el = captionsScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [captions]);
 
   useEffect(() => {
     if (!sessionId || !speakerToken) {
@@ -247,7 +294,17 @@ export const SpeakerPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4 py-6 sm:py-10">
+    <div ref={pageRef} className="relative min-h-screen bg-slate-950 text-white flex items-center justify-center px-4 py-6 sm:py-10">
+      {fullscreenSupported && (
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+          className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+        </button>
+      )}
       {/* Widened (2026-09-14, per the user's request) from max-w-md so the
           "What's being heard" captions below have room for a much bigger,
           glance-readable font — the speaker is meant to read this while
@@ -311,7 +368,7 @@ export const SpeakerPage: React.FC = () => {
                 <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
                   <Captions className="h-3.5 w-3.5" /> What's being heard
                 </p>
-                <div className="min-h-[10rem] max-h-[28rem] overflow-y-auto rounded-lg bg-black/30 px-4 py-3 space-y-2">
+                <div ref={captionsScrollRef} className="min-h-[10rem] max-h-[28rem] overflow-y-auto rounded-lg bg-black/30 px-4 py-3 space-y-2">
                   {captions.length === 0 ? (
                     <p className="text-sm text-white/40 italic">Captions will appear here once you start talking…</p>
                   ) : (
