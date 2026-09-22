@@ -4,12 +4,21 @@ import { muxDownloadUrl } from '@rekindle/live/channelStreamControl';
 import { VodPlayer } from '@rekindle/live/components/VodPlayer';
 import { RecordingRetentionBadge } from '@rekindle/live/components/RecordingRetentionBadge';
 import { RECORDING_RETENTION_DAYS } from '@rekindle/live/recordingRetention';
+import { WebinarTranscriptPanel } from '@rekindle/live/webinar/WebinarTranscriptPanel';
 import { Loader2, Video, Download, Clock } from 'lucide-react';
 
 interface MeetingLike {
   id: string;
   title: string;
   enable_recording?: boolean;
+  /** The LiveKit room this meeting/webinar ran in — translation_sessions is
+   *  keyed on this (livekit_room_name), same as the live caption pickers.
+   *  Optional so callers that can't supply one (none currently exist — every
+   *  meeting/webinar/channel-meeting table has a room_name column) just
+   *  don't get a transcript panel rather than breaking. 2026-09-23, captions
+   *  pipeline review Phase 2 follow-up: this was deliberately deferred at
+   *  the time because MeetingLike didn't carry room_name yet. */
+  room_name?: string;
 }
 
 /** undefined = fixed default, null = "never", number = custom days. */
@@ -21,6 +30,7 @@ function retentionLabel(overrideDays: number | null | undefined): string {
 
 interface LibraryItem extends MeetingRecording {
   meetingTitle: string;
+  meetingRoomName?: string;
 }
 
 const formatDuration = (s?: number) => {
@@ -59,7 +69,7 @@ export const MinistryRecordingsTab: React.FC<{
     Promise.all(
       sourceMeetings.map(async (m) => {
         const recs = await getMeetingRecordings(m.id);
-        return recs.map((r) => ({ ...r, meetingTitle: m.title }));
+        return recs.map((r) => ({ ...r, meetingTitle: m.title, meetingRoomName: m.room_name }));
       })
     )
       .then((groups) => {
@@ -143,6 +153,15 @@ export const MinistryRecordingsTab: React.FC<{
               ) : null;
             })()}
           </div>
+          {/* Replay transcript (2026-09-23, captions pipeline review Phase 2
+              follow-up) — same read-only panel WebinarEndScreen.tsx already
+              uses, reused as-is here: it's keyed on roomName alone, so it
+              works identically for a meeting, channel meeting, or webinar
+              recording. Renders nothing if no caption/translation session
+              ever ran for this room. */}
+          {active.meetingRoomName && (
+            <WebinarTranscriptPanel webinarId={active.uid} roomName={active.meetingRoomName} />
+          )}
         </div>
       )}
 
