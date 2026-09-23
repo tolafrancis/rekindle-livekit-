@@ -91,6 +91,10 @@ export const FlaggedContentManager: React.FC<FlaggedContentManagerProps> = ({ on
 
   const handleTakeAction = async (action: 'approve' | 'remove' | 'dismiss') => {
     if (!selectedContent) return;
+    if (!reviewNotes.trim()) {
+      toast({ title: t('flaggedContentManager', 'error', 'Error'), description: t('flaggedContentManager', 'notesRequired', 'A note is required before taking action on flagged content'), variant: 'destructive' });
+      return;
+    }
     setSaving(true);
 
     try {
@@ -102,12 +106,17 @@ export const FlaggedContentManager: React.FC<FlaggedContentManagerProps> = ({ on
         notes: reviewNotes
       };
 
-      await supabase
+      const { data, error } = await supabase
         .from('ministry_flagged_content')
         .update(updates)
-        .eq('id', selectedContent.id);
+        .eq('id', selectedContent.id)
+        .select()
+        .maybeSingle();
 
-      // Log audit
+      if (error) throw error;
+      if (!data) throw new Error(t('flaggedContentManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
+
+      // Log audit — only once the write is confirmed to have actually happened
       await supabase.from('ministry_audit_logs').insert({
         ministry_id: selectedContent.ministry_id,
         actor_id: user?.id,
@@ -400,25 +409,28 @@ export const FlaggedContentManager: React.FC<FlaggedContentManagerProps> = ({ on
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setShowReviewModal(false)}>{t('flaggedContentManager', 'cancel', 'Cancel')}</Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => handleTakeAction('dismiss')}
-              disabled={saving}
+              disabled={saving || !reviewNotes.trim()}
+              title={!reviewNotes.trim() ? t('flaggedContentManager', 'notesRequired', 'A note is required before taking action on flagged content') : undefined}
             >
               {t('flaggedContentManager', 'dismissReport', 'Dismiss Report')}
             </Button>
-            <Button 
+            <Button
               className="bg-green-600 hover:bg-green-700"
               onClick={() => handleTakeAction('approve')}
-              disabled={saving}
+              disabled={saving || !reviewNotes.trim()}
+              title={!reviewNotes.trim() ? t('flaggedContentManager', 'notesRequired', 'A note is required before taking action on flagged content') : undefined}
             >
               <CheckCircle className="h-4 w-4 mr-1" />
               {t('flaggedContentManager', 'approveContent', 'Approve Content')}
             </Button>
-            <Button 
+            <Button
               variant="destructive"
               onClick={() => handleTakeAction('remove')}
-              disabled={saving}
+              disabled={saving || !reviewNotes.trim()}
+              title={!reviewNotes.trim() ? t('flaggedContentManager', 'notesRequired', 'A note is required before taking action on flagged content') : undefined}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <XCircle className="h-4 w-4 mr-1" />}
               {t('flaggedContentManager', 'removeContent', 'Remove Content')}

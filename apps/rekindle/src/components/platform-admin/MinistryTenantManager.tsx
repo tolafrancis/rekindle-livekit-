@@ -241,14 +241,17 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
           break;
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('ministry_groups')
         .update(updates)
-        .eq('id', selectedMinistry.id);
+        .eq('id', selectedMinistry.id)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error(t('ministryTenantManager', 'updateBlocked', 'Update was blocked (no permission or ministry not found) — nothing was changed.'));
 
-      // Log audit
+      // Log audit — only once the write is confirmed to have actually happened
       await supabase.from('ministry_audit_logs').insert({
         ministry_id: selectedMinistry.id,
         actor_id: user?.id,
@@ -300,17 +303,25 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
 
     try {
       const existing = whiteLabelSettings[selectedMinistry.id];
-      
+      let data, error;
+
       if (existing) {
-        await supabase
+        ({ data, error } = await supabase
           .from('ministry_white_label_settings')
           .update(whiteLabelForm)
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select()
+          .maybeSingle());
       } else {
-        await supabase
+        ({ data, error } = await supabase
           .from('ministry_white_label_settings')
-          .insert({ ministry_id: selectedMinistry.id, ...whiteLabelForm });
+          .insert({ ministry_id: selectedMinistry.id, ...whiteLabelForm })
+          .select()
+          .maybeSingle());
       }
+
+      if (error) throw error;
+      if (!data) throw new Error(t('ministryTenantManager', 'updateBlocked', 'Update was blocked (no permission or ministry not found) — nothing was changed.'));
 
       toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'whiteLabelSaved', 'White-label settings saved') });
       setShowWhiteLabelModal(false);
@@ -341,19 +352,25 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
 
     try {
       const existing = subscriptions[selectedMinistry.id];
+      let data, error;
 
       if (existing) {
-        const { error } = await supabase
+        ({ data, error } = await supabase
           .from('ministry_subscriptions')
           .update(subscriptionForm)
-          .eq('id', existing.id);
-        if (error) throw error;
+          .eq('id', existing.id)
+          .select()
+          .maybeSingle());
       } else {
-        const { error } = await supabase
+        ({ data, error } = await supabase
           .from('ministry_subscriptions')
-          .insert({ ministry_id: selectedMinistry.id, ...subscriptionForm });
-        if (error) throw error;
+          .insert({ ministry_id: selectedMinistry.id, ...subscriptionForm })
+          .select()
+          .maybeSingle());
       }
+
+      if (error) throw error;
+      if (!data) throw new Error(t('ministryTenantManager', 'updateBlocked', 'Update was blocked (no permission or ministry not found) — nothing was changed.'));
 
       await supabase.from('ministry_audit_logs').insert({
         ministry_id: selectedMinistry.id,
@@ -377,24 +394,35 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
 
   const handleUpdateRiskLevel = async (ministryId: string, riskLevel: string) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('ministry_groups')
         .update({ risk_level: riskLevel })
-        .eq('id', ministryId);
+        .eq('id', ministryId)
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error(t('ministryTenantManager', 'updateBlocked', 'Update was blocked (no permission or ministry not found) — nothing was changed.'));
 
       toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'riskLevelUpdated', 'Risk level updated') });
       loadData();
     } catch (err: any) {
       toast({ title: t('ministryTenantManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+      loadData(); // revert the Select back to the real (unchanged) DB value
     }
   };
 
   const handleUpdatePlatformNotes = async (ministryId: string, notes: string) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('ministry_groups')
         .update({ platform_notes: notes })
-        .eq('id', ministryId);
+        .eq('id', ministryId)
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error(t('ministryTenantManager', 'updateBlocked', 'Update was blocked (no permission or ministry not found) — nothing was changed.'));
 
       toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'notesSaved', 'Notes saved') });
     } catch (err: any) {
@@ -569,7 +597,7 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                       </td>
                       <td className="p-4">
                         <Badge variant={sub?.plan_type === 'enterprise' ? 'default' : 'secondary'}>
-                          {sub?.plan_type || 'basic'}
+                          {sub?.plan_type || t('ministryTenantManager', 'noPlan', 'No plan')}
                         </Badge>
                         {wl && (
                           <Badge variant="outline" className="ml-1">

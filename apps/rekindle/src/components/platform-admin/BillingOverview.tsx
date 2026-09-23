@@ -75,13 +75,18 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ onUpdate }) =>
   const loadData = async () => {
     setLoading(true);
     try {
+      const windowDays = parseInt(dateFilter);
       const daysAgo = new Date();
-      daysAgo.setDate(daysAgo.getDate() - parseInt(dateFilter));
+      daysAgo.setDate(daysAgo.getDate() - windowDays);
+      const prevPeriodStart = new Date();
+      prevPeriodStart.setDate(prevPeriodStart.getDate() - windowDays * 2);
 
-      const [feesRes, donationsRes, ministriesRes] = await Promise.all([
+      const [feesRes, donationsRes, ministriesRes, prevFeesRes, prevDonationsRes] = await Promise.all([
         supabase.from('platform_fees').select('*').gte('created_at', daysAgo.toISOString()).order('created_at', { ascending: false }),
         supabase.from('donations').select('*').gte('created_at', daysAgo.toISOString()).order('created_at', { ascending: false }),
-        supabase.from('ministry_groups').select('id, name, theme_color')
+        supabase.from('ministry_groups').select('id, name, theme_color'),
+        supabase.from('platform_fees').select('amount').gte('created_at', prevPeriodStart.toISOString()).lt('created_at', daysAgo.toISOString()),
+        supabase.from('donations').select('amount').gte('created_at', prevPeriodStart.toISOString()).lt('created_at', daysAgo.toISOString()),
       ]);
 
       setFees(feesRes.data || []);
@@ -102,14 +107,21 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ onUpdate }) =>
       
       const uniqueMinistries = new Set(allFees.map(f => f.ministry_id));
 
+      const prevRevenue = (prevFeesRes.data || []).reduce((sum, f) => sum + Number(f.amount), 0)
+        + (prevDonationsRes.data || []).reduce((sum, d) => sum + Number(d.amount), 0);
+      const currentRevenue = totalFees + totalDonations;
+      // No prior-period revenue to compare against — leave growth at 0 rather
+      // than dividing by zero or showing a fabricated number.
+      const monthlyGrowth = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue) * 100 : 0;
+
       setStats({
-        totalRevenue: totalFees + totalDonations,
+        totalRevenue: currentRevenue,
         totalFees,
         totalDonations,
         pendingFees,
         collectedFees,
         avgFeePerMinistry: uniqueMinistries.size > 0 ? totalFees / uniqueMinistries.size : 0,
-        monthlyGrowth: 12.5 // Placeholder
+        monthlyGrowth: Math.round(monthlyGrowth * 10) / 10
       });
     } catch (err) {
       console.error('Error loading billing data:', err);
@@ -121,10 +133,15 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ onUpdate }) =>
 
   const handleCollectFee = async (feeId: string) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('platform_fees')
         .update({ status: 'collected', collected_at: new Date().toISOString() })
-        .eq('id', feeId);
+        .eq('id', feeId)
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error(t('billingOverview', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
 
       toast({ title: t('billingOverview', 'successTitle', 'Success'), description: t('billingOverview', 'feeCollected', 'Fee marked as collected') });
       loadData();

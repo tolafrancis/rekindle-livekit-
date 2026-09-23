@@ -6,9 +6,9 @@ import { Progress } from '../ui/progress';
 import { supabase } from '@/lib/supabase';
 import { toast } from '../ui/use-toast';
 import {
-  Server, Database, HardDrive, Zap, Activity, RefreshCw,
+  Server, Database, HardDrive, Zap, RefreshCw,
   Loader2, CheckCircle, AlertTriangle, XCircle, Clock,
-  Wifi, Globe, Shield, BarChart3
+  Shield, BarChart3
 } from 'lucide-react';
 
 interface SystemStatus {
@@ -23,9 +23,8 @@ interface UsageMetrics {
   storageLimitMB: number;
   apiCallsToday: number;
   apiCallsLimit: number;
-  activeConnections: number;
   avgResponseTimeMs: number;
-  uptime: number;
+  authResponseTimeMs: number;
 }
 
 export const SystemHealthMonitor: React.FC = () => {
@@ -40,9 +39,8 @@ export const SystemHealthMonitor: React.FC = () => {
     storageLimitMB: 10240,
     apiCallsToday: 0,
     apiCallsLimit: 1000000,
-    activeConnections: 0,
     avgResponseTimeMs: 45,
-    uptime: 99.9
+    authResponseTimeMs: 0
   });
   const [loading, setLoading] = useState(true);
   const [lastChecked, setLastChecked] = useState<Date>(new Date());
@@ -61,6 +59,13 @@ export const SystemHealthMonitor: React.FC = () => {
       const { error: dbError } = await supabase.from('user_profiles').select('id').limit(1);
       const responseTime = Date.now() - startTime;
 
+      // Check Auth service — getUser() (unlike getSession()) validates the
+      // token against the Supabase Auth server, so this is a real round trip
+      // rather than a decorative always-green badge.
+      const authStart = Date.now();
+      const { error: authError } = await supabase.auth.getUser();
+      const authResponseTime = Date.now() - authStart;
+
       // Get storage usage (simulated - would need actual storage API)
       const { data: storageData } = await supabase.from('ministry_storage_usage').select('total_size_bytes');
       const totalStorageBytes = (storageData || []).reduce((sum, s) => sum + (s.total_size_bytes || 0), 0);
@@ -77,7 +82,7 @@ export const SystemHealthMonitor: React.FC = () => {
         api: responseTime < 500 ? 'operational' : responseTime < 2000 ? 'degraded' : 'down',
         database: dbError ? 'down' : responseTime < 200 ? 'healthy' : 'degraded',
         storage: totalStorageBytes / (1024 * 1024) > 9000 ? 'full' : 'healthy',
-        auth: 'operational'
+        auth: authError ? 'down' : authResponseTime < 1000 ? 'operational' : 'degraded'
       });
 
       setMetrics({
@@ -85,9 +90,8 @@ export const SystemHealthMonitor: React.FC = () => {
         storageLimitMB: 10240,
         apiCallsToday: totalApiCalls,
         apiCallsLimit: 1000000,
-        activeConnections: Math.floor(Math.random() * 100) + 50, // Simulated
         avgResponseTimeMs: responseTime,
-        uptime: 99.9
+        authResponseTimeMs: authResponseTime
       });
 
       setLastChecked(new Date());
@@ -188,7 +192,7 @@ export const SystemHealthMonitor: React.FC = () => {
                   : 'Some Systems Degraded'}
               </h3>
               <p className="text-gray-600">
-                Uptime: {metrics.uptime}% • Response Time: {metrics.avgResponseTimeMs}ms
+                DB Response: {metrics.avgResponseTimeMs}ms • Auth Response: {metrics.authResponseTimeMs}ms • Last checked {lastChecked.toLocaleTimeString()}
               </p>
             </div>
           </div>
@@ -312,24 +316,24 @@ export const SystemHealthMonitor: React.FC = () => {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-4 bg-gray-50 rounded-lg text-center">
-              <Activity className="h-8 w-8 mx-auto text-blue-500 mb-2" />
-              <p className="text-2xl font-bold">{metrics.activeConnections}</p>
-              <p className="text-sm text-gray-500">Active Connections</p>
-            </div>
-            <div className="p-4 bg-gray-50 rounded-lg text-center">
               <Clock className="h-8 w-8 mx-auto text-green-500 mb-2" />
               <p className="text-2xl font-bold">{metrics.avgResponseTimeMs}ms</p>
-              <p className="text-sm text-gray-500">Avg Response Time</p>
+              <p className="text-sm text-gray-500">DB Response Time</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg text-center">
-              <Wifi className="h-8 w-8 mx-auto text-purple-500 mb-2" />
-              <p className="text-2xl font-bold">{metrics.uptime}%</p>
-              <p className="text-sm text-gray-500">Uptime (30 days)</p>
+              <Shield className="h-8 w-8 mx-auto text-amber-500 mb-2" />
+              <p className="text-2xl font-bold">{metrics.authResponseTimeMs}ms</p>
+              <p className="text-sm text-gray-500">Auth Response Time</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg text-center">
-              <Globe className="h-8 w-8 mx-auto text-amber-500 mb-2" />
-              <p className="text-2xl font-bold">3</p>
-              <p className="text-sm text-gray-500">Edge Locations</p>
+              <Zap className="h-8 w-8 mx-auto text-blue-500 mb-2" />
+              <p className="text-2xl font-bold">{metrics.apiCallsToday.toLocaleString()}</p>
+              <p className="text-sm text-gray-500">API Calls Today</p>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-lg text-center">
+              <HardDrive className="h-8 w-8 mx-auto text-purple-500 mb-2" />
+              <p className="text-2xl font-bold">{(metrics.storageUsedMB / 1024).toFixed(1)}GB</p>
+              <p className="text-sm text-gray-500">Storage Used</p>
             </div>
           </div>
         </CardContent>

@@ -216,12 +216,20 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
         .from('ministry_subscriptions').select('id')
         .eq('ministry_id', assignMinistryId).order('created_at', { ascending: false }).limit(1).maybeSingle();
 
-      const { error } = existing?.id
-        ? await supabase.from('ministry_subscriptions').update(row).eq('id', existing.id)
-        : await supabase.from('ministry_subscriptions').insert(row);
+      const { data: written, error } = existing?.id
+        ? await supabase.from('ministry_subscriptions').update(row).eq('id', existing.id).select().maybeSingle()
+        : await supabase.from('ministry_subscriptions').insert(row).select().maybeSingle();
       if (error) throw error;
+      if (!written) throw new Error(t('subscriptionPlansManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
 
-      await supabase.from('ministry_groups').update({ subscription_status: 'active' }).eq('id', assignMinistryId);
+      const { data: groupWritten, error: groupError } = await supabase
+        .from('ministry_groups')
+        .update({ subscription_status: 'active' })
+        .eq('id', assignMinistryId)
+        .select()
+        .maybeSingle();
+      if (groupError) throw groupError;
+      if (!groupWritten) throw new Error(t('subscriptionPlansManager', 'ministryUpdateBlocked', 'Subscription saved, but the ministry\'s status could not be updated (no permission).'));
 
       await supabase.from('ministry_audit_logs').insert({
         ministry_id: assignMinistryId,
@@ -286,12 +294,15 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
     setSaving(true);
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('ministry_subscriptions')
         .update(editForm)
-        .eq('id', selectedSubscription.id);
+        .eq('id', selectedSubscription.id)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error(t('subscriptionPlansManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
 
       // Log audit
       await supabase.from('ministry_audit_logs').insert({
@@ -317,14 +328,19 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
 
   const handleResetUsage = async (subId: string, ministryId: string) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('ministry_subscriptions')
         .update({
           api_calls_used: 0,
           broadcasts_used: 0,
           video_minutes_used: 0
         })
-        .eq('id', subId);
+        .eq('id', subId)
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error(t('subscriptionPlansManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
 
       await supabase.from('ministry_audit_logs').insert({
         ministry_id: ministryId,
@@ -344,13 +360,24 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
 
   const handleApprovePayPal = async (subId: string, ministryId: string) => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('ministry_subscriptions')
         .update({ status: 'active' })
-        .eq('id', subId);
+        .eq('id', subId)
+        .select()
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error(t('subscriptionPlansManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
 
-      await supabase.from('ministry_groups').update({ subscription_status: 'active' }).eq('id', ministryId);
+      const { data: groupWritten, error: groupError } = await supabase
+        .from('ministry_groups')
+        .update({ subscription_status: 'active' })
+        .eq('id', ministryId)
+        .select()
+        .maybeSingle();
+      if (groupError) throw groupError;
+      if (!groupWritten) throw new Error(t('subscriptionPlansManager', 'ministryUpdateBlocked', 'Subscription approved, but the ministry\'s status could not be updated (no permission).'));
+
       await supabase.from('ministry_audit_logs').insert({
         ministry_id: ministryId,
         actor_id: user?.id,
