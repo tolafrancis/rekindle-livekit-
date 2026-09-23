@@ -1662,90 +1662,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
   useEffect(() => { if (isConnected) setWasEverConnected(true); }, [isConnected]);
 
-  // Show meeting ended screen
-  if (meetingEnded) {
-    return (
-      <Card className="w-full max-w-lg mx-auto">
-        <CardContent className="p-8 text-center">
-          <div className="w-20 h-20 mx-auto rounded-full bg-gray-200 flex items-center justify-center mb-6">
-            <PhoneOff className="h-10 w-10 text-gray-600" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">{t('dailyVideoCall', 'meetingEnded', 'Meeting Ended')}</h3>
-          <p className="text-gray-500 mb-6">
-            {t('dailyVideoCall', 'meetingEndedByHost', 'This meeting has been ended by the host')}
-          </p>
-          <Button onClick={onCallEnd} className="w-full">
-            {t('dailyVideoCall', 'returnToHome', 'Return to Home')}
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Show waiting room for non-hosts when connected but host hasn't joined
-  if (isConnected && !isHost && !hostHasJoined) {
-    return (
-      <WaitingRoom
-        roomName={roomName}
-        userName={userName}
-        isHost={isHost}
-        hostHasJoined={hostHasJoined}
-        onCancel={() => {
-          leaveRoom();
-          onCallEnd?.();
-        }}
-      />
-    );
-  }
-
-
-
-  // Connection lost mid-call — was connected before, isn't now, and nothing
-  // is actively retrying (the mount-only auto-join effect above never fires
-  // again on its own). Without this branch the component silently fell
-  // through to rendering the last-known, now-stale participant grid — the
-  // local host's own camera tile kept looking perfectly normal (it's the
-  // raw local MediaStream, not dependent on the room connection), so there
-  // was no visible sign anything had gone wrong, while the room had, in
-  // fact, gone empty from LiveKit's side (confirmed live via the Egress API:
-  // the audience's HLS feed ended with "Source closed" — the room was empty
-  // this whole time even though the host's screen looked fine).
-  if (wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded) {
-    return (
-      <Card className="w-full max-w-lg mx-auto">
-        <CardContent className="p-8 text-center">
-          <div className="w-20 h-20 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-6">
-            <AlertCircle className="h-10 w-10 text-red-600" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">You've been disconnected</h3>
-          <p className="text-gray-500 mb-6">
-            Your connection to the call dropped. {isHost ? 'Attendees stop seeing you until you rejoin.' : "Rejoin to get back in."}
-          </p>
-          <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
-            Rejoin
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Connecting screen
-  if (isConnecting || isJoining) {
-    return (
-      <Card className="w-full max-w-lg mx-auto">
-        <CardContent className="p-8 text-center">
-          <Loader2 className="h-12 w-12 mx-auto animate-spin text-purple-600 mb-6" />
-          <h3 className="text-xl font-semibold mb-2">
-            {isJoining ? t('dailyVideoCall', 'joiningCall', 'Joining Call...') : t('dailyVideoCall', 'connecting', 'Connecting...')}
-          </h3>
-          <p className="text-gray-500">
-            {t('dailyVideoCall', 'settingUpVideoCall', 'Please wait while we set up your video call')}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   // Whoever is actively screen-sharing (local or remote) — their screen becomes
   // the main stage. Require the track to be LIVE: when a share stops, the track
   // ends (readyState 'ended') but the participant object can linger a beat; without
@@ -1802,6 +1718,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // up) resubscribes automatically on the next render. Audio is
   // deliberately left untouched regardless of visibility — hearing someone
   // still matters even while their tile is capped/scrolled off.
+  //
+  // Real bug found live (2026-09-23): this whole block — and everything it
+  // depends on above — used to sit AFTER several early `return`s further
+  // down (meetingEnded / waiting-room / disconnected / connecting), which
+  // meant these hooks were only called once every one of those had already
+  // resolved — never during, say, the "Connecting…" render. React detected
+  // the inconsistent hook count between renders and crashed the whole call
+  // screen (minified error #300 — "rendered more hooks than during the
+  // previous render") the instant anyone tried to join. Hooks must run
+  // unconditionally on every render regardless of any early return further
+  // down, so this — and screenSharer/featuredParticipant/filmstripParticipants
+  // above, which it depends on — now lives immediately after the last hook
+  // in the component and before every one of those early returns.
   useEffect(() => {
     const onScreen = new Set<string>(
       (screenSharer || !featuredParticipant ? cappedRemoteParticipants.visible : cappedFilmstripParticipants.visible)
@@ -1831,6 +1760,88 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     });
     lastOnScreenRef.current = onScreen;
   }, [screenSharer, featuredParticipant, cappedRemoteParticipants.visible, cappedFilmstripParticipants.visible, remoteParticipants, setParticipantVideoSubscribed]);
+
+  // Show meeting ended screen
+  if (meetingEnded) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full bg-gray-200 flex items-center justify-center mb-6">
+            <PhoneOff className="h-10 w-10 text-gray-600" />
+          </div>
+          <h3 className="text-xl font-semibold mb-2">{t('dailyVideoCall', 'meetingEnded', 'Meeting Ended')}</h3>
+          <p className="text-gray-500 mb-6">
+            {t('dailyVideoCall', 'meetingEndedByHost', 'This meeting has been ended by the host')}
+          </p>
+          <Button onClick={onCallEnd} className="w-full">
+            {t('dailyVideoCall', 'returnToHome', 'Return to Home')}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Show waiting room for non-hosts when connected but host hasn't joined
+  if (isConnected && !isHost && !hostHasJoined) {
+    return (
+      <WaitingRoom
+        roomName={roomName}
+        userName={userName}
+        isHost={isHost}
+        hostHasJoined={hostHasJoined}
+        onCancel={() => {
+          leaveRoom();
+          onCallEnd?.();
+        }}
+      />
+    );
+  }
+
+  // Connection lost mid-call — was connected before, isn't now, and nothing
+  // is actively retrying (the mount-only auto-join effect above never fires
+  // again on its own). Without this branch the component silently fell
+  // through to rendering the last-known, now-stale participant grid — the
+  // local host's own camera tile kept looking perfectly normal (it's the
+  // raw local MediaStream, not dependent on the room connection), so there
+  // was no visible sign anything had gone wrong, while the room had, in
+  // fact, gone empty from LiveKit's side (confirmed live via the Egress API:
+  // the audience's HLS feed ended with "Source closed" — the room was empty
+  // this whole time even though the host's screen looked fine).
+  if (wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-6">
+            <AlertCircle className="h-10 w-10 text-red-600" />
+          </div>
+          <h3 className="text-xl font-semibold mb-2">You've been disconnected</h3>
+          <p className="text-gray-500 mb-6">
+            Your connection to the call dropped. {isHost ? 'Attendees stop seeing you until you rejoin.' : "Rejoin to get back in."}
+          </p>
+          <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
+            Rejoin
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Connecting screen
+  if (isConnecting || isJoining) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <Loader2 className="h-12 w-12 mx-auto animate-spin text-purple-600 mb-6" />
+          <h3 className="text-xl font-semibold mb-2">
+            {isJoining ? t('dailyVideoCall', 'joiningCall', 'Joining Call...') : t('dailyVideoCall', 'connecting', 'Connecting...')}
+          </h3>
+          <p className="text-gray-500">
+            {t('dailyVideoCall', 'settingUpVideoCall', 'Please wait while we set up your video call')}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Per-tile pin / spotlight / co-host controls, shared by the filmstrip and grid.
   const renderTileControls = (p: any) => {
