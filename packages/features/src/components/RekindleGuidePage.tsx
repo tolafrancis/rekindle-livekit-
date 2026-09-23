@@ -69,7 +69,8 @@ const TOC_ITEMS: Array<[string, string]> = [
   ['devotionals', 'Daily Devotionals'],
   ['prayer', 'Prayer Wall & Prayer Library'],
   ['live-channels', 'Live Channels'],
-  ['video', 'Video Conferencing & Webinars'],
+  ['video', 'Interactive Meetings'],
+  ['webinars', 'Webinars'],
   ['crm', 'Ministry Management (CRM)'],
   ['qr', 'QR Self-Registration'],
   ['kiosk', 'Kiosk Check-in'],
@@ -254,18 +255,44 @@ const RekindleGuidePage: React.FC = () => {
           />
 
           <FeatureSection
-            id="video" eyebrow="Feature" title="Video Conferencing & Webinars"
-            what="Face-to-face video meetings for teams and groups, plus a webinar mode for larger gatherings where a host (and invited speakers) present while the audience watches and interacts — raising a hand to be invited up, sending live reactions and joining the chat."
+            id="video" eyebrow="Feature" title="Interactive Meetings"
+            what="Face-to-face video meetings for teams, groups and classes. Everyone in the call can see and hear one another, chat and send live reactions. Ministry leaders can record the meeting, get AI insights afterwards, and see a record of who attended — who joined, when, and for how long."
             how={[
-              'From the main navigation, tap Live Broadcast, then the Meetings tab.',
-              'Create a meeting for a leadership team, small group or class.',
-              'For a larger event, switch on webinar mode so the audience watches a presentation and interacts without crowding the call.',
+              'In your ministry’s dashboard (Ministries → Manage), open the Interactive Meetings tab.',
+              'Create a meeting — an Instant Meeting to start now, or a Scheduled Meeting for later — and choose who can join: Public, Members Only or Leaders Only.',
+              'Use the copy-link button on the meeting card to share the invite by message, email or WhatsApp.',
+              'Recording: on the meeting card, tap Rec On / Rec Off to choose whether the meeting is recorded. Set this before the meeting starts — it can’t be changed while the meeting is live. Once a meeting has been recorded, tap Recordings on the card to watch it back.',
+              'Participants record: on the meeting card, tap Participants to see who attended. The list shows the total number of participants and, for each person, their name, when they joined and how long they were in the call. Guests are labelled “(guest)”, and anyone still in a live meeting is marked “in call”.',
+              'Tap Insights on the card to see AI insights from previous sessions of the meeting.',
             ]}
             cases={[
               'Leadership and ministry-team meetings.',
               'Bible studies, membership classes and new-believer courses.',
-              'Webinars, Q&A evenings and training for volunteers.',
+              'Taking attendance for classes and courses without a register — the Participants list records it for you.',
             ]}
+            note="The Rec On/Off, Recordings, Insights and Participants buttons are only shown to ministry leaders. The Participants list contains members’ personal information, so it’s kept private to the people running the meeting."
+          />
+
+          <FeatureSection
+            id="webinars" eyebrow="Feature" title="Webinars"
+            what="A broadcast format for larger gatherings. The host, plus any speakers and co-hosts they invite, present to an audience. The audience watches and joins in through chat, Q&A, polls and live reactions, and can raise a hand to be invited up to speak. Webinars can be recorded, captioned and translated live. After a webinar, leaders can see analytics and a full record of who attended."
+            how={[
+              'In your ministry’s dashboard (Ministries → Manage), open the Webinars tab and tap New webinar.',
+              'Add a title, description and cover image, then pick the date, time, timezone and duration, and set a maximum number of attendees.',
+              'Choose whether the webinar is Public and whether attendees must register first.',
+              'Recording: switch Recording on, and choose its visibility — Private (host & admins only) or Public (shown in the ministry’s Recordings tab). You can also switch on Captions and Live translation and pick a default language.',
+              'Under Audience interaction, choose which of Chat, Q&A and Polls to allow, and add any speakers or co-hosts.',
+              'Share the webinar with the copy-link button on its card. When it’s time, start the webinar from its card and confirm — attendees can then join.',
+              'Participants record: after the webinar, open the Past tab and tap the Participants button (the people icon) on its card. You’ll see everyone who actually attended — their name, when they joined and how long they stayed — whether or not registration was required.',
+              'Tap Analytics on a past webinar’s card to see attendance, engagement and replay figures. If registration was on, you’ll also see a registrants table showing each registrant’s status and how long they stayed.',
+              'Recorded webinars appear in the Recordings tab of the Webinars page.',
+            ]}
+            cases={[
+              'Q&A evenings, conferences and guest-speaker events.',
+              'Training for volunteers and leaders.',
+              'Following up attendees afterwards — use the Participants list to see who came and for how long.',
+            ]}
+            note="The Participants list and Analytics are only available to ministry leaders, and only once the webinar has finished."
           />
 
           <FeatureSection

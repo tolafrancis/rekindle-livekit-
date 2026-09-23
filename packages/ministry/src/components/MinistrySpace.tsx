@@ -1594,7 +1594,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               })}
             </div>
 
-            <FreeMeetingsPromoCard onStartMeeting={() => setActiveTab('meetings')} />
+            <FreeMeetingsPromoCard
+              onStartMeeting={() => setActiveTab('meetings')}
+              onSeePlans={() => navigate('/settings/billing')}
+            />
 
             {/* ReKindle Tip — nudge to set up daily reminders (self-hides once set) */}
             <ReminderSetupTip onSetup={() => navigate('/settings/account')} />
