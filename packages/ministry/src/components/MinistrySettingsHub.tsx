@@ -249,7 +249,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                 registrations: 'people',
                 whatsapp: 'engagement',
                 inbox: 'engagement',
-                birthdays: 'people',
+                birthdays: 'general',
                 rules: 'content',
                 settings: 'general',
               };
@@ -294,12 +294,13 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                   <Label>{t('ministrySettingsHub', 'ministrySlug', 'Ministry Slug')}</Label>
                   {/* Read-only here on purpose — the editable slug (with live-availability
                       checking, collision handling and its own Save button) lives in the
-                      Registration & Join Link section below. A second independent editable
-                      copy here — each with its own local state and its own Save button —
-                      previously let an edit made in one field get silently discarded if the
-                      OTHER section's Save button was clicked instead (real bug, hit in
-                      testing: edited here, saved down there, this field reverted). One
-                      editable field, one Save button — this one just links to it. */}
+                      Registration & Join Link section, under the People tab. A second
+                      independent editable copy here — each with its own local state and
+                      its own Save button — previously let an edit made in one field get
+                      silently discarded if the OTHER section's Save button was clicked
+                      instead (real bug, hit in testing: edited here, saved down there,
+                      this field reverted). One editable field, one Save button — this one
+                      just links to it (switching tabs first since it now lives under People). */}
                   <div className="flex items-center gap-2">
                     <Input value={ministry.slug || ''} readOnly disabled className="bg-gray-50" />
                     <Button
@@ -307,13 +308,16 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                       variant="outline"
                       size="sm"
                       className="shrink-0"
-                      onClick={() => document.getElementById('registration-join-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      onClick={() => {
+                        setCurrentSection('people');
+                        setTimeout(() => document.getElementById('registration-join-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                      }}
                     >
                       {t('ministrySettingsHub', 'changeSlug', 'Change')}
                     </Button>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Registration & Join Link below — changing it updates the join link everywhere; old links using the previous address will stop working.')}
+                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Registration & Join Link under the People tab — changing it updates the join link everywhere; old links using the previous address will stop working.')}
                   </p>
                   {ministry.slug && (
                     <p className="text-xs text-gray-400 mt-1 break-all">
@@ -705,12 +709,10 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
               </Button>
             </div>
 
-            <div id="registration-join-link">
-              <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
-            </div>
             <div id="custom-domain-settings">
               <CustomDomainSettings ministryId={ministry.id} />
             </div>
+            <MinistryBirthdayWishes ministryId={ministry.id} ministryName={ministry.name} />
           </div>
         )}
 
@@ -720,7 +722,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <MinistryMembersManager ministryId={ministry.id} />
             <MinistryVolunteerTeamsManager ministryId={ministry.id} />
             <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
-            <MinistryBirthdayWishes ministryId={ministry.id} ministryName={ministry.name} />
+            <div id="registration-join-link">
+              <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+            </div>
           </div>
         )}
 
