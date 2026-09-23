@@ -16,7 +16,7 @@ const API_PORTAL_URL = 'https://developers.rekindlebc.com';
  * Create Meeting modal. Also the primary on-ramp to the standalone
  * Interactive Meetings API (apps/developer-portal).
  */
-export const FreeMeetingsPromoCard: React.FC<{ onStartMeeting?: () => void }> = ({ onStartMeeting }) => {
+export const FreeMeetingsPromoCard: React.FC<{ onStartMeeting?: () => void; onSeePlans?: () => void }> = ({ onStartMeeting, onSeePlans }) => {
   const { t } = useLanguage();
   return (
     <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50">
@@ -30,7 +30,19 @@ export const FreeMeetingsPromoCard: React.FC<{ onStartMeeting?: () => void }> = 
             <Sparkles className="h-4 w-4 text-purple-500 shrink-0" />
           </p>
           <p className="text-sm text-gray-600">
-            {t('freeMeetingsPromo', 'desc', '10 hours every month, as many meetings as you like, up to 15 participants, 60 minutes each. No credit card required.')}
+            {t('freeMeetingsPromo', 'desc', '10 free hours every month. Unlimited meetings, up to 60 minutes each. No credit card required.')}
+          </p>
+          <p className="text-sm text-gray-600 mt-1">
+            {t('freeMeetingsPromo', 'participants', 'Free plan includes up to 15 participants per meeting.')}{' '}
+            {onSeePlans && (
+              <button
+                type="button"
+                onClick={onSeePlans}
+                className="font-medium text-purple-700 hover:underline whitespace-nowrap"
+              >
+                {t('freeMeetingsPromo', 'seePlans', 'Need more? See plans →')}
+              </button>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
