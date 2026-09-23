@@ -82,9 +82,11 @@ export interface UseDailyRoomReturn {
   audioPlaybackBlocked: boolean;
   enableAudioPlayback: () => Promise<void>;
   /** Per-participant network quality, keyed by LiveKit identity ('' for the
-   *  local participant). Plumbed through for a future per-tile indicator;
-   *  not yet rendered anywhere. */
+   *  local participant). */
   connectionQuality: Record<string, string>;
+  /** Subscribe/unsubscribe a remote participant's camera track — see
+   *  LiveKitRoomWrapper.ts's own doc comment. */
+  setParticipantVideoSubscribed: (identity: string, subscribed: boolean) => void;
 
   // Room info
   roomUrl: string | null;
@@ -2200,6 +2202,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     setAudioPlaybackBlocked(false);
   }, []);
 
+  // On-screen tile subscription control (2026-09-23, meeting architecture
+  // review follow-up) — plain passthrough; see LiveKitRoomWrapper.ts's own
+  // doc comment for why this exists. Imperative, not stateful — the caller
+  // (DailyVideoCall.tsx) already knows which identities are visible from
+  // its own render logic and just needs a way to act on it.
+  const setParticipantVideoSubscribed = useCallback((identity: string, subscribed: boolean) => {
+    wrapperRef.current?.setParticipantVideoSubscribed(identity, subscribed);
+  }, []);
+
   // Delete room — actually closes the LiveKit room via livekit-token's
   // delete-room action. Real bug found live (2026-09-23, meeting
   // architecture review): this used to unconditionally return true with no
@@ -2639,6 +2650,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     audioPlaybackBlocked,
     enableAudioPlayback,
     connectionQuality,
+    setParticipantVideoSubscribed,
     roomUrl,
     roomToken,
     roomName: options.roomName,

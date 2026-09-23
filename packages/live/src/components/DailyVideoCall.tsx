@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -12,7 +12,7 @@ import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, VolumeX, Volume2, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, WifiOff
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -1111,6 +1111,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isReconnecting,
     audioPlaybackBlocked,
     enableAudioPlayback,
+    connectionQuality,
+    setParticipantVideoSubscribed,
     participants,
     participantStates,
     localParticipant,
@@ -1771,6 +1773,65 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     ? remoteParticipants.filter((p: any) => p.sessionId !== featuredParticipant.sessionId)
     : remoteParticipants;
 
+  // On-screen tile capping (2026-09-23, meeting architecture review
+  // follow-up) — shared by all three layout modes (plain grid, screen-share
+  // filmstrip, featured-view filmstrip; the first two both draw from the
+  // full remoteParticipants list, so one memo covers both). Active speakers
+  // are prioritized so a live conversation can't get pushed off-screen by
+  // the cap; everyone else keeps their existing order filling the
+  // remaining slots. Tiles beyond the cap collapse into a single "+N more"
+  // indicator instead of each getting their own (still-mounted, still-
+  // decoding) element.
+  const MAX_ONSCREEN_TILES = 12;
+  const lastOnScreenRef = useRef<Set<string>>(new Set());
+  const capTiles = (list: any[]): { visible: any[]; overflowCount: number } => {
+    if (list.length <= MAX_ONSCREEN_TILES) return { visible: list, overflowCount: 0 };
+    const ordered = [...list].sort((a, b) => (b.isSpeaking ? 1 : 0) - (a.isSpeaking ? 1 : 0));
+    return { visible: ordered.slice(0, MAX_ONSCREEN_TILES), overflowCount: ordered.length - MAX_ONSCREEN_TILES };
+  };
+  const cappedRemoteParticipants = useMemo(() => capTiles(remoteParticipants), [remoteParticipants]);
+  const cappedFilmstripParticipants = useMemo(() => capTiles(filmstripParticipants), [filmstripParticipants]);
+
+  // Track-level subscription control, not just visual capping (2026-09-23,
+  // same follow-up) — the room auto-subscribes every remote CAMERA track on
+  // join regardless of what's actually rendered (this wrapper never sets
+  // autoSubscribe:false), so capping the grid visually alone still pulled
+  // full video bandwidth for everyone off-screen. Drives real per-track
+  // subscription from whichever layout mode is currently active; a
+  // participant who moves back into view (starts speaking, the cap opens
+  // up) resubscribes automatically on the next render. Audio is
+  // deliberately left untouched regardless of visibility — hearing someone
+  // still matters even while their tile is capped/scrolled off.
+  useEffect(() => {
+    const onScreen = new Set<string>(
+      (screenSharer || !featuredParticipant ? cappedRemoteParticipants.visible : cappedFilmstripParticipants.visible)
+        .map((p: any) => p.id)
+    );
+    // The featured tile itself always stays subscribed — it's the big
+    // tile, and filmstripParticipants (which cappedFilmstripParticipants is
+    // derived from) deliberately excludes them, so nothing above would
+    // otherwise ever mark them on-screen.
+    if (featuredParticipant && !featuredParticipant.isLocal) onScreen.add(featuredParticipant.id);
+
+    // remoteParticipants gets a new array reference on nearly every
+    // participant event (a mic toggle, a metadata update — not just
+    // someone joining/leaving), which would otherwise re-fire every call
+    // in this effect even when the actual on-screen SET hasn't changed at
+    // all. Diff against what was last requested and only call for
+    // identities whose subscribed state actually flipped — setSubscribed
+    // is presumably idempotent LiveKit-side, but there's no reason to rely
+    // on that when the real signal (did visibility change) is this cheap
+    // to compute here.
+    const prevOnScreen = lastOnScreenRef.current;
+    remoteParticipants.forEach((p: any) => {
+      const shouldShow = onScreen.has(p.id);
+      if (prevOnScreen.has(p.id) !== shouldShow) {
+        setParticipantVideoSubscribed(p.id, shouldShow);
+      }
+    });
+    lastOnScreenRef.current = onScreen;
+  }, [screenSharer, featuredParticipant, cappedRemoteParticipants.visible, cappedFilmstripParticipants.visible, remoteParticipants, setParticipantVideoSubscribed]);
+
   // Per-tile pin / spotlight / co-host controls, shared by the filmstrip and grid.
   const renderTileControls = (p: any) => {
     const isPinned = pinnedParticipantId === p.sessionId;
@@ -1804,6 +1865,25 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             <Shield className="h-2.5 w-2.5" />
           </button>
         )}
+      </div>
+    );
+  };
+
+  // Connection-quality badge (2026-09-23, meeting architecture review
+  // follow-up) — connectionQuality is keyed by LiveKit identity
+  // (NormalizedParticipant.id), not sessionId. Deliberately silent for
+  // 'excellent'/'good'/'unknown' — same convention most meeting apps use of
+  // only surfacing a warning once quality actually degrades, not a
+  // permanent "you're fine" indicator cluttering every tile.
+  const renderQualityBadge = (p: any) => {
+    const quality = connectionQuality[p.id];
+    if (quality !== 'poor' && quality !== 'lost') return null;
+    return (
+      <div
+        className={`absolute bottom-1 left-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${quality === 'lost' ? 'bg-red-600' : 'bg-amber-500'}`}
+        title={quality === 'lost' ? t('dailyVideoCall', 'connectionLost', 'Connection lost') : t('dailyVideoCall', 'poorConnection', 'Poor connection')}
+      >
+        <WifiOff className="h-2.5 w-2.5" />
       </div>
     );
   };
@@ -1925,13 +2005,22 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             </div>
             {remoteParticipants.length > 0 && (
               <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0 overflow-x-auto lg:overflow-y-auto overflow-y-hidden lg:overflow-x-hidden">
-                {remoteParticipants.map((p: any) => (
-                  <div key={p.sessionId} className="w-28 lg:w-full shrink-0">
+                {cappedRemoteParticipants.visible.map((p: any) => (
+                  <div key={p.sessionId} className="relative w-28 lg:w-full shrink-0">
                     <ParticipantVideo
                       participant={p}
                     />
+                    {renderQualityBadge(p)}
                   </div>
                 ))}
+                {cappedRemoteParticipants.overflowCount > 0 && (
+                  <div className="relative flex w-28 lg:w-full shrink-0 aspect-video items-center justify-center rounded-lg bg-gray-800 text-white">
+                    <div className="text-center">
+                      <Users className="h-4 w-4 mx-auto mb-0.5 opacity-70" />
+                      <p className="text-[11px] font-medium">+{cappedRemoteParticipants.overflowCount}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2012,15 +2101,24 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             </div>
             {filmstripParticipants.length > 0 && (
               <div className="flex gap-2 h-24 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                {filmstripParticipants.map((participant: any) => (
+                {cappedFilmstripParticipants.visible.map((participant: any) => (
                   <div key={participant.sessionId} className="relative h-full aspect-video shrink-0">
                     <ParticipantVideo
                       participant={participant}
                       isLarge
                     />
                     {renderTileControls(participant)}
+                    {renderQualityBadge(participant)}
                   </div>
                 ))}
+                {cappedFilmstripParticipants.overflowCount > 0 && (
+                  <div className="relative flex h-full aspect-video shrink-0 items-center justify-center rounded-lg bg-gray-800 text-white">
+                    <div className="text-center">
+                      <Users className="h-5 w-5 mx-auto mb-0.5 opacity-70" />
+                      <p className="text-xs font-medium">+{cappedFilmstripParticipants.overflowCount}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2032,17 +2130,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           // simultaneously. adaptiveStream throttles their resolution but
           // does nothing for decode/DOM/render cost — real risk of jank,
           // battery drain, or a crash on lower-end or mobile devices.
-          // Active speakers are prioritized so a live conversation never
-          // gets pushed off-screen by the cap; everyone else keeps their
-          // existing order filling the remaining slots. Tiles beyond the
-          // cap collapse into a single "+N more" indicator instead of each
-          // getting their own (still-mounted, still-decoding) element.
-          const MAX_GRID_TILES = 12;
-          const ordered = remoteParticipants.length > MAX_GRID_TILES
-            ? [...remoteParticipants].sort((a: any, b: any) => (b.isSpeaking ? 1 : 0) - (a.isSpeaking ? 1 : 0))
-            : remoteParticipants;
-          const visible = ordered.slice(0, MAX_GRID_TILES);
-          const overflowCount = ordered.length - visible.length;
+          // Uses the same cappedRemoteParticipants memo the subscription-
+          // control effect above already computed, rather than a second,
+          // separate cap — keeps what's rendered and what's actually
+          // subscribed in sync by construction.
+          const { visible, overflowCount } = cappedRemoteParticipants;
           const tileCount = visible.length + (overflowCount > 0 ? 1 : 0);
           return (
             <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
@@ -2057,6 +2149,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     isLarge={tileCount === 1}
                   />
                   {renderTileControls(participant)}
+                  {renderQualityBadge(participant)}
                 </div>
               ))}
               {overflowCount > 0 && (

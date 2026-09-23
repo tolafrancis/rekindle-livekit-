@@ -121,6 +121,13 @@ export interface IVideoRoomWrapper {
    *  onAudioPlaybackBlocked above. A no-op that resolves immediately on a
    *  wrapper with nothing to resume. */
   resumeAudioPlayback(): Promise<void>;
+
+  /** Subscribe/unsubscribe a remote participant's CAMERA track specifically
+   *  (never audio, never screen share) — lets a capped/off-screen tile stop
+   *  pulling video bandwidth without muting their mic or affecting a
+   *  screen-share they may be presenting. identity is their LiveKit
+   *  identity (== NormalizedParticipant.id). */
+  setParticipantVideoSubscribed(identity: string, subscribed: boolean): void;
 }
 
 export type VideoBackend = 'daily' | 'livekit';

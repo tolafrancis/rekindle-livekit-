@@ -574,6 +574,26 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     }
   }
 
+  /** On-screen tile subscription control (2026-09-23, meeting architecture
+   *  review, follow-up to the video-grid cap) — the room auto-subscribes
+   *  every remote CAMERA track on join (this wrapper never sets
+   *  autoSubscribe:false) regardless of whether it's actually rendered, so
+   *  capping the grid visually alone still pulled full video bandwidth for
+   *  everyone off-screen. Only ever touches the camera track: screen share
+   *  is a separate publication handled by its own featured-view logic, and
+   *  audio is deliberately left alone regardless of visibility — hearing
+   *  someone still matters even while their tile is scrolled off / behind
+   *  the "+N more" overflow indicator. */
+  setParticipantVideoSubscribed(identity: string, subscribed: boolean): void {
+    if (!this.room) return;
+    for (const p of this.room.remoteParticipants.values()) {
+      if (p.identity !== identity) continue;
+      const pub = p.getTrackPublication(Track.Source.Camera);
+      pub?.setSubscribed(subscribed);
+      return;
+    }
+  }
+
   // ============================================================
   // internals
   // ============================================================
