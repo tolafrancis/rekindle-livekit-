@@ -562,6 +562,18 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   isVideoEnabled(): boolean { return this.localVideoEnabled; }
   isAudioEnabled(): boolean { return this.localAudioEnabled; }
 
+  /** Counterpart to onAudioPlaybackBlocked (2026-09-23, meeting architecture
+   *  review) — must be called from within a real user gesture (the "Tap to
+   *  enable sound" button's own click handler), same autoplay-policy
+   *  requirement as any other audio-resume call in this codebase. */
+  async resumeAudioPlayback(): Promise<void> {
+    try {
+      await this.room?.startAudio();
+    } catch (err) {
+      console.error('[LiveKitRoomWrapper] resumeAudioPlayback failed:', err);
+    }
+  }
+
   // ============================================================
   // internals
   // ============================================================
@@ -573,6 +585,32 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       .on(RoomEvent.Disconnected, () => {
         this.joined = false;
         this.callbacks.onLeft?.();
+      })
+      // Reconnection UX (2026-09-23, meeting architecture review) — these
+      // were never wired at all before, so a transient network blip gave
+      // zero feedback: tiles just froze, and on a successful recovery
+      // nothing told the user it was over. Reconnecting can fire more than
+      // once per outage (LiveKit retries); Reconnected always follows a
+      // successful recovery.
+      .on(RoomEvent.Reconnecting, () => this.callbacks.onReconnecting?.())
+      .on(RoomEvent.Reconnected, () => this.callbacks.onReconnected?.())
+      // Same review, Issue 2/4 — a blocked autoplay used to leave a joined
+      // user watching full video with no sound and no explanation. LiveKit
+      // itself tells us via this event whenever room.canPlaybackAudio flips;
+      // only notify on the blocked transition, not every fire (it also
+      // fires once autoplay succeeds).
+      .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        if (!this.room?.canPlaybackAudio) this.callbacks.onAudioPlaybackBlocked?.();
+      })
+      .on(RoomEvent.ConnectionQualityChanged, (quality, p: Participant) => {
+        this.callbacks.onConnectionQualityChanged?.(p.isLocal ? '' : p.identity, quality);
+      })
+      // Surfaced through the existing generic error callback rather than a
+      // dedicated one — same review — this is another connect-time failure
+      // class (like a publish/subscribe error), not a new kind of UI state.
+      .on(RoomEvent.TrackSubscriptionFailed, (trackSid: string, p: RemoteParticipant, reason) => {
+        console.error(`[LiveKitRoomWrapper] failed to subscribe to track ${trackSid} from ${p.identity}:`, reason);
+        this.callbacks.onError?.(new Error(`Failed to subscribe to a track from ${p.identity}`));
       })
       .on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
         this.callbacks.onParticipantJoined?.(this.normalize(p, false));

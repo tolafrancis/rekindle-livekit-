@@ -1496,6 +1496,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
   // DB side of leaving/ending — self-contained (takes the meeting) so it still works
   // if this list component has since unmounted (e.g. left from the mini-player).
+  //
+  // Real bug found live (2026-09-23, same class already fixed for
+  // MinistryInteractiveMeetings.tsx's own leaveMeetingDb): the non-webinar
+  // else-branch only ever decremented participant_count — nothing flipped
+  // is_active back to false once the count reached zero. The overwhelmingly
+  // common way people actually leave a call is closing the tab, not an
+  // explicit "End Meeting", so a meeting whose last participant left that
+  // way stayed is_active:true forever, silently consuming a concurrent-
+  // active-meeting slot.
   const leaveMeetingDb = async (meeting: LiveChannelVideoMeeting) => {
     const isHost = meeting.host_id === user?.id;
     const isWebinar = meeting.mode === 'webinar';
@@ -1508,7 +1517,12 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           .eq('id', meeting.id);
       } else {
         const newCount = Math.max(0, meeting.participant_count - 1);
-        await supabase.from('live_channel_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+        const patch: Record<string, unknown> = { participant_count: newCount };
+        if (newCount === 0) {
+          patch.is_active = false;
+          patch.ended_at = new Date().toISOString();
+        }
+        await supabase.from('live_channel_video_meetings').update(patch).eq('id', meeting.id);
       }
     } catch (error) {
       console.error('Error leaving meeting:', error);

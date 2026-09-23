@@ -612,6 +612,52 @@ serve(async (req) => {
       }
     }
 
+    // ── 3d. Live channel meeting attendance + is_active (server-side backstop) ──
+    // Same fix as 3c above, mirrored for apps/rekindle's
+    // LiveChannelInteractiveMeetings.tsx (room_name prefix "channel-" instead
+    // of "ministry-", table live_channel_video_meetings instead of
+    // ministry_video_meetings) — the exact same class of gap exists there
+    // for the exact same reason (leaveMeetingDb's own client-side self-
+    // report can't run if the disconnecting client's network is down).
+    if (event.event === 'participant_left') {
+      const roomName = event.room?.name;
+      const identity = event.participant?.identity;
+      if (roomName?.startsWith('channel-') && identity
+        && !identity.startsWith('rlt-bot-') && !identity.endsWith('-screenshare')) {
+        const { data: meeting } = await admin
+          .from('live_channel_video_meetings')
+          .select('id, participant_count')
+          .eq('room_name', roomName)
+          .maybeSingle();
+        const m = meeting as { id?: string; participant_count?: number } | null;
+        if (m?.id) {
+          const { data: openRow } = await admin
+            .from('meeting_attendance')
+            .select('id')
+            .eq('meeting_id', m.id)
+            .eq('meeting_table', 'live_channel_video_meetings')
+            .eq('user_id', identity)
+            .eq('is_active', true)
+            .order('joined_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (openRow) {
+            await admin.from('meeting_attendance')
+              .update({ left_at: new Date().toISOString(), is_active: false })
+              .eq('id', (openRow as { id: string }).id);
+
+            const newCount = Math.max(0, (m.participant_count ?? 1) - 1);
+            const patch: Record<string, unknown> = { participant_count: newCount };
+            if (newCount === 0) {
+              patch.is_active = false;
+              patch.ended_at = new Date().toISOString();
+            }
+            await admin.from('live_channel_video_meetings').update(patch).eq('id', m.id);
+          }
+        }
+      }
+    }
+
     return new Response('ok', { status: 200 });
   } catch (error) {
     console.error('livekit-webhook error:', error);

@@ -72,7 +72,20 @@ export interface UseDailyRoomReturn {
   isConnecting: boolean;
   isJoining: boolean;
   connectionError: string | null;
-  
+  /** True while LiveKit is trying to recover a dropped connection — drives
+   *  a "Reconnecting…" banner (2026-09-23, meeting architecture review;
+   *  previously unwired, so a network blip gave zero feedback). */
+  isReconnecting: boolean;
+  /** True when the browser blocked audio autoplay on join — drives a "Tap
+   *  to enable sound" banner. Call enableAudioPlayback() from that button's
+   *  own click handler (must be a real user gesture). */
+  audioPlaybackBlocked: boolean;
+  enableAudioPlayback: () => Promise<void>;
+  /** Per-participant network quality, keyed by LiveKit identity ('' for the
+   *  local participant). Plumbed through for a future per-tile indicator;
+   *  not yet rendered anywhere. */
+  connectionQuality: Record<string, string>;
+
   // Room info
   roomUrl: string | null;
   roomToken: string | null;
@@ -209,7 +222,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  
+  // Reconnection UX (2026-09-23, meeting architecture review) — previously
+  // unwired entirely, so a network blip gave zero feedback (tiles just
+  // froze) and a blocked audio autoplay left a joined user hearing nothing
+  // with no explanation. connectionQuality is keyed by LiveKit identity,
+  // '' for the local participant — available for a future per-tile
+  // indicator; not yet rendered anywhere.
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<Record<string, string>>({});
+
   // Room info
   const [roomUrl, setRoomUrl] = useState<string | null>(null);
   const [roomToken, setRoomToken] = useState<string | null>(null);
@@ -726,7 +748,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           setIsConnected(true);
           setIsConnecting(false);
           setIsJoining(false);
-          
+          // A fresh Connected event means whatever reconnect was in flight
+          // is over, one way or another — don't leave a stale banner up.
+          setIsReconnecting(false);
+
           const startTime = new Date();
           sessionStartTimeRef.current = startTime;
           
@@ -840,6 +865,18 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         },
         onTranslationTracksChanged: (tracks) => {
           setTranslationTracks(tracks);
+        },
+        // Reconnection UX (2026-09-23, meeting architecture review) — see
+        // the state declarations above for why these exist. Reconnecting
+        // can fire more than once per outage (LiveKit retries internally);
+        // clear it on both Reconnected and the ordinary Connected path (a
+        // fresh join) so a stale "Reconnecting…" banner can't survive past
+        // whichever recovery actually happens.
+        onReconnecting: () => setIsReconnecting(true),
+        onReconnected: () => setIsReconnecting(false),
+        onAudioPlaybackBlocked: () => setAudioPlaybackBlocked(true),
+        onConnectionQualityChanged: (identity, quality) => {
+          setConnectionQuality(prev => (prev[identity] === quality ? prev : { ...prev, [identity]: quality }));
         }
       });
 
@@ -2153,6 +2190,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [isScreenSharing]);
 
+  // Retries blocked audio playback from within a real user gesture — the
+  // "Tap to enable sound" button's own onClick. See audioPlaybackBlocked's
+  // doc comment above for why this exists.
+  const enableAudioPlayback = useCallback(async () => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    await wrapper.resumeAudioPlayback();
+    setAudioPlaybackBlocked(false);
+  }, []);
+
   // Delete room — actually closes the LiveKit room via livekit-token's
   // delete-room action. Real bug found live (2026-09-23, meeting
   // architecture review): this used to unconditionally return true with no
@@ -2588,6 +2635,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     isConnecting,
     isJoining,
     connectionError,
+    isReconnecting,
+    audioPlaybackBlocked,
+    enableAudioPlayback,
+    connectionQuality,
     roomUrl,
     roomToken,
     roomName: options.roomName,

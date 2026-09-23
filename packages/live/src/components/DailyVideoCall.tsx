@@ -11,7 +11,7 @@ import { ReactionButton } from './MeetingReactions';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
-  Maximize2, Minimize2, Settings, VolumeX, CheckCircle2,
+  Maximize2, Minimize2, Settings, VolumeX, Volume2, CheckCircle2,
   XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
@@ -1108,6 +1108,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isConnecting,
     isJoining,
     connectionError,
+    isReconnecting,
+    audioPlaybackBlocked,
+    enableAudioPlayback,
     participants,
     participantStates,
     localParticipant,
@@ -1875,6 +1878,31 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       ref={containerRef}
       className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-gray-900 sm:flex-row ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
+      {/* Reconnection UX (2026-09-23, meeting architecture review) — before
+          this, a network blip gave zero feedback: tiles just froze with no
+          indication anything was wrong, and a blocked audio autoplay left a
+          joined participant watching video with no sound and no
+          explanation. Both render as a non-blocking banner on top of the
+          normal in-call UI (not a full-screen takeover like the hard-
+          disconnect screen above) since the call itself is still usable
+          while either is showing. */}
+      {isReconnecting && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-amber-500 text-white px-3 py-1.5 text-xs sm:text-sm shadow-lg">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('dailyVideoCall', 'reconnecting', 'Reconnecting…')}
+        </div>
+      )}
+      {audioPlaybackBlocked && (
+        <button
+          type="button"
+          onClick={enableAudioPlayback}
+          className={`absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 text-xs sm:text-sm shadow-lg ${isReconnecting ? 'top-11' : 'top-2'}`}
+        >
+          <Volume2 className="h-3.5 w-3.5" />
+          {t('dailyVideoCall', 'tapToEnableSound', 'Tap to enable sound')}
+        </button>
+      )}
+
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
       <RemoteAudioLayer participants={remoteParticipants} />
@@ -1996,23 +2024,52 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </div>
             )}
           </div>
-        ) : (
-          <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
-            remoteParticipants.length === 1 ? 'grid-cols-1' :
-            remoteParticipants.length <= 4 ? 'grid-cols-2' :
-            'grid-cols-3'
-          }`}>
-            {remoteParticipants.map(participant => (
-              <div key={participant.sessionId} className="relative">
-                <ParticipantVideo
-                  participant={participant}
-                  isLarge={remoteParticipants.length === 1}
-                />
-                {renderTileControls(participant)}
-              </div>
-            ))}
-          </div>
-        )}
+        ) : (() => {
+          // Real gap found live (2026-09-23, meeting architecture review):
+          // every remote participant got a rendered <video> tile with no
+          // cap at all — a well-attended meeting (up to the server-enforced
+          // 100-participant ceiling) rendered dozens of live video elements
+          // simultaneously. adaptiveStream throttles their resolution but
+          // does nothing for decode/DOM/render cost — real risk of jank,
+          // battery drain, or a crash on lower-end or mobile devices.
+          // Active speakers are prioritized so a live conversation never
+          // gets pushed off-screen by the cap; everyone else keeps their
+          // existing order filling the remaining slots. Tiles beyond the
+          // cap collapse into a single "+N more" indicator instead of each
+          // getting their own (still-mounted, still-decoding) element.
+          const MAX_GRID_TILES = 12;
+          const ordered = remoteParticipants.length > MAX_GRID_TILES
+            ? [...remoteParticipants].sort((a: any, b: any) => (b.isSpeaking ? 1 : 0) - (a.isSpeaking ? 1 : 0))
+            : remoteParticipants;
+          const visible = ordered.slice(0, MAX_GRID_TILES);
+          const overflowCount = ordered.length - visible.length;
+          const tileCount = visible.length + (overflowCount > 0 ? 1 : 0);
+          return (
+            <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
+              tileCount === 1 ? 'grid-cols-1' :
+              tileCount <= 4 ? 'grid-cols-2' :
+              'grid-cols-3'
+            }`}>
+              {visible.map(participant => (
+                <div key={participant.sessionId} className="relative">
+                  <ParticipantVideo
+                    participant={participant}
+                    isLarge={tileCount === 1}
+                  />
+                  {renderTileControls(participant)}
+                </div>
+              ))}
+              {overflowCount > 0 && (
+                <div className="relative flex aspect-video w-full items-center justify-center rounded-lg bg-gray-800 text-white">
+                  <div className="text-center">
+                    <Users className="h-6 w-6 mx-auto mb-1 opacity-70" />
+                    <p className="text-sm font-medium">+{overflowCount} {t('dailyVideoCall', 'moreParticipants', 'more')}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Local video (picture-in-picture). The <video> stays MOUNTED even while
             the local user is the featured (spotlit) tile — we just hide the PiP —
