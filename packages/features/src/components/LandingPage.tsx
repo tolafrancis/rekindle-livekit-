@@ -308,6 +308,24 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                     </li>
                   ))}
                 </ul>
+                {/* Not everyone landing here came through a ministry invite —
+                    someone just visiting rekindlebc.com directly, with no
+                    ministry affiliation, belongs in the individual app
+                    (app.rekindlebc.com), not this one. Only shown on the
+                    Ministry app: on the consumer app itself onSignUp already
+                    goes to the right place. */}
+                {appContext === 'ministry' && (
+                  <div style={{ marginTop: 28 }}>
+                    <button onClick={() => { window.location.href = CONSUMER_APP_URL; }} style={{
+                      background: 'rgba(255,255,255,.08)', color: '#fff', padding: '11px 22px', borderRadius: 100,
+                      fontSize: '.88rem', fontWeight: 600, border: '1.5px solid rgba(255,255,255,.25)', cursor: 'pointer',
+                      fontFamily: 'DM Sans, sans-serif', transition: 'all .2s',
+                    }}
+                      onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,.16)'; }}
+                      onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; }}
+                    >{t('landing', 'indivNotMinistryCta', "Not part of a ministry? Go to the ReKindle app")} →</button>
+                  </div>
+                )}
               </div>
               <div style={{ padding: '60px 48px', background: '#ede9fe' }}>
                 <span style={{ display: 'inline-block', background: 'rgba(124,58,237,.12)', color: '#7c3aed', fontSize: '.75rem', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', padding: '5px 14px', borderRadius: 100, marginBottom: 24 }}>{t('landing', 'forMinistries', "For Ministries")}</span>
