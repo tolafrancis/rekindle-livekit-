@@ -10,9 +10,11 @@ import {
 import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3, Pencil, CopyPlus, Ban, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@rekindle/supabase';
+import { Checkbox } from '@rekindle/ui/checkbox';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import { publicAppOrigin } from '@rekindle/features/liveShare';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
+import { MeetingParticipantsPanel } from '../components/MeetingParticipantsPanel';
 import { listMinistryWebinars, startWebinarNow, type MinistryWebinar, type WebinarStatus } from './webinarControl';
 import { CreateWebinarWizard } from './CreateWebinarWizard';
 import { WebinarAnalytics } from './WebinarAnalytics';
@@ -46,12 +48,17 @@ const statusBadge: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-400 border-gray-200',
 };
 
-function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
+function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selectable, selected, onToggleSelect }: {
   webinar: MinistryWebinar; ministryId: string; isLeader: boolean;
   onEdit: (w: MinistryWebinar) => void; onChanged: () => void;
+  /** Past tab only (2026-09-23) — shows a selection checkbox for bulk delete,
+   *  driven by the parent WebinarDashboard (selection state has to live above
+   *  a single card since bulk delete acts across many). */
+  selectable?: boolean; selected?: boolean; onToggleSelect?: () => void;
 }) {
   const navigate = useNavigate();
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showManageConfirm, setShowManageConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -65,7 +72,12 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   // own Start Webinar button) before navigating in — so confirming actually
   // begins it in one step, rather than landing on yet another Start button.
   // Attendees can't start anything either way, so they go straight through.
-  const handleCardOpen = () => { if (isLive || !isLeader) openWebinar(); else setShowManageConfirm(true); };
+  // In selection mode (bulk delete), a card click toggles selection instead
+  // of navigating — same reasoning as any bulk-select list.
+  const handleCardOpen = () => {
+    if (selectable) { onToggleSelect?.(); return; }
+    if (isLive || !isLeader) openWebinar(); else setShowManageConfirm(true);
+  };
   const [starting, setStarting] = useState(false);
   // Root cause of "Start Webinar doesn't drop into the call" (found live,
   // 2026-09-22, via a history.pushState/replaceState interceptor + full
@@ -200,10 +212,23 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
   };
 
   return (
-    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={handleCardOpen}>
+    <Card
+      className={`hover:shadow-md transition-shadow cursor-pointer ${selected ? 'ring-2 ring-purple-500' : ''}`}
+      onClick={handleCardOpen}
+    >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base line-clamp-2">{webinar.title}</CardTitle>
+          <div className="flex items-start gap-2 min-w-0">
+            {selectable && (
+              <Checkbox
+                checked={!!selected}
+                onCheckedChange={() => onToggleSelect?.()}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 shrink-0"
+              />
+            )}
+            <CardTitle className="text-base line-clamp-2">{webinar.title}</CardTitle>
+          </div>
           <Badge variant="outline" className={statusBadge[webinar.status] || 'bg-gray-100 text-gray-600'}>
             {webinar.status.replace(/_/g, ' ')}
           </Badge>
@@ -247,6 +272,11 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
               <BarChart3 className="h-3.5 w-3.5" />
             </Button>
           )}
+          {isLeader && isPast && (
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowParticipants(true); }} title="Participants">
+              <Users className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {isLeader && isMutable && (
             <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={busy}
               onClick={(e) => { e.stopPropagation(); setShowCancelConfirm(true); }} title="Cancel">
@@ -263,6 +293,20 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged }: {
       </CardContent>
       {isLeader && isPast && (
         <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />
+      )}
+      {/* Real per-attendee list (name, join/leave time) — same panel
+          Interactive Meetings uses, reused as-is via meetingKind=
+          "ministry_webinar" (already a supported MeetingKind). Distinct from
+          WebinarAnalytics' "Registrants" table above, which is registrant-
+          anchored and only shows when registration_required was on; this
+          shows actual attendance regardless. */}
+      {isLeader && isPast && (
+        <MeetingParticipantsPanel
+          meetingId={webinar.id}
+          open={showParticipants}
+          onClose={() => setShowParticipants(false)}
+          meetingKind="ministry_webinar"
+        />
       )}
       <Dialog open={showManageConfirm} onOpenChange={(open) => { if (!starting) setShowManageConfirm(open); }}>
         <DialogContent onClick={(e) => e.stopPropagation()}>
@@ -326,14 +370,51 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
   const [showCreate, setShowCreate] = useState(false);
   const [editingWebinar, setEditingWebinar] = useState<MinistryWebinar | null>(null);
 
+  // Multi-select bulk delete for the Past tab (2026-09-23, real request) —
+  // selection lives here rather than per-card since it acts across many
+  // cards at once. Cleared whenever the underlying list reloads (a deleted
+  // id wouldn't be in the fresh list anyway, and stale selection across a
+  // reload is more confusing than starting clean).
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleSelected = (id: string) => {
+    setSelectedForDelete((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     const data = await listMinistryWebinars(ministryId);
     setWebinars(data);
+    setSelectedForDelete(new Set());
     setLoading(false);
   }, [ministryId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Same delete-webinar action the single-card Delete button uses, called
+  // once per selected id. Sequential, not Promise.all — this deletes real S3
+  // files per webinar; no need to hammer the edge function with N concurrent
+  // requests for what's expected to be an occasional cleanup, not a hot path.
+  const bulkDelete = async () => {
+    setBulkDeleting(true);
+    let failed = 0;
+    for (const id of selectedForDelete) {
+      const { data, error } = await supabase.functions.invoke('livekit-egress', {
+        body: { action: 'delete-webinar', webinarId: id },
+      });
+      if (error || (data as { error?: string } | null)?.error) failed++;
+    }
+    setBulkDeleting(false);
+    setShowBulkDeleteConfirm(false);
+    if (failed > 0) toast.error(`${failed} webinar(s) could not be deleted`);
+    else toast.success('Webinars deleted');
+    load();
+  };
 
   const live = webinars.filter((w) => LIVE_STATUSES.includes(w.status));
   // Leaders also see their drafts under Upcoming (2026-09-21): creating a
@@ -346,7 +427,7 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
   const past = webinars.filter((w) => PAST_STATUSES.includes(w.status));
   const drafts = webinars.filter((w) => w.status === 'draft');
 
-  const renderGrid = (list: MinistryWebinar[], emptyLabel: string) => (
+  const renderGrid = (list: MinistryWebinar[], emptyLabel: string, selectable = false) => (
     loading ? (
       <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-purple-500" /></div>
     ) : list.length === 0 ? (
@@ -357,7 +438,12 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
     ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {list.map((w) => (
-          <WebinarCard key={w.id} webinar={w} ministryId={ministryId} isLeader={isLeader} onEdit={setEditingWebinar} onChanged={load} />
+          <WebinarCard
+            key={w.id} webinar={w} ministryId={ministryId} isLeader={isLeader} onEdit={setEditingWebinar} onChanged={load}
+            selectable={selectable}
+            selected={selectedForDelete.has(w.id)}
+            onToggleSelect={() => toggleSelected(w.id)}
+          />
         ))}
       </div>
     )
@@ -387,7 +473,24 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
         </TabsList>
         <TabsContent value="live">{renderGrid(live, 'No live webinars right now.')}</TabsContent>
         <TabsContent value="upcoming">{renderGrid(upcoming, 'No upcoming webinars scheduled.')}</TabsContent>
-        <TabsContent value="past">{renderGrid(past, 'No past webinars yet.')}</TabsContent>
+        <TabsContent value="past">
+          {isLeader && past.length > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-gray-500">
+                {selectedForDelete.size > 0 ? `${selectedForDelete.size} selected` : 'Select webinars to delete in bulk'}
+              </p>
+              {selectedForDelete.size > 0 && (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setSelectedForDelete(new Set())}>Clear</Button>
+                  <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => setShowBulkDeleteConfirm(true)}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete {selectedForDelete.size}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          {renderGrid(past, 'No past webinars yet.', isLeader)}
+        </TabsContent>
         {isLeader && <TabsContent value="drafts">{renderGrid(drafts, 'No drafts.')}</TabsContent>}
         {/* Same shared recordings library Interactive Meetings uses
             (MinistryRecordingsTab, in packages/ministry — injected from
@@ -406,6 +509,24 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
         onClose={() => { setShowCreate(false); setEditingWebinar(null); }}
         onSuccess={() => { setEditingWebinar(null); load(); }}
       />
+
+      <Dialog open={showBulkDeleteConfirm} onOpenChange={(open) => { if (!bulkDeleting) setShowBulkDeleteConfirm(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {selectedForDelete.size} webinar{selectedForDelete.size === 1 ? '' : 's'}?</DialogTitle>
+            <DialogDescription>
+              Permanently deletes each selected webinar, its recording, chat, attendance, and analytics. This can't be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={bulkDeleting} onClick={() => setShowBulkDeleteConfirm(false)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700" disabled={bulkDeleting} onClick={bulkDelete}>
+              {bulkDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {bulkDeleting ? 'Deleting…' : `Delete ${selectedForDelete.size}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

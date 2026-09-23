@@ -195,6 +195,28 @@ async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, 
   const c = ctx ?? {};
   const table = HOST_TABLE[c.kind ?? 'meeting'];
   if (c.meetingId && table) {
+    // Webinars need the broader "who can manage this webinar" definition,
+    // not just an exact host_id match (2026-09-23, added alongside webinar
+    // participant lists) — a ministry commonly has several leaders/co-hosts
+    // who aren't literally the one row's host_id, same is_webinar_manager/
+    // is_group_admin dual check already used for the private-recording gate
+    // and delete-webinar above. A strict host_id-only check here would 403
+    // for every other leader, which — same failure mode just fixed for
+    // meeting attendance — silently looks like "no data" client-side rather
+    // than an authorization error.
+    if (c.kind === 'ministry_webinar') {
+      const { data } = await admin.from(table).select('host_id, ministry_id').eq('id', c.meetingId).maybeSingle();
+      const row = data as { host_id?: string; ministry_id?: string } | null;
+      if (row?.host_id === userId) return true;
+      if (row?.ministry_id) {
+        const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+          admin.rpc('is_webinar_manager', { p_webinar_id: c.meetingId, p_user_id: userId }),
+          admin.rpc('is_group_admin', { p_ministry_id: row.ministry_id, p_user_id: userId }),
+        ]);
+        if (isManager || isAdmin) return true;
+      }
+      return false;
+    }
     const { data } = await admin.from(table).select('host_id').eq('id', c.meetingId).maybeSingle();
     if (data && (data as { host_id?: string }).host_id === userId) return true;
   }
