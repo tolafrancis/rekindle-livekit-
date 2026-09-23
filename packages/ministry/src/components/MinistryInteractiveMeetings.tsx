@@ -1756,10 +1756,27 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
   // DB side of leaving/ending — self-contained (takes the meeting) so it still works
   // if this list component has since unmounted (e.g. left from the mini-player).
+  //
+  // Real bug found live (2026-09-23): this only ever decremented
+  // participant_count — nothing here (or anywhere else, for a non-webinar
+  // meeting) ever flipped is_active back to false once the count reached
+  // zero. The webinar case just above (handleLeave) explicitly ends the
+  // meeting when its sole broadcaster leaves, but a plain meeting has no
+  // equivalent — the overwhelmingly common way people actually leave a call
+  // is closing the tab, not clicking "End Meeting for All", so a meeting
+  // whose last participant left that way stayed is_active:true forever.
+  // Confirmed live: a ministry had 3 meetings stuck "active" for anywhere
+  // from days to a month, silently pinned at the free tier's 3-concurrent-
+  // active-meeting cap and blocking every new meeting from being created.
   const leaveMeetingDb = async (meeting: MinistryVideoMeeting) => {
     try {
       const newCount = Math.max(0, meeting.participant_count - 1);
-      await supabase.from('ministry_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+      const patch: Record<string, unknown> = { participant_count: newCount };
+      if (newCount === 0) {
+        patch.is_active = false;
+        patch.ended_at = new Date().toISOString();
+      }
+      await supabase.from('ministry_video_meetings').update(patch).eq('id', meeting.id);
     } catch (error) {
       console.error('Error leaving meeting:', error);
     }
