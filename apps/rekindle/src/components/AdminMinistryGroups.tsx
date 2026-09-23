@@ -12,11 +12,12 @@ import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { 
-  Users, Search, Plus, Edit, Trash2, RefreshCw, 
+import {
+  Users, Search, Plus, Edit, Trash2, RefreshCw,
   UserPlus, Mail, Link, Copy, Check, Crown, Shield,
   Settings, Eye, EyeOff, Loader2
 } from 'lucide-react';
+import { buildJoinUrl } from '@rekindle/features/qrCode';
 
 interface MinistryGroup {
   id: string;
@@ -26,6 +27,11 @@ interface MinistryGroup {
   owner_id: string;
   member_count: number;
   invite_code: string;
+  /** Real bug found live (2026-09-23) — see MinistryGroupsManager.tsx's own
+   *  copy of this comment; this component is a near-duplicate with the
+   *  identical bug (a dead "/join-ministry" link). */
+  slug: string | null;
+  qr_code_version: number;
   settings: {
     allow_broadcasts: boolean;
     public_join: boolean;
@@ -342,10 +348,14 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
     }
   };
 
-  const copyInviteLink = (code: string) => {
-    const link = `${window.location.origin}/join-ministry?code=${code}`;
+  const copyInviteLink = (group: MinistryGroup) => {
+    if (!group.slug) {
+      toast({ title: t('adminMinistryGroups', 'error', 'Error'), description: t('adminMinistryGroups', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first."), variant: 'destructive' });
+      return;
+    }
+    const link = buildJoinUrl(group.slug, group.invite_code, group.qr_code_version);
     navigator.clipboard.writeText(link);
-    setCopiedCode(code);
+    setCopiedCode(group.invite_code);
     setTimeout(() => setCopiedCode(null), 2000);
     toast({ title: t('adminMinistryGroups', 'copied', 'Copied!'), description: t('adminMinistryGroups', 'inviteLinkCopied', 'Invite link copied to clipboard') });
   };
@@ -449,7 +459,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() => copyInviteLink(group.invite_code)}
+                                onClick={() => copyInviteLink(group)}
                               >
                                 {copiedCode === group.invite_code ? (
                                   <Check className="h-3 w-3 text-green-500" />
@@ -703,12 +713,13 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                 <div className="flex items-center gap-2">
                   <Input
                     readOnly
-                    value={`${window.location.origin}/join-ministry?code=${selectedGroup.invite_code}`}
+                    value={selectedGroup.slug ? buildJoinUrl(selectedGroup.slug, selectedGroup.invite_code, selectedGroup.qr_code_version) : ''}
+                    placeholder={selectedGroup.slug ? undefined : t('adminMinistryGroups', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first.")}
                     className="bg-white"
                   />
                   <Button
                     variant="outline"
-                    onClick={() => copyInviteLink(selectedGroup.invite_code)}
+                    onClick={() => copyInviteLink(selectedGroup)}
                   >
                     {copiedCode === selectedGroup.invite_code ? (
                       <Check className="h-4 w-4" />

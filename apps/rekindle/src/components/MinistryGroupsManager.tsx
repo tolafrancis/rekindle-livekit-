@@ -14,12 +14,13 @@ import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
-  Users, Search, Plus, Edit, Trash2, RefreshCw, 
+  Users, Search, Plus, Edit, Trash2, RefreshCw,
   UserPlus, Mail, Link, Copy, Check, Crown, Shield,
-  Settings, Eye, EyeOff, Loader2, Radio, Send, 
+  Settings, Eye, EyeOff, Loader2, Radio, Send,
   MessageSquare, Clock, Calendar, CheckCircle, X,
   BarChart3, History
 } from 'lucide-react';
+import { buildJoinUrl } from '@rekindle/features/qrCode';
 
 interface MinistryGroup {
   id: string;
@@ -29,6 +30,17 @@ interface MinistryGroup {
   owner_id: string;
   member_count: number;
   invite_code: string;
+  /** Real bug found live (2026-09-23): this and qr_code_version were never
+   *  declared here even though the query below already fetches them
+   *  (select('*')) — the invite-link buttons built a URL for a route
+   *  ("/join-ministry") that was never registered in either app's router,
+   *  silently dropping the invite code and landing new members on the
+   *  generic app home with no ministry context at all. The working QR
+   *  Self-Registration flow already uses /join/:slug (buildJoinUrl,
+   *  MinistryRegistrationSettings.tsx) — reused here instead of inventing
+   *  a second route. */
+  slug: string | null;
+  qr_code_version: number;
   settings: {
     allow_broadcasts: boolean;
     public_join: boolean;
@@ -815,10 +827,17 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
     }
   };
 
-  const copyInviteLink = (code: string) => {
-    const link = `${window.location.origin}/join-ministry?code=${code}`;
+  const copyInviteLink = (group: MinistryGroup) => {
+    if (!group.slug) {
+      // Every live ministry_groups row has a slug in practice (confirmed
+      // 2026-09-23), but fail loudly rather than silently generate another
+      // dead link if one somehow doesn't.
+      toast({ title: t('ministryGroupsManager', 'error', 'Error'), description: t('ministryGroupsManager', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first."), variant: 'destructive' });
+      return;
+    }
+    const link = buildJoinUrl(group.slug, group.invite_code, group.qr_code_version);
     navigator.clipboard.writeText(link);
-    setCopiedCode(code);
+    setCopiedCode(group.invite_code);
     setTimeout(() => setCopiedCode(null), 2000);
     toast({ title: t('ministryGroupsManager', 'copied', 'Copied!'), description: t('ministryGroupsManager', 'inviteLinkCopied', 'Invite link copied to clipboard') });
   };
@@ -967,7 +986,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() => copyInviteLink(group.invite_code)}
+                                onClick={() => copyInviteLink(group)}
                               >
                                 {copiedCode === group.invite_code ? (
                                   <Check className="h-3 w-3 text-green-500" />
@@ -1230,12 +1249,13 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                 <div className="flex items-center gap-2">
                   <Input
                     readOnly
-                    value={`${window.location.origin}/join-ministry?code=${selectedGroup.invite_code}`}
+                    value={selectedGroup.slug ? buildJoinUrl(selectedGroup.slug, selectedGroup.invite_code, selectedGroup.qr_code_version) : ''}
+                    placeholder={selectedGroup.slug ? undefined : t('ministryGroupsManager', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first.")}
                     className="bg-white"
                   />
                   <Button
                     variant="outline"
-                    onClick={() => copyInviteLink(selectedGroup.invite_code)}
+                    onClick={() => copyInviteLink(selectedGroup)}
                   >
                     {copiedCode === selectedGroup.invite_code ? (
                       <Check className="h-4 w-4" />
