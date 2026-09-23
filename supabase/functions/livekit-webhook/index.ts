@@ -553,6 +553,65 @@ serve(async (req) => {
       }
     }
 
+    // ── 3c. Ministry meeting attendance + is_active (server-side backstop) ──
+    // Same gap as 3b above, generalized to plain ministry meetings — and
+    // worse here, because ministry_video_meetings.is_active/participant_count
+    // (not just attendance rows) depend entirely on the same client self-
+    // report (leaveMeetingDb, MinistryInteractiveMeetings.tsx). A participant
+    // whose network drops can't possibly tell Supabase "I left" — their own
+    // browser has no connection to do it with — so without this, a meeting
+    // whose last participant disconnects that way (rather than cleanly
+    // clicking Leave) stays is_active:true forever, silently consuming one
+    // of the free tier's 3-concurrent-active-meeting slots (real incident,
+    // 2026-09-23: exactly this left a ministry stuck at the cap, unable to
+    // create any new meeting, for up to a month before it was noticed).
+    //
+    // Only touches participant_count/is_active when it ALSO finds (and
+    // closes) a genuinely-still-open meeting_attendance row for this exact
+    // identity — that's the signal the client's own leave-time self-report
+    // never got to run. A normal graceful leave already closed that row
+    // itself before this webhook fires, so this intentionally no-ops for
+    // the common case instead of double-decrementing a count the client
+    // already correctly updated.
+    if (event.event === 'participant_left') {
+      const roomName = event.room?.name;
+      const identity = event.participant?.identity;
+      if (roomName?.startsWith('ministry-') && identity
+        && !identity.startsWith('rlt-bot-') && !identity.endsWith('-screenshare')) {
+        const { data: meeting } = await admin
+          .from('ministry_video_meetings')
+          .select('id, participant_count')
+          .eq('room_name', roomName)
+          .maybeSingle();
+        const m = meeting as { id?: string; participant_count?: number } | null;
+        if (m?.id) {
+          const { data: openRow } = await admin
+            .from('meeting_attendance')
+            .select('id')
+            .eq('meeting_id', m.id)
+            .eq('meeting_table', 'ministry_video_meetings')
+            .eq('user_id', identity)
+            .eq('is_active', true)
+            .order('joined_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (openRow) {
+            await admin.from('meeting_attendance')
+              .update({ left_at: new Date().toISOString(), is_active: false })
+              .eq('id', (openRow as { id: string }).id);
+
+            const newCount = Math.max(0, (m.participant_count ?? 1) - 1);
+            const patch: Record<string, unknown> = { participant_count: newCount };
+            if (newCount === 0) {
+              patch.is_active = false;
+              patch.ended_at = new Date().toISOString();
+            }
+            await admin.from('ministry_video_meetings').update(patch).eq('id', m.id);
+          }
+        }
+      }
+    }
+
     return new Response('ok', { status: 200 });
   } catch (error) {
     console.error('livekit-webhook error:', error);
