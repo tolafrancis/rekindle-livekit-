@@ -69,6 +69,20 @@ interface WhiteLabelSettings {
   hide_platform_branding: boolean;
 }
 
+interface AdminMember {
+  id: string;
+  user_id: string;
+  role: string;
+  is_leader: boolean;
+  joined_at: string;
+  user_full_name: string | null;
+  user_email: string | null;
+  user_avatar: string | null;
+  user_phone: string | null;
+}
+
+const SUBSCRIPTION_PLAN_TYPES = ['starter', 'growth_partner', 'ministry_partner', 'ministry_plus'] as const;
+
 interface MinistryTenantManagerProps {
   onUpdate: () => void;
 }
@@ -87,19 +101,30 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showActionModal, setShowActionModal] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | 'suspend' | 'activate' | 'verify'>('approve');
   const [actionReason, setActionReason] = useState('');
   const [saving, setSaving] = useState(false);
-  
+
   const [whiteLabelForm, setWhiteLabelForm] = useState({
     custom_domain: '',
     logo_url: '',
     primary_color: '#7c3aed',
     secondary_color: '#4f46e5',
     hide_platform_branding: false
+  });
+
+  const [admins, setAdmins] = useState<AdminMember[]>([]);
+  const [adminsLoading, setAdminsLoading] = useState(false);
+
+  const [subscriptionForm, setSubscriptionForm] = useState({
+    plan_type: 'starter' as typeof SUBSCRIPTION_PLAN_TYPES[number],
+    status: 'active',
+    member_limit: 100,
+    storage_limit_mb: 1024,
+    api_calls_limit: 10000,
   });
 
   useEffect(() => {
@@ -132,9 +157,30 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
     }
   };
 
+  const loadAdmins = async (ministryId: string) => {
+    setAdminsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('ministry_members_with_profiles')
+        .select('*')
+        .eq('ministry_id', ministryId)
+        .or('role.eq.admin,role.eq.leader,is_leader.eq.true')
+        .order('joined_at', { ascending: true });
+      if (error) throw error;
+      setAdmins(data || []);
+    } catch (err) {
+      console.error('Error loading ministry admins:', err);
+      setAdmins([]);
+    } finally {
+      setAdminsLoading(false);
+    }
+  };
+
   const handleViewDetails = (ministry: Ministry) => {
     setSelectedMinistry(ministry);
     setShowDetailsModal(true);
+    setAdmins([]);
+    loadAdmins(ministry.id);
   };
 
   const handleOpenAction = (ministry: Ministry, action: typeof actionType) => {
@@ -268,6 +314,59 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
 
       toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'whiteLabelSaved', 'White-label settings saved') });
       setShowWhiteLabelModal(false);
+      loadData();
+    } catch (err: any) {
+      toast({ title: t('ministryTenantManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOpenSubscriptionAssign = (ministry: Ministry) => {
+    setSelectedMinistry(ministry);
+    const existing = subscriptions[ministry.id];
+    setSubscriptionForm({
+      plan_type: (existing?.plan_type as typeof SUBSCRIPTION_PLAN_TYPES[number]) || 'starter',
+      status: existing?.status || 'active',
+      member_limit: existing?.member_limit ?? 100,
+      storage_limit_mb: existing?.storage_limit_mb ?? 1024,
+      api_calls_limit: existing?.api_calls_limit ?? 10000,
+    });
+    setShowSubscriptionModal(true);
+  };
+
+  const handleSaveSubscription = async () => {
+    if (!selectedMinistry) return;
+    setSaving(true);
+
+    try {
+      const existing = subscriptions[selectedMinistry.id];
+
+      if (existing) {
+        const { error } = await supabase
+          .from('ministry_subscriptions')
+          .update(subscriptionForm)
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('ministry_subscriptions')
+          .insert({ ministry_id: selectedMinistry.id, ...subscriptionForm });
+        if (error) throw error;
+      }
+
+      await supabase.from('ministry_audit_logs').insert({
+        ministry_id: selectedMinistry.id,
+        actor_id: user?.id,
+        actor_type: 'platform_admin',
+        action: existing ? 'subscription_updated' : 'subscription_assigned',
+        resource_type: 'ministry_subscription',
+        resource_id: selectedMinistry.id,
+        new_values: subscriptionForm,
+      });
+
+      toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'subscriptionSaved', 'Subscription saved') });
+      setShowSubscriptionModal(false);
       loadData();
     } catch (err: any) {
       toast({ title: t('ministryTenantManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
@@ -672,12 +771,15 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                         <Label>{t('ministryTenantManager', 'customDomain', 'Custom Domain')}</Label>
                       </div>
                     </div>
+                    <Button variant="outline" onClick={() => handleOpenSubscriptionAssign(selectedMinistry)}>
+                      {t('ministryTenantManager', 'changePlan', 'Change Plan')}
+                    </Button>
                   </div>
                 ) : (
                   <div className="text-center py-8">
                     <Crown className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                     <p className="text-gray-500">{t('ministryTenantManager', 'noSubscription', 'No subscription found')}</p>
-                    <Button className="mt-4" onClick={() => { /* Open subscription assignment */ }}>
+                    <Button className="mt-4" onClick={() => handleOpenSubscriptionAssign(selectedMinistry)}>
                       {t('ministryTenantManager', 'assignSubscription', 'Assign Subscription')}
                     </Button>
                   </div>
@@ -685,11 +787,38 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
               </TabsContent>
 
               <TabsContent value="admins" className="space-y-4 mt-4">
-                <div className="text-center py-8">
-                  <UserCog className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-500">{t('ministryTenantManager', 'ministryAdminManagement', 'Ministry admin management')}</p>
-                  <p className="text-sm text-gray-400 mt-2">{t('ministryTenantManager', 'viewManageAdmins', 'View and manage ministry administrators')}</p>
-                </div>
+                {adminsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                  </div>
+                ) : admins.length > 0 ? (
+                  <div className="space-y-2">
+                    {admins.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between gap-3 border rounded-lg p-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center overflow-hidden shrink-0">
+                            {a.user_avatar
+                              ? <img src={a.user_avatar} alt="" className="w-full h-full object-cover" />
+                              : <UserCog className="h-4 w-4 text-purple-500" />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{a.user_full_name || t('ministryTenantManager', 'unnamed', 'Unnamed')}</p>
+                            <p className="text-xs text-gray-400 truncate">{a.user_email || a.user_phone || '—'}</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="capitalize shrink-0">
+                          {a.is_leader && a.role !== 'leader' ? `${a.role} · ${t('ministryTenantManager', 'leaderLabel', 'Leader')}` : a.role}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <UserCog className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-500">{t('ministryTenantManager', 'ministryAdminManagement', 'Ministry admin management')}</p>
+                    <p className="text-sm text-gray-400 mt-2">{t('ministryTenantManager', 'noAdminsFound', 'No admins or leaders found for this ministry')}</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="notes" className="space-y-4 mt-4">
@@ -835,6 +964,91 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowWhiteLabelModal(false)}>{t('ministryTenantManager', 'cancel', 'Cancel')}</Button>
             <Button onClick={handleSaveWhiteLabel} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {t('ministryTenantManager', 'saveSettings', 'Save Settings')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription Assignment Modal */}
+      <Dialog open={showSubscriptionModal} onOpenChange={setShowSubscriptionModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="h-5 w-5" />
+              {t('ministryTenantManager', 'assignSubscription', 'Assign Subscription')}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedMinistry && (
+            <div className="space-y-4">
+              <div>
+                <Label>{t('ministryTenantManager', 'planType', 'Plan')}</Label>
+                <Select
+                  value={subscriptionForm.plan_type}
+                  onValueChange={(v) => setSubscriptionForm({ ...subscriptionForm, plan_type: v as typeof SUBSCRIPTION_PLAN_TYPES[number] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBSCRIPTION_PLAN_TYPES.map((p) => (
+                      <SelectItem key={p} value={p} className="capitalize">{p.replace(/_/g, ' ')}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('ministryTenantManager', 'status', 'Status')}</Label>
+                <Select
+                  value={subscriptionForm.status}
+                  onValueChange={(v) => setSubscriptionForm({ ...subscriptionForm, status: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">{t('ministryTenantManager', 'active', 'Active')}</SelectItem>
+                    <SelectItem value="pending">{t('ministryTenantManager', 'pending', 'Pending')}</SelectItem>
+                    <SelectItem value="trialing">{t('ministryTenantManager', 'trialing', 'Trialing')}</SelectItem>
+                    <SelectItem value="cancelled">{t('ministryTenantManager', 'cancelled', 'Cancelled')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>{t('ministryTenantManager', 'memberLimit', 'Member Limit')}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={subscriptionForm.member_limit}
+                    onChange={(e) => setSubscriptionForm({ ...subscriptionForm, member_limit: parseInt(e.target.value, 10) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label>{t('ministryTenantManager', 'storageLimitMb', 'Storage (MB)')}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={subscriptionForm.storage_limit_mb}
+                    onChange={(e) => setSubscriptionForm({ ...subscriptionForm, storage_limit_mb: parseInt(e.target.value, 10) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label>{t('ministryTenantManager', 'apiCallsLimit', 'API Calls Limit')}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={subscriptionForm.api_calls_limit}
+                    onChange={(e) => setSubscriptionForm({ ...subscriptionForm, api_calls_limit: parseInt(e.target.value, 10) || 0 })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSubscriptionModal(false)}>{t('ministryTenantManager', 'cancel', 'Cancel')}</Button>
+            <Button onClick={handleSaveSubscription} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {t('ministryTenantManager', 'saveSettings', 'Save Settings')}
             </Button>
