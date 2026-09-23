@@ -245,51 +245,59 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
           <Users className="h-3.5 w-3.5" /> Up to {webinar.max_attendees} attendees
           {webinar.attendee_count > 0 ? ` · ${webinar.attendee_count} attended` : ''}
         </p>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); handleCardOpen(); }}>
-            {isLive ? <><Play className="h-3.5 w-3.5 mr-1" /> Join</> : isLeader ? 'Manage Webinar' : 'View'}
-          </Button>
-          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyLink(); }} title="Copy link">
-            <Copy className="h-3.5 w-3.5" />
-          </Button>
-          {isLeader && isMutable && (
-            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onEdit(webinar); }} title="Edit">
-              <Pencil className="h-3.5 w-3.5" />
+        {/* Hidden entirely while in selection mode (2026-09-23, real bug:
+            clicking "Manage Webinar" was toggling selection instead of
+            opening the webinar, since every click routed through the same
+            handleCardOpen). Selection is opt-in and mutually exclusive with
+            normal card actions — while picking webinars to bulk-delete,
+            there's nothing else to do with an individual card here. */}
+        {!selectable && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button size="sm" className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={(e) => { e.stopPropagation(); handleCardOpen(); }}>
+              {isLive ? <><Play className="h-3.5 w-3.5 mr-1" /> Join</> : isLeader ? 'Manage Webinar' : 'View'}
             </Button>
-          )}
-          {isLeader && (
-            <Button size="sm" variant="outline" disabled={busy} onClick={(e) => { e.stopPropagation(); duplicate(); }} title="Duplicate">
-              <CopyPlus className="h-3.5 w-3.5" />
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyLink(); }} title="Copy link">
+              <Copy className="h-3.5 w-3.5" />
             </Button>
-          )}
-          {isLeader && webinar.registration_required && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <RegisterMeetingButton meetingId={webinar.id} meetingKind="webinar" meetingTitle={webinar.title} isHost />
-            </div>
-          )}
-          {isLeader && isPast && (
-            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowAnalytics(true); }} title="Analytics">
-              <BarChart3 className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {isLeader && isPast && (
-            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowParticipants(true); }} title="Participants">
-              <Users className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {isLeader && isMutable && (
-            <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={busy}
-              onClick={(e) => { e.stopPropagation(); setShowCancelConfirm(true); }} title="Cancel">
-              <Ban className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {isLeader && isPast && (
-            <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={deleting}
-              onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }} title="Delete">
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
+            {isLeader && isMutable && (
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onEdit(webinar); }} title="Edit">
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {isLeader && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={(e) => { e.stopPropagation(); duplicate(); }} title="Duplicate">
+                <CopyPlus className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {isLeader && webinar.registration_required && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <RegisterMeetingButton meetingId={webinar.id} meetingKind="webinar" meetingTitle={webinar.title} isHost />
+              </div>
+            )}
+            {isLeader && isPast && (
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowAnalytics(true); }} title="Analytics">
+                <BarChart3 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {isLeader && isPast && (
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowParticipants(true); }} title="Participants">
+                <Users className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {isLeader && isMutable && (
+              <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={busy}
+                onClick={(e) => { e.stopPropagation(); setShowCancelConfirm(true); }} title="Cancel">
+                <Ban className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {isLeader && isPast && (
+              <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" disabled={deleting}
+                onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }} title="Delete">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
       {isLeader && isPast && (
         <WebinarAnalytics webinar={webinar} open={showAnalytics} onClose={() => setShowAnalytics(false)} />
@@ -375,6 +383,14 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
   // cards at once. Cleared whenever the underlying list reloads (a deleted
   // id wouldn't be in the fresh list anyway, and stale selection across a
   // reload is more confusing than starting clean).
+  //
+  // Real bug found live (2026-09-23): selection used to be always-on for
+  // every past card, so a click on "Manage Webinar" (which routes through
+  // the same card-click handler) toggled selection instead of opening the
+  // webinar — the host couldn't click into a past webinar at all. Selection
+  // is now opt-in: selectMode starts false, cards behave exactly like any
+  // other tab until a leader explicitly turns it on.
+  const [selectMode, setSelectMode] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -411,6 +427,7 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
     }
     setBulkDeleting(false);
     setShowBulkDeleteConfirm(false);
+    setSelectMode(false);
     if (failed > 0) toast.error(`${failed} webinar(s) could not be deleted`);
     else toast.success('Webinars deleted');
     load();
@@ -476,20 +493,27 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
         <TabsContent value="past">
           {isLeader && past.length > 0 && (
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-gray-500">
-                {selectedForDelete.size > 0 ? `${selectedForDelete.size} selected` : 'Select webinars to delete in bulk'}
-              </p>
-              {selectedForDelete.size > 0 && (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setSelectedForDelete(new Set())}>Clear</Button>
+              {selectMode ? (
+                <p className="text-xs text-gray-500">
+                  {selectedForDelete.size > 0 ? `${selectedForDelete.size} selected` : 'Tap webinars to select them'}
+                </p>
+              ) : <span />}
+              <div className="flex gap-2">
+                {selectMode && selectedForDelete.size > 0 && (
                   <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => setShowBulkDeleteConfirm(true)}>
                     <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete {selectedForDelete.size}
                   </Button>
-                </div>
-              )}
+                )}
+                <Button
+                  size="sm" variant="outline"
+                  onClick={() => { setSelectMode((v) => !v); setSelectedForDelete(new Set()); }}
+                >
+                  {selectMode ? 'Cancel' : 'Select'}
+                </Button>
+              </div>
             </div>
           )}
-          {renderGrid(past, 'No past webinars yet.', isLeader)}
+          {renderGrid(past, 'No past webinars yet.', selectMode)}
         </TabsContent>
         {isLeader && <TabsContent value="drafts">{renderGrid(drafts, 'No drafts.')}</TabsContent>}
         {/* Same shared recordings library Interactive Meetings uses
