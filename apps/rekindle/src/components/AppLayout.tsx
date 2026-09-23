@@ -1457,7 +1457,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               />
               <FreeMeetingsPromoCard
                 onStartMeeting={() => { navigateTab('live-channels'); setLiveChannelsTab('meetings'); }}
-                onSeePlans={() => navigateTab('billing')}
+                onSeePlans={() => navigateTab('subscription')}
               />
               <StreakWidget />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
