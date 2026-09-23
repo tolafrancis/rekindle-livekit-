@@ -151,15 +151,29 @@ export async function trackMeetingParticipant(
 export async function getMeetingParticipants(
   meetingId: string,
   kind: MeetingKind = 'ministry_meeting',
-): Promise<{ participants: MeetingParticipant[]; totalCount: number }> {
+): Promise<{ participants: MeetingParticipant[]; totalCount: number; error?: string }> {
   try {
+    // Real bug found live (2026-09-23): context was missing meetingId, but
+    // livekit-egress's isDbHost() reads the host check from context.meetingId
+    // specifically (top-level meetingId is only used by list-participants'
+    // own query, not the auth gate) — every other action here (start-hls/
+    // stop-hls) already includes it. Without it, isDbHost's
+    // `if (c.meetingId && table)` was always false, so list-participants
+    // 403'd for EVERY caller, including the real host.
     const { data, error } = await supabase.functions.invoke('livekit-egress', {
-      body: { action: 'list-participants', meetingId, context: { kind } },
+      body: { action: 'list-participants', meetingId, context: { kind, meetingId } },
     });
-    if (error || !data?.participants) return { participants: [], totalCount: 0 };
+    // Distinguish a genuine failure from genuinely-zero attendance — the
+    // 403 above used to collapse into this same empty shape, which is
+    // exactly what let it hide as "No attendance recorded" instead of
+    // surfacing as an error worth investigating.
+    if (error || (data as { error?: string } | null)?.error) {
+      return { participants: [], totalCount: 0, error: (data as { error?: string } | null)?.error || error?.message || 'Could not load participants' };
+    }
+    if (!data?.participants) return { participants: [], totalCount: 0 };
     return { participants: data.participants as MeetingParticipant[], totalCount: data.totalCount ?? 0 };
-  } catch {
-    return { participants: [], totalCount: 0 };
+  } catch (err: any) {
+    return { participants: [], totalCount: 0, error: err?.message || 'Could not load participants' };
   }
 }
 

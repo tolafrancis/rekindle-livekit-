@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rekindle/ui/dialog';
 import { Badge } from '@rekindle/ui/badge';
 import { getMeetingParticipants, MeetingParticipant, MeetingKind } from '../meetingStreamControl';
-import { Loader2, Users } from 'lucide-react';
+import { Loader2, Users, AlertCircle } from 'lucide-react';
 
 interface MeetingParticipantsPanelProps {
   meetingId: string;
@@ -30,14 +30,17 @@ export const MeetingParticipantsPanel: React.FC<MeetingParticipantsPanelProps> =
   const [loading, setLoading] = useState(false);
   const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !meetingId) return;
     setLoading(true);
+    setLoadError(null);
     getMeetingParticipants(meetingId, meetingKind)
-      .then(({ participants: list, totalCount: count }) => {
+      .then(({ participants: list, totalCount: count, error }) => {
         setParticipants(list);
         setTotalCount(count);
+        setLoadError(error ?? null);
       })
       .finally(() => setLoading(false));
   }, [open, meetingId, meetingKind]);
@@ -55,6 +58,11 @@ export const MeetingParticipantsPanel: React.FC<MeetingParticipantsPanelProps> =
         {loading ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading participants…
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <AlertCircle className="h-6 w-6 text-red-400" />
+            <p className="text-sm text-red-500">Couldn't load participants — {loadError}</p>
           </div>
         ) : participants.length === 0 ? (
           <p className="text-sm text-gray-500 py-8 text-center">
