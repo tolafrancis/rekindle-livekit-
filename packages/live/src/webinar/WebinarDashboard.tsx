@@ -410,15 +410,39 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
     });
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const fetchWebinars = useCallback(async () => {
     const data = await listMinistryWebinars(ministryId);
     setWebinars(data);
-    setSelectedForDelete(new Set());
-    setLoading(false);
   }, [ministryId]);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    await fetchWebinars();
+    setSelectedForDelete(new Set());
+    setLoading(false);
+  }, [fetchWebinars]);
+
   useEffect(() => { load(); }, [load]);
+
+  // Real bug reported live (2026-09-23): "when a webinar ends and i go back
+  // home its always still display in live... until i refresh." This list was
+  // only ever fetched once on mount — status changes made elsewhere (ending
+  // a webinar from WebinarStage.tsx, another host's action, a webhook)
+  // never reached an already-mounted dashboard, so it showed a stale
+  // snapshot indefinitely until something forced a remount or a hard
+  // refresh. Same postgres_changes pattern already used for e.g.
+  // TranslationListenerButton.tsx's session list — a quiet background
+  // refetch (fetchWebinars, not load) so this never flashes the full-grid
+  // loading spinner just because some webinar's status changed.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`webinar-dashboard-${ministryId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'ministry_webinars', filter: `ministry_id=eq.${ministryId}` },
+        () => { fetchWebinars(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [ministryId, fetchWebinars]);
 
   // Same delete-webinar action the single-card Delete button uses. Bounded
   // concurrency (a few at a time), not fully sequential and not unbounded
