@@ -206,9 +206,9 @@ const MinistryJoinLanding: React.FC = () => {
             {authMode === 'login' ? 'Already on Rekindle? Sign in to continue' : 'New here? Create your account'}
           </p>
           {authMode === 'login' ? (
-            <LoginForm onSwitchToSignup={() => setAuthMode('signup')} onSuccess={() => {}} />
+            <LoginForm compact onSwitchToSignup={() => setAuthMode('signup')} onSuccess={() => {}} />
           ) : (
-            <SignupForm onSwitchToLogin={() => setAuthMode('login')} onSuccess={() => {}} />
+            <SignupForm compact onSwitchToLogin={() => setAuthMode('login')} onSuccess={() => {}} />
           )}
         </div>
       </Shell>
