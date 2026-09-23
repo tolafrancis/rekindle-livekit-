@@ -1113,6 +1113,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [options.isHost, getParticipantRole, participants]);
 
   // Mute all participants
+  // Real bug found live (2026-08-18, same class as removeParticipant below):
+  // no try/catch, so a thrown moderate() error surfaced as nothing more than
+  // an unhandled promise rejection — no error toast, and the "All Muted"
+  // success message never shown either, with nothing telling the host it
+  // failed. Same fix applied here.
   const muteAll = useCallback(async (except: string[] = []) => {
     if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can mute all', variant: 'destructive' });
@@ -1122,13 +1127,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    await wrapper.sendAppMessage({
-      type: 'mute-all',
-      except
-    }, '*');
-    if (isLiveKitBackend()) await moderate('mute-all', { source: 'microphone', except });
+    try {
+      await wrapper.sendAppMessage({
+        type: 'mute-all',
+        except
+      }, '*');
+      if (isLiveKitBackend()) await moderate('mute-all', { source: 'microphone', except });
 
-    toast({ title: 'All Muted', description: 'All participants have been muted' });
+      toast({ title: 'All Muted', description: 'All participants have been muted' });
+    } catch (err: any) {
+      toast({ title: 'Could not mute all', description: err?.message || 'Unknown error', variant: 'destructive' });
+    }
   }, [options.isHost]);
 
   // Disable participant video (can only disable, not enable)
@@ -1247,6 +1256,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [options.isHost, getParticipantRole, participants]);
 
   // Disable all video
+  // Same missing-try/catch bug as muteAll above — fixed the same way.
   const disableAllVideo = useCallback(async (except: string[] = []) => {
     if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can disable all video', variant: 'destructive' });
@@ -1256,13 +1266,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    await wrapper.sendAppMessage({
-      type: 'disable-all-video',
-      except
-    }, '*');
-    if (isLiveKitBackend()) await moderate('mute-all', { source: 'camera', except });
+    try {
+      await wrapper.sendAppMessage({
+        type: 'disable-all-video',
+        except
+      }, '*');
+      if (isLiveKitBackend()) await moderate('mute-all', { source: 'camera', except });
 
-    toast({ title: 'All Video Disabled', description: 'Video disabled for all participants' });
+      toast({ title: 'All Video Disabled', description: 'Video disabled for all participants' });
+    } catch (err: any) {
+      toast({ title: 'Could not disable all video', description: err?.message || 'Unknown error', variant: 'destructive' });
+    }
   }, [options.isHost]);
 
   // Remove participant from meeting
@@ -1304,89 +1318,139 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [options.isHost, options.meetingId]);
 
   // Admit participant from waiting room
+  // Same missing-try/catch bug as muteAll above. Also fixes a real UX gap
+  // this uncovered: the waiting-room entry was optimistically removed from
+  // local state BEFORE the moderate() call, so a failure here didn't just
+  // fail silently — the participant visibly vanished from the host's
+  // waiting-room list while still actually waiting, with no way to retry
+  // short of them leaving and re-requesting. Only remove it once admit
+  // actually succeeds.
   const admitFromWaitingRoom = useCallback(async (participantId: string) => {
     if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can admit participants', variant: 'destructive' });
       return;
     }
 
-    setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
-
-    if (isLiveKitBackend()) {
-      // Waiting client has no connection — flip its DB row to 'admitted'; it's
-      // subscribed to that row and re-requests a token when admitted (§3D).
-      await moderate('admit-waiting', { identity: participantId });
-    } else {
-      const wrapper = wrapperRef.current;
-      if (wrapper) {
-        await wrapper.sendAppMessage({
-          type: 'admit-from-waiting-room',
-          participantId
-        }, participantId);
+    try {
+      if (isLiveKitBackend()) {
+        // Waiting client has no connection — flip its DB row to 'admitted'; it's
+        // subscribed to that row and re-requests a token when admitted (§3D).
+        await moderate('admit-waiting', { identity: participantId });
+      } else {
+        const wrapper = wrapperRef.current;
+        if (wrapper) {
+          await wrapper.sendAppMessage({
+            type: 'admit-from-waiting-room',
+            participantId
+          }, participantId);
+        }
       }
-    }
 
-    toast({ title: 'Participant Admitted', description: 'Participant has been admitted to the meeting' });
+      setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
+      toast({ title: 'Participant Admitted', description: 'Participant has been admitted to the meeting' });
+    } catch (err: any) {
+      toast({ title: 'Could not admit participant', description: err?.message || 'Unknown error', variant: 'destructive' });
+    }
   }, [options.isHost, moderate]);
 
   // Admit all from waiting room
+  // Real bug found live (2026-08-18, same class as removeParticipant below):
+  // no try/catch at all, and — worse for a loop — a single throw from
+  // moderate() would abort the `for` loop entirely, silently leaving
+  // everyone after the failed one still stuck waiting with no error and no
+  // indication which admits actually went through. Each admit is now
+  // isolated so one failure can't take out the rest, and the result is
+  // honest about partial success.
   const admitAllFromWaitingRoom = useCallback(async () => {
     if (!isModeratorRef.current) return;
 
+    const admitted: string[] = [];
+    let failed = 0;
     for (const participant of waitingRoomParticipants) {
-      if (isLiveKitBackend()) {
-        await moderate('admit-waiting', { identity: participant.session_id });
-      } else {
-        await wrapperRef.current?.sendAppMessage({
-          type: 'admit-from-waiting-room',
-          participantId: participant.session_id
-        }, participant.session_id);
+      try {
+        if (isLiveKitBackend()) {
+          await moderate('admit-waiting', { identity: participant.session_id });
+        } else {
+          await wrapperRef.current?.sendAppMessage({
+            type: 'admit-from-waiting-room',
+            participantId: participant.session_id
+          }, participant.session_id);
+        }
+        admitted.push(participant.session_id);
+      } catch (err) {
+        console.error('[useDailyRoom] Failed to admit participant from waiting room:', participant.session_id, err);
+        failed++;
       }
     }
 
-    setWaitingRoomParticipants([]);
-    toast({ title: 'All Admitted', description: 'All waiting participants have been admitted' });
+    if (admitted.length > 0) {
+      setWaitingRoomParticipants(prev => prev.filter(p => !admitted.includes(p.session_id)));
+    }
+    if (failed === 0) {
+      toast({ title: 'All Admitted', description: 'All waiting participants have been admitted' });
+    } else if (admitted.length > 0) {
+      toast({ title: 'Some admits failed', description: `${admitted.length} admitted, ${failed} could not be admitted — try again`, variant: 'destructive' });
+    } else {
+      toast({ title: 'Could not admit participants', description: 'None of the waiting participants could be admitted — try again', variant: 'destructive' });
+    }
   }, [options.isHost, waitingRoomParticipants, moderate]);
 
   // Reject from waiting room
+  // Same missing-try/catch bug as admitFromWaitingRoom above, and the same
+  // "removed from the list before success is confirmed" issue — fixed the
+  // same way (remove from local state only after the reject actually goes
+  // through, and surface a failure instead of dropping it silently).
   const rejectFromWaitingRoom = useCallback(async (participantId: string) => {
     if (!isModeratorRef.current) return;
 
-    setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
-
-    if (isLiveKitBackend()) {
-      await moderate('reject-waiting', { identity: participantId });
-    } else {
-      const wrapper = wrapperRef.current;
-      if (wrapper) {
-        await wrapper.sendAppMessage({
-          type: 'reject-from-waiting-room',
-          participantId
-        }, participantId);
+    try {
+      if (isLiveKitBackend()) {
+        await moderate('reject-waiting', { identity: participantId });
+      } else {
+        const wrapper = wrapperRef.current;
+        if (wrapper) {
+          await wrapper.sendAppMessage({
+            type: 'reject-from-waiting-room',
+            participantId
+          }, participantId);
+        }
       }
+      setWaitingRoomParticipants(prev => prev.filter(p => p.session_id !== participantId));
+    } catch (err: any) {
+      toast({ title: 'Could not reject participant', description: err?.message || 'Unknown error', variant: 'destructive' });
     }
   }, [options.isHost, moderate]);
 
   // Lock/unlock meeting
+  // Same missing-try/catch bug as muteAll above. Also, same reasoning as
+  // admitFromWaitingRoom: local lock-state was set optimistically before the
+  // server call, so a failed moderate() left the host's own UI showing
+  // "Locked" while the room server-side (livekit-token's locked-room gate)
+  // never actually enforced it — the worst kind of silent failure for a
+  // security-relevant control. Only commit the local state once the actual
+  // lock call succeeds.
   const lockMeeting = useCallback(async (locked: boolean) => {
     if (!isModeratorRef.current) {
       toast({ title: 'Permission Denied', description: 'Only hosts/co-hosts can lock meetings', variant: 'destructive' });
       return;
     }
 
-    setMeetingSettings(prev => ({ ...prev, isLocked: locked }));
+    try {
+      // Broadcast to all participants
+      const wrapper = wrapperRef.current;
+      if (wrapper) {
+        await wrapper.sendAppMessage({
+          type: 'meeting-lock-change',
+          locked
+        }, '*');
+        if (isLiveKitBackend()) await moderate('lock', { locked });
+      }
 
-    // Broadcast to all participants
-    const wrapper = wrapperRef.current;
-    if (wrapper) {
-      await wrapper.sendAppMessage({
-        type: 'meeting-lock-change',
-        locked
-      }, '*');
-      if (isLiveKitBackend()) await moderate('lock', { locked });
+      setMeetingSettings(prev => ({ ...prev, isLocked: locked }));
+      toast({ title: locked ? 'Meeting Locked' : 'Meeting Unlocked' });
+    } catch (err: any) {
+      toast({ title: locked ? 'Could not lock meeting' : 'Could not unlock meeting', description: err?.message || 'Unknown error', variant: 'destructive' });
     }
-
-    toast({ title: locked ? 'Meeting Locked' : 'Meeting Unlocked' });
   }, [options.isHost]);
 
   // Update meeting settings
@@ -2089,10 +2153,27 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
   }, [isScreenSharing]);
 
-  // Delete room — LiveKit rooms auto-close once empty, so this is a no-op.
+  // Delete room — actually closes the LiveKit room via livekit-token's
+  // delete-room action. Real bug found live (2026-09-23, meeting
+  // architecture review): this used to unconditionally return true with no
+  // implementation at all, so its one real caller (LiveChannelBroadcast.tsx,
+  // cleaning up after a broadcast ends) always believed the room had been
+  // closed when nothing had actually happened. "Rooms auto-close once
+  // empty" doesn't cover this caller's case either — a broadcast host
+  // stopping while viewers/participants are still connected needs the room
+  // closed immediately, not once it happens to empty out on its own.
   const deleteRoom = useCallback(async (): Promise<boolean> => {
-    return true;
-  }, []);
+    if (!isLiveKitBackend()) return true;
+    try {
+      const { data, error } = await supabase.functions.invoke('livekit-token', {
+        body: { action: 'delete-room', roomName: options.roomName, context: roleContext() },
+      });
+      if (error || data?.error) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }, [options.roomName, roleContext]);
 
   // Listen for app messages from host for controls
   useEffect(() => {

@@ -421,6 +421,22 @@ const EnhancedVideoCallWrapper = ({
 
       await stopTranslationForRoom(meeting.room_name);
 
+      // Real bug found live (2026-09-23, meeting architecture review): this
+      // only ever flipped the DB flag above — the LiveKit room itself was
+      // never actually closed, so anyone whose client couldn't self-evict
+      // on the flag change (frozen tab, momentary disconnect) stayed
+      // connected to a live, host-less room. Best-effort — the meeting is
+      // already correctly marked ended above regardless, and delete-room is
+      // itself idempotent.
+      const { error: closeErr } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'ministry_meeting', meetingId: meeting.id },
+        },
+      });
+      if (closeErr) console.error('[handleHostEndMeeting] Failed to close LiveKit room:', closeErr);
+
       toast.success(t('ministryInteractiveMeetings', 'meetingEndedForAll', 'Meeting ended for all participants'));
 
       // Call the onEndMeeting callback
@@ -1788,6 +1804,26 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         .from('ministry_video_meetings')
         .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
         .eq('id', meeting.id);
+
+      // Real bug found live (2026-09-23, meeting architecture review):
+      // "End Meeting for All" only ever flipped this DB flag — the LiveKit
+      // room itself was never actually closed. Well-behaved clients notice
+      // the flag change (realtime/poll) and self-evict within a few
+      // seconds, but anyone whose client can't run that — a frozen tab, a
+      // momentary disconnect, a client that never mounted the meeting UI —
+      // stayed connected to a live, host-less room indefinitely, and any
+      // active recording kept running. Closing the room server-side evicts
+      // everyone immediately regardless of client state. Best-effort: the
+      // meeting is already correctly marked ended above either way, and
+      // livekit-token's delete-room call is itself idempotent.
+      const { error } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'ministry_meeting', meetingId: meeting.id },
+        },
+      });
+      if (error) console.error('[endMeetingDb] Failed to close LiveKit room:', error);
     } catch (error) {
       console.error('Error ending meeting:', error);
     }

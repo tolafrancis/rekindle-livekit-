@@ -307,6 +307,18 @@ const EnhancedVideoCallWrapper = ({
         })
         .eq('id', meeting.id);
 
+      // Real bug found live (2026-09-23, meeting architecture review): see
+      // endMeetingDb's own comment below — this only ever flipped the DB
+      // flag, never actually closed the LiveKit room server-side.
+      const { error: closeErr } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'channel_meeting', meetingId: meeting.id },
+        },
+      });
+      if (closeErr) console.error('[handleHostEndMeeting] Failed to close LiveKit room:', closeErr);
+
       toast.success(t('liveChannelInteractiveMeetings', 'meetingEndedForAll', 'Meeting ended for all participants'));
       onEndMeeting();
     } catch (error) {
@@ -1509,6 +1521,24 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
         .from('live_channel_video_meetings')
         .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
         .eq('id', meeting.id);
+
+      // Real bug found live (2026-09-23, meeting architecture review):
+      // "End Meeting for All" only ever flipped this DB flag — the LiveKit
+      // room itself was never actually closed. Well-behaved clients notice
+      // the flag change and self-evict within a few seconds, but anyone
+      // whose client can't run that (frozen tab, momentary disconnect, a
+      // client that never mounted the meeting UI) stayed connected to a
+      // live, host-less room indefinitely, and any active recording kept
+      // running. Best-effort — the meeting is already correctly marked
+      // ended above regardless, and delete-room is itself idempotent.
+      const { error } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'channel_meeting', meetingId: meeting.id },
+        },
+      });
+      if (error) console.error('[endMeetingDb] Failed to close LiveKit room:', error);
     } catch (error) {
       console.error('Error ending meeting:', error);
     }
