@@ -71,7 +71,14 @@ async function deleteKey(client: AwsClient, cfg: S3DeleteConfig, key: string): P
 }
 async function deletePrefix(client: AwsClient, cfg: S3DeleteConfig, prefix: string): Promise<void> {
   const keys = await listKeys(client, cfg, prefix);
-  for (const key of keys) await deleteKey(client, cfg, key);
+  // Real bug found live (2026-09-23): a segmented HLS recording can easily
+  // have dozens of small files (one every 4s — see start-recording's
+  // SegmentedFileOutput), and this used to delete them one at a time,
+  // sequentially awaiting each round-trip — bulk-deleting several webinars
+  // at once (each with its own recording(s)) took long enough with zero
+  // progress feedback that it looked hung, even though it was actually
+  // working. Each key delete is independent, safe to run concurrently.
+  await Promise.all(keys.map((key) => deleteKey(client, cfg, key)));
 }
 
 const corsHeaders = {
@@ -361,10 +368,11 @@ serve(async (req) => {
 
       if (recordings && recordings.length > 0) {
         const s3 = new AwsClient({ accessKeyId: s3cfg.accessKey, secretAccessKey: s3cfg.secret, region: s3cfg.region, service: 's3' });
-        for (const rec of recordings as { id: string; filepath: string }[]) {
-          await deletePrefix(s3, s3cfg, rec.filepath).catch((err) =>
-            console.error(`[livekit-egress] delete-webinar: S3 cleanup failed for recording ${rec.id}:`, err));
-        }
+        // Also across a webinar's own multiple recordings, not just within
+        // one — same reasoning as deletePrefix's own comment.
+        await Promise.all((recordings as { id: string; filepath: string }[]).map((rec) =>
+          deletePrefix(s3, s3cfg, rec.filepath).catch((err) =>
+            console.error(`[livekit-egress] delete-webinar: S3 cleanup failed for recording ${rec.id}:`, err))));
       }
 
       await admin.from('livekit_recordings').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);

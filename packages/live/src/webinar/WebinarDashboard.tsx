@@ -394,6 +394,14 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Real bug found live (2026-09-23): a test bulk-delete of 9 webinars
+  // looked hung — it wasn't (the DB count kept dropping in the background),
+  // it was just slow with zero progress feedback, since each webinar's
+  // recording can have dozens of HLS segment files each needing its own S3
+  // delete call (fixed to run concurrently server-side — see deletePrefix's
+  // own comment). Tracking progress here too so this can never look stuck
+  // again even if a particular webinar's cleanup is genuinely slow.
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(0);
   const toggleSelected = (id: string) => {
     setSelectedForDelete((prev) => {
       const next = new Set(prev);
@@ -412,19 +420,31 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
 
   useEffect(() => { load(); }, [load]);
 
-  // Same delete-webinar action the single-card Delete button uses, called
-  // once per selected id. Sequential, not Promise.all — this deletes real S3
-  // files per webinar; no need to hammer the edge function with N concurrent
-  // requests for what's expected to be an occasional cleanup, not a hot path.
+  // Same delete-webinar action the single-card Delete button uses. Bounded
+  // concurrency (a few at a time), not fully sequential and not unbounded
+  // Promise.all — each call does its own real S3 cleanup work server-side,
+  // so some overlap meaningfully speeds up a multi-webinar delete without
+  // firing an unbounded burst at the edge function.
+  const BULK_DELETE_CONCURRENCY = 3;
   const bulkDelete = async () => {
     setBulkDeleting(true);
+    setBulkDeleteProgress(0);
+    const ids = [...selectedForDelete];
     let failed = 0;
-    for (const id of selectedForDelete) {
-      const { data, error } = await supabase.functions.invoke('livekit-egress', {
-        body: { action: 'delete-webinar', webinarId: id },
-      });
-      if (error || (data as { error?: string } | null)?.error) failed++;
-    }
+    let completed = 0;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        const { data, error } = await supabase.functions.invoke('livekit-egress', {
+          body: { action: 'delete-webinar', webinarId: id },
+        });
+        if (error || (data as { error?: string } | null)?.error) failed++;
+        completed++;
+        setBulkDeleteProgress(completed);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BULK_DELETE_CONCURRENCY, ids.length) }, worker));
     setBulkDeleting(false);
     setShowBulkDeleteConfirm(false);
     setSelectMode(false);
@@ -542,11 +562,18 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
               Permanently deletes each selected webinar, its recording, chat, attendance, and analytics. This can't be undone.
             </DialogDescription>
           </DialogHeader>
+          {/* Real gap found live: this used to just say "Deleting…" with no
+              sense of progress, so a slow multi-webinar delete (each one's
+              recording can have many S3 segment files to clean up) looked
+              stuck even while it was actively working through the list. */}
+          {bulkDeleting && (
+            <p className="text-sm text-gray-500">Deleting {bulkDeleteProgress} of {selectedForDelete.size}…</p>
+          )}
           <DialogFooter>
             <Button variant="outline" disabled={bulkDeleting} onClick={() => setShowBulkDeleteConfirm(false)}>Cancel</Button>
             <Button className="bg-red-600 hover:bg-red-700" disabled={bulkDeleting} onClick={bulkDelete}>
               {bulkDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {bulkDeleting ? 'Deleting…' : `Delete ${selectedForDelete.size}`}
+              {bulkDeleting ? `Deleting ${bulkDeleteProgress}/${selectedForDelete.size}…` : `Delete ${selectedForDelete.size}`}
             </Button>
           </DialogFooter>
         </DialogContent>
