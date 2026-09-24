@@ -18,7 +18,7 @@ export interface CaptionDispatch {
   status?: 'starting' | 'active';
 }
 
-export type RoomKind = 'ministry_meeting' | 'ministry_webinar';
+export type RoomKind = 'ministry_meeting' | 'ministry_webinar' | 'channel';
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 4 });
 

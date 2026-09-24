@@ -59,7 +59,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   const showTranslation = webinar.enable_translation;
   const playerRef = useRef<HlsPlayerHandle>(null);
   const captions = useHlsCaptions({
-    webinarId: webinar.id,
+    scope: { kind: 'webinar', webinarId: webinar.id },
     roomName: webinar.room_name,
     getPlaybackDate: () => playerRef.current?.getPlaybackDate() ?? null,
   });

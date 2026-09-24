@@ -26,14 +26,18 @@
 // ── Request (POST JSON body) ─────────────────────────────────────────────────
 //   In the room (meeting participants, webinar host/speakers):
 //     { roomName, livekitToken, context: { kind: 'ministry_meeting'|'ministry_webinar' } }
-//   Webinar audience watching over HLS (never in the LiveKit room):
-//     { hls: true, webinarId }
+//     (Live Broadcast channels: kind 'channel', roomName 'channel-<channel id>')
+//   Audiences watching over HLS (never in the LiveKit room):
+//     { hls: true, webinarId }   or   { hls: true, channelId }
 //       → { session_id, status: 'starting'|'active', reused }
 //
-// HLS attendees can't present a room token, so they're checked the same way
-// watching the webinar itself is (the "read ministry webinars" policy,
-// migration 0354): the webinar must be live, and either public or the caller
-// a signed-in ministry member.
+// HLS viewers can't present a room token, so they're checked the same way
+// watching is: a webinar must be live and either public or the caller a
+// signed-in ministry member (the "read ministry webinars" policy, migration
+// 0354); a channel broadcast must be live (it's public to anyone watching).
+//
+// Channel captions are offered on ministry-owned channels only — usage is
+// logged per org (migration 0374).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -45,7 +49,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-type RoomKind = 'ministry_meeting' | 'ministry_webinar';
+type RoomKind = 'ministry_meeting' | 'ministry_webinar' | 'channel';
 
 interface RequestBody {
   roomName?: string;
@@ -53,14 +57,22 @@ interface RequestBody {
   context?: { kind?: RoomKind };
   hls?: boolean;
   webinarId?: string;
+  channelId?: string;
 }
 
-// Rooms captions can run in, keyed by context.kind. Both tables carry
-// room_name, ministry_id and (migration 0372) source_language.
-const ROOM_TABLE: Record<RoomKind, string> = {
+// Meeting and webinar rooms, keyed by context.kind. Both tables carry
+// room_name, ministry_id and (migration 0372) source_language. Channels are
+// resolved from the room name instead (CHANNEL_ROOM below).
+const ROOM_TABLE: Record<Exclude<RoomKind, 'channel'>, string> = {
   ministry_meeting: 'ministry_video_meetings',
   ministry_webinar: 'ministry_webinars',
 };
+
+// A channel broadcast's LiveKit room is always "channel-<channel id>"
+// (LiveChannelBroadcast.tsx joins it under exactly that name).
+const CHANNEL_ROOM = /^channel-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+const NOT_MINISTRY_CHANNEL = 'Captions are available on ministry channels';
 
 // The caption agent joins as a hidden participant under this prefix — it
 // must never count as "a participant in the room" for the presence check.
@@ -105,9 +117,40 @@ serve(async (req) => {
     const body = (await req.json()) as RequestBody;
     const admin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
+    // ── Channel audience over HLS ──────────────────────────────────────────
+    if (body.hls && body.channelId) {
+      const { data: channel, error: channelError } = await admin
+        .from('live_channels')
+        .select('id, ministry_id, is_live, is_hls_live, source_language')
+        .eq('id', body.channelId)
+        .maybeSingle();
+      if (channelError) throw channelError;
+      if (!channel) return json({ error: 'Channel not found' }, 404);
+      if (!channel.ministry_id) return json({ error: NOT_MINISTRY_CHANNEL }, 400);
+      if (!channel.is_live && !channel.is_hls_live) return json({ error: 'This broadcast is not live' }, 409);
+
+      const roomName = `channel-${channel.id}`;
+      const { data, error } = await admin.rpc('claim_caption_session', {
+        p_org_id: channel.ministry_id,
+        p_room_id: channel.id,
+        p_room_kind: 'channel',
+        p_room_name: roomName,
+        p_source_language: channel.source_language ?? 'en',
+        p_started_by: 'hls:viewer',
+      });
+      if (error) throw error;
+
+      await admin
+        .from('caption_sessions')
+        .update({ hls_viewer_seen_at: new Date().toISOString() })
+        .eq('id', data.session_id);
+
+      return json({ ...data, room_name: roomName });
+    }
+
     // ── Webinar audience over HLS ──────────────────────────────────────────
     if (body.hls) {
-      if (!body.webinarId) return json({ error: 'webinarId is required' }, 400);
+      if (!body.webinarId) return json({ error: 'webinarId or channelId is required' }, 400);
 
       const { data: webinar, error: webinarError } = await admin
         .from('ministry_webinars')
@@ -159,7 +202,7 @@ serve(async (req) => {
     if (!roomName || !body.livekitToken) {
       return json({ error: 'roomName and livekitToken are required' }, 400);
     }
-    if (!(kind in ROOM_TABLE)) return json({ error: 'Unsupported room kind' }, 400);
+    if (kind !== 'channel' && !(kind in ROOM_TABLE)) return json({ error: 'Unsupported room kind' }, 400);
 
     // 1) Authenticate: the caller's LiveKit token must be one we signed, for
     //    THIS room, with join rights.
@@ -186,13 +229,28 @@ serve(async (req) => {
 
     // 3) Resolve the room server-side — never trust a client-supplied org or
     //    language.
-    const { data: room, error: roomError } = await admin
-      .from(ROOM_TABLE[kind])
-      .select('id, ministry_id, source_language')
-      .eq('room_name', roomName)
-      .maybeSingle();
-    if (roomError) throw roomError;
+    let room: { id: string; ministry_id: string | null; source_language: string | null } | null;
+    if (kind === 'channel') {
+      const channelId = CHANNEL_ROOM.exec(roomName)?.[1];
+      if (!channelId) return json({ error: 'Room not found' }, 404);
+      const { data, error: roomError } = await admin
+        .from('live_channels')
+        .select('id, ministry_id, source_language')
+        .eq('id', channelId)
+        .maybeSingle();
+      if (roomError) throw roomError;
+      room = data;
+    } else {
+      const { data, error: roomError } = await admin
+        .from(ROOM_TABLE[kind])
+        .select('id, ministry_id, source_language')
+        .eq('room_name', roomName)
+        .maybeSingle();
+      if (roomError) throw roomError;
+      room = data;
+    }
     if (!room) return json({ error: 'Room not found' }, 404);
+    if (!room.ministry_id) return json({ error: NOT_MINISTRY_CHANNEL }, 400);
 
     // 4) Atomic get-or-create + dispatch (one live session per room).
     const { data, error } = await admin.rpc('claim_caption_session', {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import type { LiveCaptionSegment } from '@rekindle/types/videoRoom';
-import { readPrefs, writePrefs, type CaptionPrefs, type CaptionSize, type CaptionStatus } from './captionPrefs';
+import { updateCaptionPrefs, useCaptionPrefs, type CaptionSize, type CaptionStatus } from './captionPrefs';
 
 /**
  * On-demand source-language captions (agents/captions) — separate from Live
@@ -43,22 +43,14 @@ const ENSURE_INTERVAL_MS = 5 * 60_000;
 
 interface UseLiveCaptionsOptions {
   roomName: string;
-  kind: 'ministry_meeting' | 'ministry_webinar';
+  kind: 'ministry_meeting' | 'ministry_webinar' | 'channel';
 }
 
 export function useLiveCaptions(bridge: LiveCaptionsBridge | null, { roomName, kind }: UseLiveCaptionsOptions) {
-  const [prefs, setPrefs] = useState<CaptionPrefs>(readPrefs);
+  const prefs = useCaptionPrefs();
   const [status, setStatus] = useState<CaptionStatus>('off');
   const [lines, setLines] = useState<CaptionLine[]>([]);
   const receivedRef = useRef(false);
-
-  const updatePrefs = useCallback((patch: Partial<CaptionPrefs>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      writePrefs(next);
-      return next;
-    });
-  }, []);
 
   const ensureAgent = useCallback(async (b: LiveCaptionsBridge): Promise<boolean> => {
     const livekitToken = b.getAccessToken();
@@ -154,8 +146,8 @@ export function useLiveCaptions(bridge: LiveCaptionsBridge | null, { roomName, k
     });
   }, [bridge, prefs.enabled]);
 
-  const setEnabled = useCallback((enabled: boolean) => updatePrefs({ enabled }), [updatePrefs]);
-  const setSize = useCallback((size: CaptionSize) => updatePrefs({ size }), [updatePrefs]);
+  const setEnabled = useCallback((enabled: boolean) => updateCaptionPrefs({ enabled }), []);
+  const setSize = useCallback((size: CaptionSize) => updateCaptionPrefs({ size }), []);
 
   return {
     enabled: prefs.enabled,

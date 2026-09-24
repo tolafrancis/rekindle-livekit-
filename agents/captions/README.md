@@ -22,14 +22,16 @@ Translation bot (`rekindle-translation-bot`): it never reads or writes any
    segment with a stable id; interim results update it in place and the final
    result closes it. Segments are published with `publishTranscription`,
    attributed to the speaker's identity and track.
-5. **Webinar audiences (HLS)** aren't in the LiveKit room. For webinar rooms
-   the agent also broadcasts every update on the Supabase Realtime channel
+5. **HLS audiences** (webinar attendees, Live Broadcast viewers) aren't in
+   the LiveKit room. For webinar and channel-broadcast rooms the agent also
+   broadcasts every update on the Supabase Realtime channel
    `captions:<room name>` (event `caption`), with the wall-clock time the words
    were spoken. The viewer holds each line back until HLS playback reaches that
    moment (`packages/live/src/hlsCaptionSync.ts`), using the stream's own
    program-date-time when present, or the player's measured latency otherwise.
-   HLS viewers with CC on call `caption_hls_viewer_heartbeat` (migration
-   `0373`) about every 45 s; the agent counts a heartbeat in the last 90 s as a
+   HLS viewers with CC on call `caption_hls_viewer_heartbeat` (webinars,
+   migration `0373`) or `caption_channel_viewer_heartbeat` (channels, `0374`)
+   about every 45 s; the agent counts a heartbeat in the last 90 s as a
    caption viewer.
 6. The agent stops 3 minutes after the last participant turns CC off (and no
    HLS viewer has heartbeated), when the room ends, or (abuse guard) after 30
@@ -52,7 +54,8 @@ pm2 save
 
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are needed for webinar
   audiences (Realtime broadcast). Without them, in-room captions still work.
-- Run migrations `0372` and `0373` before starting this version.
+- Run migrations `0372`, `0373` and `0374` before starting this version.
+- Channel captions run on ministry-owned channels only (usage is per org).
 - `DATABASE_URL` must be the Supabase **session-mode** pooler string
   (port 5432). The transaction pooler doesn't support `LISTEN`.
 - Node 20 needs `--env-file` support (20.6+); the PM2 file passes it.

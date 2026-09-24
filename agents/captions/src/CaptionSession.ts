@@ -7,8 +7,8 @@
 // track. Nothing is stored, so participants who turn CC on later only see
 // captions from that moment on.
 //
-// Webinar rooms: every update is also broadcast over Supabase Realtime for
-// the HLS audience (HlsBroadcaster), who count as caption viewers through
+// Webinar and channel-broadcast rooms: every update is also broadcast over
+// Supabase Realtime for the HLS audience (HlsBroadcaster), who count as caption viewers through
 // their heartbeat (caption_sessions.hls_viewer_seen_at, migration 0373).
 //
 // Stops when:
@@ -72,7 +72,7 @@ export class CaptionSession {
       this.onEnded(this.sessionId);
       return;
     }
-    if (roomKind === 'ministry_webinar') {
+    if (roomKind === 'ministry_webinar' || roomKind === 'channel') {
       this.broadcaster = HlsBroadcaster.forRoom(this.dispatch.room_name);
       if (!this.broadcaster) this.log('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — HLS attendees will get no captions');
     }
