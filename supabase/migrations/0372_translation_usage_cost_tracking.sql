@@ -12,12 +12,19 @@
 -- This adds raw usage columns (tokens/characters/audio-seconds — cheap,
 -- harmless to expose on the same tables that are already publicly
 -- readable for /display), a small admin-editable provider-rate table, and
--- an admin-only RPC that turns usage into an actual dollar figure. Rates
--- are seeded at 0 deliberately — real per-provider pricing depends on your
--- actual plan/tier with each vendor and changes over time; a guessed
--- number presented as a real cost would be worse than an honest $0 until
--- you fill in your real rates (see the UPDATE statement at the bottom of
--- this file's comment for how).
+-- an admin-only RPC that turns usage into an actual dollar figure.
+--
+-- Rates are seeded from each provider's own public pricing page (checked
+-- 2026-09-24, sources in each row's `notes` below) for the exact models
+-- this bot actually calls: Deepgram Nova-3 streaming, gpt-5 (the literal
+-- model string in AudioPipeline.ts — NOT gpt-5.4/5.5/5.6, which are
+-- priced differently), ElevenLabs Turbo v2.5. These are list/pay-as-you-go
+-- prices, not necessarily what you're actually billed if you're on a
+-- different plan tier, a volume discount, or (Deepgram specifically) a
+-- time-limited promotional rate — verify against your own account/invoice
+-- and update via translation_provider_rates directly, e.g.:
+--   update translation_provider_rates set rate_usd = 0.0000123
+--     where provider = 'elevenlabs' and unit = 'character';
 -- =====================================================================
 
 begin;
@@ -37,7 +44,8 @@ alter table translation_sessions
 
 -- ---------------------------------------------------------------------
 -- 2. Provider rate table — what YOU pay each vendor, not what you charge
---    ministries. Seeded at 0; update with your real rates, e.g.:
+--    ministries. Seeded from public pricing pages (see notes per row);
+--    update with your real billed rate if it differs, e.g.:
 --      update translation_provider_rates set rate_usd = 0.0000167
 --        where provider = 'elevenlabs' and unit = 'character';
 --    Admin-only (platform admin via is_content_admin, matching the
@@ -56,10 +64,13 @@ create table if not exists translation_provider_rates (
 
 insert into translation_provider_rates (provider, unit, rate_usd, notes)
 values
-  ('deepgram', 'audio_second', 0, 'Nova-2/Nova-3 streaming STT — placeholder, set to your actual $/min plan rate divided by 60'),
-  ('openai_translate', 'token_input', 0, 'gpt-5 translate call, prompt tokens — placeholder, set to your actual $/1M input tokens divided by 1,000,000'),
-  ('openai_translate', 'token_output', 0, 'gpt-5 translate call, completion tokens — placeholder, set to your actual $/1M output tokens divided by 1,000,000'),
-  ('elevenlabs', 'character', 0, 'Turbo v2.5 TTS — placeholder, set to your actual plan''s $/character rate')
+  ('deepgram', 'audio_second', 0.00008, 'Nova-3 streaming (Monolingual), pay-as-you-go: $0.0048/min ÷ 60 (deepgram.com/pricing, checked 2026-09-24 — this is a promotional rate with no published end date; list price is $0.0077/min = $0.0001283/sec if the promo ends)'),
+  ('openai_translate', 'token_input', 0.00000125, 'gpt-5 (the exact model AudioPipeline.ts calls — NOT 5.4/5.5/5.6): $1.25 per 1M input tokens (developers.openai.com/api/docs/pricing, checked 2026-09-24)'),
+  ('openai_translate', 'token_output', 0.00001, 'gpt-5: $10.00 per 1M output tokens (developers.openai.com/api/docs/pricing, checked 2026-09-24)'),
+  ('elevenlabs', 'character', 0.00005, 'Flash/Turbo tier (covers eleven_turbo_v2_5, the model_id AudioPipeline.ts sends): $0.05 per 1,000 characters, pay-as-you-go (elevenlabs.io/pricing/api, checked 2026-09-24)')
+-- do nothing (not "do update") on conflict — this only ever fires on a
+-- re-run, and by then the row may hold a real rate you've since edited by
+-- hand (or a different plan/tier's rate); a re-run must never clobber that.
 on conflict (provider, unit) do nothing;
 
 alter table translation_provider_rates enable row level security;
