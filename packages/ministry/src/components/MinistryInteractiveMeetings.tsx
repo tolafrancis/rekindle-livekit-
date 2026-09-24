@@ -207,10 +207,6 @@ const EnhancedVideoCallWrapper = ({
   const isGuest = !userId || userId.startsWith('guest-');
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [streamConfigOpen, setStreamConfigOpen] = useState(false);
-  // Preventive, host-only tip (2026-09-21): meetings cannot be converted to
-  // Webinar mode once live and cannot exceed MEETING_PARTICIPANT_CAP — this
-  // just helps a host plan the NEXT one correctly, dismissible per session.
-  const [showCapTip, setShowCapTip] = useState(true);
   // Live audience roster (everyone announces presence; host invites people up).
   const presenceMembers = useMeetingPresence(meeting.id, userId, userName, isGuest, isWebinar);
   const [meetingEnded, setMeetingEnded] = useState(false);
@@ -615,26 +611,6 @@ const EnhancedVideoCallWrapper = ({
           one row). */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
-      {!isPiP && isHost && showCapTip && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-md">
-          <div className="flex items-start gap-2 rounded-lg bg-amber-50/95 backdrop-blur-sm border border-amber-200 px-3 py-2 shadow-lg">
-            <p className="text-xs text-amber-800 flex-1">
-              {t(
-                'ministryInteractiveMeetings',
-                'meetingCapLiveTip',
-                "Meetings are capped at {cap} participants and can't switch to Webinar mode once live. Expecting a bigger crowd next time? Create it as a Webinar instead.",
-              ).replace('{cap}', String(MEETING_PARTICIPANT_CAP))}
-            </p>
-            <button
-              onClick={() => setShowCapTip(false)}
-              className="shrink-0 text-amber-600 hover:text-amber-800"
-              title={t('ministryInteractiveMeetings', 'dismiss', 'Dismiss')}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
       {!isPiP && (
         <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
           {callBackground && (
