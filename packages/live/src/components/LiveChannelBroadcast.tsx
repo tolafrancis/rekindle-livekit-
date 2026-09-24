@@ -272,11 +272,11 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     }
   });
 
-  // On-demand captions (agents/captions) — ministry channels on the LiveKit
-  // backend only (caption usage is logged per org, migration 0374). The host
-  // is in the room, so this is the same in-room path meetings use; the agent
+  // On-demand captions (agents/captions) — every channel on the LiveKit
+  // backend. Usage is logged per org, or per channel owner for personal
+  // channels (migrations 0374/0375). The host is in the room, so this is the same in-room path meetings use; the agent
   // also broadcasts to HLS viewers (see LiveChannelViewer).
-  const captionsAvailable = isLiveKitBackend() && !!channel.ministry_id;
+  const captionsAvailable = isLiveKitBackend();
   const captions = useLiveCaptions(
     captionsAvailable && dailyRoom.isConnected ? dailyRoom.captionsBridge : null,
     { roomName: `channel-${channel.id}`, kind: 'channel' },

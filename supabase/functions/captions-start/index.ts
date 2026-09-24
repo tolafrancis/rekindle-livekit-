@@ -36,8 +36,8 @@
 // signed-in ministry member (the "read ministry webinars" policy, migration
 // 0354); a channel broadcast must be live (it's public to anyone watching).
 //
-// Channel captions are offered on ministry-owned channels only — usage is
-// logged per org (migration 0374).
+// Usage is logged per org; personal (non-ministry) channels log it against
+// the channel owner instead (migration 0375).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -72,7 +72,6 @@ const ROOM_TABLE: Record<Exclude<RoomKind, 'channel'>, string> = {
 // (LiveChannelBroadcast.tsx joins it under exactly that name).
 const CHANNEL_ROOM = /^channel-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
-const NOT_MINISTRY_CHANNEL = 'Captions are available on ministry channels';
 
 // The caption agent joins as a hidden participant under this prefix — it
 // must never count as "a participant in the room" for the presence check.
@@ -121,12 +120,11 @@ serve(async (req) => {
     if (body.hls && body.channelId) {
       const { data: channel, error: channelError } = await admin
         .from('live_channels')
-        .select('id, ministry_id, is_live, is_hls_live, source_language')
+        .select('id, ministry_id, owner_id, is_live, is_hls_live, source_language')
         .eq('id', body.channelId)
         .maybeSingle();
       if (channelError) throw channelError;
       if (!channel) return json({ error: 'Channel not found' }, 404);
-      if (!channel.ministry_id) return json({ error: NOT_MINISTRY_CHANNEL }, 400);
       if (!channel.is_live && !channel.is_hls_live) return json({ error: 'This broadcast is not live' }, 409);
 
       const roomName = `channel-${channel.id}`;
@@ -137,6 +135,7 @@ serve(async (req) => {
         p_room_name: roomName,
         p_source_language: channel.source_language ?? 'en',
         p_started_by: 'hls:viewer',
+        p_owner_user_id: channel.owner_id,
       });
       if (error) throw error;
 
@@ -229,13 +228,13 @@ serve(async (req) => {
 
     // 3) Resolve the room server-side — never trust a client-supplied org or
     //    language.
-    let room: { id: string; ministry_id: string | null; source_language: string | null } | null;
+    let room: { id: string; ministry_id: string | null; owner_id?: string | null; source_language: string | null } | null;
     if (kind === 'channel') {
       const channelId = CHANNEL_ROOM.exec(roomName)?.[1];
       if (!channelId) return json({ error: 'Room not found' }, 404);
       const { data, error: roomError } = await admin
         .from('live_channels')
-        .select('id, ministry_id, source_language')
+        .select('id, ministry_id, owner_id, source_language')
         .eq('id', channelId)
         .maybeSingle();
       if (roomError) throw roomError;
@@ -250,7 +249,7 @@ serve(async (req) => {
       room = data;
     }
     if (!room) return json({ error: 'Room not found' }, 404);
-    if (!room.ministry_id) return json({ error: NOT_MINISTRY_CHANNEL }, 400);
+    if (!room.ministry_id && !room.owner_id) return json({ error: 'Room has no owner to log caption usage against' }, 400);
 
     // 4) Atomic get-or-create + dispatch (one live session per room).
     const { data, error } = await admin.rpc('claim_caption_session', {
@@ -260,6 +259,7 @@ serve(async (req) => {
       p_room_name: roomName,
       p_source_language: room.source_language ?? 'en',
       p_started_by: identity,
+      p_owner_user_id: room.owner_id ?? null,
     });
     if (error) throw error;
 

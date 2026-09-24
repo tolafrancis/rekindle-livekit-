@@ -36,8 +36,9 @@ Translation bot (`rekindle-translation-bot`): it never reads or writes any
 6. The agent stops 3 minutes after the last participant turns CC off (and no
    HLS viewer has heartbeated), when the room ends, or (abuse guard) after 30
    minutes with nothing transcribed.
-7. Every running minute is added to `caption_usage` (per org, room and UTC
-   day). When an org passes `CAPTION_ORG_DAILY_ALERT_MINUTES` in a day, the
+7. Every running minute is added to `caption_usage` (per org — or channel
+   owner, for personal channels — room and UTC day). When an org or owner
+   passes `CAPTION_ORG_DAILY_ALERT_MINUTES` in a day, the
    agent logs an alert and platform admins get an in-app notification. There
    is no user-facing cap.
 
@@ -54,8 +55,9 @@ pm2 save
 
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are needed for webinar
   audiences (Realtime broadcast). Without them, in-room captions still work.
-- Run migrations `0372`, `0373` and `0374` before starting this version.
-- Channel captions run on ministry-owned channels only (usage is per org).
+- Run migrations `0372`, `0373`, `0374` and `0375` before starting this version.
+- Personal (non-ministry) channels log usage against the channel owner
+  instead of an org (`0375`).
 - `DATABASE_URL` must be the Supabase **session-mode** pooler string
   (port 5432). The transaction pooler doesn't support `LISTEN`.
 - Node 20 needs `--env-file` support (20.6+); the PM2 file passes it.

@@ -361,14 +361,15 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // timeout expired with no fresh src to show yet.
   const joinWebRtc = !watchViaHls || (hlsFallbackDue && !hlsSrc);
 
-  // On-demand captions (agents/captions) — ministry channels on the LiveKit
-  // backend (caption usage is logged per org, migration 0374). Two paths,
+  // On-demand captions (agents/captions) — every channel on the LiveKit
+  // backend; usage is logged per org, or per owner for personal channels
+  // (migrations 0374/0375). Two paths,
   // one shared CC preference (captionPrefs):
   //   - watching over HLS: captions arrive over Supabase Realtime and are
   //     held back until playback reaches them (useHlsCaptions)
   //   - in the room (speakers, or the WebRTC fallback): LiveKit transcription
   //     events in real time (useLiveCaptions)
-  const captionsAvailable = isLiveKitBackend() && !!channel.ministry_id;
+  const captionsAvailable = isLiveKitBackend();
   const liveCaptions = useLiveCaptions(
     captionsAvailable && isLive && joinWebRtc && dailyRoom.isConnected ? dailyRoom.captionsBridge : null,
     { roomName: liveKitRoomName, kind: 'channel' },

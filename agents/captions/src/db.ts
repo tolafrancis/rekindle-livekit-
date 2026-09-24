@@ -9,7 +9,9 @@ import { config } from './config.js';
 export interface CaptionDispatch {
   action: 'start';
   session_id: string;
-  org_id: string;
+  /** Null for personal (non-ministry) channels — usage then goes to owner_user_id. */
+  org_id: string | null;
+  owner_user_id?: string | null;
   room_id: string;
   room_kind?: RoomKind;
   room_name: string;
@@ -59,11 +61,17 @@ export async function endSession(sessionId: string, reason: string): Promise<voi
   );
 }
 
-/** Adds caption minutes; returns the org's total for today (UTC). */
-export async function recordUsage(orgId: string, roomId: string, minutes: number): Promise<number> {
+/** Adds caption minutes; returns the org's (or, for a personal channel, the
+ *  owner's) total for today (UTC). */
+export async function recordUsage(
+  orgId: string | null,
+  roomId: string,
+  minutes: number,
+  ownerUserId: string | null = null,
+): Promise<number> {
   const { rows } = await pool.query<{ total: number }>(
-    'select public.record_caption_usage($1, $2, $3, $4) as total',
-    [orgId, roomId, minutes, config.orgDailyAlertMinutes],
+    'select public.record_caption_usage($1, $2, $3, $4, $5) as total',
+    [orgId, roomId, minutes, config.orgDailyAlertMinutes, ownerUserId],
   );
   return rows[0]?.total ?? 0;
 }
@@ -73,9 +81,9 @@ export async function recordUsage(orgId: string, roomId: string, minutes: number
  *  rows with a fresh heartbeat left over from before a restart. */
 export async function findRecoverableSessions(): Promise<CaptionDispatch[]> {
   const { rows } = await pool.query<{
-    id: string; org_id: string; room_id: string; room_kind: RoomKind; room_name: string; source_language: string; status: string;
+    id: string; org_id: string | null; owner_user_id: string | null; room_id: string; room_kind: RoomKind; room_name: string; source_language: string; status: string;
   }>(
-    `select id, org_id, room_id, room_kind, room_name, source_language, status
+    `select id, org_id, owner_user_id, room_id, room_kind, room_name, source_language, status
        from public.caption_sessions
       where status in ('starting', 'active')
         and last_heartbeat_at > now() - interval '2 minutes'`,
@@ -84,6 +92,7 @@ export async function findRecoverableSessions(): Promise<CaptionDispatch[]> {
     action: 'start',
     session_id: r.id,
     org_id: r.org_id,
+    owner_user_id: r.owner_user_id,
     room_id: r.room_id,
     room_kind: r.room_kind,
     room_name: r.room_name,

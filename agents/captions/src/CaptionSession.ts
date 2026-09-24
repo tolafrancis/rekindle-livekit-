@@ -148,7 +148,7 @@ export class CaptionSession {
 
     // Round the final partial minute up (only if the agent ran at all).
     if (this.lastUsageTickAt && Date.now() - this.lastUsageTickAt >= 1000) {
-      await recordUsage(this.dispatch.org_id, this.dispatch.room_id, 1).catch((err) =>
+      await recordUsage(this.dispatch.org_id, this.dispatch.room_id, 1, this.dispatch.owner_user_id ?? null).catch((err) =>
         console.warn('[session] final usage record failed:', err.message));
     }
     await endSession(this.sessionId, reason).catch((err) =>
@@ -268,10 +268,10 @@ export class CaptionSession {
     if (this.stopped) return;
     this.lastUsageTickAt = Date.now();
     try {
-      const orgTotalToday = await recordUsage(this.dispatch.org_id, this.dispatch.room_id, 1);
+      const orgTotalToday = await recordUsage(this.dispatch.org_id, this.dispatch.room_id, 1, this.dispatch.owner_user_id ?? null);
       if (!this.alerted && orgTotalToday >= config.orgDailyAlertMinutes) {
         this.alerted = true;
-        console.warn(`[session ${this.sessionId.slice(0, 8)}] ALERT: org ${this.dispatch.org_id} is at ${orgTotalToday} caption minutes today (threshold ${config.orgDailyAlertMinutes})`);
+        console.warn(`[session ${this.sessionId.slice(0, 8)}] ALERT: ${this.dispatch.org_id ? `org ${this.dispatch.org_id}` : `channel owner ${this.dispatch.owner_user_id}`} is at ${orgTotalToday} caption minutes today (threshold ${config.orgDailyAlertMinutes})`);
       }
     } catch (err) {
       console.warn('[session] usage record failed:', (err as Error).message);
