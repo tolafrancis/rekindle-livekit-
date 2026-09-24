@@ -14,6 +14,8 @@ interface WebinarTranslationButtonProps {
   /** True whenever a real (non-Original) language is selected — the caller
    *  mutes the HLS video's own audio while this is true. */
   onActiveChange?: (active: boolean) => void;
+  /** See TranslationListenerButton's showCaptionsOption. */
+  showCaptionsOption?: boolean;
 }
 
 /**
@@ -30,6 +32,7 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
   roomName,
   delaySeconds,
   onActiveChange,
+  showCaptionsOption,
 }) => (
   <TranslationListenerButton
     scopeId={webinarId}
@@ -38,6 +41,7 @@ export const WebinarTranslationButton: React.FC<WebinarTranslationButtonProps> =
     delaySeconds={delaySeconds}
     onActiveChange={onActiveChange}
     startCaptionsSession={{ rpc: 'start_webinar_captions_session', params: { p_webinar_id: webinarId } }}
+    showCaptionsOption={showCaptionsOption}
   />
 );
 

@@ -61,6 +61,10 @@ interface FloatingTranslationButtonProps {
    *  literally the caller's own auth.uid(), so the button is hidden
    *  entirely without this. */
   userId?: string;
+  /** Show the same-language "Show Captions" row. Meetings pass false: they
+   *  use on-demand captions (CaptionsButton / agents/captions) instead.
+   *  Translated-language caption rows are unaffected either way. */
+  showCaptionsOption?: boolean;
 }
 
 const sessionIdFromBotIdentity = (botIdentity: string): string => botIdentity.replace(/^rlt-bot-/, '');
@@ -80,6 +84,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   roomName,
   isHost = false,
   userId,
+  showCaptionsOption = true,
 }) => {
   const { user } = useAuth();
   const { tracks, currentLanguage, setLanguage, participants } = translation;
@@ -691,6 +696,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               Also independent of Audio the same way it always was: keep the
               real voice and still read captions, or mute translated audio
               but read along, same idea as any video app's separate CC menu. */}
+          {(showCaptionsOption || realTranslationTracks.length > 0) && (<>
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Captions</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
             <button type="button" onClick={() => setCaptionMode('off')} className={`${row} ${sel(captionMode === 'off')}`}>
@@ -698,6 +704,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <span className="flex-1">Off</span>
               {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            {showCaptionsOption && (
             <button
               type="button"
               onClick={startCaptionsSession}
@@ -708,6 +715,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <span className="flex-1">Show Captions</span>
               {captionMode === 'original' && !captionsStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            )}
             {realTranslationTracks.map((track) => (
               <button
                 key={`caption-${track.botIdentity}`}
@@ -721,6 +729,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               </button>
             ))}
           </div>
+          </>)}
 
           {isHost && (
             <div className="mt-2 border-t pt-2 px-2.5 space-y-2">

@@ -24,6 +24,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@rekindle/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@rekindle/ui/dialog';
 import { LiveChannelChat } from './LiveChannelChat';
 import { FloatingTranslationButton } from './FloatingTranslationButton';
+import { CaptionOverlay } from './CaptionOverlay';
+import { CaptionsButton } from './CaptionsButton';
+import { useLiveCaptions } from '../useLiveCaptions';
+import { CAPTION_LANGUAGES } from '../captionLanguages';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import SavedMeetingInsights from './SavedMeetingInsights';
 import MeetingInsightsPanel from './MeetingInsightsPanel';
@@ -55,7 +60,8 @@ import {
   X,
   Sparkles,
   FileText,
-  Volume2
+  Volume2,
+  Captions,
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { LiveChannel, ChannelCoHost } from '@rekindle/types/liveChannelTypes';
@@ -265,6 +271,26 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       if (!participant.local) { /* speaker left */ }
     }
   });
+
+  // On-demand captions (agents/captions) — every channel on the LiveKit
+  // backend. Usage is logged per org, or per channel owner for personal
+  // channels (migrations 0374/0375). The host is in the room, so this is the same in-room path meetings use; the agent
+  // also broadcasts to HLS viewers (see LiveChannelViewer).
+  const captionsAvailable = isLiveKitBackend();
+  const captions = useLiveCaptions(
+    captionsAvailable && dailyRoom.isConnected ? dailyRoom.captionsBridge : null,
+    { roomName: `channel-${channel.id}`, kind: 'channel' },
+  );
+  const [captionLanguage, setCaptionLanguage] = useState<string>(channel.source_language || 'en');
+  const saveCaptionLanguage = async (language: string) => {
+    const previous = captionLanguage;
+    setCaptionLanguage(language);
+    const { error } = await supabase.from('live_channels').update({ source_language: language }).eq('id', channel.id);
+    if (error) {
+      setCaptionLanguage(previous);
+      toast({ title: 'Could not save caption language', description: error.message, variant: 'destructive' });
+    }
+  };
 
   // Recording is just the enable_recording flag the HLS Egress reads at
   // go-live — mirror the channel's setting, nothing else to sync.
@@ -1327,6 +1353,24 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                     onCheckedChange={() => toggleRecording()}
                   />
                 </div>
+
+                {captionsAvailable && (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Captions className="h-5 w-5 text-indigo-400" />
+                      <div>
+                        <Label className="text-white">{t('liveChannelBroadcast', 'captionLanguage', 'Caption language')}</Label>
+                        <p className="text-xs text-gray-400">{t('liveChannelBroadcast', 'captionLanguageTip', 'The language spoken. Viewers can turn captions (CC) on themselves.')}</p>
+                      </div>
+                    </div>
+                    <Select value={captionLanguage} onValueChange={saveCaptionLanguage}>
+                      <SelectTrigger className="w-36 bg-gray-900 border-gray-600 text-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CAPTION_LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -1482,6 +1526,18 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
           >
             {/* Live reactions — audience + host share the `channel.id` broadcast channel */}
             <MeetingReactionsLayer reactions={reactions} />
+            {captions.enabled && (
+              <CaptionOverlay
+                lines={captions.lines}
+                size={captions.size}
+                bottomOffsetClassName="bottom-6"
+                placeholder={
+                  captions.status === 'starting' || captions.status === 'waiting'
+                    ? t('liveChannelBroadcast', 'captionsWaiting', 'Captions are on — they’ll appear when someone speaks.')
+                    : null
+                }
+              />
+            )}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50">
               <ReactionButton onReact={sendReaction} placement="down" />
             </div>
@@ -1680,6 +1736,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 roomName={`channel-${channel.id}`}
                 isHost
                 userId={user?.id}
+                showCaptionsOption={false}
+              />
+            )}
+            {captionsAvailable && dailyRoom.isConnected && (
+              <CaptionsButton
+                enabled={captions.enabled}
+                status={captions.status}
+                size={captions.size}
+                onToggle={captions.toggle}
+                onSizeChange={captions.setSize}
               />
             )}
 

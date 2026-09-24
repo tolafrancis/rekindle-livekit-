@@ -16,6 +16,8 @@ interface BroadcastTranslationButtonProps {
    *  mutes the HLS video's own audio while this is true, same idea as the
    *  meeting picker muting the room's other mics. */
   onActiveChange?: (active: boolean) => void;
+  /** See TranslationListenerButton's showCaptionsOption. */
+  showCaptionsOption?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
   roomName,
   delaySeconds,
   onActiveChange,
+  showCaptionsOption,
 }) => (
   <TranslationListenerButton
     scopeId={channelId}
@@ -41,6 +44,7 @@ export const BroadcastTranslationButton: React.FC<BroadcastTranslationButtonProp
     delaySeconds={delaySeconds}
     onActiveChange={onActiveChange}
     startCaptionsSession={{ rpc: 'start_captions_session', params: { p_channel_id: channelId } }}
+    showCaptionsOption={showCaptionsOption}
   />
 );
 

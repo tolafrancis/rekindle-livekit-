@@ -50,6 +50,7 @@ interface PreviewState {
 
 export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   private room: Room | null = null;
+  private accessToken: string | null = null;
   private callbacks: VideoWrapperCallbacks = {};
   private joined = false;
   private joining = false;
@@ -167,6 +168,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       clearTimeout(timeoutId);
       this.joined = true;
       this.joining = false;
+      this.accessToken = token;
 
       // Real bug found live (2026-08-18): a bot that started translating
       // BEFORE this participant joined was never discovered. Every trigger
@@ -233,10 +235,21 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       } catch { /* ignore */ }
       this.room = null;
     }
+    this.accessToken = null;
     this.joined = false;
     this.joining = false;
     this.localAudioEnabled = false;
     this.localVideoEnabled = false;
+  }
+
+  // ---- on-demand captions ----
+
+  async setLocalAttributes(attributes: Record<string, string>): Promise<void> {
+    await this.room?.localParticipant.setAttributes(attributes);
+  }
+
+  getAccessToken(): string | null {
+    return this.joined ? this.accessToken : null;
   }
 
   async destroy(): Promise<void> {
@@ -621,6 +634,21 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // fires once autoplay succeeds).
       .on(RoomEvent.AudioPlaybackStatusChanged, () => {
         if (!this.room?.canPlaybackAudio) this.callbacks.onAudioPlaybackBlocked?.();
+      })
+      // On-demand captions (agents/captions): the agent publishes each
+      // segment attributed to the SPEAKER's identity, so `p` is who said it.
+      .on(RoomEvent.TranscriptionReceived, (segments, p?: Participant) => {
+        if (!p || !segments.length) return;
+        this.callbacks.onTranscription?.(segments.map((seg) => ({
+          id: seg.id,
+          text: seg.text,
+          final: seg.final,
+          language: seg.language,
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+          speakerIdentity: p.identity,
+          speakerName: p.name || p.identity,
+        })));
       })
       .on(RoomEvent.ConnectionQualityChanged, (quality, p: Participant) => {
         this.callbacks.onConnectionQualityChanged?.(p.isLocal ? '' : p.identity, quality);

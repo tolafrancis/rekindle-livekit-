@@ -12,6 +12,14 @@ export interface HlsPlayerHandle {
    *  mounted. See LiveChannelViewer.tsx's "Join Broadcast" gesture for the
    *  call site and the full rationale. */
   prime: () => void;
+  /** Wall-clock time (epoch ms) of the frame currently on screen, or null
+   *  before playback starts. Used to show on-demand captions in sync with
+   *  what the viewer hears (useHlsCaptions). `exact` when the playlist
+   *  carries EXT-X-PROGRAM-DATE-TIME (hls.js `playingDate`, or the native
+   *  player's getStartDate()) — a server-side clock. Otherwise estimated on
+   *  THIS device's clock from the player's measured lag behind the live
+   *  edge plus one target segment duration. */
+  getPlaybackDate: () => { ms: number; exact: boolean } | null;
 }
 
 interface HlsPlayerProps {
@@ -71,12 +79,33 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
   // own MANIFEST_PARSED-triggered attemptPlay() and whatever click led here.
   // pause() right after so nothing actually starts playing before there's
   // real content — this is a permission grant, not a real play.
+  // Kept current by the ~1/sec lag sampler below, for getPlaybackDate().
+  const hlsInstanceRef = useRef<Hls | null>(null);
+  const lastLagRef = useRef<number | null>(null);
+
   useImperativeHandle(ref, () => ({
     prime: () => {
       const video = videoRef.current;
       if (!video) return;
       video.play().catch(() => {});
       video.pause();
+    },
+    getPlaybackDate: () => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return null;
+      const h = hlsInstanceRef.current;
+      try {
+        const playing = h?.playingDate;
+        if (playing && isFinite(playing.getTime())) return { ms: playing.getTime(), exact: true };
+      } catch { /* instance torn down mid-rebuild */ }
+      const start = (video as HTMLVideoElement & { getStartDate?: () => Date }).getStartDate?.();
+      if (start && isFinite(start.getTime()) && start.getTime() > 0) {
+        return { ms: start.getTime() + video.currentTime * 1000, exact: true };
+      }
+      const lag = lastLagRef.current;
+      if (lag === null) return null;
+      const targetDuration = h?.levels?.[h.currentLevel]?.details?.targetduration ?? 0;
+      return { ms: Date.now() - (lag + targetDuration) * 1000, exact: false };
     },
   }), []);
   const [status, setStatus] = useState<'loading' | 'playing' | 'waiting' | 'ended' | 'error'>('loading');
@@ -444,7 +473,11 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
         lag = video.buffered.end(video.buffered.length - 1) - video.currentTime;
       }
       if (showDebug) setDebugInfo({ lag, recoveries: recoveriesRef.current });
-      if (lag !== null && isFinite(lag) && lag > 0) onLatencyChangeRef.current?.(lag);
+      hlsInstanceRef.current = hls;
+      if (lag !== null && isFinite(lag) && lag > 0) {
+        lastLagRef.current = lag;
+        onLatencyChangeRef.current?.(lag);
+      }
     }, 1000);
 
     // Stall watchdog (real report, 2026-09-22: audience playback went
@@ -492,6 +525,8 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (debugTimer) clearInterval(debugTimer);
       clearInterval(stallWatchdog);
       if (hls) hls.destroy();
+      hlsInstanceRef.current = null;
+      lastLagRef.current = null;
     };
   }, [src, showDebug]);
 

@@ -70,6 +70,15 @@ enabled = true
 # verification stays on, matching livekit-egress/livekit-token/livekit-moderation.
 verify_jwt = true
 
+[functions.captions-start]
+enabled = true
+# Authorization is the caller's own LiveKit room token (verified inside the
+# function with TokenVerifier + a live participant-list check), so guests who
+# joined from a share link can start captions too. They still send the
+# project anon key as their Bearer, which passes gateway JWT verification —
+# kept on, matching livekit-token / livekit-egress / livekit-ingress.
+verify_jwt = true
+
 [functions.livekit-webhook]
 enabled = true
 # LiveKit signs webhook requests using its API Key & Secret HMAC payload signature,

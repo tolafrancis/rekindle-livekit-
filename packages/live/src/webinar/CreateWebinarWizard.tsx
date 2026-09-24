@@ -19,6 +19,7 @@ import { zonedWallTimeToUtcISO, utcISOToZonedInputValue, guessUserTimeZone, comm
 import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 import { FREE_TIER_MEETING_LIMITS } from '@rekindle/auth/subscriptionEnforcement';
 import { checkWebinarQuota, createWebinarSpeaker, type MinistryWebinar } from './webinarControl';
+import { CAPTION_LANGUAGES } from '../captionLanguages';
 
 interface CreateWebinarWizardProps {
   ministryId: string;
@@ -78,6 +79,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
   const [enablePolls, setEnablePolls] = useState(true);
   const [recordingVisibility, setRecordingVisibility] = useState<'public' | 'private'>('private');
   const [defaultLanguage, setDefaultLanguage] = useState('en');
+  const [captionLanguage, setCaptionLanguage] = useState('en');
   const [speakers, setSpeakers] = useState<DraftSpeaker[]>([]);
   const [newSpeakerEmail, setNewSpeakerEmail] = useState('');
   const [newSpeakerName, setNewSpeakerName] = useState('');
@@ -120,7 +122,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
       setTitle(''); setDescription(''); setCoverImageUrl(''); setScheduledTime('');
       setTimezone(guessUserTimeZone()); setDurationMinutes(60); setMaxAttendees(200);
       setIsPublic(false); setRegistrationRequired(false); setEnableRecording(true);
-      setEnableCaptions(true); setEnableTranslation(false); setDefaultLanguage('en');
+      setEnableCaptions(true); setEnableTranslation(false); setDefaultLanguage('en'); setCaptionLanguage('en');
       setEnableChat(true); setEnableQA(true); setEnablePolls(true);
       setRecordingVisibility('private');
       setSpeakers([]);
@@ -138,6 +140,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     setRegistrationRequired(webinar.registration_required);
     setEnableRecording(webinar.enable_recording);
     setEnableCaptions(webinar.enable_captions);
+    setCaptionLanguage(webinar.source_language ?? 'en');
     setEnableTranslation(webinar.enable_translation);
     setEnableChat(webinar.enable_chat);
     setEnableQA(webinar.enable_qa);
@@ -191,6 +194,9 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         enable_polls: enablePolls,
         recording_visibility: recordingVisibility,
         default_language: defaultLanguage,
+        // Only written when the host picks a non-default caption language, so
+        // saving still works on a database that hasn't run migration 0372 yet.
+        ...(captionLanguage !== (webinar?.source_language ?? 'en') ? { source_language: captionLanguage } : {}),
       };
 
       if (isEditing && webinar) {
@@ -373,9 +379,16 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
                 </Select>
               </div>
             )}
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <Label className="text-sm">Captions</Label>
-              <Switch checked={enableCaptions} onCheckedChange={setEnableCaptions} />
+            {/* Captions are on-demand now: anyone can turn CC on during the
+                webinar, so there's no host switch — just the language spoken. */}
+            <div className="space-y-1">
+              <Label className="text-xs">Caption language</Label>
+              <Select value={captionLanguage} onValueChange={setCaptionLanguage}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CAPTION_LANGUAGES.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center justify-between rounded-md border p-3">
               <Label className="text-sm">Live translation</Label>

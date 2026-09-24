@@ -34,6 +34,20 @@ export interface NormalizedParticipant {
   metadata?: { role?: ParticipantRole };
 }
 
+/** One on-demand caption segment (agents/captions → LiveKit transcription
+ *  event). `id` is stable per phrase: interim updates reuse it and the final
+ *  result closes it. Times are wall-clock epoch ms of when it was spoken. */
+export interface LiveCaptionSegment {
+  id: string;
+  text: string;
+  final: boolean;
+  language: string;
+  startTime: number;
+  endTime: number;
+  speakerIdentity: string;
+  speakerName: string;
+}
+
 /** Callbacks the hook wires into a wrapper. Superset of the Daily wrapper's,
  *  plus `onData` (LiveKit data channel → Phase 3 advisory handler). */
 export interface VideoWrapperCallbacks {
@@ -78,6 +92,9 @@ export interface VideoWrapperCallbacks {
    *  interface's other loosely-typed args, to stay drop-in compatible
    *  across both backends. */
   onConnectionQualityChanged?: (identity: string, quality: string) => void;
+  /** On-demand captions: LiveKit RoomEvent.TranscriptionReceived, already
+   *  resolved to the speaker's identity and display name. */
+  onTranscription?: (segments: LiveCaptionSegment[]) => void;
 }
 
 /**
@@ -128,6 +145,13 @@ export interface IVideoRoomWrapper {
    *  screen-share they may be presenting. identity is their LiveKit
    *  identity (== NormalizedParticipant.id). */
   setParticipantVideoSubscribed(identity: string, subscribed: boolean): void;
+
+  /** On-demand captions: set the local participant's LiveKit attributes
+   *  (captions=on|off). Optional — LiveKit-only. */
+  setLocalAttributes?(attributes: Record<string, string>): Promise<void>;
+  /** The room token this wrapper joined with — captions-start uses it to
+   *  prove the caller is in the room. Null when not joined. */
+  getAccessToken?(): string | null;
 }
 
 export type VideoBackend = 'daily' | 'livekit';

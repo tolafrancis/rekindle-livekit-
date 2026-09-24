@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@rekindle/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Hand, PhoneOff, MessageSquare, HelpCircle, BarChart3, Loader2, Volume2, VolumeX } from 'lucide-react';
-import { HlsPlayer } from '../components/HlsPlayer';
+import { HlsPlayer, type HlsPlayerHandle } from '../components/HlsPlayer';
+import { CaptionOverlay } from '../components/CaptionOverlay';
+import { CaptionsButton } from '../components/CaptionsButton';
+import { useHlsCaptions } from '../useHlsCaptions';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { trackMeetingParticipant } from '../meetingStreamControl';
 import { useMeetingPresence } from '../useMeetingPresence';
@@ -51,7 +54,15 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   const myRequest = speakerRequests.myRequest;
   const [hlsLatencySeconds, setHlsLatencySeconds] = useState(HLS_TARGET_LATENCY_SECONDS);
   const [translationActive, setTranslationActive] = useState(false);
-  const showTranslation = webinar.enable_captions || webinar.enable_translation;
+  // Captions no longer depend on the host: CC below is on-demand for every
+  // attendee (useHlsCaptions). This picker is now for Live Translation only.
+  const showTranslation = webinar.enable_translation;
+  const playerRef = useRef<HlsPlayerHandle>(null);
+  const captions = useHlsCaptions({
+    scope: { kind: 'webinar', webinarId: webinar.id },
+    roomName: webinar.room_name,
+    getPlaybackDate: () => playerRef.current?.getPlaybackDate() ?? null,
+  });
   // Starts muted (2026-09-22, real bug reported live: "always starts with
   // tap to enable sound and it does nothing"). Root cause: HlsPlayer tries
   // to autoplay WITH sound the instant the manifest parses — before any real
@@ -94,6 +105,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
           <div className="w-full aspect-video sm:max-w-3xl">
           {webinar.hls_playback_url ? (
             <HlsPlayer
+              ref={playerRef}
               src={webinar.hls_playback_url}
               onEnded={onEnded}
               className="w-full h-full"
@@ -153,13 +165,34 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
           )}
         </div>
 
+        {captions.enabled && (
+          <CaptionOverlay
+            lines={captions.lines}
+            size={captions.size}
+            bottomOffsetClassName="bottom-16 sm:bottom-16"
+            placeholder={
+              captions.status === 'starting' || captions.status === 'waiting'
+                ? 'Captions are on — they’ll appear when someone speaks.'
+                : null
+            }
+          />
+        )}
+
         <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
+          <CaptionsButton
+            enabled={captions.enabled}
+            status={captions.status}
+            size={captions.size}
+            onToggle={captions.toggle}
+            onSizeChange={captions.setSize}
+          />
           {showTranslation && (
             <WebinarTranslationButton
               webinarId={webinar.id}
               roomName={webinar.room_name}
               delaySeconds={hlsLatencySeconds}
               onActiveChange={setTranslationActive}
+              showCaptionsOption={false}
             />
           )}
           <Button onClick={onLeave} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
