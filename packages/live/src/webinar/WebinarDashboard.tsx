@@ -156,6 +156,7 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
         enable_captions: webinar.enable_captions,
         enable_translation: webinar.enable_translation,
         default_language: webinar.default_language,
+        ...(webinar.source_language && webinar.source_language !== 'en' ? { source_language: webinar.source_language } : {}),
       });
       if (error) throw error;
       toast.success('Duplicated as a new draft');

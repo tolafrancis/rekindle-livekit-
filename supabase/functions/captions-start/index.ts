@@ -24,8 +24,16 @@
 //   4. Run migration 0372_on_demand_captions.sql first.
 //
 // ── Request (POST JSON body) ─────────────────────────────────────────────────
-//   { roomName, livekitToken, context: { kind: 'ministry_meeting'|'ministry_webinar' } }
+//   In the room (meeting participants, webinar host/speakers):
+//     { roomName, livekitToken, context: { kind: 'ministry_meeting'|'ministry_webinar' } }
+//   Webinar audience watching over HLS (never in the LiveKit room):
+//     { hls: true, webinarId }
 //       → { session_id, status: 'starting'|'active', reused }
+//
+// HLS attendees can't present a room token, so they're checked the same way
+// watching the webinar itself is (the "read ministry webinars" policy,
+// migration 0354): the webinar must be live, and either public or the caller
+// a signed-in ministry member.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -43,6 +51,8 @@ interface RequestBody {
   roomName?: string;
   livekitToken?: string;
   context?: { kind?: RoomKind };
+  hls?: boolean;
+  webinarId?: string;
 }
 
 // Rooms captions can run in, keyed by context.kind. Both tables carry
@@ -85,6 +95,7 @@ serve(async (req) => {
     const LIVEKIT_API_KEY = Deno.env.get('LIVEKIT_API_KEY');
     const LIVEKIT_API_SECRET = Deno.env.get('LIVEKIT_API_SECRET');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
@@ -92,6 +103,57 @@ serve(async (req) => {
     }
 
     const body = (await req.json()) as RequestBody;
+    const admin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // ── Webinar audience over HLS ──────────────────────────────────────────
+    if (body.hls) {
+      if (!body.webinarId) return json({ error: 'webinarId is required' }, 400);
+
+      const { data: webinar, error: webinarError } = await admin
+        .from('ministry_webinars')
+        .select('id, ministry_id, room_name, status, is_public, source_language')
+        .eq('id', body.webinarId)
+        .maybeSingle();
+      if (webinarError) throw webinarError;
+      if (!webinar) return json({ error: 'Webinar not found' }, 404);
+      if (webinar.status !== 'live') return json({ error: 'This webinar is not live' }, 409);
+
+      const userClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+      });
+      const { data: { user } } = await userClient.auth.getUser();
+
+      if (!webinar.is_public) {
+        if (!user) return json({ error: 'Sign in to use captions for this webinar' }, 401);
+        const { data: isMember, error: memberError } = await admin.rpc('is_group_member', {
+          p_ministry_id: webinar.ministry_id,
+          p_user_id: user.id,
+        });
+        if (memberError) throw memberError;
+        if (!isMember) return json({ error: 'Not a member of this ministry' }, 403);
+      }
+
+      const { data, error } = await admin.rpc('claim_caption_session', {
+        p_org_id: webinar.ministry_id,
+        p_room_id: webinar.id,
+        p_room_kind: 'ministry_webinar',
+        p_room_name: webinar.room_name,
+        p_source_language: webinar.source_language ?? 'en',
+        p_started_by: `hls:${user?.id ?? 'guest'}`,
+      });
+      if (error) throw error;
+
+      // Count this viewer straight away, so the agent doesn't see "nobody
+      // watching captions" before the viewer's first heartbeat.
+      await admin
+        .from('caption_sessions')
+        .update({ hls_viewer_seen_at: new Date().toISOString() })
+        .eq('id', data.session_id);
+
+      return json({ ...data, room_name: webinar.room_name });
+    }
+
+    // ── In the room ────────────────────────────────────────────────────────
     const roomName = body.roomName;
     const kind: RoomKind = body.context?.kind ?? 'ministry_meeting';
     if (!roomName || !body.livekitToken) {
@@ -124,7 +186,6 @@ serve(async (req) => {
 
     // 3) Resolve the room server-side — never trust a client-supplied org or
     //    language.
-    const admin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const { data: room, error: roomError } = await admin
       .from(ROOM_TABLE[kind])
       .select('id, ministry_id, source_language')

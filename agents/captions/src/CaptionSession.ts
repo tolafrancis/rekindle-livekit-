@@ -7,8 +7,13 @@
 // track. Nothing is stored, so participants who turn CC on later only see
 // captions from that moment on.
 //
+// Webinar rooms: every update is also broadcast over Supabase Realtime for
+// the HLS audience (HlsBroadcaster), who count as caption viewers through
+// their heartbeat (caption_sessions.hls_viewer_seen_at, migration 0373).
+//
 // Stops when:
-//   - no participant has the attribute captions=on for config.idleStopMs (3 min)
+//   - no participant has the attribute captions=on, and no HLS viewer has
+//     heartbeated, for config.idleStopMs (3 min)
 //   - the room ends (the agent is disconnected)
 //   - nothing at all was transcribed for config.noSpeechStopMs (30 min) — an
 //     abuse guard, not a limit: normal meetings never come close.
@@ -25,7 +30,8 @@ import {
 } from '@livekit/rtc-node';
 import { AccessToken } from 'livekit-server-sdk';
 import { AGENT_IDENTITY_PREFIX, config } from './config.js';
-import { claimSession, endSession, heartbeat, recordUsage, type CaptionDispatch } from './db.js';
+import { claimSession, endSession, heartbeat, recordUsage, type CaptionDispatch, type RoomKind } from './db.js';
+import { HlsBroadcaster } from './HlsBroadcaster.js';
 import { SpeakerTranscriber, type CaptionUpdate } from './SpeakerTranscriber.js';
 
 const HEARTBEAT_MS = 30_000;
@@ -45,6 +51,8 @@ export class CaptionSession {
   private lastSpeechAt = Date.now();
   private alerted = false;
   private stopped = false;
+  private hlsViewerRecent = false;
+  private broadcaster: HlsBroadcaster | null = null;
   private readonly log: (...args: unknown[]) => void;
 
   constructor(dispatch: CaptionDispatch, onEnded: (sessionId: string) => void) {
@@ -56,10 +64,17 @@ export class CaptionSession {
 
   /** `resuming` = picking up an already-'active' row after an agent restart. */
   async start(resuming: boolean): Promise<void> {
-    if (!resuming && !(await claimSession(this.sessionId))) {
+    const roomKind: RoomKind | null = resuming
+      ? (this.dispatch.room_kind ?? 'ministry_meeting')
+      : await claimSession(this.sessionId);
+    if (!roomKind) {
       this.log('already claimed or ended — skipping');
       this.onEnded(this.sessionId);
       return;
+    }
+    if (roomKind === 'ministry_webinar') {
+      this.broadcaster = HlsBroadcaster.forRoom(this.dispatch.room_name);
+      if (!this.broadcaster) this.log('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — HLS attendees will get no captions');
     }
 
     try {
@@ -93,11 +108,22 @@ export class CaptionSession {
     }
 
     this.lastUsageTickAt = Date.now();
-    this.heartbeatTimer = setInterval(() => {
-      heartbeat(this.sessionId).catch((err) => console.warn('[session] heartbeat failed:', err.message));
-    }, HEARTBEAT_MS);
+    await this.beat();
+    this.heartbeatTimer = setInterval(() => void this.beat(), HEARTBEAT_MS);
     this.usageTimer = setInterval(() => void this.usageTick(), USAGE_TICK_MS);
     this.updateCaptionViewers();
+  }
+
+  private async beat(): Promise<void> {
+    try {
+      const { hlsViewerRecent } = await heartbeat(this.sessionId);
+      if (hlsViewerRecent !== this.hlsViewerRecent) {
+        this.hlsViewerRecent = hlsViewerRecent;
+        this.updateCaptionViewers();
+      }
+    } catch (err) {
+      console.warn('[session] heartbeat failed:', (err as Error).message);
+    }
   }
 
   /** Disconnect without ending the DB row (graceful agent shutdown): the
@@ -105,6 +131,7 @@ export class CaptionSession {
   async detach(): Promise<void> {
     this.stopped = true;
     this.clearTimers();
+    this.broadcaster?.close();
     for (const t of this.transcribers.values()) t.close();
     this.transcribers.clear();
     await this.room.disconnect().catch(() => {});
@@ -115,6 +142,7 @@ export class CaptionSession {
     this.stopped = true;
     this.log('stopping:', reason);
     this.clearTimers();
+    this.broadcaster?.close();
     for (const t of this.transcribers.values()) t.close();
     this.transcribers.clear();
 
@@ -203,6 +231,7 @@ export class CaptionSession {
     for (const participant of this.room.remoteParticipants.values()) {
       if (participant.attributes?.captions === 'on' && !participant.identity.startsWith(AGENT_IDENTITY_PREFIX)) viewers += 1;
     }
+    if (this.hlsViewerRecent) viewers += 1;
     if (viewers > 0) {
       if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; this.log(`${viewers} caption viewer(s) — idle stop cancelled`); }
     } else if (!this.idleTimer) {
@@ -213,6 +242,10 @@ export class CaptionSession {
 
   private async publish(update: CaptionUpdate): Promise<void> {
     if (this.stopped) return;
+    if (this.broadcaster) {
+      const speaker = this.room.remoteParticipants.get(update.speakerIdentity);
+      this.broadcaster.send(update, speaker?.name || update.speakerIdentity);
+    }
     try {
       await this.room.localParticipant?.publishTranscription({
         participantIdentity: update.speakerIdentity,

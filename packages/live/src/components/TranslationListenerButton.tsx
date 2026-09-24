@@ -69,6 +69,10 @@ export interface TranslationListenerButtonProps {
     rpc: string;
     params: Record<string, string>;
   };
+  /** Show the same-language "Show Captions" row. Webinar attendees pass
+   *  false: they use on-demand captions (CaptionsButton / useHlsCaptions)
+   *  instead. Translated-language caption rows are unaffected either way. */
+  showCaptionsOption?: boolean;
 }
 
 /**
@@ -94,6 +98,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
   delaySeconds,
   onActiveChange,
   startCaptionsSession,
+  showCaptionsOption = true,
 }) => {
   const logTag = `TranslationListenerButton:${scopeKind}`;
 
@@ -118,7 +123,11 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
   // choice — Meet/Zoom/YouTube all remember it.
   const CAPTION_MODE_STORAGE_KEY = `rk-caption-mode-${scopeId}`;
   const [captionMode, setCaptionModeState] = useState<CaptionMode>(() => {
-    try { return (localStorage.getItem(CAPTION_MODE_STORAGE_KEY) as CaptionMode) || 'off'; } catch { return 'off'; }
+    try {
+      const stored = (localStorage.getItem(CAPTION_MODE_STORAGE_KEY) as CaptionMode) || 'off';
+      // A remembered "Show Captions" choice can't be restored where that row is hidden.
+      return !showCaptionsOption && stored === 'original' ? 'off' : stored;
+    } catch { return 'off'; }
   });
   const setCaptionMode = (mode: CaptionMode) => {
     setCaptionModeState(mode);
@@ -735,6 +744,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
             </p>
           )}
 
+          {(showCaptionsOption || realSessions.length > 0) && (<>
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Captions</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
             <button type="button" onClick={() => setCaptionMode('off')} className={`${row} ${sel(captionMode === 'off')}`}>
@@ -742,6 +752,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
               <span className="flex-1">Off</span>
               {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            {showCaptionsOption && (
             <button
               type="button"
               onClick={startCaptions}
@@ -752,6 +763,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
               <span className="flex-1">Show Captions</span>
               {captionMode === 'original' && !captionsStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            )}
             {realSessions.map((s) => (
               <button
                 key={`caption-${s.id}`}
@@ -765,6 +777,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
               </button>
             ))}
           </div>
+          </>)}
           {captionsError && (
             <p className="text-xs text-red-600 px-2.5 pt-1.5">{captionsError}</p>
           )}

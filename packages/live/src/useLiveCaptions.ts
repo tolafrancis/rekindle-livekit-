@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import type { LiveCaptionSegment } from '@rekindle/types/videoRoom';
+import { readPrefs, writePrefs, type CaptionPrefs, type CaptionSize, type CaptionStatus } from './captionPrefs';
 
 /**
  * On-demand source-language captions (agents/captions) — separate from Live
@@ -29,47 +30,16 @@ export interface LiveCaptionsBridge {
   subscribe: (listener: (segments: LiveCaptionSegment[]) => void) => () => void;
 }
 
-export type CaptionSize = 'sm' | 'md' | 'lg';
-export type CaptionStatus = 'off' | 'starting' | 'waiting' | 'live' | 'error';
+export type { CaptionSize, CaptionStatus } from './captionPrefs';
 
 /** A segment as the overlay renders it: `final` false = still being spoken. */
 export type CaptionLine = LiveCaptionSegment;
 
-const PREFS_KEY = 'rekindle.captions.prefs';
 const MAX_LINES = 6;
 // Re-ensure the agent periodically while CC is on — recovers on its own if
 // the agent was restarted or stopped by its no-speech guard. Idempotent and
 // cheap; jittered so a full room doesn't call in lockstep.
 const ENSURE_INTERVAL_MS = 5 * 60_000;
-
-interface CaptionPrefs {
-  enabled: boolean;
-  size: CaptionSize;
-}
-
-const DEFAULT_PREFS: CaptionPrefs = { enabled: false, size: 'md' };
-
-function readPrefs(): CaptionPrefs {
-  try {
-    const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as Partial<CaptionPrefs>;
-    return {
-      enabled: parsed.enabled === true,
-      size: parsed.size === 'sm' || parsed.size === 'lg' ? parsed.size : 'md',
-    };
-  } catch {
-    return DEFAULT_PREFS;
-  }
-}
-
-function writePrefs(prefs: CaptionPrefs): void {
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    /* storage unavailable (private mode) — prefs just won't persist */
-  }
-}
 
 interface UseLiveCaptionsOptions {
   roomName: string;

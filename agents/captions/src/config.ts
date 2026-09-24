@@ -19,6 +19,12 @@ export const config = {
   databaseUrl: required('DATABASE_URL'),
   deepgramApiKey: required('DEEPGRAM_API_KEY'),
 
+  // Supabase Realtime broadcast to webinar audiences watching over HLS.
+  // Optional: without them, webinar in-room captions still work but HLS
+  // attendees get none (logged once per session).
+  supabaseUrl: process.env.SUPABASE_URL || null,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
+
   // nova-3 is Deepgram's most accurate English model; nova-2 covers the
   // widest language set (and is what the translation bot already runs).
   deepgramModelEn: process.env.CAPTION_DEEPGRAM_MODEL_EN || 'nova-3',

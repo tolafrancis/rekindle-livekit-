@@ -1,6 +1,6 @@
 // Postgres access: a pooled client for queries, plus one dedicated
-// connection that LISTENs on "caption_dispatch" (migration 0372's
-// claim_caption_session sends it). Supabase Realtime doesn't relay arbitrary
+// connection that LISTENs on "caption_dispatch" (claim_caption_session,
+// migrations 0372/0373, sends it). Supabase Realtime doesn't relay arbitrary
 // pg_notify channels, so this needs a real session-mode connection.
 
 import pg from 'pg';
@@ -11,33 +11,43 @@ export interface CaptionDispatch {
   session_id: string;
   org_id: string;
   room_id: string;
+  room_kind?: RoomKind;
   room_name: string;
   source_language: string;
   /** Set on rows read back from the table (recovery), not on notifies. */
   status?: 'starting' | 'active';
 }
 
+export type RoomKind = 'ministry_meeting' | 'ministry_webinar';
+
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 4 });
 
-/** Moves a session from 'starting' to 'active'. Returns false if it was
- *  already claimed or ended, so a duplicate notify never starts a second
- *  agent for the same session. */
-export async function claimSession(sessionId: string): Promise<boolean> {
-  const { rowCount } = await pool.query(
+/** Moves a session from 'starting' to 'active' and returns its room kind,
+ *  or null if it was already claimed or ended — so a duplicate notify never
+ *  starts a second agent for the same session. */
+export async function claimSession(sessionId: string): Promise<RoomKind | null> {
+  const { rows } = await pool.query<{ room_kind: RoomKind }>(
     `update public.caption_sessions
         set status = 'active', last_heartbeat_at = now()
-      where id = $1 and status = 'starting'`,
+      where id = $1 and status = 'starting'
+      returning room_kind`,
     [sessionId],
   );
-  return (rowCount ?? 0) > 0;
+  return rows[0]?.room_kind ?? null;
 }
 
-export async function heartbeat(sessionId: string): Promise<void> {
-  await pool.query(
+/** Keeps the session alive and reports whether an HLS viewer (webinar
+ *  audience) has had CC on in the last 90 seconds — they can't set a
+ *  LiveKit attribute, so they heartbeat caption_hls_viewer_heartbeat
+ *  (migration 0373) instead. */
+export async function heartbeat(sessionId: string): Promise<{ hlsViewerRecent: boolean }> {
+  const { rows } = await pool.query<{ hls_recent: boolean }>(
     `update public.caption_sessions set last_heartbeat_at = now()
-      where id = $1 and status = 'active'`,
+      where id = $1 and status = 'active'
+      returning coalesce(hls_viewer_seen_at > now() - interval '90 seconds', false) as hls_recent`,
     [sessionId],
   );
+  return { hlsViewerRecent: rows[0]?.hls_recent ?? false };
 }
 
 export async function endSession(sessionId: string, reason: string): Promise<void> {
@@ -63,9 +73,9 @@ export async function recordUsage(orgId: string, roomId: string, minutes: number
  *  rows with a fresh heartbeat left over from before a restart. */
 export async function findRecoverableSessions(): Promise<CaptionDispatch[]> {
   const { rows } = await pool.query<{
-    id: string; org_id: string; room_id: string; room_name: string; source_language: string; status: string;
+    id: string; org_id: string; room_id: string; room_kind: RoomKind; room_name: string; source_language: string; status: string;
   }>(
-    `select id, org_id, room_id, room_name, source_language, status
+    `select id, org_id, room_id, room_kind, room_name, source_language, status
        from public.caption_sessions
       where status in ('starting', 'active')
         and last_heartbeat_at > now() - interval '2 minutes'`,
@@ -75,6 +85,7 @@ export async function findRecoverableSessions(): Promise<CaptionDispatch[]> {
     session_id: r.id,
     org_id: r.org_id,
     room_id: r.room_id,
+    room_kind: r.room_kind,
     room_name: r.room_name,
     source_language: r.source_language,
     status: r.status === 'active' ? 'active' : 'starting',
