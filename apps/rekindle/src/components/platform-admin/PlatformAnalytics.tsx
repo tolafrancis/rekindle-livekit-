@@ -9,8 +9,26 @@ import { toast } from '../ui/use-toast';
 import {
   BarChart3, TrendingUp, Users, Building2, Calendar,
   Loader2, RefreshCw, Activity, Eye, MessageSquare,
-  Heart, BookOpen, Mic, Video, ArrowUpRight, ArrowDownRight
+  Heart, BookOpen, Mic, Video, ArrowUpRight, ArrowDownRight, Languages, DollarSign
 } from 'lucide-react';
+
+interface TranslationUsageRow {
+  session_id: string;
+  ministry_id: string;
+  source_language: string;
+  target_language: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_hours: number;
+  stt_audio_seconds: number | null;
+  stt_cost_usd: number;
+  translate_input_tokens: number;
+  translate_output_tokens: number;
+  translate_cost_usd: number;
+  tts_characters: number;
+  tts_cost_usd: number;
+  total_cost_usd: number;
+}
 
 interface AnalyticsData {
   totalUsers: number;
@@ -56,6 +74,8 @@ export const PlatformAnalytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('30');
   const [topMinistries, setTopMinistries] = useState<any[]>([]);
+  const [translationUsage, setTranslationUsage] = useState<TranslationUsageRow[]>([]);
+  const [ministryNames, setMinistryNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadAnalytics();
@@ -77,7 +97,8 @@ export const PlatformAnalytics: React.FC = () => {
         prayersRes,
         voiceRoomsRes,
         liveChannelsRes,
-        messagesRes
+        messagesRes,
+        translationUsageRes
       ] = await Promise.all([
         supabase.from('user_profiles').select('id, created_at, last_active_at'),
         supabase.from('user_profiles').select('id').gte('created_at', monthAgo.toISOString()),
@@ -86,11 +107,16 @@ export const PlatformAnalytics: React.FC = () => {
         supabase.from('prayer_points').select('id'),
         supabase.from('voice_rooms').select('id'),
         supabase.from('live_channels').select('id'),
-        supabase.from('room_chat_messages').select('id').gte('created_at', daysAgo.toISOString())
+        supabase.from('room_chat_messages').select('id').gte('created_at', daysAgo.toISOString()),
+        supabase.rpc('get_translation_usage_report', { p_start_date: daysAgo.toISOString() })
       ]);
 
       const users = usersRes.data || [];
       const ministries = ministriesRes.data || [];
+      const ministryNameMap: Record<string, string> = {};
+      ministries.forEach((m: any) => { ministryNameMap[m.id] = m.name; });
+      setMinistryNames(ministryNameMap);
+      setTranslationUsage((translationUsageRes.data as TranslationUsageRow[]) || []);
       
       // Calculate active users (active in last 7 days)
       const sevenDaysAgo = new Date();
@@ -262,6 +288,106 @@ export const PlatformAnalytics: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Live Translation Usage & Cost */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Languages className="h-5 w-5" />
+            {t('platformAnalytics', 'translationUsage', 'Live Translation Usage & Cost')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {translationUsage.length === 0 ? (
+            <p className="text-sm text-gray-500">{t('platformAnalytics', 'noTranslationSessions', 'No translation sessions in this date range')}</p>
+          ) : (() => {
+            const totalHours = translationUsage.reduce((sum, r) => sum + (r.duration_hours || 0), 0);
+            const totalCost = translationUsage.reduce((sum, r) => sum + (r.total_cost_usd || 0), 0);
+            const totalSttSeconds = translationUsage.reduce((sum, r) => sum + (r.stt_audio_seconds || 0), 0);
+            const totalTtsChars = translationUsage.reduce((sum, r) => sum + (r.tts_characters || 0), 0);
+            const totalTokens = translationUsage.reduce((sum, r) => sum + (r.translate_input_tokens || 0) + (r.translate_output_tokens || 0), 0);
+            const allZeroCost = totalCost === 0;
+
+            const byLanguage: Record<string, { sessions: number; hours: number; cost: number }> = {};
+            const byMinistry: Record<string, { sessions: number; hours: number; cost: number }> = {};
+            translationUsage.forEach((r) => {
+              const langKey = `${r.source_language} → ${r.target_language}`;
+              byLanguage[langKey] = byLanguage[langKey] || { sessions: 0, hours: 0, cost: 0 };
+              byLanguage[langKey].sessions += 1;
+              byLanguage[langKey].hours += r.duration_hours || 0;
+              byLanguage[langKey].cost += r.total_cost_usd || 0;
+
+              byMinistry[r.ministry_id] = byMinistry[r.ministry_id] || { sessions: 0, hours: 0, cost: 0 };
+              byMinistry[r.ministry_id].sessions += 1;
+              byMinistry[r.ministry_id].hours += r.duration_hours || 0;
+              byMinistry[r.ministry_id].cost += r.total_cost_usd || 0;
+            });
+
+            return (
+              <div className="space-y-5">
+                {allZeroCost && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    {t('platformAnalytics', 'ratesNotConfigured', 'Provider rates are not configured yet — usage below is real, but $ cost will show as $0 until rates are set in translation_provider_rates.')}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{translationUsage.length}</p>
+                    <p className="text-xs text-gray-500">{t('platformAnalytics', 'sessions', 'Sessions')}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{totalHours.toFixed(1)}</p>
+                    <p className="text-xs text-gray-500">{t('platformAnalytics', 'hours', 'Hours')}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{Math.round(totalSttSeconds / 60).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">{t('platformAnalytics', 'sttMinutes', 'STT Minutes')}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{totalTokens.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">{t('platformAnalytics', 'translateTokens', 'Translate Tokens')}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold flex items-center justify-center gap-1">
+                      <DollarSign className="h-5 w-5 text-green-600" />
+                      {totalCost.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-gray-500">{t('platformAnalytics', 'totalCost', 'Total Cost')}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {t('platformAnalytics', 'ttsCharsSummary', '{count} TTS characters sent to ElevenLabs').replace('{count}', totalTtsChars.toLocaleString())}
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">{t('platformAnalytics', 'byLanguagePair', 'By Language Pair')}</h4>
+                    <div className="space-y-1.5">
+                      {Object.entries(byLanguage).sort((a, b) => b[1].hours - a[1].hours).map(([lang, v]) => (
+                        <div key={lang} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">{lang}</span>
+                          <span className="text-gray-500">{v.sessions} · {v.hours.toFixed(1)}h · ${v.cost.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">{t('platformAnalytics', 'byMinistry', 'By Ministry')}</h4>
+                    <div className="space-y-1.5">
+                      {Object.entries(byMinistry).sort((a, b) => b[1].hours - a[1].hours).map(([ministryId, v]) => (
+                        <div key={ministryId} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600 truncate">{ministryNames[ministryId] || ministryId}</span>
+                          <span className="text-gray-500 shrink-0 ml-2">{v.sessions} · {v.hours.toFixed(1)}h · ${v.cost.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {/* Top Ministries */}
       <Card>
