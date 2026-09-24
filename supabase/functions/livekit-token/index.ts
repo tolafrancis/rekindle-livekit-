@@ -446,7 +446,8 @@ serve(async (req) => {
       let realCount = 0;
       try {
         const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
-        realCount = participants.length;
+        // The hidden on-demand caption agent (agents/captions) never takes a seat.
+        realCount = participants.filter((p) => !p.identity.startsWith('caption-agent-')).length;
       } catch { /* room not up yet → 0 real participants */ }
 
       if (realCount >= MEETING_PARTICIPANT_CAP) {

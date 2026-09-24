@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 // Daily removed — LiveKit is the only backend. These structural stand-ins keep the
 // legacy participant-conversion types compiling; those Daily code paths are now
 // unreachable (isLiveKitBackend() is always true). No @daily-co dependency remains.
@@ -12,7 +12,8 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { createVideoWrapper, isLiveKitBackend } from './videoBackend';
 import { NativeScreenShare } from './NativeScreenShare';
-import type { IVideoRoomWrapper, NormalizedParticipant } from '@rekindle/types/videoRoom';
+import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant } from '@rekindle/types/videoRoom';
+import type { LiveCaptionsBridge } from './useLiveCaptions';
 import {
   ParticipantRole,
   ParticipantState, 
@@ -137,6 +138,9 @@ export interface UseDailyRoomReturn {
   translationTracks: Array<{ language: string; botIdentity: string }>;
   translationLanguage: string | null;
   setTranslationLanguage: (language: string | null, originalSpeakerIdentity?: string) => Promise<void>;
+  /** On-demand captions (agents/captions) — see useLiveCaptions. Stable for
+   *  the hook's lifetime; its methods no-op until the room is joined. */
+  captionsBridge: LiveCaptionsBridge;
   /** Directly enables mic+optional video for an accepted speaker, bypassing the permission gate */
   enableSpeakerMedia: (withVideo: boolean) => Promise<void>;
   startScreenShare: () => Promise<void>;
@@ -267,6 +271,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // on any path that never fires onTranslationTracksChanged.
   const [translationTracks, setTranslationTracks] = useState<Array<{ language: string; botIdentity: string }>>([]);
   const [translationLanguage, setTranslationLanguageState] = useState<string | null>(null);
+  const captionListenersRef = useRef(new Set<(segments: LiveCaptionSegment[]) => void>());
 
   // Enhanced state for role-based system
   const [participantStates, setParticipantStates] = useState<ParticipantState[]>([]);
@@ -879,6 +884,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         onAudioPlaybackBlocked: () => setAudioPlaybackBlocked(true),
         onConnectionQualityChanged: (identity, quality) => {
           setConnectionQuality(prev => (prev[identity] === quality ? prev : { ...prev, [identity]: quality }));
+        },
+        onTranscription: (segments) => {
+          captionListenersRef.current.forEach((listener) => listener(segments));
         }
       });
 
@@ -2086,6 +2094,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // language_configs.speaker_identity for this ministry, if the caller has
   // it, so the wrapper can locally mute the source speaker while a
   // translation plays (build plan §2.7).
+  const captionsBridge = useMemo<LiveCaptionsBridge>(() => ({
+    setLocalAttributes: async (attributes) => {
+      await wrapperRef.current?.setLocalAttributes?.(attributes);
+    },
+    getAccessToken: () => wrapperRef.current?.getAccessToken?.() ?? null,
+    subscribe: (listener) => {
+      captionListenersRef.current.add(listener);
+      return () => { captionListenersRef.current.delete(listener); };
+    },
+  }), []);
+
   const setTranslationLanguage = useCallback(async (language: string | null, originalSpeakerIdentity?: string) => {
     const wrapper = wrapperRef.current as any;
     if (!wrapper?.setTranslationLanguage) return;
@@ -2680,6 +2699,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     translationTracks,
     translationLanguage,
     setTranslationLanguage,
+    captionsBridge,
     enableSpeakerMedia,
     startScreenShare,
     stopScreenShare,

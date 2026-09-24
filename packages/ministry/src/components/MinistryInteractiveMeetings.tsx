@@ -63,6 +63,10 @@ import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBack
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
 import { FloatingTranslationButton, type TranslationControls } from '@rekindle/live/components/FloatingTranslationButton';
 import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner';
+import { CaptionOverlay } from '@rekindle/live/components/CaptionOverlay';
+import { CaptionsButton } from '@rekindle/live/components/CaptionsButton';
+import { useLiveCaptions, type LiveCaptionsBridge } from '@rekindle/live/useLiveCaptions';
+import { CAPTION_LANGUAGES } from '@rekindle/live/captionLanguages';
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
 import { MeetingRecordings } from '@rekindle/live/components/MeetingRecordings';
@@ -125,6 +129,8 @@ interface MinistryVideoMeeting {
   timezone?: string | null;
   reminder_offsets?: number[] | null;
   registration_enabled?: boolean;
+  /** Caption (speech-to-text) language for on-demand captions — migration 0372. */
+  source_language?: string;
   hls_playback_url?: string;
   cf_live_input_uid?: string;
   created_at: string;
@@ -148,6 +154,7 @@ interface CreateMeetingFormData {
   enable_chat: boolean;
   enable_screenshare: boolean;
   mode: 'meeting' | 'webinar';
+  source_language: string;
 }
 
 /* ======================================================
@@ -192,6 +199,10 @@ const EnhancedVideoCallWrapper = ({
   const [callBackground, setCallBackground] = useState<{ videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean } | null>(null);
   // ReKindle Live Translation — same lift-to-parent pattern as callBackground.
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+  // On-demand captions (agents/captions) — any participant can turn CC on,
+  // no host action needed. Same lift-to-parent pattern as callTranslation.
+  const [callCaptionsBridge, setCallCaptionsBridge] = useState<LiveCaptionsBridge | null>(null);
+  const captions = useLiveCaptions(callCaptionsBridge, { roomName: meeting.room_name, kind: 'ministry_meeting' });
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -605,6 +616,7 @@ const EnhancedVideoCallWrapper = ({
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
         onTranslationControlsChange={setCallTranslation}
+        onCaptionsBridgeChange={setCallCaptionsBridge}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
@@ -614,6 +626,17 @@ const EnhancedVideoCallWrapper = ({
           bar, which was overflowing the screen on mobile with too many buttons in
           one row). */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
+      {!isPiP && captions.enabled && (
+        <CaptionOverlay
+          lines={captions.lines}
+          size={captions.size}
+          placeholder={
+            captions.status === 'starting' || captions.status === 'waiting'
+              ? t('ministryInteractiveMeetings', 'captionsWaiting', 'Captions are on — they’ll appear when someone speaks.')
+              : null
+          }
+        />
+      )}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && isHost && showCapTip && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-md">
@@ -652,6 +675,16 @@ const EnhancedVideoCallWrapper = ({
               roomName={meeting.room_name}
               isHost={isHost}
               userId={userId}
+              showCaptionsOption={false}
+            />
+          )}
+          {callCaptionsBridge && (
+            <CaptionsButton
+              enabled={captions.enabled}
+              status={captions.status}
+              size={captions.size}
+              onToggle={captions.toggle}
+              onSizeChange={captions.setSize}
             />
           )}
           <ReactionButton onReact={sendReaction} />
@@ -928,6 +961,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
     enable_chat: true,
     enable_screenshare: true,
     mode: 'meeting',
+    source_language: 'en',
   });
   const [modeTouched, setModeTouched] = useState(false);
   const tzOptions = React.useMemo(() => commonTimeZones(), []);
@@ -953,6 +987,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
         enable_chat: meeting.enable_chat,
         enable_screenshare: meeting.enable_screenshare,
         mode: meeting.mode || 'meeting',
+        source_language: meeting.source_language || 'en',
       });
     }
   }, [isOpen, meeting]);
@@ -1071,6 +1106,11 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
         enable_recording: isFreeTier ? false : formData.enable_recording,
         enable_chat: formData.enable_chat,
         enable_screenshare: formData.enable_screenshare,
+        // Only written when the host picks a non-default caption language, so
+        // saving still works on a database that hasn't run migration 0372 yet.
+        ...(formData.source_language !== (meeting?.source_language ?? 'en')
+          ? { source_language: formData.source_language }
+          : {}),
       };
 
       if (isEditing && meeting) {
@@ -1334,6 +1374,26 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
                 <SelectItem value="leaders">{t('ministryInteractiveMeetings', 'accessLeaders', 'Leaders Only')}</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('ministryInteractiveMeetings', 'captionLanguageLabel', 'Caption language')}</Label>
+            <Select
+              value={formData.source_language}
+              onValueChange={(value) => setFormData({ ...formData, source_language: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CAPTION_LANGUAGES.map((lang) => (
+                  <SelectItem key={lang.value} value={lang.value}>{lang.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">
+              {t('ministryInteractiveMeetings', 'captionLanguageTip', 'The language people speak in this meeting. Anyone can turn captions (CC) on during the call.')}
+            </p>
           </div>
 
           <div className="space-y-2">

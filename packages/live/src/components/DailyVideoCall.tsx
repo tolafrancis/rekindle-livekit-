@@ -23,6 +23,7 @@ import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
 import { Capacitor } from '@capacitor/core';
+import type { LiveCaptionsBridge } from '../useLiveCaptions';
 
 interface DailyVideoCallProps {
   roomName: string;
@@ -105,6 +106,10 @@ interface DailyVideoCallProps {
      *  prop through every caller individually. */
     participants: Array<{ identity: string; name: string }>;
   }) => void;
+  /** On-demand captions (agents/captions) — same lift-state-to-parent
+   *  pattern: the bridge while connected, null otherwise. The parent drives
+   *  it with useLiveCaptions and renders CaptionsButton + CaptionOverlay. */
+  onCaptionsBridgeChange?: (bridge: LiveCaptionsBridge | null) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -1023,6 +1028,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRaiseHandStateChange,
   onBackgroundStateChange,
   onTranslationControlsChange,
+  onCaptionsBridgeChange,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1171,6 +1177,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     translationTracks,
     translationLanguage,
     setTranslationLanguage,
+    captionsBridge,
   } = useDailyRoom({
     roomName,
     userName,
@@ -1284,6 +1291,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   useEffect(() => {
     onBackgroundStateChange?.({ videoBackground, setVideoBackground, isNative });
   }, [videoBackground, setVideoBackground, isNative, onBackgroundStateChange]);
+
+  // On-demand captions: surface the bridge only while actually connected, so
+  // the parent never calls captions-start without a live room token.
+  useEffect(() => {
+    onCaptionsBridgeChange?.(isConnected ? captionsBridge : null);
+  }, [isConnected, captionsBridge, onCaptionsBridgeChange]);
 
   // ReKindle Live Translation state lives in useDailyRoom too (via the
   // LiveKit wrapper); surface it the same way so the parent can render its
