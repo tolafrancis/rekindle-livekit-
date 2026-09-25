@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -17,6 +17,8 @@ interface SmallGroupPageProps {
   onBack: () => void;
 }
 
+const POSTS_PAGE = 20;
+
 export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -29,6 +31,12 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
   const [members, setMembers] = useState<any[]>([]);
   const [meetings, setMeetings] = useState<any[]>([]);
   const [posts, setPosts] = useState<any[]>([]);
+  // The group feed is fetched POSTS_PAGE rows at a time; reloads (e.g. after
+  // posting) re-fetch however many are already on screen.
+  const [postsHasMore, setPostsHasMore] = useState(false);
+  const [loadingMorePosts, setLoadingMorePosts] = useState(false);
+  const postsCountRef = useRef(0);
+  postsCountRef.current = posts.length;
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [newPrayer, setNewPrayer] = useState('');
@@ -77,14 +85,17 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
 
         const isMember = mine?.status === 'active';
         if (isMember) {
+          const postsLimit = Math.max(POSTS_PAGE, postsCountRef.current);
           const [membersRes, meetingsRes, postsRes] = await Promise.all([
             supabase.from('small_group_members').select('*').eq('group_id', groupId).eq('status', 'active'),
             supabase.from('small_group_meetings').select('*').eq('group_id', groupId).order('meeting_date', { ascending: true }),
-            supabase.from('small_group_posts').select('*').eq('group_id', groupId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
+            supabase.from('small_group_posts').select('*').eq('group_id', groupId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false })
+              .limit(postsLimit),
           ]);
           setMembers(membersRes.data || []);
           setMeetings((meetingsRes.data || []).filter((m: any) => m.status !== 'completed'));
           setPosts(postsRes.data || []);
+          setPostsHasMore((postsRes.data?.length ?? 0) === postsLimit);
         }
       }
     } catch (e: any) {
@@ -151,6 +162,27 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
       toast({ title: t('smallGroupsMember', 'error', 'Error'), description: e.message, variant: 'destructive' });
     } finally {
       setSavingNotifyPref(false);
+    }
+  };
+
+  const loadMorePosts = async () => {
+    const from = postsCountRef.current;
+    setLoadingMorePosts(true);
+    try {
+      const { data, error } = await supabase.from('small_group_posts').select('*').eq('group_id', groupId)
+        .order('is_pinned', { ascending: false }).order('created_at', { ascending: false })
+        .range(from, from + POSTS_PAGE - 1);
+      if (error) throw error;
+      const rows = data || [];
+      setPosts(prev => {
+        const seen = new Set(prev.map((p: any) => p.id));
+        return [...prev, ...rows.filter((p: any) => !seen.has(p.id))];
+      });
+      setPostsHasMore(rows.length === POSTS_PAGE);
+    } catch (e: any) {
+      toast({ title: t('smallGroupsMember', 'error', 'Error'), description: e.message, variant: 'destructive' });
+    } finally {
+      setLoadingMorePosts(false);
     }
   };
 
@@ -311,6 +343,14 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
                     {p.resource_url && <a href={p.resource_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline">{p.resource_url}</a>}
                   </CardContent></Card>
                 ))}
+                {postsHasMore && (
+                  <div className="flex justify-center pt-1">
+                    <Button variant="outline" size="sm" onClick={loadMorePosts} disabled={loadingMorePosts}>
+                      {loadingMorePosts && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      {t('common', 'loadMore', 'Load more')}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

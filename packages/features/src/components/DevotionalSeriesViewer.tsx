@@ -468,7 +468,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
 
     // Intro slide — welcome-by-title line, plus the author entered when the
     // series was created (shown only when an author is set; no fallback text).
-    const introTitle = localizedDay.title || t('devotionals', 'untitled');
+    const introTitle = localizedDay.title || t('devotionals', 'untitled', 'Untitled');
     const authorName = selectedSeries?.author?.trim();
     const welcomeLine = t('devotionalSeriesViewer', 'welcomeLine', 'You are welcome to today\'s devotional titled "{title}". This time is set apart for you and God.').replace('{title}', String(introTitle));
     const introContent = authorName
@@ -754,13 +754,13 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
 
   const getDayUnlockMessage = (dayNumber: number): string | null => {
     if (dayNumber === 1) return null;
-    if (!progress) return t('devotionals', 'startToUnlock');
+    if (!progress) return t('devotionals', 'startToUnlock', 'Start the series to unlock');
     
     const previousDayNumber = dayNumber - 1;
     const isPreviousDayCompleted = progress.completed_days.includes(previousDayNumber);
     
     if (!isPreviousDayCompleted) {
-      return `${t('devotionals', 'completeDay')} ${previousDayNumber} ${t('devotionals', 'first')}`;
+      return `${t('devotionals', 'completeDay', 'Complete Day')} ${previousDayNumber} ${t('devotionals', 'first', 'first')}`;
     }
     
     const previousDayData = progress.completed_days_data?.find(d => d.day === previousDayNumber);
@@ -768,7 +768,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     
     const daysSince = getDaysSinceCompletion(previousDayData.completed_at);
     if (daysSince < 1) {
-      return t('devotionals', 'unlocksTomorrow');
+      return t('devotionals', 'unlocksTomorrow', 'Unlocks Tomorrow');
     }
     
     return null;
@@ -1033,7 +1033,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       setView('list');
     } catch (err) {
       console.error('Error loading series:', err);
-      toast({ title: t('errors', 'generic'), description: t('devotionals', 'loadError'), variant: 'destructive' });
+      toast({ title: t('errors', 'generic', 'An error occurred. Please try again.'), description: t('devotionals', 'loadError', 'Failed to load devotional content'), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -1113,7 +1113,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       setView('series');
     } catch (err) {
       console.error('Error loading series:', err);
-      toast({ title: t('errors', 'generic'), description: t('devotionals', 'loadError'), variant: 'destructive' });
+      toast({ title: t('errors', 'generic', 'An error occurred. Please try again.'), description: t('devotionals', 'loadError', 'Failed to load devotional content'), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -1122,7 +1122,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const startSeries = async () => {
     if (!user || !selectedSeries) {
       toast({ 
-        title: t('auth', 'signInRequired'), 
+        title: t('auth', 'signInRequired', 'Sign In Required'), 
         description: t('devotionals', 'signInToStart'), 
         variant: 'destructive' 
       });
@@ -1150,7 +1150,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       if (upsertError) {
         console.error('Failed to start series:', upsertError);
         toast({
-          title: t('errors', 'generic') || t('devotionalSeriesViewer', 'error', 'Error'),
+          title: t('errors', 'generic', 'An error occurred. Please try again.') || t('devotionalSeriesViewer', 'error', 'Error'),
           description: t('devotionalSeriesViewer', 'failedToStartSeriesX', 'Failed to start series: {msg}').replace('{msg}', String(upsertError.message)),
           variant: 'destructive',
           duration: 7000
@@ -1162,7 +1162,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       if (!upsertData || upsertData.length === 0) {
         console.error('Upsert returned no data');
         toast({
-          title: t('errors', 'generic') || t('devotionalSeriesViewer', 'error', 'Error'),
+          title: t('errors', 'generic', 'An error occurred. Please try again.') || t('devotionalSeriesViewer', 'error', 'Error'),
           description: t('devotionalSeriesViewer', 'failedToInitProgress', 'Failed to initialize your progress. Please try again.'),
           variant: 'destructive',
           duration: 7000
@@ -1199,8 +1199,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     } catch (err) {
       console.error('Error starting series:', err);
       toast({ 
-        title: t('errors', 'generic'), 
-        description: t('devotionals', 'startError') || t('devotionalSeriesViewer', 'failedToStartSeries', 'Failed to start series'),
+        title: t('errors', 'generic', 'An error occurred. Please try again.'), 
+        description: t('devotionals', 'startError', 'Failed to start series') || t('devotionalSeriesViewer', 'failedToStartSeries', 'Failed to start series'),
         variant: 'destructive',
         duration: 7000
       });
@@ -1210,8 +1210,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const openDay = (dayNumber: number) => {
     if (!progress && dayNumber > 1) {
       toast({ 
-        title: t('devotionals', 'startFirst'), 
-        description: t('devotionals', 'startFirstDesc'), 
+        title: t('devotionals', 'startFirst', 'Start the Series First'), 
+        description: t('devotionals', 'startFirstDesc', 'Begin the series to unlock this day'), 
         variant: 'destructive' 
       });
       return;
@@ -1225,8 +1225,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       
       if (!isPreviousDayCompleted) {
         toast({ 
-          title: t('devotionals', 'dayLocked'), 
-          description: `${t('devotionals', 'completeDay')} ${previousDayNumber} ${t('devotionals', 'toUnlock')}`, 
+          title: t('devotionals', 'dayLocked', 'Day Locked'), 
+          description: `${t('devotionals', 'completeDay', 'Complete Day')} ${previousDayNumber} ${t('devotionals', 'toUnlock', 'to unlock this day')}`, 
           variant: 'destructive' 
         });
       } else {
@@ -1235,8 +1235,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
           const daysSince = getDaysSinceCompletion(previousDayData.completed_at);
           if (daysSince === 0) {
             toast({ 
-              title: t('devotionals', 'dayLocked'), 
-              description: t('devotionals', 'unlocksTomorrowDesc'), 
+              title: t('devotionals', 'dayLocked', 'Day Locked'), 
+              description: t('devotionals', 'unlocksTomorrowDesc', 'This day will unlock tomorrow. Take time to reflect on today\'s devotional.'), 
               variant: 'destructive',
               duration: 5000
             });
@@ -1357,7 +1357,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
           onConflict: 'user_id,series_id'
         });
         toast({
-          title: t('devotionals', 'dayComplete') || t('devotionalSeriesViewer', 'savedOffline', 'Saved Offline'),
+          title: t('devotionals', 'dayComplete', 'Day Complete') || t('devotionalSeriesViewer', 'savedOffline', 'Saved Offline'),
           description: t('devotionalSeriesViewer', 'savedOfflineDesc', 'Your progress is saved on this device and will sync when you reconnect.')
         });
       } else {
@@ -1379,7 +1379,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         } else if (!updateData || updateData.length === 0) {
           console.error('Upsert returned no data - unexpected error');
           toast({
-            title: t('errors', 'saveFailed') || t('devotionalSeriesViewer', 'saveFailed', 'Save Failed'),
+            title: t('errors', 'saveFailed', 'Failed to save changes') || t('devotionalSeriesViewer', 'saveFailed', 'Save Failed'),
             description: t('devotionalSeriesViewer', 'failedToSaveProgress', 'Failed to save your progress. Please try again.'),
             variant: 'destructive',
             duration: 7000
@@ -1415,8 +1415,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
 
       if (isSeriesComplete) {
         toast({ 
-          title: t('devotionals', 'seriesComplete'), 
-          description: `${t('devotionals', 'congratulations')} "${selectedSeries.title}"` 
+          title: t('devotionals', 'seriesComplete', 'Series Complete'), 
+          description: `${t('devotionals', 'congratulations', 'Congratulations')} "${selectedSeries.title}"` 
         });
         setShowCompletionModal(true);
         setTimeout(() => {
@@ -1425,8 +1425,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         }, 1000);
       } else {
         toast({ 
-          title: t('devotionals', 'dayComplete'), 
-          description: `${t('devotionals', 'day')} ${currentDay.day_number} ${t('devotionals', 'complete')}.`
+          title: t('devotionals', 'dayComplete', 'Day Complete'), 
+          description: `${t('devotionals', 'day', 'Day')} ${currentDay.day_number} ${t('devotionals', 'complete', 'Complete')}.`
         });
         
         // Show share prompt before navigating away
@@ -1440,8 +1440,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     } catch (err) {
       console.error('Error marking day complete:', err);
       toast({ 
-        title: t('errors', 'generic'), 
-        description: t('devotionals', 'completeError') || t('devotionalSeriesViewer', 'errorSavingProgress', 'An error occurred while saving your progress'),
+        title: t('errors', 'generic', 'An error occurred. Please try again.'), 
+        description: t('devotionals', 'completeError', 'Failed to mark as complete') || t('devotionalSeriesViewer', 'errorSavingProgress', 'An error occurred while saving your progress'),
         variant: 'destructive',
         duration: 7000
       });
@@ -2075,7 +2075,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 {selectedSeries.is_featured && (
                   <Badge className="bg-amber-500 mb-2">
                     <Star className="h-3 w-3 mr-1" />
-                    {t('devotionals', 'featured')}
+                    {t('devotionals', 'featured', 'Featured')}
                   </Badge>
                 )}
                 <h1 className="text-2xl md:text-3xl font-serif font-bold mb-2 break-words">{localizedSeries.title}</h1>
@@ -2095,7 +2095,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                   }}
                 >
                   <ArrowLeft className="h-4 w-4 mr-1" />
-                  {t('common', 'back')}
+                  {t('common', 'back', 'Back')}
                 </Button>
                 <ShareButton
                   title={localizedSeries.title}
@@ -2108,7 +2108,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             <div className="flex gap-4 mb-4 items-center flex-wrap">
               <Badge variant="outline">
                 <Calendar className="h-3 w-3 mr-1" />
-                {selectedSeries.total_days} {t('devotionals', 'days')}
+                {selectedSeries.total_days} {t('devotionals', 'days', 'days')}
               </Badge>
               <Badge className={getDifficultyColor(selectedSeries.difficulty_level)}>
                 {selectedSeries.difficulty_level}
@@ -2135,12 +2135,12 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             {progress && (
               <div className="bg-purple-50 p-4 rounded-lg mb-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-purple-900">{t('devotionals', 'yourProgress')}</span>
+                  <span className="font-medium text-purple-900">{t('devotionals', 'yourProgress', 'Your Progress')}</span>
                   <span className="font-bold text-purple-600">{getProgressPercentage()}%</span>
                 </div>
                 <Progress value={getProgressPercentage()} className="mb-2" />
                 <p className="text-sm text-purple-700">
-                  {progress.completed_days.length} {t('devotionals', 'of')} {selectedSeries.total_days} {t('devotionals', 'daysCompleted')}
+                  {progress.completed_days.length} {t('devotionals', 'of', 'of')} {selectedSeries.total_days} {t('devotionals', 'daysCompleted', 'days completed')}
                 </p>
               </div>
             )}
@@ -2149,24 +2149,24 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             {!progress ? (
               <Button onClick={startSeries} className="w-full bg-purple-600 hover:bg-purple-700">
                 <Play className="h-4 w-4 mr-2" />
-                {t('devotionals', 'startSeries')}
+                {t('devotionals', 'startSeries', 'Start Series')}
               </Button>
             ) : progress.is_completed ? (
               <Button onClick={() => openDay(1)} variant="outline" className="w-full">
                 <BookOpen className="h-4 w-4 mr-2" />
-                {t('devotionals', 'readAgain')}
+                {t('devotionals', 'readAgain', 'Read Again')}
               </Button>
             ) : (
               <Button onClick={() => openDay(progress.current_day)} className="w-full bg-purple-600 hover:bg-purple-700">
                 <Play className="h-4 w-4 mr-2" />
-                {t('devotionals', 'continue')} {t('devotionals', 'day')} {progress.current_day}
+                {t('devotionals', 'continue', 'Continue')} {t('devotionals', 'day', 'Day')} {progress.current_day}
               </Button>
             )}
           </CardContent>
         </Card>
 
         {/* Days List */}
-        <h2 className="text-xl font-semibold mb-4">{t('devotionals', 'dailyDevotionals')}</h2>
+        <h2 className="text-xl font-semibold mb-4">{t('devotionals', 'dailyDevotionals', 'Daily Devotionals')}</h2>
         <div className="space-y-3">
           {days.map((day) => {
             const localizedDay = getLocalizedDay(day);
@@ -2196,9 +2196,9 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <Badge variant="outline" className="text-xs">{t('devotionals', 'day')} {day.day_number}</Badge>
-                        {isCurrent && <Badge className="bg-purple-600 text-xs">{t('devotionals', 'current')}</Badge>}
-                        {completed && <Badge className="bg-green-600 text-xs">{t('devotionals', 'complete')}</Badge>}
+                        <Badge variant="outline" className="text-xs">{t('devotionals', 'day', 'Day')} {day.day_number}</Badge>
+                        {isCurrent && <Badge className="bg-purple-600 text-xs">{t('devotionals', 'current', 'Current')}</Badge>}
+                        {completed && <Badge className="bg-green-600 text-xs">{t('devotionals', 'complete', 'Complete')}</Badge>}
                         {showDayFallback && <LanguageFallbackBadge contentLanguage={day.language || 'en'} />}
                         {!unlocked && unlockMessage && (
                           <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
@@ -2207,7 +2207,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                           </Badge>
                         )}
                       </div>
-                      <h3 className="font-medium">{localizedDay.title || t('devotionals', 'untitled')}</h3>
+                      <h3 className="font-medium">{localizedDay.title || t('devotionals', 'untitled', 'Untitled')}</h3>
                       <DayScriptureRef reference={localizedDay.scripture_reference} />
                     </div>
                     {unlocked ? (
@@ -2232,7 +2232,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         <div className="flex items-center justify-end">
           <Button variant="outline" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            {t('common', 'back')}
+            {t('common', 'back', 'Back')}
           </Button>
         </div>
       )}
@@ -2242,7 +2242,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         <div className="relative flex-1">
           <Search className={searchFilterIconClass} />
           <Input
-            placeholder={t('devotionals', 'searchSeries')}
+            placeholder={t('devotionals', 'searchSeries', 'Search series...')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className={searchFilterInputClass}
@@ -2250,10 +2250,10 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         </div>
         <Select value={filterCategory} onValueChange={setFilterCategory}>
           <SelectTrigger className={`w-full md:w-56 ${searchFilterSelectTriggerClass}`}>
-            <SelectValue placeholder={t('devotionals', 'allCategories')} />
+            <SelectValue placeholder={t('devotionals', 'allCategories', 'Category')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('devotionals', 'allCategories')}</SelectItem>
+            <SelectItem value="all">{t('devotionals', 'allCategories', 'Category')}</SelectItem>
             {categories.map(cat => {
               const localized = getLocalizedCategory(cat);
               return (
@@ -2277,7 +2277,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         <div>
           <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Star className="h-5 w-5 text-amber-500" />
-            {t('devotionals', 'featuredSeries')}
+            {t('devotionals', 'featuredSeries', 'Featured Series')}
           </h3>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSeries.filter(s => s.is_featured).map(series => {
@@ -2303,7 +2303,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     <div className="flex gap-2 mb-2">
                       <Badge className="bg-amber-500">
                         <Star className="h-3 w-3 mr-1" />
-                        {t('devotionals', 'featured')}
+                        {t('devotionals', 'featured', 'Featured')}
                       </Badge>
                       {showFallback && <LanguageFallbackBadge contentLanguage={series.language || 'en'} />}
                     </div>
@@ -2313,7 +2313,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                       <div className="flex gap-2">
                         <Badge variant="outline">
                           <Calendar className="h-3 w-3 mr-1" />
-                          {series.total_days} {t('devotionals', 'days')}
+                          {series.total_days} {t('devotionals', 'days', 'days')}
                         </Badge>
                         <Badge className={getDifficultyColor(series.difficulty_level)}>
                           {series.difficulty_level}
@@ -2334,7 +2334,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
 
       {/* All Series */}
       <div>
-        <h3 className="text-xl font-semibold mb-4">{t('devotionals', 'allSeries')}</h3>
+        <h3 className="text-xl font-semibold mb-4">{t('devotionals', 'allSeries', 'All Series')}</h3>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredSeries.filter(s => !s.is_featured).map(series => {
             const localized = getLocalizedSeries(series);
@@ -2367,7 +2367,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     <div className="flex gap-2">
                       <Badge variant="outline">
                         <Calendar className="h-3 w-3 mr-1" />
-                        {series.total_days} {t('devotionals', 'days')}
+                        {series.total_days} {t('devotionals', 'days', 'days')}
                       </Badge>
                       <Badge className={getDifficultyColor(series.difficulty_level)}>
                         {series.difficulty_level}
@@ -2390,12 +2390,12 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
           <CardContent className="p-12 text-center">
             <BookOpen className="h-12 w-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-medium mb-2">
-              {searchTerm || filterCategory !== 'all' ? t('devotionals', 'noSeriesFound') : t('devotionals', 'noSeriesAvailable')}
+              {searchTerm || filterCategory !== 'all' ? t('devotionals', 'noSeriesFound', 'No series found') : t('devotionals', 'noSeriesAvailable', 'No series available')}
             </h3>
             <p className="text-gray-500">
               {searchTerm || filterCategory !== 'all' 
-                ? t('devotionals', 'tryAdjusting')
-                : t('devotionals', 'checkBack')}
+                ? t('devotionals', 'tryAdjusting', 'Try adjusting your search or filters')
+                : t('devotionals', 'checkBack', 'Check back later for new content')}
             </p>
           </CardContent>
         </Card>
@@ -2493,15 +2493,15 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       <Dialog open={showCompletionModal} onOpenChange={setShowCompletionModal}>
         <DialogContent className="text-center">
           <DialogHeader>
-            <DialogTitle className="text-2xl">{t('devotionals', 'congratulations')}!</DialogTitle>
+            <DialogTitle className="text-2xl">{t('devotionals', 'congratulations', 'Congratulations')}!</DialogTitle>
           </DialogHeader>
           <div className="py-6">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Award className="h-10 w-10 text-green-600" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">{t('devotionals', 'seriesComplete')}!</h3>
+            <h3 className="text-xl font-semibold mb-2">{t('devotionals', 'seriesComplete', 'Series Complete')}!</h3>
             <p className="text-gray-600 mb-4">
-              {t('devotionals', 'completedAll')} {selectedSeries?.total_days} {t('devotionals', 'daysOf')} "{selectedSeries ? getLocalizedSeries(selectedSeries).title : ''}"
+              {t('devotionals', 'completedAll', 'You have completed all')} {selectedSeries?.total_days} {t('devotionals', 'daysOf', 'days of')} "{selectedSeries ? getLocalizedSeries(selectedSeries).title : ''}"
             </p>
             {/* Share series completion */}
             {selectedSeries && (() => {
@@ -2540,7 +2540,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               );
             })()}
             <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
-              {t('devotionals', 'viewSeries')}
+              {t('devotionals', 'viewSeries', 'View Series')}
             </Button>
           </div>
         </DialogContent>

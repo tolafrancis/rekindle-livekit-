@@ -159,7 +159,7 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Languages className="h-5 w-5" />
-              {t('settings', 'language')}
+              {t('settings', 'language', 'Language')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 relative">
@@ -169,7 +169,7 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder={t('common', 'search')}
+                placeholder={t('common', 'search', 'Search')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -179,7 +179,7 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
             {/* Region tabs */}
             <Tabs value={selectedRegion} onValueChange={setSelectedRegion}>
               <TabsList className="grid h-auto grid-cols-3 sm:h-10 sm:grid-cols-5 w-full">
-                <TabsTrigger value="all" className="text-xs sm:text-sm">{t('common', 'all')}</TabsTrigger>
+                <TabsTrigger value="all" className="text-xs sm:text-sm">{t('common', 'all', 'All')}</TabsTrigger>
                 <TabsTrigger value="asian" className="text-xs sm:text-sm">Asian</TabsTrigger>
                 <TabsTrigger value="middle-eastern" className="text-xs sm:text-sm">Middle East</TabsTrigger>
                 <TabsTrigger value="european" className="text-xs sm:text-sm">European</TabsTrigger>
@@ -207,7 +207,7 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5 text-purple-600" />
-            {t('settings', 'language')}
+            {t('settings', 'language', 'Language')}
           </CardTitle>
           <CardDescription>
             Choose your preferred language for the application
@@ -233,7 +233,7 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
               )}
               <Badge className="bg-purple-600">
                 <Check className="h-3 w-3 mr-1" />
-                {t('common', 'selected')}
+                {t('common', 'selected', 'Selected')}
               </Badge>
             </div>
           </div>

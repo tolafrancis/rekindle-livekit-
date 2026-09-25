@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -26,6 +26,9 @@ interface PrayerPost {
   created_at: string;
 }
 
+// Posts are fetched a page at a time instead of the whole wall.
+const PAGE_SIZE = 20;
+
 export function CommunityPrayerWall() {
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
@@ -39,16 +42,25 @@ export function CommunityPrayerWall() {
   const [filter, setFilter] = useState('all');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  // Latest values for the realtime handler, which is registered once.
+  const postsCountRef = useRef(0);
+  const filterRef = useRef(filter);
+  postsCountRef.current = posts.length;
+  filterRef.current = filter;
   
   // Check prayer wall access level
   const prayerWallAccessLevel = 'unlimited'; // Prayer wall is free for all users
   const canPostPrayers = prayerWallAccessLevel !== 'view_only';
 
   useEffect(() => {
-    fetchPosts();
     loadCurrentUser();
-    
-    // Set up realtime subscription
+
+    // Set up realtime subscription. Every "pray" tap anywhere updates a row's
+    // prayer_count, so changes are coalesced into one quiet refresh of the
+    // posts already on screen every 2s, instead of a full reload per change.
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel('prayer-wall')
       .on('postgres_changes', { 
@@ -56,50 +68,87 @@ export function CommunityPrayerWall() {
         schema: 'public', 
         table: 'prayer_wall_posts' 
       }, () => {
-        console.log('Prayer wall updated, refetching...');
-        fetchPosts();
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          fetchPostsRef.current({ silent: true });
+        }, 2000);
       })
       .subscribe();
     
     return () => { 
+      if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(channel); 
     };
   }, []);
 
+  // First page, and back to the first page whenever the category changes
+  // (the category is filtered in the query now, not over an in-memory list).
+  useEffect(() => {
+    fetchPosts({ reset: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
   const loadCurrentUser = async () => {
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      // Local session read — no auth-server round trip needed just for the id.
+      const { data: { session }, error } = await supabase.auth.getSession();
       if (error) throw error;
-      setCurrentUserId(user?.id || null);
+      setCurrentUserId(session?.user?.id || null);
     } catch (err) {
       console.error('Error loading current user:', err);
     }
   };
 
-  const fetchPosts = async () => {
+  // reset: first page only. append: next page. Otherwise (after a post, pray,
+  // or realtime change) re-fetch the window already on screen so the list
+  // doesn't collapse back to page one. silent: don't toggle the loading state.
+  const fetchPosts = async (opts: { reset?: boolean; append?: boolean; silent?: boolean } = {}) => {
+    const loaded = postsCountRef.current;
+    const from = opts.append ? loaded : 0;
+    const to = opts.append || opts.reset
+      ? from + PAGE_SIZE - 1
+      : Math.max(PAGE_SIZE, loaded) - 1;
     try {
-      setLoading(true);
-      const { data, error } = await supabase
+      if (opts.append) setLoadingMore(true);
+      else if (!opts.silent) setLoading(true);
+      let query = supabase
         .from('prayer_wall_posts')
         .select('*')
-        .eq('is_hidden', false)  // Only show non-hidden posts
-        .order('created_at', { ascending: false });
+        .eq('is_hidden', false);  // Only show non-hidden posts
+      if (filterRef.current !== 'all') query = query.eq('category', filterRef.current);
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
       
       if (error) throw error;
       
-      console.log('Fetched prayer posts:', data?.length || 0);
-      setPosts(data || []);
+      const rows = data || [];
+      if (opts.append) {
+        setPosts(prev => {
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...rows.filter(p => !seen.has(p.id))];
+        });
+      } else {
+        setPosts(rows);
+      }
+      setHasMore(rows.length === to - from + 1);
     } catch (err: any) {
       console.error('Error fetching posts:', err);
-      toast({
-        title: t('communityPrayerWall', 'error', 'Error'),
-        description: t('communityPrayerWall', 'failedToLoadRequests', 'Failed to load prayer requests'),
-        variant: 'destructive'
-      });
+      if (!opts.silent) {
+        toast({
+          title: t('communityPrayerWall', 'error', 'Error'),
+          description: t('communityPrayerWall', 'failedToLoadRequests', 'Failed to load prayer requests'),
+          variant: 'destructive'
+        });
+      }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+  const fetchPostsRef = useRef(fetchPosts);
+  fetchPostsRef.current = fetchPosts;
 
   const submitPost = async () => {
     if (!title.trim() || !content.trim()) {
@@ -294,7 +343,7 @@ export function CommunityPrayerWall() {
   };
 
   const categories = ['all', 'healing', 'family', 'guidance', 'gratitude', 'general'];
-  const filtered = filter === 'all' ? posts : posts.filter(p => p.category === filter);
+  const filtered = posts; // category is applied in the query
 
   const categoryColors: Record<string, string> = {
     healing: 'bg-green-100 text-green-700',
@@ -411,7 +460,7 @@ export function CommunityPrayerWall() {
         <Card className="p-8 text-center">
           <AlertCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
           <p className="text-gray-500">
-            {posts.length === 0
+            {filter === 'all'
               ? t('communityPrayerWall', 'noRequestsYet', 'No prayer requests yet. Be the first to share!')
               : t('communityPrayerWall', 'noRequestsInCategory', 'No prayer requests in this category')}
           </p>
@@ -471,6 +520,14 @@ export function CommunityPrayerWall() {
               </div>
             </Card>
           ))}
+          {hasMore && (
+            <div className="flex justify-center pt-2">
+              <Button variant="outline" onClick={() => fetchPosts({ append: true })} disabled={loadingMore}>
+                {loadingMore && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {t('common', 'loadMore', 'Load more')}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

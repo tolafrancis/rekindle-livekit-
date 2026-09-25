@@ -119,7 +119,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
 
   const handleToggleBookmark = async () => {
     if (!user?.id) {
-      toast({ title: t('auth', 'signInRequired'), description: t('devotionals', 'signInToBookmark'), variant: 'destructive' });
+      toast({ title: t('auth', 'signInRequired', 'Sign In Required'), description: t('devotionals', 'signInToBookmark'), variant: 'destructive' });
       return;
     }
 
@@ -133,7 +133,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
           .eq('entry_id', entry.id);
 
         setBookmarked(false);
-        toast({ title: t('devotionals', 'bookmarkRemoved') });
+        toast({ title: t('devotionals', 'bookmarkRemoved', 'Bookmark removed') });
       } else {
         // Add bookmark
         await supabase
@@ -150,7 +150,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
       }
     } catch (err: any) {
       console.error('Error toggling bookmark:', err);
-      toast({ title: t('errors', 'generic'), description: err.message, variant: 'destructive' });
+      toast({ title: t('errors', 'generic', 'An error occurred. Please try again.'), description: err.message, variant: 'destructive' });
     }
   };
 
@@ -167,7 +167,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
       toast({ title: t('devotionals', 'notesSaved') });
     } catch (err: any) {
       console.error('Error saving notes:', err);
-      toast({ title: t('errors', 'generic'), description: err.message, variant: 'destructive' });
+      toast({ title: t('errors', 'generic', 'An error occurred. Please try again.'), description: err.message, variant: 'destructive' });
     }
   };
 
@@ -175,14 +175,14 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
     setCompleted(true);
     onComplete();
     toast({ 
-      title: t('devotionals', 'dayComplete'), 
-      description: `${t('devotionals', 'completedDay')} ${entry.day_number} ${t('devotionals', 'of')} ${seriesTitle}` 
+      title: t('devotionals', 'dayComplete', 'Day Complete'), 
+      description: `${t('devotionals', 'completedDay')} ${entry.day_number} ${t('devotionals', 'of', 'of')} ${seriesTitle}` 
     });
   };
 
   const handleShare = async () => {
     const shareData = {
-      title: `${seriesTitle} - ${t('devotionals', 'day')} ${entry.day_number}`,
+      title: `${seriesTitle} - ${t('devotionals', 'day', 'Day')} ${entry.day_number}`,
       text: `${localizedEntry.title}\n\n${localizedEntry.scripture_reference || ''}\n\n${t('devotionals', 'joinJourney')}`,
       url: window.location.href
     };
@@ -192,7 +192,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}\n${shareData.url}`);
-        toast({ title: t('common', 'copied') });
+        toast({ title: t('common', 'copied', 'Copied') });
       }
     } catch (err) {
       console.error('Error sharing:', err);
@@ -224,11 +224,11 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
             <div className="min-w-0">
               <h2 className="font-semibold text-sm text-gray-600 truncate">{seriesTitle}</h2>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <Badge>{t('devotionals', 'day')} {entry.day_number} {t('devotionals', 'of')} {totalDays}</Badge>
+                <Badge>{t('devotionals', 'day', 'Day')} {entry.day_number} {t('devotionals', 'of', 'of')} {totalDays}</Badge>
                 {completed && (
                   <Badge variant="default" className="bg-green-600">
                     <CheckCircle className="h-3 w-3 mr-1" />
-                    {t('devotionals', 'completed')}
+                    {t('devotionals', 'completed', 'Completed')}
                   </Badge>
                 )}
               </div>
@@ -332,7 +332,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
                 <h3 className="font-semibold text-blue-900 mb-4 flex items-center gap-2">
                   <MessageSquare className="h-5 w-5" />
-                  {t('devotionals', 'reflectionQuestions')}
+                  {t('devotionals', 'reflectionQuestions', 'Reflection Questions:')}
                 </h3>
                 <ol className="list-decimal list-inside space-y-3 text-blue-800">
                   {localizedEntry.reflection_questions.map((q, idx) => (
@@ -419,7 +419,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
             <CardContent className="p-6 text-center">
               <div className="text-4xl mb-3">🎉</div>
               <h3 className="text-xl font-bold text-green-900 mb-2">
-                {t('devotionals', 'congratulations')}
+                {t('devotionals', 'congratulations', 'Congratulations')}
               </h3>
               <p className="text-green-700">
                 {t('devotionals', 'completedSeries', { series: seriesTitle })}
