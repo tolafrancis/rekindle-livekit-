@@ -3,7 +3,7 @@
 //
 // Required env secrets (set in Supabase Dashboard ? Settings ? Edge Functions):
 //   RESEND_API_KEY   � from resend.com
-//   FROM_EMAIL       � e.g. announcements@yourdomain.com
+//   FROM_EMAIL       � e.g. notifications@rekindlebc.com (a Resend-verified sender)
 //   SUPABASE_URL     � auto-injected
 //   SUPABASE_SERVICE_ROLE_KEY � auto-injected
 
@@ -63,7 +63,7 @@ serve(async (req) => {
 
     const resendKey = Deno.env.get("RESEND_API_KEY");
     const fromEmail =
-      Deno.env.get("FROM_EMAIL") || "announcements@gracecounsel.app";
+      Deno.env.get("FROM_EMAIL") || "notifications@rekindlebc.com";
 
     // -- Supabase client ---------------------------------------------------
     const supabase = createClient(

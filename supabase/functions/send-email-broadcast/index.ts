@@ -57,7 +57,7 @@ serve(async (req) => {
     // ── Email provider config ────────────────────────────────────────────────
     const RESEND_API_KEY    = Deno.env.get('RESEND_API_KEY');
     const SENDGRID_API_KEY  = Deno.env.get('SENDGRID_API_KEY');
-    const FROM_EMAIL        = Deno.env.get('FROM_EMAIL') ?? 'noreply@example.com';
+    const FROM_EMAIL        = Deno.env.get('FROM_EMAIL') || 'notifications@rekindlebc.com';
     // The "From" display name: senderName overrides the default org name
     const FROM_NAME         = senderName || Deno.env.get('FROM_NAME') || 'ReKindle';
     const fromAddress       = `${FROM_NAME} <${FROM_EMAIL}>`;
@@ -502,7 +502,7 @@ DEPLOYMENT INSTRUCTIONS:
 3. Set environment secrets in Supabase Dashboard → Settings → Edge Functions:
 
    Required:
-   - FROM_EMAIL        Your verified sending address (e.g. hello@yourdomain.com)
+   - FROM_EMAIL        Your verified sending address (e.g. notifications@rekindlebc.com)
    - FROM_NAME         Default "From" display name (e.g. "ReKindle" — overridden by senderName at call time)
    - SITE_URL          Your app URL (injected into email footer)
 
