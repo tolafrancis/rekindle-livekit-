@@ -217,8 +217,11 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
       try {
         console.log('[Language] Syncing language preference with user profile...');
         
-        // Try user_metadata first (fastest, no database query)
-        const { data: { user: authUser } } = await supabase.auth.getUser();
+        // Try user_metadata first (fastest, no database query). getSession()
+        // reads the locally stored session; getUser() would be an extra auth
+        // server round trip on every sign-in just to read the same metadata.
+        const { data: { session } } = await supabase.auth.getSession();
+        const authUser = session?.user;
         
         if (authUser?.user_metadata?.preferred_language) {
           const metaLanguage = authUser.user_metadata.preferred_language as SupportedLanguage;
@@ -273,7 +276,9 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     };
 
     syncLanguageWithProfile();
-  }, [user]);
+    // Keyed on the id so a token refresh doesn't redo the profile lookup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Update document attributes when language changes
   useEffect(() => {

@@ -302,7 +302,19 @@ export const BookSummaries: React.FC = () => {
         setReferralStats(stats);
       }
 
-      // Load leaderboard
+    } catch (err) {
+      console.error('Error loading referral stats:', err);
+    }
+  };
+  
+  // The leaderboard aggregates every user's referrals, so it's only fetched
+  // when the Referral Dashboard dialog (its only consumer) is first opened —
+  // not on every open of the Books tab.
+  const leaderboardLoadedRef = useRef(false);
+  const loadReferralLeaderboard = async () => {
+    if (leaderboardLoadedRef.current) return;
+    leaderboardLoadedRef.current = true;
+    try {
       const { data: leaderboardData } = await supabase
         .from('book_referrals')
         .select(`
@@ -332,10 +344,11 @@ export const BookSummaries: React.FC = () => {
         setReferralLeaderboard(leaderboard);
       }
     } catch (err) {
-      console.error('Error loading referral stats:', err);
+      leaderboardLoadedRef.current = false;
+      console.error('Error loading referral leaderboard:', err);
     }
   };
-  
+
   // ✅ STEP 3: NOW all useEffect hooks (can safely call the functions above)
   useEffect(() => {
     loadBooks();
@@ -366,6 +379,10 @@ export const BookSummaries: React.FC = () => {
       audioRef.current.playbackRate = playbackRate;
     }
   }, [volume, playbackRate]);
+
+  useEffect(() => {
+    if (showReferralDialog) loadReferralLeaderboard();
+  }, [showReferralDialog]);
 
   useEffect(() => {
     setIsPlaying(false);

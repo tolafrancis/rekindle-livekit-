@@ -1,13 +1,10 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
-import MinistryJoinLanding from "@/components/registration/MinistryJoinLanding";
-import MinistryKiosk from "@/components/registration/MinistryKiosk";
-import MemberMinistryProfile from "@/components/registration/MemberMinistryProfile";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
@@ -16,21 +13,31 @@ import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
 import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
-import AdminPage from "./pages/AdminPage";
-import LandingPage from "./pages/LandingPage";
-import MetaWhatsAppCallback from "./pages/MetaWhatsAppCallback";
-import PrivacyPolicyPage from "@rekindle/features/components/PrivacyPolicyPage";
-import TermsOfServicePage from "@rekindle/features/components/TermsOfServicePage";
-import RekindleGuidePage from "@rekindle/features/components/RekindleGuidePage";
-import UnsubscribePage from "@rekindle/features/components/UnsubscribePage";
-import Skeleton from "./components/Skeleton";
-import WebinarJoinShim from "./components/WebinarJoinShim";
-import WebinarSpeakerInviteShim from "./components/WebinarSpeakerInviteShim";
-import NotFound from "./pages/NotFound";
 import { BackToTop } from "./components/BackToTop";
-// Import the wrapper component that renders MLiveChannel (same architecture as LiveChannels)
-import MinistryLiveWrapper from "./components/MinistryLiveWrapper";
-import { ChannelWatchPage } from "@rekindle/live/components/ChannelWatchPage";
+import RouteFallback from "./components/RouteFallback";
+
+// Every route other than the main app shell is code-split: a visitor opening
+// /join/:slug or /privacy shouldn't download (and parse) the whole app, and the
+// app shell shouldn't carry the admin, kiosk, webinar or legal pages either.
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const MetaWhatsAppCallback = lazy(() => import("./pages/MetaWhatsAppCallback"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const MinistryJoinLanding = lazy(() => import("@/components/registration/MinistryJoinLanding"));
+const MinistryKiosk = lazy(() => import("@/components/registration/MinistryKiosk"));
+const MemberMinistryProfile = lazy(() => import("@/components/registration/MemberMinistryProfile"));
+const PrivacyPolicyPage = lazy(() => import("@rekindle/features/components/PrivacyPolicyPage"));
+const TermsOfServicePage = lazy(() => import("@rekindle/features/components/TermsOfServicePage"));
+const RekindleGuidePage = lazy(() => import("@rekindle/features/components/RekindleGuidePage"));
+const UnsubscribePage = lazy(() => import("@rekindle/features/components/UnsubscribePage"));
+const Skeleton = lazy(() => import("./components/Skeleton"));
+const WebinarJoinShim = lazy(() => import("./components/WebinarJoinShim"));
+const WebinarSpeakerInviteShim = lazy(() => import("./components/WebinarSpeakerInviteShim"));
+// MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels)
+const MinistryLiveWrapper = lazy(() => import("./components/MinistryLiveWrapper"));
+const ChannelWatchPage = lazy(() =>
+  import("@rekindle/live/components/ChannelWatchPage").then((m) => ({ default: m.ChannelWatchPage }))
+);
 
 // Configure QueryClient with better defaults for stability
 // FIXED: Added refetchOnMount: false and refetchInterval: false to prevent auto-refreshes
@@ -99,6 +106,7 @@ const App = () => {
                 <Sonner />
                 <BrowserRouter>
                   <PushNotificationNavHandler />
+                  <Suspense fallback={<RouteFallback />}>
                   <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />
@@ -165,6 +173,7 @@ const App = () => {
                   <Route path="/api/meta-whatsapp-callback" element={<MetaWhatsAppCallback />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
+                  </Suspense>
                 {/* Universal back-to-top — available on every route, no per-page wiring */}
                 <BackToTop />
                 {/* Persistent meeting layer — keeps a live call mounted across tab

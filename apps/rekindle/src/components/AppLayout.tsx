@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -15,8 +15,6 @@ import { badges } from '../data/badges';
 import { CounsellorCard, Counsellor } from './CounsellorCard';
 import { BadgeCard } from './BadgeCard';
 import { StatCard } from './StatCard';
-import { GraceCounselChat } from './GraceCounselChat';
-import { ReferralGenerator } from './ReferralGenerator';
 import { PrayerPointModal } from './PrayerPointModal';
 import { AffirmationCard } from './AffirmationCard';
 import { StreakWidget } from './StreakWidget';
@@ -24,12 +22,6 @@ import { ReminderSetupTip } from './ReminderSetupTip';
 import { OnboardingTips } from './OnboardingTips';
 import { DeclarationCard } from './DeclarationCard';
 import { InstrumentalPlayer } from './InstrumentalPlayer';
-import { ProfileSettings } from './ProfileSettings';
-import { CounsellorBookingModal } from './CounsellorBookingModal';
-import { MyBookings } from './MyBookings';
-import { MusicLibrary } from './MusicLibrary';
-import { CommunityPrayerWall } from './CommunityPrayerWall';
-import { ScriptureMemory } from './ScriptureMemory';
 import { NotificationFeed } from './NotificationFeed';
 import { useNotifications } from '@/hooks/useNotifications';
 import { getPlatformSetting } from '@rekindle/features/platformSettings';
@@ -37,30 +29,12 @@ import { AppFooter } from './AppFooter';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { registerPush } from '@rekindle/features/usePushNotifications';
 import { UpgradePromptModal } from './UpgradePromptModal';
-import { UserActivityDashboard } from './UserActivityDashboard';
-import { BookSummaries } from './BookSummaries';
-import { CommunityRevelations } from './CommunityRevelations';
-import { CommunityActivityFeed } from './CommunityActivityFeed';
-import { DevotionalLibrary } from './DevotionalLibrary';
-import { PrayerLibrary } from './PrayerLibrary';
-import GlobalSearch from './GlobalSearch';
-import { DailyReminders } from './DailyReminders';
-import { PrayerJournal } from './PrayerJournal';
-import { BibleReadingPlan } from './BibleReadingPlan';
-import { EnhancedPrayerChallenges } from './EnhancedPrayerChallenges';
-import { LiveChannels } from './LiveChannels';
 import { OfflineIndicator } from './OfflineIndicator';
 import { DailyDevotionalWidget } from './DailyDevotionalWidget';
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
 import { DevotionalSourceSettings } from './DevotionalSourceSettings';
-import AdminDashboard from './AdminDashboard';
-import { SubscriptionManager } from './SubscriptionManager';
-import { SponsorshipSystem } from './SponsorshipSystem';
-import AdminSystemHealthDashboard from './AdminSystemHealthDashboard';
-import { PaymentHistory } from './PaymentHistory';
-import { CounsellorDashboard } from './CounsellorDashboard';
 import { ErrorBoundary } from './ErrorBoundary';
-import MinistriesHub from './MinistriesHub';
+import RouteFallback from './RouteFallback';
 
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -87,6 +61,37 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 
+
+// Feature tabs are code-split: each one is only downloaded the first time the
+// user opens it, instead of every screen (admin, live broadcast, ministries,
+// counselling, billing …) being parsed before the app shell can render.
+const GraceCounselChat = lazy(() => import('./GraceCounselChat').then((m) => ({ default: m.GraceCounselChat })));
+const ReferralGenerator = lazy(() => import('./ReferralGenerator').then((m) => ({ default: m.ReferralGenerator })));
+const ProfileSettings = lazy(() => import('./ProfileSettings').then((m) => ({ default: m.ProfileSettings })));
+const CounsellorBookingModal = lazy(() => import('./CounsellorBookingModal').then((m) => ({ default: m.CounsellorBookingModal })));
+const MyBookings = lazy(() => import('./MyBookings').then((m) => ({ default: m.MyBookings })));
+const MusicLibrary = lazy(() => import('./MusicLibrary').then((m) => ({ default: m.MusicLibrary })));
+const CommunityPrayerWall = lazy(() => import('./CommunityPrayerWall').then((m) => ({ default: m.CommunityPrayerWall })));
+const ScriptureMemory = lazy(() => import('./ScriptureMemory').then((m) => ({ default: m.ScriptureMemory })));
+const UserActivityDashboard = lazy(() => import('./UserActivityDashboard').then((m) => ({ default: m.UserActivityDashboard })));
+const BookSummaries = lazy(() => import('./BookSummaries').then((m) => ({ default: m.BookSummaries })));
+const CommunityRevelations = lazy(() => import('./CommunityRevelations').then((m) => ({ default: m.CommunityRevelations })));
+const CommunityActivityFeed = lazy(() => import('./CommunityActivityFeed').then((m) => ({ default: m.CommunityActivityFeed })));
+const DevotionalLibrary = lazy(() => import('./DevotionalLibrary').then((m) => ({ default: m.DevotionalLibrary })));
+const PrayerLibrary = lazy(() => import('./PrayerLibrary').then((m) => ({ default: m.PrayerLibrary })));
+const DailyReminders = lazy(() => import('./DailyReminders').then((m) => ({ default: m.DailyReminders })));
+const PrayerJournal = lazy(() => import('./PrayerJournal').then((m) => ({ default: m.PrayerJournal })));
+const BibleReadingPlan = lazy(() => import('./BibleReadingPlan').then((m) => ({ default: m.BibleReadingPlan })));
+const EnhancedPrayerChallenges = lazy(() => import('./EnhancedPrayerChallenges').then((m) => ({ default: m.EnhancedPrayerChallenges })));
+const LiveChannels = lazy(() => import('./LiveChannels').then((m) => ({ default: m.LiveChannels })));
+const SubscriptionManager = lazy(() => import('./SubscriptionManager').then((m) => ({ default: m.SubscriptionManager })));
+const SponsorshipSystem = lazy(() => import('./SponsorshipSystem').then((m) => ({ default: m.SponsorshipSystem })));
+const PaymentHistory = lazy(() => import('./PaymentHistory').then((m) => ({ default: m.PaymentHistory })));
+const CounsellorDashboard = lazy(() => import('./CounsellorDashboard').then((m) => ({ default: m.CounsellorDashboard })));
+const GlobalSearch = lazy(() => import('./GlobalSearch'));
+const AdminDashboard = lazy(() => import('./AdminDashboard'));
+const AdminSystemHealthDashboard = lazy(() => import('./AdminSystemHealthDashboard'));
+const MinistriesHub = lazy(() => import('./MinistriesHub'));
 
 interface UserProfile {
   id: string;
@@ -319,8 +324,6 @@ const parentForTab = (tab: string): NavGroup | undefined =>
 
 const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandled, initialTab }) => {
 
-  console.log('[AppLayout] Rendering with initialTab:', initialTab);
-
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -440,9 +443,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     tabUrlSyncedRef.current = true;
   }, [activeTab]);
   
-  console.log('[AppLayout] initialTab received:', initialTab);
-  console.log('[AppLayout] activeTab state:', activeTab);
-  
   const [selectedPrayer, setSelectedPrayer] = useState<PrayerPoint | null>(null);
   const [selectedDevotional, setSelectedDevotional] = useState<Devotional | null>(null);
   const [selectedCounsellor, setSelectedCounsellor] = useState<Counsellor | null>(null);
@@ -514,7 +514,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   }, [navigateTab]);
   const [devotionalProgress, setDevotionalProgress] = useState<Record<string, any>>({});
   const [signingOut, setSigningOut] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [counsellors, setCounsellors] = useState<Counsellor[]>([]);
   const [loadingCounsellors, setLoadingCounsellors] = useState(false);
   const [isCounsellor, setIsCounsellor] = useState(false);
@@ -847,29 +846,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     if (activeTab === 'my-dashboard') checkCounsellorStatus();
   }, [activeTab, loadDevotionalProgress, loadCounsellors, checkCounsellorStatus]);
 
-  // Initial data loading
+  // Initial data loading. Only the counsellor check is needed up front (it
+  // decides whether the My Dashboard tab exists), and it runs in the background
+  // rather than holding the whole shell behind a spinner. The counsellor list
+  // and devotional progress used to be fetched here too, blocking first paint
+  // on a full `counsellors` table read; they now load only when their tab
+  // opens (the tab-change effect above also covers starting on that tab).
   useEffect(() => {
-    const loadInitialData = async () => {
-      setIsLoading(true);
-      try {
-        await Promise.all([
-          loadDevotionalProgress(), 
-          loadCounsellors(),
-          checkCounsellorStatus()
-        ]);
-      } catch (error) {
-        console.error('[AppLayout] Failed to load initial data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadInitialData();
-  }, [loadDevotionalProgress, loadCounsellors, checkCounsellorStatus]);
+    checkCounsellorStatus();
+  }, [checkCounsellorStatus]);
 
   // Handle pending room join - redirect to live channels
   useEffect(() => {
-    if (pendingRoomJoin && !isLoading) {
+    if (pendingRoomJoin) {
       // Legacy room joins are redirected to Live Channels
       navigateTab('live-channels');
       toast({
@@ -878,7 +867,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       });
       onRoomJoinHandled?.();
     }
-  }, [pendingRoomJoin, onRoomJoinHandled, isLoading, t, navigateTab]);
+  }, [pendingRoomJoin, onRoomJoinHandled, t, navigateTab]);
 
   const handleBookCounsellor = useCallback((counsellor: Counsellor) => {
     setSelectedCounsellor(counsellor);
@@ -901,7 +890,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   // Translated strings - FIXED: Using proper fallback values
   const welcomeText = t('auth', 'welcomeBack', 'Welcome');
-  const loadingText = t('common', 'loading', 'Loading your spiritual journey...');
   const heroTitle = t('hero', 'home.title', 'Transform Your Spiritual Journey');
   const heroSubtitle = t('hero', 'home.subtitle', 'Igniting Spiritual Growth. Empowering Believers. Transforming Lives');
   const booksCompletedLabel = t('hero', 'stats.booksCompleted', 'Books Completed');
@@ -990,17 +978,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const bookingConfirmedTitle = t('common', 'success', 'Booking Confirmed');
   const bookingConfirmedDesc = t('counselling', 'bookSession', 'Your counselling session has been scheduled');
   const nowPlayingTitle = t('common', 'start', 'Now Playing');
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-purple-600 mx-auto mb-4" />
-          <p className="text-gray-600">{loadingText}</p>
-        </div>
-      </div>
-    );
-  }
 
   const renderPrimaryNavigation = (className: string) => (
     <nav className={className} aria-label="Primary navigation">
@@ -1445,6 +1422,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         )}
         <div className="min-w-0 max-w-full overflow-x-clip">
             <ErrorBoundary>
+            <Suspense fallback={<RouteFallback fullScreen={false} />}>
           {activeTab === 'home' && (
             <div className="space-y-6">
               <ReminderSetupTip
@@ -1615,6 +1593,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
           {activeTab === 'profile' && <ProfileSettings />}
 
+            </Suspense>
         </ErrorBoundary>
         </div>
       </main>
@@ -1688,7 +1667,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       )}
 
       {/* Global Search Modal */}
-      {!ministryWorkspaceActive && <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />}
+      {/* Mounted only while open (it renders nothing when closed) so its chunk
+          is fetched on first use rather than with the app shell. */}
+      {!ministryWorkspaceActive && searchOpen && (
+        <Suspense fallback={null}>
+          <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Modals */}
       <PrayerPointModal
@@ -1699,17 +1684,21 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         }}
       />
 
-      <CounsellorBookingModal
-        counsellor={selectedCounsellor}
-        open={showBookingModal}
-        onClose={() => setShowBookingModal(false)}
-        onBooked={() => {
-          toast({
-            title: bookingConfirmedTitle,
-            description: bookingConfirmedDesc
-          });
-        }}
-      />
+      {selectedCounsellor && (
+        <Suspense fallback={null}>
+          <CounsellorBookingModal
+            counsellor={selectedCounsellor}
+            open={showBookingModal}
+            onClose={() => setShowBookingModal(false)}
+            onBooked={() => {
+              toast({
+                title: bookingConfirmedTitle,
+                description: bookingConfirmedDesc
+              });
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };
