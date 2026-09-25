@@ -169,6 +169,7 @@ export interface Translations {
     weekly: string;
     monthly: string;
     yearly: string;
+    saved: string;
   };
   auth: {
     login: string;
@@ -352,6 +353,24 @@ export interface Translations {
     emailAddress: string;
     personalMessageOptional: string;
     addPersonalNote: string;
+    signInToBookmark: string;
+    bookmarkAdded: string;
+    notesSaved: string;
+    completedDay: string;
+    joinJourney: string;
+    minRead: string;
+    time: string;
+    listen: string;
+    watchVideo: string;
+    prayer: string;
+    personalNotes: string;
+    writeThoughts: string;
+    saveNotes: string;
+    bookmarkToSave: string;
+    previousDay: string;
+    markComplete: string;
+    nextDay: string;
+    signInToStart: string;
   };
   prayers: {
     title: string;

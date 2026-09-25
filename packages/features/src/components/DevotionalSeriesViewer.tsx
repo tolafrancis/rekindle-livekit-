@@ -1123,7 +1123,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     if (!user || !selectedSeries) {
       toast({ 
         title: t('auth', 'signInRequired', 'Sign In Required'), 
-        description: t('devotionals', 'signInToStart'), 
+        description: t('devotionals', 'signInToStart', 'Please sign in to start this devotional series'), 
         variant: 'destructive' 
       });
       return;
