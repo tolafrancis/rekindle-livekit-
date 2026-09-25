@@ -1,5 +1,10 @@
 // Supabase Edge Function: send-email-broadcast
 // Deploy with: supabase functions deploy send-email-broadcast
+//
+// Callers: platform admins (BroadcastMessaging in the admin dashboard),
+// ministry admins emailing their own ministry (MinistryVideoMessagesManager)
+// and the process-scheduled-video-messages job (service-role key). Anyone
+// else is rejected — this emails users from the platform's own domain.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -48,11 +53,47 @@ serve(async (req) => {
     }
 
     // ── Supabase client (service role) ───────────────────────────────────────
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      serviceRoleKey,
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
+
+    // ── Authorization ────────────────────────────────────────────────────────
+    // Service-role callers (scheduled jobs) may send anything. Otherwise:
+    //   • ministryId only        → an admin of that ministry, or a platform admin
+    //   • platform-wide audience
+    //     or an explicit userIds → platform admins only
+    const deny = (status: number, error: string) =>
+      new Response(JSON.stringify({ error }), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const isServiceCall = !!serviceRoleKey && token === serviceRoleKey;
+    if (!isServiceCall) {
+      const { data: { user }, error: userError } = token
+        ? await supabaseClient.auth.getUser(token)
+        : { data: { user: null }, error: null };
+      if (userError || !user) return deny(401, 'Unauthorized: please sign in again.');
+
+      const { data: profile } = await supabaseClient
+        .from('user_profiles').select('role').eq('user_id', user.id).maybeSingle();
+      const isPlatformAdmin = ['admin', 'super_admin'].includes(profile?.role ?? '');
+
+      if (!isPlatformAdmin) {
+        const ministryScoped = !!ministryId && !(userIds && userIds.length > 0);
+        if (!ministryScoped) {
+          return deny(403, 'Only platform admins can email platform-wide audiences or hand-picked users.');
+        }
+        const { data: isMinistryAdmin } = await supabaseClient
+          .rpc('is_group_admin', { p_ministry_id: ministryId, p_user_id: user.id });
+        if (!isMinistryAdmin) {
+          return deny(403, "Only this ministry's admins can email its members.");
+        }
+      }
+    }
 
     // ── Email provider config ────────────────────────────────────────────────
     const RESEND_API_KEY    = Deno.env.get('RESEND_API_KEY');

@@ -324,6 +324,9 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
       body: {
         ministryId,
         subject: `New video message: ${video.title}`,
+        // title is required by send-email-broadcast; without it every call
+        // was rejected with a 400 and members never got this email.
+        title: video.title,
         message: `${ministryName || 'Your ministry'} just posted a new video message${video.speaker_name ? ` from ${video.speaker_name}` : ''}: "${video.title}". Watch it now: ${window.location.origin}/ministry-videos/${video.id}`,
         messageCategory: 'transactional',
       },
