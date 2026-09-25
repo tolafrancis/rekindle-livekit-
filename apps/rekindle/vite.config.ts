@@ -57,4 +57,19 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     exclude: ['@supabase/supabase-js'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Long-lived vendor chunks: these libraries change far less often than
+        // app code, so splitting them out lets browsers (and the Capacitor
+        // webview) keep them cached across deploys instead of re-downloading
+        // one monolithic bundle on every release. Feature code is split
+        // separately via React.lazy in App.tsx / Index.tsx / AppLayout.tsx.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+        },
+      },
+    },
+  },
 }));

@@ -144,7 +144,7 @@ export const UserActivityDashboard: React.FC = () => {
         supabase.from('community_revelations').select('*').eq('user_id', user.id),
         supabase.from('user_activity_log').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50),
         supabase.from('discipleship_connections').select('*').eq('mentor_user_id', user.id),
-        supabase.from('user_profiles').select('referral_code').eq('id', user.id).single(),
+        supabase.from('user_profiles').select('referral_code').eq('user_id', user.id).maybeSingle(),
         supabase.from('prayer_history').select('duration_minutes, prayer_points_count').eq('user_id', user.id),
         supabase.from('ministry_devotional_progress').select('id').eq('user_id', user.id),
         supabase.from('devotional_user_progress').select('completed_days').eq('user_id', user.id),

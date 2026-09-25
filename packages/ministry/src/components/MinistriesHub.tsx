@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent } from '@rekindle/ui/card';
@@ -21,7 +21,10 @@ import {
   Heart, Upload, Image as ImageIcon,
   Sparkles, ScrollText
 } from 'lucide-react';
-import MinistrySpace from './MinistrySpace';
+// The ministry workspace (meetings, live, recordings, management …) is only
+// needed once a ministry is entered, so it's its own chunk rather than being
+// downloaded — along with the video stack it pulls in — just to show the list.
+const MinistrySpace = lazy(() => import('./MinistrySpace'));
 import { peekDeepLink } from '@rekindle/features/deepLink';
 
 interface Ministry {
@@ -166,10 +169,28 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     if (!user?.id) return;
 
     try {
-      const { data: memberData, error: memberError } = await supabase
-        .from('ministry_group_members')
-        .select('*')
-        .eq('user_id', user.id);
+      // These three lookups are independent, so fetch them together rather
+      // than one after another (the Ministries tab used to wait on each round
+      // trip in turn before anything could render).
+      const [
+        { data: memberData, error: memberError },
+        { data: activeProfiles, error: activeProfileError },
+        { data: ownedData },
+      ] = await Promise.all([
+        supabase
+          .from('ministry_group_members')
+          .select('*')
+          .eq('user_id', user.id),
+        supabase
+          .from('ministry_member_profiles')
+          .select('ministry_id')
+          .eq('user_id', user.id)
+          .eq('registration_status', 'active'),
+        supabase
+          .from('ministry_groups')
+          .select('*')
+          .or(`owner_id.eq.${user.id},leader_id.eq.${user.id}`),
+      ]);
 
       if (memberError) throw memberError;
 
@@ -186,46 +207,41 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         };
       });
 
-      const { data: activeProfiles, error: activeProfileError } = await supabase
-        .from('ministry_member_profiles')
-        .select('ministry_id')
-        .eq('user_id', user.id)
-        .eq('registration_status', 'active');
-
       if (activeProfileError) throw activeProfileError;
 
-      for (const profileItem of activeProfiles || []) {
-        const id = String(profileItem.ministry_id);
-        if (!membershipIds.has(id)) {
-          const { data: existing } = await supabase
-            .from('ministry_group_members')
-            .select('id')
-            .eq('group_id', id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (!existing) {
-            const { error: insertError } = await supabase.from('ministry_group_members').insert({
-              ministry_id: id,
-              group_id: id,
-              user_id: user.id,
-              role: 'member',
-              is_leader: false,
-              joined_at: new Date().toISOString(),
-            });
-            if (insertError && !/duplicate|already exists|unique/i.test(insertError.message || '')) {
-              console.warn('Unable to reconcile active ministry membership:', insertError.message);
-            }
-          }
-          membershipMap[id] = {
-            ministry_id: id,
-            role: 'member',
-            subscription_level: 1,
-            is_leader: false,
-            joined_at: new Date().toISOString(),
-          };
-          membershipIds.add(id);
+      // Reconcile active registrations that have no ministry_group_members row.
+      // memberData above already holds every row for this user, so a missing id
+      // really is missing — insert directly (a concurrent duplicate is
+      // tolerated) and do all of them in parallel instead of a
+      // select-then-insert round-trip pair per ministry.
+      const missingIds = Array.from(new Set(
+        (activeProfiles || [])
+          .map(p => String(p.ministry_id))
+          .filter(id => !membershipIds.has(id))
+      ));
+      await Promise.all(missingIds.map(async (id) => {
+        const { error: insertError } = await supabase.from('ministry_group_members').insert({
+          ministry_id: id,
+          group_id: id,
+          user_id: user.id,
+          role: 'member',
+          is_leader: false,
+          joined_at: new Date().toISOString(),
+        });
+        if (insertError && !/duplicate|already exists|unique/i.test(insertError.message || '')) {
+          console.warn('Unable to reconcile active ministry membership:', insertError.message);
         }
-      }
+      }));
+      missingIds.forEach(id => {
+        membershipMap[id] = {
+          ministry_id: id,
+          role: 'member',
+          subscription_level: 1,
+          is_leader: false,
+          joined_at: new Date().toISOString(),
+        };
+        membershipIds.add(id);
+      });
 
       setMemberships(membershipMap);
 
@@ -239,11 +255,6 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         if (ministryError) throw ministryError;
         allMinistries = ministryData || [];
       }
-
-      const { data: ownedData } = await supabase
-        .from('ministry_groups')
-        .select('*')
-        .or(`owner_id.eq.${user.id},leader_id.eq.${user.id}`);
 
       if (ownedData) {
         ownedData.forEach(m => {
@@ -484,12 +495,20 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   if (activeView === 'ministry-space' && selectedMinistry) {
     const membership = memberships[selectedMinistry.id];
     return (
-      <MinistrySpace
-        ministry={selectedMinistry}
-        membership={membership}
-        onExit={handleExitMinistry}
-        onMinistryUpdate={handleMinistryUpdate}
-      />
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+          </div>
+        }
+      >
+        <MinistrySpace
+          ministry={selectedMinistry}
+          membership={membership}
+          onExit={handleExitMinistry}
+          onMinistryUpdate={handleMinistryUpdate}
+        />
+      </Suspense>
     );
   }
 

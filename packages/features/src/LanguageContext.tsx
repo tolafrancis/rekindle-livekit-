@@ -17,7 +17,8 @@ import {
   isRTLLanguage,
   getLanguageFontFamily,
   SUPPORTED_LANGUAGES,
-  DEFAULT_TRANSLATIONS,
+  EMPTY_TRANSLATIONS,
+  loadEnglishTranslations,
   translationService,
   formatDate as i18nFormatDate,
   formatTime as i18nFormatTime,
@@ -79,6 +80,14 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 const LANGUAGE_STORAGE_KEY = 'app_language_preference';
 
+// Start downloading the English UI dictionary (its own chunk, ~400 KB) the
+// moment this module is evaluated, in parallel with auth start-up, rather than
+// waiting for the provider to mount. Until it lands, t() renders each call
+// site's inline English fallback.
+loadEnglishTranslations().catch((err) => {
+  console.warn('[Language] English dictionary failed to preload:', err);
+});
+
 interface LanguageProviderProps {
   children: ReactNode;
 }
@@ -99,7 +108,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     console.log(`[Language] Initialized with default: ${DEFAULT_LANGUAGE}`);
     return DEFAULT_LANGUAGE;
   });
-  const [translations, setTranslations] = useState<Translations>(DEFAULT_TRANSLATIONS);
+  const [translations, setTranslations] = useState<Translations>(EMPTY_TRANSLATIONS);
   const [isLoading, setIsLoading] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
 
@@ -130,7 +139,11 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
   }, []);
 
   const loadingRef = useRef(false);
-  const lastLoadedLanguage = useRef<string>('en');
+  // Nothing is loaded yet — even English now arrives asynchronously.
+  const lastLoadedLanguage = useRef<string>('');
+  // The language most recently asked for, so a slow English load can't
+  // overwrite translations for a language the user switched to meanwhile.
+  const requestedLanguage = useRef<string>('');
   
   // Derived state
   const isRTL = useMemo(() => isRTLLanguage(language), [language]);
@@ -147,11 +160,21 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
       return;
     }
 
-    // For English, use defaults immediately
+    requestedLanguage.current = lang;
+
+    // English is the in-code dictionary (no DB/translation step); it's just
+    // loaded from its own chunk, usually already fetched by the preload above.
     if (lang === 'en') {
-      console.log('[Language] Using English defaults (no translation needed)');
-      setTranslations(DEFAULT_TRANSLATIONS);
-      lastLoadedLanguage.current = 'en';
+      try {
+        const english = await loadEnglishTranslations();
+        if (requestedLanguage.current === 'en') {
+          setTranslations(english);
+          lastLoadedLanguage.current = 'en';
+        }
+      } catch (error) {
+        // Inline fallbacks keep rendering English; allow a later retry.
+        console.error('[Language] ❌ Error loading English dictionary:', error);
+      }
       return;
     }
 
@@ -168,7 +191,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     } catch (error) {
       console.error(`[Language] ❌ Error loading translations for ${lang}:`, error);
       // Fallback to default translations
-      setTranslations(DEFAULT_TRANSLATIONS);
+      setTranslations(await loadEnglishTranslations().catch(() => EMPTY_TRANSLATIONS));
       console.warn('[Language] Using English fallback translations');
     } finally {
       loadingRef.current = false;
@@ -217,8 +240,11 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
       try {
         console.log('[Language] Syncing language preference with user profile...');
         
-        // Try user_metadata first (fastest, no database query)
-        const { data: { user: authUser } } = await supabase.auth.getUser();
+        // Try user_metadata first (fastest, no database query). getSession()
+        // reads the locally stored session; getUser() would be an extra auth
+        // server round trip on every sign-in just to read the same metadata.
+        const { data: { session } } = await supabase.auth.getSession();
+        const authUser = session?.user;
         
         if (authUser?.user_metadata?.preferred_language) {
           const metaLanguage = authUser.user_metadata.preferred_language as SupportedLanguage;
@@ -237,7 +263,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
           const { data, error } = await supabase
             .from('user_profiles')
             .select('preferred_language')
-            .eq('id', user.id)
+            .eq('user_id', user.id)
             .maybeSingle();
 
           if (error) {
@@ -273,7 +299,9 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     };
 
     syncLanguageWithProfile();
-  }, [user]);
+    // Keyed on the id so a token refresh doesn't redo the profile lookup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Update document attributes when language changes
   useEffect(() => {
@@ -350,7 +378,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
             await supabase
               .from('user_profiles')
               .update({ preferred_language: newLanguage })
-              .eq('id', user.id);
+              .eq('user_id', user.id);
             console.log('[Language] Updated user_profiles table');
           } catch (dbError) {
             console.warn('[Language] Could not update user_profiles (column may not exist)');

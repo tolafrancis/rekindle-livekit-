@@ -9,6 +9,16 @@ import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
 
+// Human-readable name for a language code (e.g. "de" → "German (de)"),
+// falling back to the bare code where the browser has no name for it.
+const languageName = (code: string): string => {
+  try {
+    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+    if (name && name.toLowerCase() !== code.toLowerCase()) return `${name} (${code})`;
+  } catch { /* invalid or unsupported code */ }
+  return code.toUpperCase();
+};
+
 interface CaptionLine {
   id: string;
   text: string;
@@ -819,7 +829,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                     {supportedLanguages
                       .filter((code) => !tracks.some((t) => t.language === code))
                       .map((code) => (
-                        <SelectItem key={code} value={code}>{code.toUpperCase()}</SelectItem>
+                        <SelectItem key={code} value={code}>{languageName(code)}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>

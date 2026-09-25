@@ -98,6 +98,25 @@ interface Question {
 // Main Component
 // ─────────────────────────────────────────────
 
+// Feeds are fetched a page at a time instead of every row ever posted.
+const FEED_PAGE_SIZE = 20;
+
+// Append a page, skipping rows already shown (offsets shift when new posts
+// arrive between page loads).
+function appendUnique<T extends { id: string }>(prev: T[], page: T[]): T[] {
+  const seen = new Set(prev.map(r => r.id));
+  return [...prev, ...page.filter(r => !seen.has(r.id))];
+}
+
+const LoadMoreButton: React.FC<{ loading: boolean; onClick: () => void; label: string }> = ({ loading, onClick, label }) => (
+  <div className="flex justify-center pt-2">
+    <Button variant="outline" onClick={onClick} disabled={loading}>
+      {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+      {label}
+    </Button>
+  </div>
+);
+
 export const CommunityRevelations: React.FC = () => {
   const { profile, user } = useAuth();
   const { t } = useLanguage();
@@ -109,6 +128,8 @@ export const CommunityRevelations: React.FC = () => {
   // ── Q&A state ──
   const [questions, setQuestions] = useState<Question[]>([]);
   const [qaLoading, setQaLoading] = useState(true);
+  const [qaLoadingMore, setQaLoadingMore] = useState(false);
+  const [qaHasMore, setQaHasMore] = useState(false);
   const [showQForm, setShowQForm] = useState(false);
   const [qTitle, setQTitle] = useState('');
   const [qContent, setQContent] = useState('');
@@ -120,6 +141,8 @@ export const CommunityRevelations: React.FC = () => {
   // ── Revelations state ──
   const [revelations, setRevelations] = useState<Revelation[]>([]);
   const [revLoading, setRevLoading] = useState(true);
+  const [revLoadingMore, setRevLoadingMore] = useState(false);
+  const [revHasMore, setRevHasMore] = useState(false);
   const [showRevForm, setShowRevForm] = useState(false);
   const [revTitle, setRevTitle] = useState('');
   const [revContent, setRevContent] = useState('');
@@ -134,6 +157,8 @@ export const CommunityRevelations: React.FC = () => {
   // ── Testimonies state ──
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
   const [testLoading, setTestLoading] = useState(true);
+  const [testLoadingMore, setTestLoadingMore] = useState(false);
+  const [testHasMore, setTestHasMore] = useState(false);
   const [testTableReady, setTestTableReady] = useState(true);
   const [showTestForm, setShowTestForm] = useState(false);
   const [testTitle, setTestTitle] = useState('');
@@ -147,31 +172,42 @@ export const CommunityRevelations: React.FC = () => {
   const testWordCount = testContent.trim().split(/\s+/).filter(w => w).length;
   const canShareRevelations = entitlements.canShareRevelations;
 
+  // Each sub-tab's feed is fetched the first time that tab is shown (it used to
+  // fetch all three feeds, in full, on every visit to this screen).
+  const loadedTabsRef = React.useRef<Set<string>>(new Set());
   useEffect(() => {
-    loadRevelations();
-    loadTestimonies();
-    loadQuestions();
-  }, []);
+    if (loadedTabsRef.current.has(activeTab)) return;
+    loadedTabsRef.current.add(activeTab);
+    if (activeTab === 'revelations') loadRevelations();
+    else if (activeTab === 'testimonies') loadTestimonies();
+    else if (activeTab === 'qa') loadQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // ─────────────────────────────────────────────
   // Revelations helpers
   // ─────────────────────────────────────────────
 
-  const loadRevelations = async () => {
-    setRevLoading(true);
+  const loadRevelations = async (append = false) => {
+    if (append) setRevLoadingMore(true); else setRevLoading(true);
     try {
+      const from = append ? revelations.length : 0;
       const { data, error } = await supabase
         .from('community_revelations')
         .select('*')
         .eq('is_published', true)
         .eq('is_hidden', false)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, from + FEED_PAGE_SIZE - 1);
       if (error) throw error;
-      setRevelations((data || []).map(rev => ({ ...rev, liked: false, bookmarked: false })));
+      const page = (data || []).map(rev => ({ ...rev, liked: false, bookmarked: false }));
+      setRevelations(prev => (append ? appendUnique(prev, page) : page));
+      setRevHasMore(page.length === FEED_PAGE_SIZE);
     } catch (err: any) {
       toast({ title: t('communityRevelations', 'error', 'Error'), description: t('communityRevelations', 'failedLoadRevelations', 'Failed to load revelations'), variant: 'destructive' });
     } finally {
       setRevLoading(false);
+      setRevLoadingMore(false);
     }
   };
 
@@ -309,25 +345,31 @@ export const CommunityRevelations: React.FC = () => {
   // Testimonies helpers
   // ─────────────────────────────────────────────
 
-  const loadTestimonies = async () => {
-    setTestLoading(true);
+  const loadTestimonies = async (append = false) => {
+    if (append) setTestLoadingMore(true); else setTestLoading(true);
     try {
+      const from = append ? testimonies.length : 0;
       const { data, error } = await supabase
         .from('app_testimonies')
         .select('*')
         .eq('is_published', true)
         .eq('is_hidden', false)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, from + FEED_PAGE_SIZE - 1);
       if (error) {
         console.warn('Testimonies load error:', error.message);
-        setTestimonies([]);
+        if (!append) setTestimonies([]);
+        setTestHasMore(false);
         return;
       }
-      setTestimonies((data || []).map(t => ({ ...t, liked: false, bookmarked: false })));
+      const page = (data || []).map(t => ({ ...t, liked: false, bookmarked: false }));
+      setTestimonies(prev => (append ? appendUnique(prev, page) : page));
+      setTestHasMore(page.length === FEED_PAGE_SIZE);
     } catch (err: any) {
       console.error('Error loading testimonies:', err);
     } finally {
       setTestLoading(false);
+      setTestLoadingMore(false);
     }
   };
 
@@ -445,23 +487,29 @@ export const CommunityRevelations: React.FC = () => {
   // Q&A helpers
   // ─────────────────────────────────────────────
 
-  const loadQuestions = async () => {
-    setQaLoading(true);
+  const loadQuestions = async (append = false) => {
+    if (append) setQaLoadingMore(true); else setQaLoading(true);
     try {
+      const from = append ? questions.length : 0;
       const { data, error } = await supabase
         .from('community_questions')
         .select('*, community_answers(*)')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(from, from + FEED_PAGE_SIZE - 1);
       if (error) throw error;
-      setQuestions((data || []).map(q => ({
+      const page = (data || []).map(q => ({
         ...q,
         upvoted: false,
         answers: (q.community_answers || []).map((a: any) => ({ ...a, upvoted: false })),
-      })));
+      }));
+      setQuestions(prev => (append ? appendUnique(prev, page) : page));
+      setQaHasMore(page.length === FEED_PAGE_SIZE);
     } catch {
-      setQuestions([]);
+      if (!append) setQuestions([]);
+      setQaHasMore(false);
     } finally {
       setQaLoading(false);
+      setQaLoadingMore(false);
     }
   };
 
@@ -813,6 +861,9 @@ export const CommunityRevelations: React.FC = () => {
                   </CardContent>
                 </Card>
               ))}
+              {revHasMore && revFilter === 'all' && (
+                <LoadMoreButton loading={revLoadingMore} onClick={() => loadRevelations(true)} label={t('common', 'loadMore', 'Load more')} />
+              )}
             </div>
           )}
         </div>
@@ -950,6 +1001,9 @@ export const CommunityRevelations: React.FC = () => {
                   </CardContent>
                 </Card>
               ))}
+              {testHasMore && testFilter === 'all' && (
+                <LoadMoreButton loading={testLoadingMore} onClick={() => loadTestimonies(true)} label={t('common', 'loadMore', 'Load more')} />
+              )}
             </div>
           )}
         </div>
@@ -1119,6 +1173,9 @@ export const CommunityRevelations: React.FC = () => {
                   <p className="font-medium">{t('communityRevelations', 'noQuestionsYet', 'No questions yet.')}</p>
                   <p className="text-sm mt-1">{t('communityRevelations', 'beFirstSeekClarity', 'Be the first to seek clarity from the community.')}</p>
                 </div>
+              )}
+              {qaHasMore && (
+                <LoadMoreButton loading={qaLoadingMore} onClick={() => loadQuestions(true)} label={t('common', 'loadMore', 'Load more')} />
               )}
             </div>
           )}

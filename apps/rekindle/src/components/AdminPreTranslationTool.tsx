@@ -19,10 +19,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { 
   ASIAN_LANGUAGE_CODES, 
   SUPPORTED_LANGUAGES, 
-  DEFAULT_TRANSLATIONS,
   type SupportedLanguage,
   type Translations 
 } from '@/lib/i18n';
+import { DEFAULT_TRANSLATIONS } from '@rekindle/features/i18n-en';
 
 // =====================================================
 // PRE-TRANSLATION CATEGORIES

@@ -6,10 +6,10 @@
 import { supabase } from '@rekindle/supabase';
 import { 
   ASIAN_LANGUAGE_CODES, 
-  DEFAULT_TRANSLATIONS,
   type SupportedLanguage,
   type Translations 
 } from './i18n';
+import { DEFAULT_TRANSLATIONS } from './i18n-en';
 
 // =====================================================
 // PRE-TRANSLATION CONFIGURATION

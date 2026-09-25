@@ -171,7 +171,146 @@ export const COMMON_LANGUAGES: Array<{ code: string; label: string }> = [
   { code: 'ha', label: 'Hausa' },
 ];
 
-const languageLabel = (code: string) => COMMON_LANGUAGES.find(l => l.code === code)?.label || code.toUpperCase();
+// Target languages a ministry can offer listeners. The target side is text
+// translation + text-to-speech, which covers far more than the pilot list
+// above (that list still drives the *speaker's* language, which is bound by
+// speech recognition). Codes are ISO 639-1, as the bot expects.
+export const TARGET_LANGUAGES: Array<{ code: string; label: string; aliases?: string[] }> = [
+  { code: 'af', label: 'Afrikaans' },
+  { code: 'am', label: 'Amharic' },
+  { code: 'ar', label: 'Arabic' },
+  { code: 'bn', label: 'Bengali', aliases: ['bangla'] },
+  { code: 'bg', label: 'Bulgarian' },
+  { code: 'my', label: 'Burmese', aliases: ['myanmar'] },
+  { code: 'ca', label: 'Catalan' },
+  { code: 'zh', label: 'Chinese', aliases: ['mandarin', 'chinese simplified'] },
+  { code: 'hr', label: 'Croatian' },
+  { code: 'cs', label: 'Czech' },
+  { code: 'da', label: 'Danish' },
+  { code: 'nl', label: 'Dutch' },
+  { code: 'en', label: 'English' },
+  { code: 'et', label: 'Estonian' },
+  { code: 'tl', label: 'Filipino (Tagalog)', aliases: ['filipino', 'tagalog', 'fil'] },
+  { code: 'fi', label: 'Finnish' },
+  { code: 'fr', label: 'French' },
+  { code: 'de', label: 'German' },
+  { code: 'el', label: 'Greek' },
+  { code: 'gu', label: 'Gujarati' },
+  { code: 'ha', label: 'Hausa' },
+  { code: 'he', label: 'Hebrew' },
+  { code: 'hi', label: 'Hindi' },
+  { code: 'hu', label: 'Hungarian' },
+  { code: 'ig', label: 'Igbo' },
+  { code: 'id', label: 'Indonesian', aliases: ['bahasa indonesia'] },
+  { code: 'it', label: 'Italian' },
+  { code: 'ja', label: 'Japanese' },
+  { code: 'kn', label: 'Kannada' },
+  { code: 'km', label: 'Khmer', aliases: ['cambodian'] },
+  { code: 'ko', label: 'Korean' },
+  { code: 'lo', label: 'Lao', aliases: ['laotian'] },
+  { code: 'lv', label: 'Latvian' },
+  { code: 'lt', label: 'Lithuanian' },
+  { code: 'ms', label: 'Malay', aliases: ['bahasa melayu'] },
+  { code: 'ml', label: 'Malayalam' },
+  { code: 'mr', label: 'Marathi' },
+  { code: 'ne', label: 'Nepali' },
+  { code: 'no', label: 'Norwegian' },
+  { code: 'fa', label: 'Persian', aliases: ['farsi'] },
+  { code: 'pl', label: 'Polish' },
+  { code: 'pt', label: 'Portuguese' },
+  { code: 'pa', label: 'Punjabi' },
+  { code: 'ro', label: 'Romanian' },
+  { code: 'ru', label: 'Russian' },
+  { code: 'sr', label: 'Serbian' },
+  { code: 'si', label: 'Sinhala', aliases: ['sinhalese'] },
+  { code: 'sk', label: 'Slovak' },
+  { code: 'sl', label: 'Slovenian' },
+  { code: 'so', label: 'Somali' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'sw', label: 'Swahili' },
+  { code: 'sv', label: 'Swedish' },
+  { code: 'ta', label: 'Tamil' },
+  { code: 'te', label: 'Telugu' },
+  { code: 'th', label: 'Thai' },
+  { code: 'tr', label: 'Turkish' },
+  { code: 'uk', label: 'Ukrainian' },
+  { code: 'ur', label: 'Urdu' },
+  { code: 'vi', label: 'Vietnamese', aliases: ['tieng viet', 'tiếng việt'] },
+  { code: 'xh', label: 'Xhosa' },
+  { code: 'yo', label: 'Yoruba' },
+  { code: 'zu', label: 'Zulu' },
+];
+
+export const languageLabel = (code: string) =>
+  TARGET_LANGUAGES.find(l => l.code === code)?.label
+  || COMMON_LANGUAGES.find(l => l.code === code)?.label
+  || code.toUpperCase();
+
+// Turn what an admin typed — a code ("de") or a name ("German", "tagalog") —
+// into a language code. Returns null for anything we can't recognise, rather
+// than silently storing e.g. "german" as if it were a code.
+const resolveLanguageInput = (raw: string): { code: string; known: boolean } | null => {
+  const q = raw.trim().toLowerCase();
+  if (!q) return null;
+  const hit = TARGET_LANGUAGES.find(l =>
+    l.code === q || l.label.toLowerCase() === q || l.aliases?.includes(q));
+  if (hit) return { code: hit.code, known: true };
+  // An unlisted but well-formed ISO code (e.g. "yue", "pt-br") is allowed through.
+  if (/^[a-z]{2,3}(-[a-z0-9]{2,4})?$/.test(q)) return { code: q, known: false };
+  return null;
+};
+
+// Searchable picker for the (long) target-language list.
+const LanguagePicker: React.FC<{
+  exclude: string[];
+  onPick: (code: string) => void;
+}> = ({ exclude, onPick }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const options = TARGET_LANGUAGES.filter(l =>
+    !exclude.includes(l.code) &&
+    (!q || l.label.toLowerCase().includes(q) || l.code.startsWith(q) || l.aliases?.some(a => a.includes(q))));
+  return (
+    <Popover open={open} onOpenChange={o => { setOpen(o); if (!o) setQuery(''); }}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" className="justify-between font-normal w-full max-w-[240px]">
+          <span className="truncate">Add a language</span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search languages…"
+            className="h-8 pl-7 text-sm"
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto mt-2 space-y-0.5">
+          {options.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-2.5 py-2">
+              No match. You can also type any language code in the box next to this button.
+            </p>
+          ) : options.map(l => (
+            <button
+              key={l.code}
+              type="button"
+              onClick={() => { onPick(l.code); setOpen(false); setQuery(''); }}
+              className="w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-sm text-left text-gray-700 hover:bg-gray-100"
+            >
+              <span>{l.label}</span>
+              <span className="text-xs text-muted-foreground">{l.code}</span>
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 // 'auto' (2026-08-22) is a real, understood sentinel end to end — not just a
 // display string. The bot (rekindle-translation-bot's AudioPipeline.ts)
@@ -205,6 +344,9 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   // starting point for an admin who's pinning for the first time.
   const lastPinnedSourceLanguageRef = useRef('en');
   const [newLanguageCode, setNewLanguageCode] = useState('');
+  // Last-saved language list, to flag unsaved additions/removals right next
+  // to the list (the Save button is at the very bottom of this long form).
+  const [savedTargetLanguages, setSavedTargetLanguages] = useState<string[]>([]);
   const [pin, setPin] = useState('');
   const [pinSaving, setPinSaving] = useState(false);
   const [hasPin, setHasPin] = useState(false);
@@ -523,6 +665,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
           speaker_identity: data.speaker_identity,
         });
         setHasPin(!!data.pin_hash);
+        setSavedTargetLanguages(data.supported_target_languages || []);
       }
     } catch (err: any) {
       console.error('[MinistryTranslationSettings] load failed:', err);
@@ -580,6 +723,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
       setSavedPerLanguageVoices(nextSaved);
       setPerLanguageVoices(nextSaved);
 
+      setSavedTargetLanguages(config.supported_target_languages);
       toast({ title: 'Translation settings saved' });
     } catch (err: any) {
       console.error('[MinistryTranslationSettings] save failed:', err);
@@ -590,11 +734,35 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
   };
 
   const addLanguage = (codeRaw?: string) => {
-    const code = (codeRaw ?? newLanguageCode).trim().toLowerCase();
-    if (!code || config.supported_target_languages.includes(code)) { setNewLanguageCode(''); return; }
-    setConfig(c => ({ ...c, supported_target_languages: [...c.supported_target_languages, code] }));
+    const raw = codeRaw ?? newLanguageCode;
+    if (!raw.trim()) return;
+    const resolved = resolveLanguageInput(raw);
+    if (!resolved) {
+      toast({
+        title: `"${raw.trim()}" isn't a language we recognise`,
+        description: 'Pick it from "Add a language", or type its language name or code (e.g. German or de).',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const { code, known } = resolved;
     setNewLanguageCode('');
+    if (config.supported_target_languages.includes(code)) {
+      toast({ title: `${languageLabel(code)} is already in the list` });
+      return;
+    }
+    setConfig(c => ({ ...c, supported_target_languages: [...c.supported_target_languages, code] }));
+    if (!known) {
+      toast({
+        title: `Added "${code}"`,
+        description: "This code isn't in our list — check the translation service supports it before a live service.",
+      });
+    }
   };
+
+  const targetLanguagesDirty =
+    savedTargetLanguages.length !== config.supported_target_languages.length ||
+    savedTargetLanguages.some((c, i) => config.supported_target_languages[i] !== c);
 
   const removeLanguage = (code: string) => {
     setConfig(c => ({
@@ -703,25 +871,29 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
               )}
             </div>
             <div className="flex flex-wrap gap-2 items-center pt-1">
-              <Select value="" onValueChange={v => addLanguage(v)}>
-                <SelectTrigger className="max-w-[220px]"><SelectValue placeholder="Add a common language" /></SelectTrigger>
-                <SelectContent>
-                  {COMMON_LANGUAGES.filter(l => !config.supported_target_languages.includes(l.code)).map(l => (
-                    <SelectItem key={l.code} value={l.code}>{l.label} ({l.code})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LanguagePicker exclude={config.supported_target_languages} onPick={code => addLanguage(code)} />
               <Input
                 value={newLanguageCode}
                 onChange={e => setNewLanguageCode(e.target.value)}
-                placeholder="or type a code, e.g. tl"
-                className="max-w-[160px]"
+                placeholder="or type a name or code"
+                className="max-w-[200px]"
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLanguage(); } }}
               />
-              <Button type="button" variant="outline" size="sm" onClick={() => addLanguage()}>
+              <Button type="button" variant="outline" size="sm" onClick={() => addLanguage()} aria-label="Add language">
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+            {targetLanguagesDirty && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 mt-2">
+                <span className="text-xs text-amber-800">
+                  Language changes aren't saved yet — they won't appear for listeners or in services until you save.
+                </span>
+                <Button type="button" size="sm" onClick={save} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Save now
+                </Button>
+              </div>
+            )}
           </div>
 
           {config.supported_target_languages.length > 0 && (

@@ -1,11 +1,16 @@
 // Supabase Edge Function: send-ministry-email
 // Deploy with: supabase functions deploy send-ministry-email
 //
-// Required env secrets (set in Supabase Dashboard ? Settings ? Edge Functions):
-//   RESEND_API_KEY   � from resend.com
-//   FROM_EMAIL       � e.g. announcements@yourdomain.com
-//   SUPABASE_URL     � auto-injected
-//   SUPABASE_SERVICE_ROLE_KEY � auto-injected
+// Required env secrets (set in Supabase Dashboard → Edge Functions → Secrets):
+//   RESEND_API_KEY   — from resend.com
+//   FROM_EMAIL       — e.g. notifications@rekindlebc.com (a Resend-verified sender)
+//   SUPABASE_URL     — auto-injected
+//   SUPABASE_SERVICE_ROLE_KEY — auto-injected
+//
+// Callers: ministry admins (MinistryAnnouncementsManager, MinistryBroadcast),
+// platform admins (MinistryGroupsManager) and the process-scheduled-broadcasts
+// job (service-role key). Anyone else is rejected — this sends from the
+// platform's own domain to a whole ministry's member list.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -63,14 +68,44 @@ serve(async (req) => {
 
     const resendKey = Deno.env.get("RESEND_API_KEY");
     const fromEmail =
-      Deno.env.get("FROM_EMAIL") || "announcements@gracecounsel.app";
+      Deno.env.get("FROM_EMAIL") || "notifications@rekindlebc.com";
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
     // -- Supabase client ---------------------------------------------------
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      serviceRoleKey,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
+
+    // -- Authorization -----------------------------------------------------
+    // This runs with the service-role key and emails an entire ministry, so
+    // the caller must be the scheduled-broadcast job (service-role key), an
+    // admin of THIS ministry, or a platform admin.
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const isServiceCall = !!serviceRoleKey && token === serviceRoleKey;
+    if (!isServiceCall) {
+      const { data: { user }, error: userError } = token
+        ? await supabase.auth.getUser(token)
+        : { data: { user: null }, error: null };
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized: please sign in again." }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const [{ data: isMinistryAdmin }, { data: profile }] = await Promise.all([
+        supabase.rpc("is_group_admin", { p_ministry_id: ministryId, p_user_id: user.id }),
+        supabase.from("user_profiles").select("role").eq("user_id", user.id).maybeSingle(),
+      ]);
+      const isPlatformAdmin = ["admin", "super_admin"].includes(profile?.role ?? "");
+      if (!isMinistryAdmin && !isPlatformAdmin) {
+        return new Response(
+          JSON.stringify({ error: "Only this ministry's admins can send ministry emails." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // -- Fetch ministry name -----------------------------------------------
     // NOTE: this previously read from `ministries`/`ministry_members`/`profiles`
@@ -117,8 +152,9 @@ serve(async (req) => {
     );
 
     if (recipients.length === 0) {
-      // Still mark announcement as notified, just no recipients
-      await supabase
+      // Still mark announcement as notified, just no recipients.
+      // (Query builders have no .catch() — read the error off the result.)
+      const { error: logError } = await supabase
         .from("broadcast_logs")
         .insert({
           title,
@@ -129,8 +165,8 @@ serve(async (req) => {
           failed_sends: 0,
           sent_at: new Date().toISOString(),
           metadata: { announcementId, ministryId, targetAudience },
-        })
-        .catch((e) => console.error("Log error:", e));
+        });
+      if (logError) console.error("Log error:", logError);
 
       return new Response(
         JSON.stringify({
@@ -147,7 +183,7 @@ serve(async (req) => {
     // -- Build HTML email --------------------------------------------------
     const priorityBanner =
       priority === "urgent"
-        ? `<div style="background:#ef4444;color:#fff;padding:8px 24px;font-weight:700;text-align:center;font-size:13px;letter-spacing:.5px;">? URGENT ANNOUNCEMENT</div>`
+        ? `<div style="background:#ef4444;color:#fff;padding:8px 24px;font-weight:700;text-align:center;font-size:13px;letter-spacing:.5px;">&#9888; URGENT ANNOUNCEMENT</div>`
         : priority === "high"
         ? `<div style="background:#f97316;color:#fff;padding:8px 24px;font-weight:700;text-align:center;font-size:13px;letter-spacing:.5px;">HIGH PRIORITY</div>`
         : "";
@@ -198,7 +234,7 @@ serve(async (req) => {
         <tr><td style="padding:20px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;">
           <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
             You're receiving this because you're a member of <strong>${ministryName}</strong>.<br/>
-            This announcement was sent via Grace Counsel.
+            This announcement was sent via ReKindle.
           </p>
         </td></tr>
       </table>
@@ -212,8 +248,8 @@ serve(async (req) => {
     let failed = 0;
 
     if (!resendKey) {
-      // Development mode � log and return simulated success
-      console.warn("RESEND_API_KEY not set � simulating email delivery");
+      // Development mode — log and return simulated success
+      console.warn("RESEND_API_KEY not set — simulating email delivery");
       console.log("Would send to:", recipients.map((r) => r.email));
       successful = recipients.length;
     } else {
@@ -260,7 +296,7 @@ serve(async (req) => {
     );
 
     // -- Write broadcast log -----------------------------------------------
-    await supabase
+    const { error: logError } = await supabase
       .from("broadcast_logs")
       .insert({
         title,
@@ -271,15 +307,15 @@ serve(async (req) => {
         failed_sends: failed,
         sent_at: new Date().toISOString(),
         metadata: { announcementId, ministryId, targetAudience },
-      })
-      .catch((e) => console.error("Failed to write broadcast log:", e));
+      });
+    if (logError) console.error("Failed to write broadcast log:", logError);
 
     return new Response(
       JSON.stringify({
         success: true,
         message: resendKey
           ? "Ministry announcement emails sent"
-          : "Ministry announcement emails sent (simulated � set RESEND_API_KEY for production)",
+          : "Ministry announcement emails sent (simulated — set RESEND_API_KEY for production)",
         sent: successful,
         failed,
         total: recipients.length,

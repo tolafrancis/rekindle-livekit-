@@ -14,7 +14,7 @@ import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrC
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2 } from 'lucide-react';
 import type { BadgeProps } from '@rekindle/ui/badge';
-import { COMMON_LANGUAGES } from './MinistryTranslationSettings';
+import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
 
 interface MinistryTranslationServiceManagerProps {
   ministryId: string;
@@ -684,7 +684,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     <SelectTrigger><SelectValue placeholder="Choose a language" /></SelectTrigger>
                     <SelectContent>
                       {supportedLanguages.map(code => (
-                        <SelectItem key={code} value={code}>{code.toUpperCase()}</SelectItem>
+                        <SelectItem key={code} value={code}>{languageLabel(code)} ({code})</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -755,7 +755,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                   <SelectTrigger><SelectValue placeholder="Choose a language" /></SelectTrigger>
                   <SelectContent>
                     {supportedLanguages.map(code => (
-                      <SelectItem key={code} value={code}>{code.toUpperCase()}</SelectItem>
+                      <SelectItem key={code} value={code}>{languageLabel(code)} ({code})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

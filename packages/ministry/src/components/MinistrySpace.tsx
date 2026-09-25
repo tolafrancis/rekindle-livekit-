@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -19,7 +19,6 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { getMinistryEntitlements, FREE_ENTITLEMENTS } from '@rekindle/auth/ministryEntitlements';
-import { VideoMessagePlayer } from '@rekindle/live/components/VideoMessagePlayer';
 import {
   ArrowLeft, Home, BookOpen, Heart, Calendar, MessageSquare,
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
@@ -28,6 +27,44 @@ import {
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
   User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard,
 } from 'lucide-react';
+
+// Every workspace tab (live, meetings, webinars, recordings, settings, the
+// shared Word/Prayer/Community screens …) is its own chunk, loaded when the tab
+// is opened, instead of all of them downloading on entering a ministry.
+const MinistrySettingsHub = lazy(() => import('./MinistrySettingsHub').then((m) => ({ default: m.MinistrySettingsHub })));
+const MinistryLiveTechSettings = lazy(() => import('./MinistryLiveTechSettings').then((m) => ({ default: m.MinistryLiveTechSettings })));
+const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
+const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
+const DevotionalModule = lazy(() => import('@rekindle/features/components/DevotionalModule').then((m) => ({ default: m.DevotionalModule })));
+const MinistryInteractiveMeetings = lazy(() => import('./MinistryInteractiveMeetings').then((m) => ({ default: m.MinistryInteractiveMeetings })));
+const WebinarDashboard = lazy(() => import('@rekindle/live/webinar/WebinarDashboard').then((m) => ({ default: m.WebinarDashboard })));
+const MinistryRecordingsTab = lazy(() => import('./MinistryRecordingsTab').then((m) => ({ default: m.MinistryRecordingsTab })));
+const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default: m.MLiveChannel })));
+const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
+const DiscoverSmallGroups = lazy(() => import('./DiscoverSmallGroups').then((m) => ({ default: m.DiscoverSmallGroups })));
+const MySmallGroups = lazy(() => import('./MySmallGroups').then((m) => ({ default: m.MySmallGroups })));
+const BibleReadingPlan = lazy(() => import('@rekindle/features/components/BibleReadingPlan').then((m) => ({ default: m.BibleReadingPlan })));
+const ScriptureMemory = lazy(() => import('@rekindle/features/components/ScriptureMemory').then((m) => ({ default: m.ScriptureMemory })));
+const BookSummaries = lazy(() => import('@rekindle/features/components/BookSummaries').then((m) => ({ default: m.BookSummaries })));
+const DevotionalLibrary = lazy(() => import('@rekindle/features/components/DevotionalLibrary').then((m) => ({ default: m.DevotionalLibrary })));
+const PrayerLibrary = lazy(() => import('@rekindle/features/components/PrayerLibrary').then((m) => ({ default: m.PrayerLibrary })));
+const PrayerJournal = lazy(() => import('@rekindle/features/components/PrayerJournal').then((m) => ({ default: m.PrayerJournal })));
+const CommunityPrayerWall = lazy(() => import('@rekindle/features/components/CommunityPrayerWall').then((m) => ({ default: m.CommunityPrayerWall })));
+const CommunityActivityFeed = lazy(() => import('@rekindle/features/components/CommunityActivityFeed').then((m) => ({ default: m.CommunityActivityFeed })));
+const EnhancedPrayerChallenges = lazy(() => import('@rekindle/features/components/EnhancedPrayerChallenges').then((m) => ({ default: m.EnhancedPrayerChallenges })));
+const MinistryBroadcast = lazy(() => import('./MinistryBroadcast'));
+// Pastor's video-message player pulls in hls.js (~500 KB); only load it when a
+// video is actually played.
+const VideoMessagePlayer = lazy(() => import('@rekindle/live/components/VideoMessagePlayer').then((m) => ({ default: m.VideoMessagePlayer })));
+
+const MINISTRY_FEED_PAGE = 20;
+type FeedKind = 'prayers' | 'testimonies' | 'revelations';
+
+const TabFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+  </div>
+);
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
 // mobile hamburger menu so both stay in sync.
@@ -45,22 +82,10 @@ const MINISTRY_NAV = [
   { id: 'webinars', label: 'Webinars', icon: Radio },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
-import { MinistrySettingsHub, SettingsSectionId } from './MinistrySettingsHub';
-import { MinistryLiveTechSettings } from './MinistryLiveTechSettings';
-import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
-import { MinistryRulesManager } from './MinistryRulesManager';
+import type { SettingsSectionId } from './MinistrySettingsHub';
 import { AcceptRulesModal } from './AcceptRulesModal';
-import MinistryBroadcast from './MinistryBroadcast';
-import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
-import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
-import { WebinarDashboard } from '@rekindle/live/webinar/WebinarDashboard';
-import { MinistryRecordingsTab } from './MinistryRecordingsTab';
-import { MLiveChannel } from './MLiveChannel';
-import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
-import { DiscoverSmallGroups } from './DiscoverSmallGroups';
-import { MySmallGroups } from './MySmallGroups';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
@@ -70,15 +95,6 @@ import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
 import { recordDailyActivity } from '@rekindle/features/streak';
 import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
-import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan';
-import { ScriptureMemory } from '@rekindle/features/components/ScriptureMemory';
-import { BookSummaries } from '@rekindle/features/components/BookSummaries';
-import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibrary';
-import { PrayerLibrary } from '@rekindle/features/components/PrayerLibrary';
-import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
-import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
-import { CommunityActivityFeed } from '@rekindle/features/components/CommunityActivityFeed';
-import { EnhancedPrayerChallenges } from '@rekindle/features/components/EnhancedPrayerChallenges';
 import { DeclarationCard } from '@rekindle/features/components/DeclarationCard';
 import { AffirmationCard } from '@rekindle/features/components/AffirmationCard';
 import { useUserAnalytics } from '@rekindle/features/useUserAnalytics';
@@ -323,6 +339,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [events, setEvents] = useState<MinistryEvent[]>([]);
   const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([]);
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
+  // Member-generated feeds (prayer requests, testimonies, revelations) are
+  // fetched MINISTRY_FEED_PAGE rows at a time. Refreshes re-fetch however many
+  // are already on screen, so "Load more" survives the frequent reloads.
+  const [feedHasMore, setFeedHasMore] = useState<Record<FeedKind, boolean>>({ prayers: false, testimonies: false, revelations: false });
+  const [feedLoadingMore, setFeedLoadingMore] = useState<FeedKind | null>(null);
+  const feedCountRef = useRef<Record<FeedKind, number>>({ prayers: 0, testimonies: 0, revelations: 0 });
   const [devotionals, setDevotionals] = useState<MinistryDevotional[]>([]);
   const [videoMessages, setVideoMessages] = useState<MinistryVideoMessage[]>([]);
   // Ministry Rules & Guidelines — rulesItems is the currently-published
@@ -402,6 +424,51 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Hidden in native builds: no purchase/upgrade surfaces there (Phase 0 — Apple 3.1.1).
   const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess && canShowPurchaseUI();
 
+  feedCountRef.current = {
+    prayers: prayerRequests.length,
+    testimonies: testimonies.length,
+    revelations: mRevelations.length,
+  };
+
+  const loadMoreFeed = async (kind: FeedKind) => {
+    const from = feedCountRef.current[kind];
+    const to = from + MINISTRY_FEED_PAGE - 1;
+    setFeedLoadingMore(kind);
+    try {
+      const query =
+        kind === 'prayers'
+          ? supabase.from('ministry_prayer_requests').select('*').eq('ministry_id', ministry.id).eq('status', 'active')
+          : kind === 'testimonies'
+            ? supabase.from('ministry_testimonies').select('*').eq('ministry_id', ministry.id).eq('is_approved', true)
+            : supabase.from('community_revelations').select('*').eq('ministry_id', ministry.id).eq('is_published', true).eq('is_hidden', false);
+      const { data, error } = await query.order('created_at', { ascending: false }).range(from, to);
+      if (error) throw error;
+      const rows: any[] = data || [];
+      const appendNew = <T extends { id: string }>(prev: T[], next: T[]) => {
+        const seen = new Set(prev.map(r => r.id));
+        return [...prev, ...next.filter(r => !seen.has(r.id))];
+      };
+      if (kind === 'prayers') setPrayerRequests(prev => appendNew(prev, rows));
+      else if (kind === 'testimonies') setTestimonies(prev => appendNew(prev, rows));
+      else setMRevelations(prev => appendNew(prev, rows.map(r => ({ ...r, liked: false }))));
+      setFeedHasMore(prev => ({ ...prev, [kind]: rows.length === MINISTRY_FEED_PAGE }));
+    } catch (err) {
+      console.error(`Error loading more ${kind}:`, err);
+    } finally {
+      setFeedLoadingMore(null);
+    }
+  };
+
+  const renderLoadMore = (kind: FeedKind) =>
+    feedHasMore[kind] ? (
+      <div className="flex justify-center pt-3">
+        <Button variant="outline" onClick={() => loadMoreFeed(kind)} disabled={feedLoadingMore === kind}>
+          {feedLoadingMore === kind && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          {t('common', 'loadMore', 'Load more')}
+        </Button>
+      </div>
+    ) : null;
+
   const loadMinistryData = useCallback(async () => {
     setLoading(true);
     try {
@@ -412,13 +479,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       expiryFloor.setHours(0, 0, 0, 0);
       expiryFloor.setDate(expiryFloor.getDate() - 5);
       const expiryFloorISO = expiryFloor.toISOString();
+      const prayersLimit = Math.max(MINISTRY_FEED_PAGE, feedCountRef.current.prayers);
+      const testimoniesLimit = Math.max(MINISTRY_FEED_PAGE, feedCountRef.current.testimonies);
       const [announcementsRes, eventsRes, prayersRes, testimoniesRes, devotionalsRes, prayerLibraryRes, campaignsRes, videoMessagesRes] = await Promise.all([
         supabase.from('ministry_announcements').select('*').eq('ministry_id', ministry.id)
           .not('status', 'in', '("draft","scheduled","expired")')
           .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
         supabase.from('ministry_events').select('*').eq('ministry_id', ministry.id).order('start_time', { ascending: true }),
-        supabase.from('ministry_prayer_requests').select('*').eq('ministry_id', ministry.id).eq('status', 'active').order('created_at', { ascending: false }),
-        supabase.from('ministry_testimonies').select('*').eq('ministry_id', ministry.id).eq('is_approved', true).order('created_at', { ascending: false }),
+        supabase.from('ministry_prayer_requests').select('*').eq('ministry_id', ministry.id).eq('status', 'active').order('created_at', { ascending: false })
+          .limit(prayersLimit),
+        supabase.from('ministry_testimonies').select('*').eq('ministry_id', ministry.id).eq('is_approved', true).order('created_at', { ascending: false })
+          .limit(testimoniesLimit),
         supabase.from('ministry_devotionals')
           .select('*')
           .eq('ministry_id', ministry.id)
@@ -451,6 +522,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       setEvents(eventsRes.data || []);
       setPrayerRequests(prayersRes.data || []);
       setTestimonies(testimoniesRes.data || []);
+      setFeedHasMore(prev => ({
+        ...prev,
+        prayers: (prayersRes.data?.length ?? 0) === prayersLimit,
+        testimonies: (testimoniesRes.data?.length ?? 0) === testimoniesLimit,
+      }));
       setVideoMessages(videoMessagesRes.data || []);
 
       // Daily-devotional source (0149): if this ministry pointed its homepage at an
@@ -1025,14 +1101,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     setMQaLoading(true);
 
     // Load ministry-scoped revelations
+    const revLimit = Math.max(MINISTRY_FEED_PAGE, feedCountRef.current.revelations);
     const { data: revData } = await supabase
       .from('community_revelations')
       .select('*')
       .eq('ministry_id', ministry.id)
       .eq('is_published', true)
       .eq('is_hidden', false)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(revLimit);
     setMRevelations((revData || []).map(r => ({ ...r, liked: false })));
+    setFeedHasMore(prev => ({ ...prev, revelations: (revData?.length ?? 0) === revLimit }));
     setMRevLoading(false);
 
     // Load ministry-scoped questions
@@ -1189,19 +1268,22 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
+    <Suspense fallback={<TabFallback />}>
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Pastor's Video Message player overlay */}
       {showVideoPlayer && activeVideoMessage && (
-        <VideoMessagePlayer
-          videoId={activeVideoMessage.id}
-          ministryId={ministry.id}
-          title={activeVideoMessage.title}
-          speakerName={activeVideoMessage.speaker_name}
-          playbackUrl={activeVideoMessage.playback_url!}
-          captionsUrl={activeVideoMessage.captions_url}
-          shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
-          onClose={() => setShowVideoPlayer(false)}
-        />
+        <Suspense fallback={null}>
+          <VideoMessagePlayer
+            videoId={activeVideoMessage.id}
+            ministryId={ministry.id}
+            title={activeVideoMessage.title}
+            speakerName={activeVideoMessage.speaker_name}
+            playbackUrl={activeVideoMessage.playback_url!}
+            captionsUrl={activeVideoMessage.captions_url}
+            shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
+            onClose={() => setShowVideoPlayer(false)}
+          />
+        </Suspense>
       )}
 
       {/* Blocking Rules & Guidelines gate — see the rules-loading effect
@@ -1477,6 +1559,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* Main content */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <Suspense fallback={<TabFallback />}>
         {/* Live Tab - MLiveChannel */}
         {activeTab === 'live' && (
           <MLiveChannel
@@ -2198,6 +2281,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </Button>
             </div>
             {prayerRequests.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {prayerRequests.map(prayer => (
                   <Card key={prayer.id}>
@@ -2224,6 +2308,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   </Card>
                 ))}
               </div>
+              {renderLoadMore('prayers')}
+              </>
             ) : (
               <Card className="p-12 text-center">
                 <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
@@ -2249,6 +2335,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </Button>
             </div>
             {testimonies.length > 0 ? (
+              <>
               <div className="space-y-4">
                 {testimonies.map(testimony => (
                   <Card key={testimony.id}>
@@ -2262,6 +2349,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   </Card>
                 ))}
               </div>
+              {renderLoadMore('testimonies')}
+              </>
             ) : (
               <Card className="p-12 text-center">
                 <Star className="h-12 w-12 mx-auto text-gray-400 mb-4" />
@@ -2497,6 +2586,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         </CardContent>
                       </Card>
                     ))}
+                    {renderLoadMore('revelations')}
                   </div>
                 )}
               </div>
@@ -2899,6 +2989,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {prayerSubTab === 'wall' && <CommunityPrayerWall />}
           </div>
         )}
+        </Suspense>
           </div>
         </div>
       </div>
@@ -3136,6 +3227,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         />
       )}
     </div>
+    </Suspense>
     </TakeDeclarationContext.Provider>
   );
 };

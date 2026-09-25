@@ -33,7 +33,7 @@ export function useNotifications() {
     setNotifications(items);
     setUnreadCount(items.filter(n => !n.is_read).length);
     setLoading(false);
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -54,7 +54,7 @@ export function useNotifications() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user?.id]);
 
   const markRead = useCallback(async (id: string) => {
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
@@ -68,7 +68,7 @@ export function useNotifications() {
       .eq('user_id', user.id).eq('is_read', false);
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     setUnreadCount(0);
-  }, [user]);
+  }, [user?.id]);
 
   const dismiss = useCallback(async (id: string) => {
     await supabase.from('notifications').delete().eq('id', id);
