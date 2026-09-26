@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { TutorialContent, TUTORIAL_CSS, TUTORIAL_TOC_GROUPS } from './RekindleTutorialPage';
 
 const COMPANY = 'ReKindle BC';
 const WEBSITE = 'rekindlebc.com';
@@ -60,6 +61,7 @@ const PILL_LINKS: Array<[string, string]> = [
   ['crm', 'Ministry CRM'],
   ['small-groups', 'Small Groups'],
   ['giving', 'Giving & Gift Aid'],
+  ['tutorial', 'Step-by-step tutorial'],
 ];
 
 const TOC_ITEMS: Array<[string, string]> = [
@@ -82,6 +84,7 @@ const TOC_ITEMS: Array<[string, string]> = [
   ['whatsapp-setup', 'Connect WhatsApp — Step by Step'],
   ['pastoral', 'Pastoral Messages'],
   ['translation', 'Live Translation'],
+  ['tutorial', 'Step-by-step tutorial'],
   ['where', 'Where to use Rekindle'],
   ['privacy', 'Data protection & safeguarding'],
   ['bringing', 'Bringing Rekindle to your ministry'],
@@ -93,12 +96,13 @@ const RekindleGuidePage: React.FC = () => {
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0d0a1e 0%, #0a0718 100%)', color: '#fff' }}>
       <style>{`
+        ${TUTORIAL_CSS}
         .guide-body h2 { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 1.6rem; font-weight: 700; color: #fff; margin: 0 0 .9rem; }
         .guide-body p { font-size: .92rem; color: rgba(255,255,255,.65); line-height: 1.85; margin-bottom: .9rem; }
         .guide-body .eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #a78bfa; margin: 0 0 .5rem; }
         .guide-body .kicker { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.35); margin: 1.4rem 0 .6rem; }
         .guide-body .steps, .guide-body .cases { list-style: none; padding: 0; margin: 0 0 .9rem; display: flex; flex-direction: column; gap: .6rem; }
-        .guide-body .steps li { display: grid; grid-template-columns: 1.6rem 1fr; gap: .65rem; font-size: .92rem; color: rgba(255,255,255,.65); line-height: 1.6; counter-increment: step; }
+        .guide-body .steps li { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); gap: .65rem; font-size: .92rem; color: rgba(255,255,255,.65); line-height: 1.6; counter-increment: step; }
         .guide-body .steps { counter-reset: step; }
         .guide-body .steps li::before { content: counter(step); font-family: 'Cormorant Garamond', serif; font-weight: 700; font-size: .9rem; color: #a78bfa; width: 1.6rem; height: 1.6rem; border-radius: 999px; border: 1px solid rgba(167,139,250,.35); display: flex; align-items: center; justify-content: center; }
         .guide-body .cases li { padding-left: 1rem; position: relative; font-size: .92rem; color: rgba(255,255,255,.65); line-height: 1.6; }
@@ -156,6 +160,16 @@ const RekindleGuidePage: React.FC = () => {
               <a key={id} href={`#${id}`}>{label}</a>
             ))}
           </nav>
+          {TUTORIAL_TOC_GROUPS.map(([label, items]) => (
+            <div key={label} className="guide-toc-group" style={{ marginTop: '1rem' }}>
+              <p className="guide-toc-label">Tutorial · {label}</p>
+              <nav className="guide-toc">
+                {items.map(([id, itemLabel]) => (
+                  <a key={id} href={`#${id}`}>{itemLabel}</a>
+                ))}
+              </nav>
+            </div>
+          ))}
         </div>
 
         <div className="guide-body">
@@ -479,6 +493,14 @@ const RekindleGuidePage: React.FC = () => {
             <p>An <strong>edge agent</strong> is a small piece of software installed on a dedicated computer at your venue and wired directly into your sound mixer. It runs the same live transcription and translation as Broadcast and Meeting Translation, but delivers the translated audio as its own feed through your venue's sound system — a dedicated language channel a congregant can listen to on the spot — alongside the same translated text everyone can follow on their own phone. It's the physical, in-room counterpart to Rekindle's cloud-based translation: built for ministries that want translated audio available through their existing PA setup, not only on-screen.</p>
             <p><em>Leader setup:</em> from your ministry's dashboard (Ministries → Manage), tap Live, then Live Translation.</p>
           </section>
+
+          <section id="tutorial" className="guide-section">
+            <p className="eyebrow">Tutorial</p>
+            <h2>Using Rekindle, step by step</h2>
+            <p>Exactly where to tap, in order, for everything members and leaders do most. Follow along with the app open beside you.</p>
+          </section>
+
+          <TutorialContent />
 
           <section id="where" className="guide-section">
             <p className="eyebrow">Everyday use</p>
