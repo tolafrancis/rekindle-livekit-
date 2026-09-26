@@ -12,7 +12,8 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrCode';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
-import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2 } from 'lucide-react';
+import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2, Captions } from 'lucide-react';
+import { ObsCaptionSetupDialog } from '@rekindle/live/components/ObsCaptionSetupDialog';
 import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
 
@@ -342,6 +343,10 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     }
   };
 
+  // Session whose "Captions in OBS" setup dialog is open (Browser Source link
+  // for burning translated captions into the OBS output).
+  const [obsCaptionSessionId, setObsCaptionSessionId] = useState<string | null>(null);
+
   const copyDisplayLink = (sessionId: string) => {
     const url = `${window.location.origin}/display/${sessionId}`;
     navigator.clipboard.writeText(url).then(
@@ -523,6 +528,11 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     <Copy className="h-4 w-4" />
                   </Button>
                   {session.status !== 'ended' && (
+                    <Button variant="ghost" size="sm" onClick={() => setObsCaptionSessionId(session.id)} title="Captions in OBS">
+                      <Captions className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {session.status !== 'ended' && (
                     <Button variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this speaker link">
                       <Square className="h-4 w-4" />
                     </Button>
@@ -640,6 +650,11 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     ) : (
                       <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy display link">
                         <Copy className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {session.status !== 'ended' && (
+                      <Button variant="ghost" size="sm" onClick={() => setObsCaptionSessionId(session.id)} title="Captions in OBS">
+                        <Captions className="h-4 w-4" />
                       </Button>
                     )}
                     {session.status !== 'ended' && (
@@ -865,6 +880,13 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {obsCaptionSessionId && (
+        <ObsCaptionSetupDialog
+          sessionId={obsCaptionSessionId}
+          open
+          onOpenChange={(o) => { if (!o) setObsCaptionSessionId(null); }}
+        />
+      )}
     </div>
   );
 };

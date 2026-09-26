@@ -8,6 +8,7 @@ import { Progress } from '@rekindle/ui/progress';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
+import { localizedSelect, withCurrentTranslation } from '../localizedSelect';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { useViewHistory } from '../hooks/useViewHistory';
@@ -69,6 +70,8 @@ interface UserProgress {
   is_completed: boolean;
 }
 
+const SERIES_LIST_COLUMNS = ['id', 'title', 'description', 'category_id', 'subtitle', 'author', 'cover_image_url', 'total_days', 'difficulty_level', 'tags', 'is_featured', 'is_published', 'published_at', 'created_at', 'updated_at', 'fixed_start_date', 'start_behavior', 'ministry_id', 'background_music_url', 'target_audience', 'keywords', 'language', 'author_social_url'] as const;
+
 export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hidePlanBanner = false } = {}) => {
   const { user } = useAuth();
   const { t, language, getLocalizedContent } = useLanguage();
@@ -104,7 +107,10 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
     return () => {
       isMounted.current = false;
     };
-  }, [user]);
+    // Keyed on the id (a token refresh shouldn't refetch) and the language
+    // (the series list fetches only the current language's translations).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, language]);
 
   const loadCategories = async () => {
     try {
@@ -128,9 +134,11 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
     setLoading(true);
 
     try {
+      // Every column except the all-languages `translations` blob, which was
+      // ~90% of this list's download (see localizedSelect).
       let query = supabase
         .from('devotional_series')
-        .select('*')
+        .select(localizedSelect(SERIES_LIST_COLUMNS, language))
         .eq('is_published', true)
         .order('is_featured', { ascending: false })
         .order('created_at', { ascending: false });
@@ -139,17 +147,20 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
         query = query.eq('category_id', selectedCategory);
       }
 
-      const { data: seriesData, error: seriesError } = await query;
+      // The user's bookmarks don't depend on the series list, so fetch both
+      // at once instead of one round trip after the other.
+      const [{ data: rawSeries, error: seriesError }, bookmarksRes] = await Promise.all([
+        query,
+        user
+          ? supabase.from('devotional_bookmarks').select('series_id').eq('user_id', user.id)
+          : Promise.resolve(null),
+      ]);
       if (seriesError) throw seriesError;
+      const seriesData = withCurrentTranslation(rawSeries as any[], language);
 
       // Load bookmarks if user is logged in
       if (user && seriesData) {
-        const seriesIds = seriesData.map(s => s.id);
-        const { data: bookmarksData } = await supabase
-          .from('devotional_bookmarks')
-          .select('series_id')
-          .eq('user_id', user.id)
-          .in('series_id', seriesIds);
+        const bookmarksData = bookmarksRes?.data;
 
         const bookmarkedIds = new Set(bookmarksData?.map(b => b.series_id) || []);
 

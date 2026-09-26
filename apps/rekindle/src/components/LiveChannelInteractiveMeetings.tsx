@@ -55,6 +55,7 @@ import DailyVideoCall from './DailyVideoCall';
 import { HlsPlayer } from './HlsPlayer';
 import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@/lib/videoBackend';
+import { getRoomOccupancy, leavePatch } from '@rekindle/live/roomOccupancy';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
@@ -257,13 +258,27 @@ const EnhancedVideoCallWrapper = ({
   useEffect(() => {
     if (isHost) return;
     let cancelled = false;
+    // A false is_active isn't proof the host ended it: the flag is client-
+    // maintained, and a participant dropping off could flip it while the
+    // host was still live (then everyone else was told "the host has ended
+    // this meeting"). For regular meetings, confirm with LiveKit that the
+    // room is actually empty — "End for all" deletes the room, so a real end
+    // reads 0. If occupancy can't be checked (e.g. our own network is what
+    // dropped), don't end — the 4s poll re-checks once we're back.
+    // Webinar audiences are HLS-only viewers, never in the room, so they
+    // keep trusting the flag.
+    const onInactive = async () => {
+      if (isWebinar) { if (!cancelled) setMeetingEnded(true); return; }
+      const others = await getRoomOccupancy(meeting.room_name);
+      if (!cancelled && others === 0) setMeetingEnded(true);
+    };
     const check = async () => {
       const { data } = await supabase
         .from('live_channel_video_meetings')
         .select('is_active')
         .eq('id', meeting.id)
         .maybeSingle();
-      if (!cancelled && data && data.is_active === false) setMeetingEnded(true);
+      if (!cancelled && data && data.is_active === false) await onInactive();
     };
     check();
     const poll = setInterval(check, 4000);
@@ -274,7 +289,7 @@ const EnhancedVideoCallWrapper = ({
         .channel(`lc-meeting-status-${meeting.id}`)
         .on('postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'live_channel_video_meetings', filter: `id=eq.${meeting.id}` },
-          (payload) => { if ((payload.new as any)?.is_active === false) setMeetingEnded(true); })
+          (payload) => { if ((payload.new as any)?.is_active === false) onInactive(); })
         .subscribe();
     } catch { statusChannel = null; }
 
@@ -283,7 +298,7 @@ const EnhancedVideoCallWrapper = ({
       clearInterval(poll);
       try { if (statusChannel) supabase.removeChannel(statusChannel); } catch { /* noop */ }
     };
-  }, [isHost, meeting.id]);
+  }, [isWebinar, isHost, meeting.id, meeting.room_name]);
 
   // Notify + auto-close the audience when the host ends the meeting.
   useEffect(() => {
@@ -1460,7 +1475,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     try {
       const { data: freshMeeting } = await supabase
         .from('live_channel_video_meetings')
-        .select('is_active')
+        .select('is_active, participant_count')
         .eq('id', meeting.id)
         .single();
       
@@ -1481,7 +1496,9 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       const { error: countError } = await supabase
         .from('live_channel_video_meetings')
         .update({ 
-          participant_count: meeting.participant_count + 1 
+          // From the fresh row, not the list's snapshot — a stale snapshot
+          // is how the count drifted low enough for a leave to end a live meeting.
+          participant_count: (freshMeeting?.participant_count ?? meeting.participant_count) + 1 
         })
         .eq('id', meeting.id);
 
@@ -1516,13 +1533,10 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
           .eq('id', meeting.id);
       } else {
-        const newCount = Math.max(0, meeting.participant_count - 1);
-        const patch: Record<string, unknown> = { participant_count: newCount };
-        if (newCount === 0) {
-          patch.is_active = false;
-          patch.ended_at = new Date().toISOString();
-        }
-        await supabase.from('live_channel_video_meetings').update(patch).eq('id', meeting.id);
+        await supabase
+          .from('live_channel_video_meetings')
+          .update(await leavePatch('live_channel_video_meetings', meeting))
+          .eq('id', meeting.id);
       }
     } catch (error) {
       console.error('Error leaving meeting:', error);

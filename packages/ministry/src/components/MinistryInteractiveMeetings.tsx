@@ -56,6 +56,7 @@ import DailyVideoCall from '@rekindle/live/components/DailyVideoCall';
 import { HlsPlayer } from '@rekindle/live/components/HlsPlayer';
 import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
+import { getRoomOccupancy, leavePatch } from '@rekindle/live/roomOccupancy';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from '@rekindle/live/components/MeetingReactions';
@@ -249,13 +250,27 @@ const EnhancedVideoCallWrapper = ({
   useEffect(() => {
     if (isHost) return;
     let cancelled = false;
+    // A false is_active isn't proof the host ended it: the flag is client-
+    // maintained, and a participant dropping off could flip it while the
+    // host was still live (then everyone else was told "the host has ended
+    // this meeting"). For regular meetings, confirm with LiveKit that the
+    // room is actually empty — "End for all" deletes the room, so a real end
+    // reads 0. If occupancy can't be checked (e.g. our own network is what
+    // dropped), don't end — the 4s poll re-checks once we're back.
+    // Webinar audiences are HLS-only viewers, never in the room, so they
+    // keep trusting the flag.
+    const onInactive = async () => {
+      if (isWebinar) { if (!cancelled) setMeetingEnded(true); return; }
+      const others = await getRoomOccupancy(meeting.room_name);
+      if (!cancelled && others === 0) setMeetingEnded(true);
+    };
     const check = async () => {
       const { data } = await supabase
         .from('ministry_video_meetings')
         .select('is_active')
         .eq('id', meeting.id)
         .maybeSingle();
-      if (!cancelled && data && data.is_active === false) setMeetingEnded(true);
+      if (!cancelled && data && data.is_active === false) await onInactive();
     };
     check();
     const poll = setInterval(check, 4000);
@@ -266,7 +281,7 @@ const EnhancedVideoCallWrapper = ({
         .channel(`meeting-status-${meeting.id}`)
         .on('postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'ministry_video_meetings', filter: `id=eq.${meeting.id}` },
-          (payload) => { if ((payload.new as any)?.is_active === false) setMeetingEnded(true); })
+          (payload) => { if ((payload.new as any)?.is_active === false) onInactive(); })
         .subscribe();
     } catch { statusChannel = null; }
 
@@ -275,7 +290,7 @@ const EnhancedVideoCallWrapper = ({
       clearInterval(poll);
       try { if (statusChannel) supabase.removeChannel(statusChannel); } catch { /* noop */ }
     };
-  }, [isWebinar, isHost, meeting.id]);
+  }, [isWebinar, isHost, meeting.id, meeting.room_name]);
 
   // When the host ends the meeting, notify the audience and close automatically
   // instead of leaving them stuck on a dead screen.
@@ -1695,7 +1710,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     try {
       const { data: freshMeeting } = await supabase
         .from('ministry_video_meetings')
-        .select('is_active')
+        .select('is_active, participant_count')
         .eq('id', meeting.id)
         .single();
       
@@ -1712,8 +1727,11 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
         if (error) throw error;
 
-        // Trigger push notification to ministry members
-        if (ministryId) {
+        // "Meeting Started" goes out only when the HOST starts it. A
+        // participant (re)joining a meeting that merely looked inactive —
+        // e.g. after their connection dropped — used to broadcast it too,
+        // which read to everyone as that participant starting/hosting it.
+        if (ministryId && meeting.host_id === user?.id) {
           supabase.functions.invoke('send-push-notification', {
             body: {
               targetAudience: 'ministry_members',
@@ -1733,7 +1751,9 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       const { error: countError } = await supabase
         .from('ministry_video_meetings')
         .update({ 
-          participant_count: meeting.participant_count + 1 
+          // From the fresh row, not the list's snapshot — a stale snapshot
+          // is how the count drifted low enough for a leave to end a live meeting.
+          participant_count: (freshMeeting?.participant_count ?? meeting.participant_count) + 1 
         })
         .eq('id', meeting.id);
 
@@ -1762,13 +1782,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   // active-meeting cap and blocking every new meeting from being created.
   const leaveMeetingDb = async (meeting: MinistryVideoMeeting) => {
     try {
-      const newCount = Math.max(0, meeting.participant_count - 1);
-      const patch: Record<string, unknown> = { participant_count: newCount };
-      if (newCount === 0) {
-        patch.is_active = false;
-        patch.ended_at = new Date().toISOString();
-      }
-      await supabase.from('ministry_video_meetings').update(patch).eq('id', meeting.id);
+      await supabase
+        .from('ministry_video_meetings')
+        .update(await leavePatch('ministry_video_meetings', meeting))
+        .eq('id', meeting.id);
     } catch (error) {
       console.error('Error leaving meeting:', error);
     }
