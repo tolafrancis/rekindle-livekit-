@@ -35,6 +35,7 @@ const WebinarJoinShim = lazy(() => import("./components/WebinarJoinShim"));
 const WebinarSpeakerInviteShim = lazy(() => import("./components/WebinarSpeakerInviteShim"));
 // MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels)
 const MinistryLiveWrapper = lazy(() => import("./components/MinistryLiveWrapper"));
+const ObsCaptionOverlay = lazy(() => import("@rekindle/live/components/ObsCaptionOverlay"));
 const ChannelWatchPage = lazy(() =>
   import("@rekindle/live/components/ChannelWatchPage").then((m) => ({ default: m.ChannelWatchPage }))
 );
@@ -140,6 +141,10 @@ const App = () => {
                   {/* Public live-broadcast watch link (channel Share builds /channels/:id).
                       Renders LiveChannelViewer directly — guests can watch without signing in. */}
                   <Route path="/channels/:id" element={<ChannelWatchPage />} />
+
+                  {/* Transparent live-caption overlay for an OBS Browser Source
+                      (see docs/obs-live-captions.md). Public, like /display. */}
+                  <Route path="/obs-captions/:sessionId" element={<ObsCaptionOverlay />} />
 
                   {/* MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels) */}
                   <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />

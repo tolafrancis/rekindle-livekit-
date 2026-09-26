@@ -33,6 +33,7 @@ import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
 import { WebinarJoinPage } from '@rekindle/live/webinar/WebinarJoinPage';
 import { WebinarSpeakerInvitePage } from '@rekindle/live/webinar/WebinarSpeakerInvitePage';
 import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDisplayPage';
+import { ObsCaptionOverlay } from '@rekindle/live/components/ObsCaptionOverlay';
 import { TranslationDisplayLanding } from '@rekindle/live/components/TranslationDisplayLanding';
 import { SpeakerPage } from '@rekindle/live/components/SpeakerPage';
 import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
@@ -245,6 +246,9 @@ function AppRoutes() {
           private, not this route gate. */}
       <Route path="/display/:sessionId" element={<TranslationDisplayPage />} />
       <Route path="/display" element={<TranslationDisplayLanding />} />
+      {/* Transparent live-caption overlay for an OBS Browser Source (see
+          docs/obs-live-captions.md). Public for the same reason as /display. */}
+      <Route path="/obs-captions/:sessionId" element={<ObsCaptionOverlay />} />
 
       {/* "Speaker Link" (migration 0288) — a browser-only alternative to
           Meetings/the PA edge agent for starting a translation session.
