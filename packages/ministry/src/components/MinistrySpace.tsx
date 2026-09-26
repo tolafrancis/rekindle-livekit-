@@ -1645,7 +1645,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               );
             })()}
 
-            {/* Rekindle Guide — full walkthrough of every feature, incl. Small Groups */}
+            {/* Rekindle Guide — the step-by-step tutorial for members and leaders */}
             <button
               onClick={() => navigate('/guide')}
               className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
@@ -1655,22 +1655,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-gray-900">{t('ministrySpace', 'guideTitle', 'The Rekindle Guide')}</span>
-                <span className="block text-xs text-gray-500 truncate">{t('ministrySpace', 'guideDesc', 'A full walkthrough of everything Rekindle can do for your ministry')}</span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
-            </button>
-
-            {/* Step-by-step tutorial — where to tap, with screenshots */}
-            <button
-              onClick={() => navigate('/tutorial')}
-              className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white">
-                <Book className="h-5 w-5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-gray-900">{t('ministrySpace', 'tutorialTitle', 'Step-by-step tutorial')}</span>
-                <span className="block text-xs text-gray-500 truncate">{t('ministrySpace', 'tutorialDesc', 'Exactly where to tap for everything members and leaders do most')}</span>
+                <span className="block text-xs text-gray-500 truncate">{t('ministrySpace', 'guideDesc', 'Step by step: exactly where to tap for everything members and leaders do most')}</span>
               </span>
               <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
             </button>
