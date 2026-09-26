@@ -444,14 +444,15 @@ const TutorialContent: React.FC = () => (
       path={['Manage', 'Live', 'Live Translation', 'Service']}
       steps={[
         { text: <>In your dashboard open <strong>Live › Live Translation</strong>. You’ll see three tabs: <strong>Service</strong>, <strong>Devices</strong> and <strong>Settings</strong>.</>, shot: 'translation-service.png', alt: 'Live Translation › Service' },
-        { text: <>On <strong>Service</strong>, tap <strong>Start Service</strong>.</> },
+        { text: <>First, add at least one language: open the <strong>Settings</strong> tab and, under <strong>Supported target languages</strong>, tap <strong>Add a language</strong> and pick the language your listeners need.</> },
+        { text: <>Back on <strong>Service</strong>, tap <strong>Start Service</strong>.</> },
         { text: <>Enter a <strong>Service name</strong>, pick the <strong>Speaker’s language</strong> (choosing it is more accurate than Auto-detect) and the <strong>Target language</strong>, and leave the engine on <strong>Auto</strong>.</>, shot: 'translation-start.png', alt: 'Starting a translation service' },
         { text: <>You get two links. Send the <strong>Speaker link</strong> to whoever is preaching, and share the <strong>Listener link</strong> (or its QR code) with the congregation.</> },
         { text: <>The speaker opens their link and allows the microphone. Translation starts as soon as they speak. They can tap a misheard word to teach it for next time.</> },
         { text: <>Streaming with OBS? Use the <strong>Captions in OBS</strong> button on the session to get a caption overlay for your broadcast.</> },
         { text: <>When the service ends, tap the stop button on the session.</> },
       ]}
-      tip="Under Settings › Approved Vocabulary, add names, places and church phrases your pastor uses often. The translation engine listens out for them, which cuts down on misheard words."
+      tip="Start Service stays greyed out until at least one language has been added under Settings › Supported target languages, so add your languages before the day of the service. Also under Settings › Approved Vocabulary, add names, places and church phrases your pastor uses often. The translation engine listens out for them, which cuts down on misheard words."
     />
 
     <TutorialSection
