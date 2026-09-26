@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Badge } from '@rekindle/ui/badge';
 import { supabase } from '@rekindle/supabase';
+import { LiveScriptureSettingsCard } from './LiveScriptureSettingsCard';
 import { toast } from '@rekindle/ui/use-toast';
 import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown, Mic, Upload, Trash2, Search, LibraryBig } from 'lucide-react';
 
@@ -1261,6 +1262,8 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
         {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
         Save Settings
       </Button>
+
+      <LiveScriptureSettingsCard ministryId={ministryId} />
     </div>
   );
 };

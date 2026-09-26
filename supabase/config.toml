@@ -85,6 +85,13 @@ enabled = true
 # (see the file's header comment — same RLS the page's own row fetch uses).
 verify_jwt = true
 
+[functions.scripture-passage]
+enabled = true
+# Live Scripture: proxies licensed Bible text from API.Bible so its key
+# never reaches the browser. Checks for a real signed-in ministry member
+# itself, since every call counts against the platform's API.Bible quota.
+verify_jwt = true
+
 [functions.translation-list-voices]
 enabled = true
 # Proxies the TTS provider's own voice catalog for the settings UI's voice

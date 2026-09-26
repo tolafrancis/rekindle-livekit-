@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@rekindle/supabase';
 import { ObsCaptionSender, type ObsCaptionStatus } from '../obsCaptionSender';
+import { ScripturePanel } from './ScripturePanel';
 
 /**
  * /obs-captions/:sessionId — a transparent caption overlay meant to be added
@@ -27,6 +28,13 @@ import { ObsCaptionSender, type ObsCaptionStatus } from '../obsCaptionSender';
  *   &cc=1                            ALSO send each finished line to OBS as
  *                                    CEA-608 closed captions via obs-websocket
  *   &obsport=<port>                  obs-websocket port        (4455)
+ *   &scripture=0|1                   show the verse the operator puts up
+ *                                    in Live Scripture         (1)
+ *   &spos=top|bottom                 where the verse goes; on the captions'
+ *                                    side it sits just above them (= pos)
+ *   &ssize=<px>                      verse font size           (36)
+ *   Verse text is never sent over the cc=1 path: CEA-608 carries about 32
+ *   basic-Latin characters a line, far too little for Scripture.
  *   #obsws=<password>                obs-websocket password — in the URL
  *                                    FRAGMENT so it never leaves the machine
  *                                    (fragments aren't sent to any server)
@@ -71,6 +79,9 @@ export const ObsCaptionOverlay: React.FC = () => {
       cc: q.get('cc') === '1',
       obsPort: num(q.get('obsport'), 4455, 1, 65535),
       obsPassword: hash.get('obsws') ?? '',
+      scripture: q.get('scripture') !== '0',
+      scripturePos: (q.get('spos') === 'top' || q.get('spos') === 'bottom' ? q.get('spos') : null) as 'top' | 'bottom' | null,
+      scriptureSize: num(q.get('ssize'), 36, 14, 120),
     };
   }, []);
 
@@ -199,6 +210,11 @@ export const ObsCaptionOverlay: React.FC = () => {
       : { background: 'rgba(0,0,0,0.72)', padding: '0.12em 0.45em', borderRadius: 8, boxDecorationBreak: 'clone', WebkitBoxDecorationBreak: 'clone' }),
   };
 
+  const scripturePos = opts.scripturePos ?? opts.pos;
+  const scripture = opts.scripture && (
+    <ScripturePanel sessionId={sessionId} variant="overlay" size={opts.scriptureSize} overlayStyle={opts.style as 'box' | 'outline'} />
+  );
+
   return (
     <div
       style={{
@@ -208,6 +224,20 @@ export const ObsCaptionOverlay: React.FC = () => {
         padding: '4vh 5vw', fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif',
       }}
     >
+      {/* On the captions' own side the verse sits just above them; on the
+          other side it gets its own strip at that edge. */}
+      {scripture && scripturePos !== opts.pos && (
+        <div
+          style={{
+            position: 'fixed', left: 0, right: 0, [scripturePos]: 0, padding: '4vh 5vw',
+            display: 'flex', justifyContent: 'center',
+          }}
+        >
+          {scripture}
+        </div>
+      )}
+      {scripture && scripturePos === opts.pos && <div style={{ marginBottom: '0.6em' }}>{scripture}</div>}
+
       <div
         style={{
           maxWidth: '90vw', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '0.3em',

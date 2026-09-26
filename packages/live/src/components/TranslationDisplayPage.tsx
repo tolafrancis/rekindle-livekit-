@@ -7,6 +7,7 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2 } from 'lucide-react';
+import { ScripturePanel } from './ScripturePanel';
 
 interface SessionInfo {
   id: string;
@@ -622,6 +623,9 @@ export const TranslationDisplayPage: React.FC = () => {
           <Minimize2 className="h-4 w-4" />
         </button>
       )}
+
+      {/* Live Scripture: the verse the operator put up, above the captions. */}
+      {session && <ScripturePanel sessionId={session.id} variant="display" />}
 
       {/* aria-live="polite" (2026-09-23, real gap flagged in a captions
           pipeline review): announces each final caption line to screen

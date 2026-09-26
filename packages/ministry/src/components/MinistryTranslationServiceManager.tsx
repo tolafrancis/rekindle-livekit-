@@ -16,6 +16,7 @@ import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic,
 import { ObsCaptionSetupDialog } from '@rekindle/live/components/ObsCaptionSetupDialog';
 import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
+import { LiveScriptureOperatorCard, type ScriptureSessionOption } from './LiveScriptureOperatorCard';
 
 interface MinistryTranslationServiceManagerProps {
   ministryId: string;
@@ -449,6 +450,13 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // comment) — so they're listed on their own instead of nested under a
   // service card.
   const speakerSessions = sessions.filter(s => s.source_type === 'browser_speaker' && !s.service_id);
+  // Live Scripture watches one running session's captions at a time.
+  const scriptureSessions: ScriptureSessionOption[] = sessions
+    .filter(s => s.status !== 'ended' && s.status !== 'error')
+    .map(s => ({
+      id: s.id,
+      label: `${services.find(sv => sv.id === s.service_id)?.name || SOURCE_TYPE_LABEL[s.source_type] || 'Session'} · ${s.source_language.toUpperCase()} → ${s.target_language.toUpperCase()}`,
+    }));
 
   if (loading) {
     return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -494,6 +502,8 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
           Add at least one supported target language in the Settings tab before starting a service.
         </CardContent></Card>
       )}
+
+      <LiveScriptureOperatorCard ministryId={ministryId} sessions={scriptureSessions} />
 
       {speakerSessions.length > 0 && (
         <Card>
