@@ -3198,7 +3198,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "manageMinistry": "Manage Ministry",
     "myProfile": "My Profile",
     "guideTitle": "The Rekindle Guide",
-    "guideDesc": "A full walkthrough of everything Rekindle can do for your ministry",
+    "guideDesc": "Step by step: exactly where to tap for everything members and leaders do most",
     "backToRekindle": "Back to Rekindle",
     "ministryNavigation": "{name} navigation",
     "unlockFullFeatures": "Unlock Full Ministry Features",

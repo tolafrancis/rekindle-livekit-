@@ -42,7 +42,7 @@ const Screenshot: React.FC<{ file: string; alt: string }> = ({ file, alt }) => {
   );
 };
 
-// Same visual language as RekindleGuidePage's FeatureSection, but built around
+// Same visual language as the original Rekindle Guide, but built around
 // "where to go" (the path) and numbered steps, each with its own screenshot.
 const TutorialSection: React.FC<TutorialSectionProps> = ({ id, eyebrow, title, intro, path, steps, tip }) => (
   <section id={id} className="guide-section">
@@ -86,7 +86,7 @@ const PILL_LINKS: Array<[string, string]> = [
   ['leader-translation', 'Live translation'],
 ];
 
-export const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
+const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
   ['Getting started', [
     ['sign-up', 'Create your account'],
     ['install', 'Install the app on your phone'],
@@ -120,9 +120,8 @@ export const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
   ]],
 ];
 
-// Rules the tutorial adds on top of the guide's shared styles. Exported so
-// RekindleGuidePage can embed the tutorial with the same look.
-export const TUTORIAL_CSS = `
+// Styles for the tutorial's parts, paths and screenshots.
+const TUTORIAL_CSS = `
   .guide-body h3 { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 2rem; font-weight: 700; color: #fff; margin: 0 0 .4rem; }
   .guide-body .steps strong { color: #fff; font-weight: 600; }
   .guide-body .path { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: .4rem; }
@@ -137,9 +136,8 @@ export const TUTORIAL_CSS = `
   .guide-toc-label { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #a78bfa; margin-bottom: .5rem; }
 `;
 
-// The tutorial's three parts and their step-by-step sections. Rendered on its
-// own /tutorial page and inside The Rekindle Guide.
-export const TutorialContent: React.FC = () => (
+// The tutorial's three parts and their step-by-step sections.
+const TutorialContent: React.FC = () => (
   <>
     {/* ───────────────────────── Part 1 ───────────────────────── */}
     <div className="guide-part">
@@ -446,14 +444,15 @@ export const TutorialContent: React.FC = () => (
       path={['Manage', 'Live', 'Live Translation', 'Service']}
       steps={[
         { text: <>In your dashboard open <strong>Live › Live Translation</strong>. You’ll see three tabs: <strong>Service</strong>, <strong>Devices</strong> and <strong>Settings</strong>.</>, shot: 'translation-service.png', alt: 'Live Translation › Service' },
-        { text: <>On <strong>Service</strong>, tap <strong>Start Service</strong>.</> },
+        { text: <>First, add at least one language: open the <strong>Settings</strong> tab and, under <strong>Supported target languages</strong>, tap <strong>Add a language</strong> and pick the language your listeners need.</> },
+        { text: <>Back on <strong>Service</strong>, tap <strong>Start Service</strong>.</> },
         { text: <>Enter a <strong>Service name</strong>, pick the <strong>Speaker’s language</strong> (choosing it is more accurate than Auto-detect) and the <strong>Target language</strong>, and leave the engine on <strong>Auto</strong>.</>, shot: 'translation-start.png', alt: 'Starting a translation service' },
         { text: <>You get two links. Send the <strong>Speaker link</strong> to whoever is preaching, and share the <strong>Listener link</strong> (or its QR code) with the congregation.</> },
         { text: <>The speaker opens their link and allows the microphone. Translation starts as soon as they speak. They can tap a misheard word to teach it for next time.</> },
         { text: <>Streaming with OBS? Use the <strong>Captions in OBS</strong> button on the session to get a caption overlay for your broadcast.</> },
         { text: <>When the service ends, tap the stop button on the session.</> },
       ]}
-      tip="Under Settings › Approved Vocabulary, add names, places and church phrases your pastor uses often. The translation engine listens out for them, which cuts down on misheard words."
+      tip="Start Service stays greyed out until at least one language has been added under Settings › Supported target languages, so add your languages before the day of the service. Also under Settings › Approved Vocabulary, add names, places and church phrases your pastor uses often. The translation engine listens out for them, which cuts down on misheard words."
     />
 
     <TutorialSection
@@ -518,7 +517,7 @@ const RekindleTutorialPage: React.FC = () => {
       {/* Content */}
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '48px 24px 80px' }}>
         <div style={{ marginBottom: 28 }}>
-          <p style={{ fontSize: '.72rem', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#a78bfa', marginBottom: 10 }}>Tutorial</p>
+          <p style={{ fontSize: '.72rem', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: '#a78bfa', marginBottom: 10 }}>The Rekindle Guide</p>
           <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '2.6rem', fontWeight: 700, color: '#fff', marginBottom: 12 }}>Using Rekindle, step by step</h1>
           <p style={{ fontSize: '.95rem', color: 'rgba(255,255,255,.55)', maxWidth: 560, lineHeight: 1.7 }}>
             Exactly where to tap, in order, for everything members and leaders do most. Follow along with the app open beside you.
@@ -550,7 +549,7 @@ const RekindleTutorialPage: React.FC = () => {
           <section id="help" className="guide-section">
             <p className="eyebrow">Need a hand?</p>
             <h2>We’re here to help</h2>
-            <p>If a screen looks different from what’s described here, or you get stuck on a step, get in touch and we’ll walk you through it. For an overview of what each feature is for, see <a href="/guide" style={{ color: '#c4b5fd' }}>The Rekindle Guide</a>.</p>
+            <p>If a screen looks different from what’s described here, or you get stuck on a step, get in touch and we’ll walk you through it.</p>
             <div className="guide-contact">
               <div>
                 <strong>Rekindle Digital Missions</strong>
