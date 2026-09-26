@@ -27,6 +27,7 @@
 //       → { success: true }
 //   { action: 'delete-room',  roomName, context? }          // endMeetingForAll (§1E)
 //   { action: 'create-room',  roomName, maxParticipants?, emptyTimeout?, context? }  // presets (§1E)
+//   { action: 'room-occupancy', roomName }                 // how many OTHER real people are in the room
 //
 //   context = { kind?: 'meeting'|'ministry_meeting'|'channel_meeting'|'channel',
 //               meetingId?, channelId? }  — used ONLY for server-side role derivation.
@@ -56,7 +57,7 @@ type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
 const MEETING_PARTICIPANT_CAP = 100;
 
 interface RequestBody {
-  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room';
+  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room' | 'room-occupancy';
   roomName: string;
   userName?: string;
   viewerOnly?: boolean;
@@ -315,7 +316,7 @@ serve(async (req) => {
     // stays closed because guest role is derived here, not from the client. The
     // admin actions (delete/create room, grant-publish) still require a real user.
     const isGuest = !user;
-    if (isGuest && action !== 'token') {
+    if (isGuest && action !== 'token' && action !== 'room-occupancy') {
       return json({ error: 'Unauthorized' }, 401);
     }
     // Stable per-connection identity: real users key on their uid; guests get a
@@ -326,6 +327,34 @@ serve(async (req) => {
       ? (body.viewerOnly ? 'viewer' : 'attendee')
       : await resolveRole(admin, user!.id, body);
     const isHost = role === 'host';
+
+    // ── Room occupancy (read-only) ─────────────────────────────────────────
+    // The meetings tables' participant_count / is_active are maintained by
+    // clients and drift (stale read-modify-write). Clients ask LiveKit itself
+    // — the source of truth for who is actually connected — before marking a
+    // meeting ended on leave, and before telling someone "the host ended
+    // this meeting". Counts real people other than the caller: excludes the
+    // caller's own identity and screen-share shadow, translation bots
+    // (rlt-bot-*), hidden participants and recording/egress participants.
+    // A room that doesn't exist (deleted by "End for all", or never created)
+    // is simply 0. Deliberately needs no role: it only reveals a head count.
+    if (action === 'room-occupancy') {
+      let participants: Array<{ identity: string; kind?: number; permission?: { hidden?: boolean } }> = [];
+      try {
+        participants = (await svc.listParticipants(body.roomName)) as typeof participants;
+      } catch {
+        participants = []; // room not found = nobody there
+      }
+      const EGRESS_KIND = 2; // livekit ParticipantInfo.Kind.EGRESS
+      const others = participants.filter((p) =>
+        !p.permission?.hidden &&
+        p.kind !== EGRESS_KIND &&
+        !p.identity.startsWith('rlt-bot-') &&
+        !p.identity.endsWith('-screenshare') &&
+        (isGuest || p.identity !== user!.id),
+      );
+      return json({ occupants: others.length });
+    }
 
     // ── Non-token admin actions ────────────────────────────────────────────
     if (action === 'delete-room') {
