@@ -91,7 +91,7 @@ function sanitizeLayout(raw: Record<string, unknown> | undefined) {
     layoutMode,
     spotlightParticipants,
     screenShareMode: SCREEN_MODES.includes(raw.screenShareMode as string) ? raw.screenShareMode : 'screen-speaker',
-    recordingLayout: RECORDING_LAYOUTS.includes(raw.recordingLayout as string) ? raw.recordingLayout : 'speaker',
+    recordingLayout: RECORDING_LAYOUTS.includes(raw.recordingLayout as string) ? raw.recordingLayout : 'gallery',
     showThumbnails: typeof raw.showThumbnails === 'boolean' ? raw.showThumbnails : true,
     rev: typeof raw.rev === 'number' && Number.isFinite(raw.rev) ? raw.rev : 0,
   };
