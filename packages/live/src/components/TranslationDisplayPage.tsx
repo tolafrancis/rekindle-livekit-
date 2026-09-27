@@ -49,11 +49,18 @@ interface LogLine {
 type ConnStatus = 'connecting' | 'live' | 'reconnecting' | 'ended';
 type FontSize = 'small' | 'large' | 'full';
 
+// Size of the newest line. "large" (the default) matches the speaker
+// link's current line; earlier lines stay on screen smaller and dimmed
+// underneath it, the same way the speaker link shows them.
 const FONT_SIZE_CLASS: Record<FontSize, string> = {
-  small: 'text-lg sm:text-xl',
-  large: 'text-2xl sm:text-3xl',
+  small: 'text-2xl sm:text-3xl',
+  large: 'text-3xl sm:text-5xl',
   full: 'text-4xl sm:text-6xl',
 };
+const OLDER_LINE_CLASS = 'text-base sm:text-lg text-white/40';
+// How many lines stay on screen: the newest plus a few earlier ones for
+// context, like the speaker link (not a full transcript).
+const MAX_LINES = 6;
 const FONT_SIZE_CYCLE: FontSize[] = ['small', 'large', 'full'];
 
 /**
@@ -200,7 +207,7 @@ export const TranslationDisplayPage: React.FC = () => {
         .select('id, source_text, translated_text, created_at')
         .eq('session_id', sessionId)
         .order('created_at', { ascending: false })
-        .limit(3);
+        .limit(MAX_LINES);
       if (!cancelled && data) setLines([...data].reverse() as LogLine[]);
     };
     loadLines();
@@ -211,7 +218,7 @@ export const TranslationDisplayPage: React.FC = () => {
         { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           const row = payload.new as LogLine;
-          setLines(prev => [...prev, row].slice(-3));
+          setLines(prev => [...prev, row].slice(-MAX_LINES));
         })
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
@@ -239,18 +246,14 @@ export const TranslationDisplayPage: React.FC = () => {
     };
   }, [session, sessionId]);
 
-  // Clear stale captions after silence (2026-09-23, real gap flagged in a
-  // captions pipeline review): without this, the last spoken line(s) sat on
-  // screen forever through any pause. Resets on every new line so an
-  // actively-talking speaker never gets cut off mid-flow. Skipped once the
-  // session has ended — that state already swaps to its own "no longer
-  // available" screen below, this would just be fighting that transition.
+  // Earlier lines stay up through pauses (no clearing on silence), so a
+  // listener who looks away for a moment can catch up. Keep the newest line
+  // in view when the lines don't all fit.
+  const mainRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (lines.length === 0 || session?.status === 'ended') return;
-    const CLEAR_AFTER_SILENCE_MS = 8000;
-    const timer = setTimeout(() => setLines([]), CLEAR_AFTER_SILENCE_MS);
-    return () => clearTimeout(timer);
-  }, [lines, session?.status]);
+    const el = mainRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
 
   // WebRTC-only audio (see docs/rlt-build-checklist.md's "WebRTC-only
   // /display" plan): join the LiveKit room directly as a subscribe-only
@@ -632,6 +635,7 @@ export const TranslationDisplayPage: React.FC = () => {
           readers — this page has no growing interim text, only finalized
           lines, so nothing extra to gate out of the live region. */}
       <main
+        ref={mainRef}
         aria-live="polite"
         aria-atomic="false"
         className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
@@ -641,12 +645,14 @@ export const TranslationDisplayPage: React.FC = () => {
           // return above swaps to the "no longer available" page first.
           <p className="text-center text-white/50 text-lg">Translation starting…</p>
         ) : (
-          visibleLines.map(line => (
+          visibleLines.map((line, i) => (
             <div key={line.id} className={presenterMode ? '' : 'w-full'}>
               {bilingual && (
                 <p className="text-sm sm:text-base text-white/50 mb-1">{line.source_text}</p>
               )}
-              <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-medium`}>
+              <p className={i === visibleLines.length - 1
+                ? `${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`
+                : `${OLDER_LINE_CLASS} leading-snug`}>
                 {line.translated_text}
               </p>
             </div>

@@ -456,6 +456,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
     .map(s => ({
       id: s.id,
       label: `${services.find(sv => sv.id === s.service_id)?.name || SOURCE_TYPE_LABEL[s.source_type] || 'Session'} · ${s.source_language.toUpperCase()} → ${s.target_language.toUpperCase()}`,
+      targetLanguage: s.target_language,
     }));
 
   if (loading) {

@@ -16,7 +16,7 @@ import {
   type ScriptureDetection,
   type ScriptureReference,
 } from '@rekindle/features/scripture/parser';
-import { fetchPassage } from '@rekindle/features/scripture/providers';
+import { fetchListenerPassage, fetchPassage } from '@rekindle/features/scripture/providers';
 import { useScriptureSettings } from './liveScriptureSettings';
 
 /**
@@ -34,6 +34,8 @@ import { useScriptureSettings } from './liveScriptureSettings';
 export interface ScriptureSessionOption {
   id: string;
   label: string;
+  /** The session's listener language, for showing the verse in it too. */
+  targetLanguage?: string | null;
 }
 
 interface Detected {
@@ -69,8 +71,8 @@ const Inner: React.FC<{ ministryId: string; sessions: ScriptureSessionOption[] }
 
   // Refs so the realtime callback always sees current values without
   // resubscribing on every change.
-  const live = useRef({ settings, locked, onScreen, sessionId });
-  live.current = { settings, locked, onScreen, sessionId };
+  const live = useRef({ settings, locked, onScreen, sessionId, sessions });
+  live.current = { settings, locked, onScreen, sessionId, sessions };
 
   const show = useCallback(async (reference: ScriptureReference) => {
     const target = live.current.sessionId;
@@ -79,7 +81,12 @@ const Inner: React.FC<{ ministryId: string; sessions: ScriptureSessionOption[] }
     setBusy(true);
     setError(null);
     try {
-      const passage = await fetchPassage(preferred_version, ministryId, reference);
+      const targetLanguage = live.current.sessions.find(s => s.id === target)?.targetLanguage;
+      const [passage, listener] = await Promise.all([
+        fetchPassage(preferred_version, ministryId, reference),
+        // The listener's language is a bonus: without it the verse still goes up.
+        fetchListenerPassage(targetLanguage, reference).catch(() => null),
+      ]);
       const label = preferred_version === 'KJV' ? 'KJV' : preferred_version_label || passage.versionLabel;
       const { error: insertError } = await supabase.from('translation_scripture_events').insert({
         session_id: target,
@@ -91,6 +98,9 @@ const Inner: React.FC<{ ministryId: string; sessions: ScriptureSessionOption[] }
         attribution: passage.attribution ?? null,
         is_licensed: preferred_version !== 'KJV',
         display_seconds,
+        listener_text: listener?.text ?? null,
+        listener_version: listener?.versionLabel ?? null,
+        listener_language: listener?.language ?? null,
       });
       if (insertError) throw insertError;
       setOnScreen({ reference, versionLabel: label, until: untilFor(Date.now(), display_seconds) });
@@ -122,25 +132,35 @@ const Inner: React.FC<{ ministryId: string; sessions: ScriptureSessionOption[] }
     }
   }, [ministryId]);
 
-  // Pick up what's already on screen for this session (e.g. after a reload).
+  // Follow what's on screen for this session: the latest row on load (e.g.
+  // after a reload), then every new one, including verses the speaker link
+  // puts up by itself.
   useEffect(() => {
     setOnScreen(null);
     if (!sessionId) return;
     let cancelled = false;
+    type Row = { status: string; reference: string | null; version: string | null; display_seconds: number; created_at: string };
+    const apply = (row: Row | undefined) => {
+      if (cancelled || !row) return;
+      const reference = row.status === 'shown' && row.reference ? parseReference(row.reference) : null;
+      if (!reference) { setOnScreen(null); return; }
+      const until = untilFor(new Date(row.created_at).getTime(), row.display_seconds);
+      setOnScreen(until === null || until > Date.now() ? { reference, versionLabel: row.version || '', until } : null);
+    };
     supabase
       .from('translation_scripture_events')
       .select('status, reference, version, display_seconds, created_at')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: false })
       .limit(1)
-      .then(({ data }) => {
-        const row = data?.[0] as { status: string; reference: string | null; version: string | null; display_seconds: number; created_at: string } | undefined;
-        const reference = row?.status === 'shown' && row.reference ? parseReference(row.reference) : null;
-        if (cancelled || !row || !reference) return;
-        const until = untilFor(new Date(row.created_at).getTime(), row.display_seconds);
-        if (until === null || until > Date.now()) setOnScreen({ reference, versionLabel: row.version || '', until });
-      }, () => {});
-    return () => { cancelled = true; };
+      .then(({ data }) => apply(data?.[0] as Row | undefined), () => {});
+    const channel = supabase
+      .channel(`scripture-operator-${sessionId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'translation_scripture_events', filter: `session_id=eq.${sessionId}` },
+        (payload) => apply(payload.new as Row))
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
   }, [sessionId]);
 
   // Forget the on-screen verse once the displays have timed it out.
