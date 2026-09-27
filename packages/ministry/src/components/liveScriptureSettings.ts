@@ -17,7 +17,7 @@ export const DEFAULT_SCRIPTURE_SETTINGS: ScriptureSettings = {
   preferred_version: DEFAULT_BIBLE_VERSION,
   preferred_version_label: 'KJV',
   auto_detect: true,
-  auto_show: false,
+  auto_show: true,
   display_seconds: 30,
 };
 

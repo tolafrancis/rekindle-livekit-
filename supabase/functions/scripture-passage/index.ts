@@ -18,6 +18,9 @@
 //     → 200 { versions: Array<{ id, abbreviation, name, language }> }
 //   { action: 'passage', ministryId, bibleId, passageId: 'JHN.3.16-JHN.3.18' }
 //     → 200 { reference, text, copyright }
+//   The speaker link (no signed-in user) sends { sessionId, speakerToken }
+//   in place of ministryId; the token is checked by
+//   speaker_scripture_settings (migration 0374).
 //   → 400 bad input · 401 not signed in · 403 not a member of ministryId
 //   → 503 { error: 'not_configured' } API_BIBLE_KEY missing
 //   → 502 { error: 'provider_error' } API.Bible failed
@@ -58,27 +61,39 @@ serve(async (req) => {
     const body = (await req.json().catch(() => ({}))) as {
       action?: string;
       ministryId?: string;
+      /** Speaker link (/speak/:sessionId): its session + token instead of a signed-in user. */
+      sessionId?: string;
+      speakerToken?: string;
       language?: string;
       bibleId?: string;
       passageId?: string;
     };
-    if (!body.ministryId) return json({ error: 'ministryId is required' }, 400);
-
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return json({ error: 'unauthorized' }, 401);
-    const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
 
     // Every call counts against the platform's API.Bible quota, so only
-    // members of the ministry running the service can make one.
-    const { data: isMember, error: memberErr } = await userClient.rpc('is_group_member', {
-      p_ministry_id: body.ministryId,
-      p_user_id: userData.user.id,
-    });
-    if (memberErr || !isMember) return json({ error: 'not_a_member' }, 403);
+    // members of the ministry running the service, or that service's own
+    // speaker link, can make one.
+    if (body.sessionId && body.speakerToken) {
+      const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const { data: ctx, error: ctxErr } = await anonClient.rpc('speaker_scripture_settings', {
+        p_session_id: body.sessionId,
+        p_speaker_token: body.speakerToken,
+      });
+      if (ctxErr || !ctx?.ministry_id) return json({ error: 'unauthorized' }, 401);
+    } else {
+      if (!body.ministryId) return json({ error: 'ministryId is required' }, 400);
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) return json({ error: 'unauthorized' }, 401);
+      const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+      const { data: isMember, error: memberErr } = await userClient.rpc('is_group_member', {
+        p_ministry_id: body.ministryId,
+        p_user_id: userData.user.id,
+      });
+      if (memberErr || !isMember) return json({ error: 'not_a_member' }, 403);
+    }
 
     if (!API_BIBLE_KEY) return json({ error: 'not_configured' }, 503);
     const headers = { 'api-key': API_BIBLE_KEY };

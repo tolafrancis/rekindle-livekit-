@@ -8,6 +8,7 @@ const first = (text: string): ScriptureDetection | undefined => new ScriptureDet
 // [what the speaker said, expected reference or null, expected status]
 const SINGLE_LINE: Array<[string, string | null, ('confirmed' | 'suggest')?]> = [
   // Written, explicit
+  ['John chapter three verse 16.', 'John 3:16', 'confirmed'],
   ['John 3:16', 'John 3:16', 'confirmed'],
   ['For God so loved the world, John 3:16.', 'John 3:16', 'confirmed'],
   ['Romans 8:28-30', 'Romans 8:28-30', 'confirmed'],
@@ -188,6 +189,40 @@ test('context: an invalid verse for the remembered chapter is ignored', () => {
   const det = new ScriptureDetector();
   det.scan('John chapter 3', null, 0);
   assert.deepEqual(det.scan('verse 40', null, 1_000), []);
+});
+
+test('split line: a book ending one caption line joins "chapter one verse two" in the next', () => {
+  const det = new ScriptureDetector();
+  assert.deepEqual(det.scan('Second Corinthians', null, 0), []);
+  const d = det.scan('chapter one verse two.', null, 3_000)[0];
+  assert.equal(formatReference(d.reference), '2 Corinthians 1:2');
+  assert.equal(d.status, 'confirmed');
+});
+
+test('split line: "turn with me to Romans" then "chapter 8" is only a suggestion', () => {
+  const det = new ScriptureDetector();
+  det.scan('turn with me to Romans', null, 0);
+  const d = det.scan('chapter 8', null, 2_000)[0];
+  assert.equal(formatReference(d.reference), 'Romans 8');
+  assert.equal(d.status, 'suggest');
+});
+
+test('split line: a bare book never resolves "verse N" on its own', () => {
+  const det = new ScriptureDetector();
+  det.scan('Second Corinthians', null, 0);
+  assert.deepEqual(det.scan('verse 2', null, 1_000), []);
+});
+
+test('split line: the book on its own is forgotten after 20 seconds', () => {
+  const det = new ScriptureDetector();
+  det.scan('Second Corinthians', null, 0);
+  assert.deepEqual(det.scan('chapter one verse two', null, 21_000), []);
+});
+
+test('split line: a book mid-sentence does not carry over', () => {
+  const det = new ScriptureDetector();
+  det.scan('Paul wrote Romans to the church', null, 0);
+  assert.deepEqual(det.scan('chapter one verse two', null, 1_000), []);
 });
 
 test('reset() forgets the context', () => {

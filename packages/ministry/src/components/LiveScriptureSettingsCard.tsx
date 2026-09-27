@@ -55,8 +55,9 @@ export const LiveScriptureSettingsCard: React.FC<{ ministryId: string }> = ({ mi
           <BookOpen className="h-4 w-4 text-indigo-600" /> Live Scripture
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          When the speaker says a Bible reference, like "John 3:16", it's picked up from the captions so you can show the verse on
-          the listener screen and the OBS captions overlay.
+          When the speaker says a Bible reference, like "John 3:16", it's picked up from the captions and the verse is shown on
+          the listener screen and the OBS captions overlay, in this version and, where there's a published translation for it,
+          the listener's language (Vietnamese uses the 1926 Bible).
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -90,8 +91,8 @@ export const LiveScriptureSettingsCard: React.FC<{ ministryId: string }> = ({ mi
           <div>
             <Label>Show confirmed verses automatically</Label>
             <p className="text-xs text-muted-foreground">
-              Off: you tap Show for each verse. On: a full reference like "Romans 8:28" goes up by itself. A chapter on its own,
-              like "Psalm 23", always waits for you.
+              On (the default): a full reference like "Romans 8:28" goes up by itself, including during speaker-link services
+              with no dashboard open. Off: you tap Show for each verse. A chapter on its own, like "Psalm 23", always waits for you.
             </p>
           </div>
           <Switch checked={settings.auto_show} disabled={!loaded} onCheckedChange={(v) => update({ auto_show: v })} />

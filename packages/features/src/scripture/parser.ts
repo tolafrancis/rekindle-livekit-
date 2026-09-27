@@ -237,7 +237,12 @@ const ref = (book: BibleBook, chapter: number, startVerse?: number, endVerse?: n
   ...(startVerse !== undefined ? { startVerse, endVerse: endVerse ?? startVerse } : {}),
 });
 
+// chapter 0 = the speaker named a book at the very end of a caption line
+// ("…turn with me to Second Corinthians") and the chapter and verse arrived
+// in the next line ("chapter one verse two"). Only "chapter N …" resolves
+// against it, and only for a short while (BOOK_ONLY_CONTEXT_MS).
 interface Context { book: BibleBook; chapter: number; at: number }
+const BOOK_ONLY_CONTEXT_MS = 20_000;
 
 function parse(text: string, ctx: Context | null): { found: ScriptureDetection[]; ctx: Context | null } {
   const toks = tokenize(text);
@@ -252,7 +257,13 @@ function parse(text: string, ctx: Context | null): { found: ScriptureDetection[]
       const chapterKw = isWord(toks[j], 'chapter', 'chapters', 'ch', 'chap');
       if (chapterKw) j++;
       const chapter = numAt(toks, j);
-      if (chapter === null) { i = hit.next; continue; } // a book name alone is never a reference
+      if (chapter === null) {
+        // A book name alone is never a reference, but one that ends the line
+        // may get its chapter in the next caption line.
+        if (hit.next >= toks.length && !hit.abbrev) context = { book, chapter: 0, at: 0 };
+        i = hit.next;
+        continue;
+      }
       j++;
 
       let verse: number | null = null;
@@ -375,7 +386,8 @@ export class ScriptureDetector {
    * lost. Returns every reference found in the line, in speaking order.
    */
   scan(sourceText: string, translatedText?: string | null, now: number = Date.now()): ScriptureDetection[] {
-    if (this.ctx && now - this.ctx.at > this.contextMs) this.ctx = null;
+    const ttl = this.ctx?.chapter === 0 ? BOOK_ONLY_CONTEXT_MS : this.contextMs;
+    if (this.ctx && now - this.ctx.at > ttl) this.ctx = null;
 
     let result = parse(sourceText || '', this.ctx);
     if (!result.found.length && translatedText && translatedText !== sourceText) {

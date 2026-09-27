@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Room, RoomEvent, createAudioAnalyser } from 'livekit-client';
 import type { LocalAudioTrack } from 'livekit-client';
 import { supabase } from '@rekindle/supabase';
+import { useSpeakerScripture } from './useSpeakerScripture';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -48,6 +49,9 @@ export const SpeakerPage: React.FC = () => {
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  // Live Scripture: verses the speaker reads out go up on the listener
+  // display automatically while this page is live (see useSpeakerScripture).
+  useSpeakerScripture(sessionId, speakerToken, phase === 'live');
   const [languages, setLanguages] = useState<{ source: string; target: string } | null>(null);
   const [muted, setMuted] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Copy listener link');
