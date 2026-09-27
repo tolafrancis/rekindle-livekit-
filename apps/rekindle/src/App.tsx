@@ -36,6 +36,7 @@ const WebinarSpeakerInviteShim = lazy(() => import("./components/WebinarSpeakerI
 // MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels)
 const MinistryLiveWrapper = lazy(() => import("./components/MinistryLiveWrapper"));
 const ObsCaptionOverlay = lazy(() => import("@rekindle/live/components/ObsCaptionOverlay"));
+const RecordingTemplatePage = lazy(() => import("@rekindle/live/components/RecordingTemplatePage"));
 const ChannelWatchPage = lazy(() =>
   import("@rekindle/live/components/ChannelWatchPage").then((m) => ({ default: m.ChannelWatchPage }))
 );
@@ -145,6 +146,11 @@ const App = () => {
                   {/* Transparent live-caption overlay for an OBS Browser Source
                       (see docs/obs-live-captions.md). Public, like /display. */}
                   <Route path="/obs-captions/:sessionId" element={<ObsCaptionOverlay />} />
+
+                  {/* LiveKit Egress recording template: the recording's own layout
+                      (Speaker / Dual / Screen + …), opened by the recorder with its
+                      own room token. Public, like /obs-captions. */}
+                  <Route path="/recording-template" element={<RecordingTemplatePage />} />
 
                   {/* MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels) */}
                   <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />

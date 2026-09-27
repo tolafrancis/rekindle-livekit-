@@ -78,6 +78,10 @@ export interface VideoWrapperCallbacks {
    *  interface's other loosely-typed args, to stay drop-in compatible
    *  across both backends. */
   onConnectionQualityChanged?: (identity: string, quality: string) => void;
+  /** LiveKit room metadata (JSON string) — on connect and on every
+   *  RoomEvent.RoomMetadataChanged. Carries the host's shared meeting layout
+   *  and spotlight list (packages/live/src/layout/meetingLayout.ts). */
+  onRoomMetadataChanged?: (metadata: string) => void;
 }
 
 /**

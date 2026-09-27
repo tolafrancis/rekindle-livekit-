@@ -14,6 +14,24 @@ import { createVideoWrapper, isLiveKitBackend } from './videoBackend';
 import { NativeScreenShare } from './NativeScreenShare';
 import type { IVideoRoomWrapper, NormalizedParticipant } from '@rekindle/types/videoRoom';
 import {
+  DEFAULT_LAYOUT_STATE,
+  addSpotlight as addSpotlightTo,
+  clearSpotlights as clearSpotlightsIn,
+  layoutFromRoomMetadata,
+  removeSpotlight as removeSpotlightFrom,
+  sanitizeLayoutState,
+  setLayoutMode as setLayoutModeIn,
+  setRecordingLayout as setRecordingLayoutIn,
+  setScreenShareMode as setScreenShareModeIn,
+  setShowThumbnails as setShowThumbnailsIn,
+  spotlightOnly,
+  swapSpeakers as swapSpeakersIn,
+  type LayoutMode,
+  type MeetingLayoutState,
+  type RecordingLayout,
+  type ScreenShareMode,
+} from './layout/meetingLayout';
+import {
   ParticipantRole,
   ParticipantState, 
   MeetingSettings, 
@@ -113,8 +131,15 @@ export interface UseDailyRoomReturn {
   isRecording: boolean;
   /** True host (DB) OR a co-host promoted live — gets full in-call moderator controls. */
   isModerator: boolean;
+  /** First spotlit participant (kept for single-spotlight callers). */
   spotlightedParticipantId: string | null;
   pinnedParticipantId: string | null;
+  /** The host's shared layout and spotlight list, from LiveKit room metadata. */
+  layoutState: MeetingLayoutState;
+  /** True once the room metadata has been read after joining. */
+  layoutLoaded: boolean;
+  /** True when a host or co-host has set a layout in this room before. */
+  hasSharedLayout: boolean;
   
   // Media state
   isMicOn: boolean;
@@ -179,7 +204,16 @@ export interface UseDailyRoomReturn {
   resumeRecording: () => Promise<void>;
   
   // Spotlight and pin
+  /** "Spotlight for Everyone": this person alone (null clears every spotlight). */
   spotlightParticipant: (participantId: string | null) => void;
+  addToSpotlight: (participantId: string) => void;
+  removeFromSpotlight: (participantId: string) => void;
+  clearSpotlights: () => void;
+  swapSpeakers: () => void;
+  setLayoutMode: (mode: LayoutMode) => void;
+  setScreenShareMode: (mode: ScreenShareMode) => void;
+  setRecordingLayout: (layout: RecordingLayout) => void;
+  setShowThumbnails: (show: boolean) => void;
   pinParticipant: (participantId: string | null) => void;
   
   // Raise hand
@@ -274,7 +308,19 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const [waitingRoomParticipants, setWaitingRoomParticipants] = useState<WaitingRoomParticipant[]>([]);
   const [meetingSettings, setMeetingSettings] = useState<MeetingSettings>(DEFAULT_MEETING_SETTINGS);
   const [isRecording, setIsRecording] = useState(false);
-  const [spotlightedParticipantId, setSpotlightedParticipantId] = useState<string | null>(null);
+  // Shared layout + multi-spotlight (layout/meetingLayout.ts). Room metadata is
+  // the source of truth; see applyLayout below.
+  const [layoutState, setLayoutStateRaw] = useState<MeetingLayoutState>(DEFAULT_LAYOUT_STATE);
+  const layoutStateRef = useRef<MeetingLayoutState>(DEFAULT_LAYOUT_STATE);
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
+  const [hasSharedLayout, setHasSharedLayout] = useState(false);
+  // Only ever move forward: a slower, older message can't undo a newer change.
+  const acceptLayout = useCallback((incoming: MeetingLayoutState, force = false) => {
+    if (!force && incoming.rev < layoutStateRef.current.rev) return;
+    layoutStateRef.current = incoming;
+    setLayoutStateRaw(incoming);
+  }, []);
+  const spotlightedParticipantId = layoutState.spotlightParticipants[0] ?? null;
   const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
   const [handRaised, setHandRaised] = useState(false);
   // Reactive list of raised hands (the ref alone never triggers re-renders)
@@ -577,7 +623,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         audioEnabled: !isMutedByHost && (hasPermission(role, 'canUnmuteAudio') || role === 'host'),
         videoEnabled: !isVideoDisabledByHost && (hasPermission(role, 'canEnableVideo') || role === 'host'),
         handRaised: raisedHandsRef.current.has(convertedParticipant.sessionId),
-        isSpotlighted: spotlightedParticipantId === convertedParticipant.sessionId,
+        isSpotlighted: layoutStateRef.current.spotlightParticipants.includes(convertedParticipant.sessionId),
         isPinned: pinnedParticipantId === convertedParticipant.sessionId,
         isMutedByHost: isMutedByHost,
         joinedAt: convertedParticipant.joinedAt,
@@ -589,7 +635,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     });
 
     setParticipantStates(states);
-  }, [convertParticipant, getParticipantRole, spotlightedParticipantId, pinnedParticipantId]);
+  }, [convertParticipant, getParticipantRole, layoutState, pinnedParticipantId]);
 
   // Check audio input availability
   const checkAudioInput = useCallback(async () => {
@@ -867,6 +913,18 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         },
         onTranslationTracksChanged: (tracks) => {
           setTranslationTracks(tracks);
+        },
+        onRoomMetadataChanged: (metadata: string) => {
+          const layout = layoutFromRoomMetadata(metadata);
+          if (layout) {
+            setHasSharedLayout(true);
+            // Room metadata is authoritative: take it even at an equal rev.
+            if (layout.rev >= layoutStateRef.current.rev) {
+              layoutStateRef.current = layout;
+              setLayoutStateRaw(layout);
+            }
+          }
+          setLayoutLoaded(true);
         },
         // Reconnection UX (2026-09-23, meeting architecture review) — see
         // the state declarations above for why these exist. Reconnecting
@@ -1521,6 +1579,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         body: {
           action: 'start-recording',
           roomName: options.roomName,
+          // The recording's own layout, independent of anyone's screen.
+          recordingLayout: layoutStateRef.current.recordingLayout,
           kind: options.channelId ? 'channel' : 'meeting',
           channelId: options.channelId,
           meetingId: options.meetingId,
@@ -1576,18 +1636,71 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     await updateMeetingSettings({ recordingStatus: 'recording' });
   }, [options.isHost, updateMeetingSettings]);
 
-  // Spotlight participant
-  const spotlightParticipant = useCallback((participantId: string | null) => {
-    setSpotlightedParticipantId(participantId);
-    
-    const wrapper = wrapperRef.current;
-    if (wrapper) {
-      wrapper.sendAppMessage({
-        type: 'spotlight-change',
-        participantId
-      }, '*');
+  // Shared layout / multi-spotlight. Host or co-host only: apply it here at
+  // once, tell everyone over the data channel for instant feedback, and store
+  // it in the room metadata through livekit-moderation, which checks the
+  // caller's role and is what late joiners and the recording read.
+  const applyLayout = useCallback(async (nextState: MeetingLayoutState) => {
+    if (!isModeratorRef.current) return;
+    if (nextState === layoutStateRef.current) return;
+    acceptLayout(nextState);
+    setHasSharedLayout(true);
+    try {
+      await wrapperRef.current?.sendAppMessage({ type: 'layout-change', layout: nextState }, '*');
+      const data = await moderate('set-layout', { layout: nextState });
+      // Someone else changed it first: show what's stored.
+      if (data?.stale && data.layout) {
+        const stored = sanitizeLayoutState(data.layout);
+        if (stored) acceptLayout(stored, true);
+      }
+    } catch (err: any) {
+      console.error('[Layout] set-layout failed:', err);
+      toast({ title: 'Could not update the layout for everyone', description: err?.message || 'Try again.', variant: 'destructive' });
     }
-  }, []);
+  }, [acceptLayout, moderate]);
+
+  // Spotlight participant: "Spotlight for Everyone" (null removes all).
+  const spotlightParticipant = useCallback((participantId: string | null) => {
+    const s = layoutStateRef.current;
+    void applyLayout(participantId ? spotlightOnly(s, participantId) : clearSpotlightsIn(s));
+  }, [applyLayout]);
+
+  const addToSpotlight = useCallback((participantId: string) => {
+    const r = addSpotlightTo(layoutStateRef.current, participantId);
+    if ('error' in r) {
+      toast({ title: 'Spotlight is full', description: r.error, variant: 'destructive' });
+      return;
+    }
+    void applyLayout(r.state);
+  }, [applyLayout]);
+
+  const removeFromSpotlight = useCallback((participantId: string) => {
+    void applyLayout(removeSpotlightFrom(layoutStateRef.current, participantId));
+  }, [applyLayout]);
+
+  const clearSpotlights = useCallback(() => {
+    void applyLayout(clearSpotlightsIn(layoutStateRef.current));
+  }, [applyLayout]);
+
+  const swapSpeakers = useCallback(() => {
+    void applyLayout(swapSpeakersIn(layoutStateRef.current));
+  }, [applyLayout]);
+
+  const setLayoutMode = useCallback((mode: LayoutMode) => {
+    void applyLayout(setLayoutModeIn(layoutStateRef.current, mode));
+  }, [applyLayout]);
+
+  const setScreenShareMode = useCallback((mode: ScreenShareMode) => {
+    void applyLayout(setScreenShareModeIn(layoutStateRef.current, mode));
+  }, [applyLayout]);
+
+  const setRecordingLayout = useCallback((layout: RecordingLayout) => {
+    void applyLayout(setRecordingLayoutIn(layoutStateRef.current, layout));
+  }, [applyLayout]);
+
+  const setShowThumbnails = useCallback((show: boolean) => {
+    void applyLayout(setShowThumbnailsIn(layoutStateRef.current, show));
+  }, [applyLayout]);
 
   // Pin participant (local only). Toggle semantics: pinning the already-pinned
   // participant — or passing null — clears the pin. (Previously the "Unpin" button
@@ -2455,9 +2568,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           setMeetingSettings(prev => ({ ...prev, ...data.settings }));
           break;
 
-        case 'spotlight-change':
-          setSpotlightedParticipantId(data.participantId);
+        case 'layout-change': {
+          // Instant copy of a host/co-host's layout change. Only trusted from a
+          // moderator; the room metadata update that follows is the real one.
+          if (!isFromHost) break;
+          const incoming = sanitizeLayoutState(data.layout);
+          if (incoming) {
+            setHasSharedLayout(true);
+            acceptLayout(incoming);
+          }
           break;
+        }
 
         case 'hand-raised':
           raisedHandsRef.current.add(data.participantId);
@@ -2507,7 +2628,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     // above. (The former Daily app-message path was removed with the Daily backend.)
 
     return () => { controlMessageHandlerRef.current = null; };
-  }, [isConnected, isMicOn, isCameraOn, toggleMic, toggleCamera, leaveRoom, participants, getParticipantRole, options.isHost]);
+  }, [isConnected, isMicOn, isCameraOn, toggleMic, toggleCamera, leaveRoom, participants, getParticipantRole, options.isHost, acceptLayout]);
 
   // §3D — LiveKit waiting room, host side: mirror the meeting_waiting_room table
   // (status='waiting') into waitingRoomParticipants via Supabase realtime.
@@ -2666,6 +2787,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     isModerator,
     spotlightedParticipantId,
     pinnedParticipantId,
+    layoutState,
+    layoutLoaded,
+    hasSharedLayout,
     isMicOn,
     isCameraOn,
     isScreenSharing,
@@ -2708,6 +2832,14 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     pauseRecording,
     resumeRecording,
     spotlightParticipant,
+    addToSpotlight,
+    removeFromSpotlight,
+    clearSpotlights,
+    swapSpeakers,
+    setLayoutMode,
+    setScreenShareMode,
+    setRecordingLayout,
+    setShowThumbnails,
     pinParticipant,
     raiseHand,
     lowerHand,

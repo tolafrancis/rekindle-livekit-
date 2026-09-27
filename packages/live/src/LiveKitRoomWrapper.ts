@@ -181,6 +181,9 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // One explicit scan right after connect() picks up whatever's
       // already live at join time; everything after that stays reactive.
       this.notifyTranslationTracksChanged();
+      // Same reason for the room metadata (the host's layout and spotlight):
+      // what was set before this participant joined has to be read now.
+      this.callbacks.onRoomMetadataChanged?.(room.metadata ?? '');
 
       // Set local participant name explicitly — ensures guest display names persist.
       // The LiveKit token should include the name, but set it explicitly as a backup.
@@ -602,6 +605,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   private wireEvents(room: Room): void {
     room
       .on(RoomEvent.Connected, () => this.callbacks.onJoined?.())
+      .on(RoomEvent.RoomMetadataChanged, (metadata: string) => this.callbacks.onRoomMetadataChanged?.(metadata))
       .on(RoomEvent.Disconnected, () => {
         this.joined = false;
         this.callbacks.onLeft?.();
