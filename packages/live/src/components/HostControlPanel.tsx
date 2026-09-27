@@ -37,6 +37,8 @@ interface HostControlPanelProps {
   meetingSettings: MeetingSettings;
   isRecording: boolean;
   spotlightedParticipantId: string | null;
+  /** Everyone spotlit, in order (multi-spotlight). */
+  spotlightParticipants?: string[];
   /** True for host and co-hosts — unlocks the moderation controls. */
   isHost: boolean;
   /** True only for the real host — recording is bound to the host's RTMP push. */
@@ -63,6 +65,10 @@ interface HostControlPanelProps {
   /** Current recording lifecycle state from the parent */
   recordingStatus?: 'idle' | 'starting' | 'recording' | 'stopping' | 'error';
   onSpotlightParticipant: (participantId: string | null) => void;
+  /** Multi-spotlight: add to / remove from the spotlight list. When unset,
+   *  the star replaces the spotlight (single spotlight). */
+  onAddSpotlight?: (participantId: string) => void;
+  onRemoveSpotlight?: (participantId: string) => void;
   onLowerHand: (participantId: string) => void;
   onClose: () => void;
 }
@@ -95,9 +101,13 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
   enableRecording = false,
   recordingStatus = 'idle',
   onSpotlightParticipant,
+  onAddSpotlight,
+  onRemoveSpotlight,
+  spotlightParticipants,
   onLowerHand,
   onClose
 }) => {
+  const spotIndex = (id: string) => (spotlightParticipants ?? (spotlightedParticipantId ? [spotlightedParticipantId] : [])).indexOf(id);
   const [showMuteAllDialog, setShowMuteAllDialog] = useState(false);
   const [showVideoOffDialog, setShowVideoOffDialog] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
@@ -251,7 +261,10 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
                                 {participant.isLocal && ' (You)'}
                               </p>
                               {participant.isSpotlighted && (
-                                <Star className="h-3 w-3 text-amber-400 fill-amber-400 flex-shrink-0" />
+                                <Badge className="h-4 px-1.5 text-[10px] bg-amber-500 text-white border-0 flex-shrink-0">
+                                  <Star className="h-2.5 w-2.5 mr-0.5 fill-current" />
+                                  Spotlight{spotIndex(participant.session_id) >= 0 && (spotlightParticipants?.length ?? 0) > 1 ? ` ${spotIndex(participant.session_id) + 1}` : ''}
+                                </Badge>
                               )}
                             </div>
                             <Badge 
@@ -355,8 +368,8 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-amber-400 hover:text-amber-300 hover:bg-gray-600"
-                              onClick={() => onSpotlightParticipant(null)}
-                              title="Remove spotlight"
+                              onClick={() => onRemoveSpotlight ? onRemoveSpotlight(participant.session_id) : onSpotlightParticipant(null)}
+                              title="Remove from spotlight"
                             >
                               <Star className="h-3 w-3 fill-current" />
                             </Button>
@@ -365,8 +378,8 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-gray-400 hover:text-amber-400 hover:bg-gray-600"
-                              onClick={() => onSpotlightParticipant(participant.session_id)}
-                              title="Spotlight"
+                              onClick={() => onAddSpotlight ? onAddSpotlight(participant.session_id) : onSpotlightParticipant(participant.session_id)}
+                              title={onAddSpotlight ? 'Add to spotlight' : 'Spotlight'}
                             >
                               <Star className="h-3 w-3" />
                             </Button>
