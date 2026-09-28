@@ -324,7 +324,16 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           extraControlButtons={extraControlButtons}
         />
 
-        {!isPiP && (webinar.enable_captions || webinar.enable_translation) && callTranslation && (
+        {/* Was gated on (webinar.enable_captions || webinar.enable_translation)
+            — that hid the button (Live Scripture included) entirely for any
+            webinar that had both off. Neither flag is enforced server-side
+            (start_webinar_captions_session only checks language_configs.
+            is_public), so it was purely a client convenience toggle, not a
+            real permission boundary — dropped it so Live Scripture is
+            reachable independently of Captions/Translation here too
+            (2026-09-28), matching MinistryInteractiveMeetings.tsx's own
+            FloatingTranslationButton, which was already unconditional. */}
+        {!isPiP && callTranslation && (
           <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50">
             <FloatingTranslationButton
               translation={callTranslation}

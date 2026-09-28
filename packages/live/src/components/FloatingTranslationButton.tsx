@@ -2,12 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Button } from '@rekindle/ui/button';
-import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X } from 'lucide-react';
+import { Input } from '@rekindle/ui/input';
+import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X, BookOpen, EyeOff } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { ScripturePanel, useCurrentScripture } from './ScripturePanel';
+import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
 
 // Human-readable name for a language code (e.g. "de" → "German (de)"),
 // falling back to the bare code where the browser has no name for it.
@@ -277,6 +280,92 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     return () => clearTimeout(timer);
   }, [captionLines, interimText]);
 
+  // Live Scripture, standalone from Captions (2026-09-28) — independent
+  // toggle, own session. Persisted per room like captionMode above.
+  // Deliberately NOT derived from `tracks` the way captionMode is: a
+  // scripture-only session never gets a bot, so it never publishes a
+  // LiveKit track — sessionIdForCaptionMode's track-matching approach would
+  // never find it. This queries translation_sessions directly instead (see
+  // the effect below), the same way TranslationListenerButton.tsx already
+  // does for its own (HLS-viewer) captions picker.
+  const SCRIPTURE_STORAGE_KEY = `rk-scripture-mode-${roomName}`;
+  const [scriptureOn, setScriptureOnState] = useState(() => {
+    try { return localStorage.getItem(SCRIPTURE_STORAGE_KEY) === 'on'; } catch { return false; }
+  });
+  const setScriptureOn = (on: boolean) => {
+    setScriptureOnState(on);
+    try { localStorage.setItem(SCRIPTURE_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* non-fatal */ }
+  };
+  const [scriptureSessionId, setScriptureSessionId] = useState<string | null>(null);
+  const [scriptureStarting, setScriptureStarting] = useState(false);
+  const [scriptureManual, setScriptureManual] = useState('');
+  const [scriptureManualError, setScriptureManualError] = useState<string | null>(null);
+  const [scriptureHiding, setScriptureHiding] = useState(false);
+  const scriptureSettings = useScriptureSettings(ministryId);
+  const onScreenVerse = useCurrentScripture(scriptureSessionId ?? undefined);
+
+  useEffect(() => {
+    if (!scriptureOn) { setScriptureSessionId(null); return; }
+    let cancelled = false;
+    (async () => {
+      setScriptureStarting(true);
+      try {
+        // Any already-running session for this room (real translation or
+        // captions, any target language) is already a perfectly good
+        // Scripture anchor — only dispatch a new (bot-less) one if the room
+        // genuinely has nothing yet.
+        const { data: existing } = await supabase
+          .from('translation_sessions')
+          .select('id')
+          .eq('livekit_room_name', roomName)
+          .in('status', ['initialising', 'joining', 'active', 'paused'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        if (existing) { setScriptureSessionId(existing.id); return; }
+
+        const { data, error } = await supabase.rpc('start_bot_session', {
+          p_ministry_id: ministryId,
+          p_room_name: roomName,
+          p_source_language: sourceLanguage,
+          p_target_language: sourceLanguage,
+          p_speaker_identity: isHost ? null : (userId || null),
+          p_session_kind: 'scripture_only',
+        });
+        if (cancelled) return;
+        if (error) throw error;
+        setScriptureSessionId((data as { session_id: string } | null)?.session_id ?? null);
+      } catch (err: any) {
+        console.error('[FloatingTranslationButton] could not start Live Scripture:', err);
+        toast({ title: 'Could not turn on Live Scripture', description: err.message, variant: 'destructive' });
+        setScriptureOn(false);
+      } finally {
+        if (!cancelled) setScriptureStarting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId]);
+
+  const showManualVerse = async () => {
+    if (!scriptureSessionId || !scriptureManual.trim()) return;
+    setScriptureManualError(null);
+    const err = await showScriptureVerse(scriptureSessionId, ministryId, scriptureManual.trim(), scriptureSettings, sourceLanguage);
+    if (err) setScriptureManualError(err);
+    else setScriptureManual('');
+  };
+
+  const hideVerse = async () => {
+    if (!scriptureSessionId) return;
+    setScriptureHiding(true);
+    try {
+      await hideScriptureVerse(scriptureSessionId, ministryId);
+    } finally {
+      setScriptureHiding(false);
+    }
+  };
+
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
   // needs sourceLanguage (the room's own language, i.e. what a reverse
@@ -522,6 +611,16 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           viewport up to a much larger cap, with room for the previous line
           too (context, like any real captions bar) instead of just the
           latest one. */}
+      {/* Live Scripture overlay — positioned above the captions bar (which
+          sits lower-center) so the two never collide; matches the same
+          ScripturePanel "display" card /display renders, positioned above
+          its own captions the same way (see TranslationDisplayPage.tsx). */}
+      {scriptureOn && scriptureSessionId && (
+        <div className="fixed top-3 sm:top-4 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2">
+          <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+        </div>
+      )}
+
       {captionMode !== 'off' && (
         <div
           ref={captionOverlay.ref}
@@ -730,6 +829,46 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                 {captionMode === track.language && <Check className="h-3.5 w-3.5 text-indigo-600" />}
               </button>
             ))}
+          </div>
+
+          {/* Live Scripture — standalone from Captions (2026-09-28): turning
+              this on never dispatches a bot on its own (see the effect
+              above), so it costs nothing and needs no STT running. If
+              Captions/Translation is also on (or gets turned on afterward)
+              for this room, they share the same session automatically. */}
+          <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Live Scripture</p>
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => setScriptureOn(!scriptureOn)}
+              disabled={scriptureStarting}
+              className={`${row} ${sel(scriptureOn)} disabled:opacity-50`}
+            >
+              {scriptureStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+              <span className="flex-1">{scriptureOn ? 'On' : 'Off — tap to turn on'}</span>
+              {scriptureOn && !scriptureStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+            </button>
+            {scriptureOn && isHost && scriptureSessionId && (
+              <div className="px-2.5 space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    value={scriptureManual}
+                    onChange={(e) => { setScriptureManual(e.target.value); setScriptureManualError(null); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') showManualVerse(); }}
+                    placeholder='e.g. "John 3:16"'
+                    className="h-8 text-xs flex-1"
+                  />
+                  <Button size="sm" className="h-8" onClick={showManualVerse} disabled={!scriptureManual.trim()}>Show</Button>
+                </div>
+                {scriptureManualError && <p className="text-xs text-destructive">{scriptureManualError}</p>}
+                {onScreenVerse && (
+                  <Button size="sm" variant="outline" className="h-7 w-full" onClick={hideVerse} disabled={scriptureHiding}>
+                    {scriptureHiding ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5 mr-1.5" />}
+                    Hide
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {isHost && (

@@ -51,7 +51,6 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   const myRequest = speakerRequests.myRequest;
   const [hlsLatencySeconds, setHlsLatencySeconds] = useState(HLS_TARGET_LATENCY_SECONDS);
   const [translationActive, setTranslationActive] = useState(false);
-  const showTranslation = webinar.enable_captions || webinar.enable_translation;
   // Starts muted (2026-09-22, real bug reported live: "always starts with
   // tap to enable sound and it does nothing"). Root cause: HlsPlayer tries
   // to autoplay WITH sound the instant the manifest parses — before any real
@@ -154,14 +153,17 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
         </div>
 
         <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
-          {showTranslation && (
-            <WebinarTranslationButton
-              webinarId={webinar.id}
-              roomName={webinar.room_name}
-              delaySeconds={hlsLatencySeconds}
-              onActiveChange={setTranslationActive}
-            />
-          )}
+          {/* Unconditional — see LiveChannelViewer.tsx's own identical
+              button, whose matching "Enable translation?" toggle was
+              already pulled out for the same reason (not server-enforced,
+              and it made Live Scripture unreachable when both flags were
+              off, 2026-09-28). */}
+          <WebinarTranslationButton
+            webinarId={webinar.id}
+            roomName={webinar.room_name}
+            delaySeconds={hlsLatencySeconds}
+            onActiveChange={setTranslationActive}
+          />
           <Button onClick={onLeave} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
             <PhoneOff className="h-4 w-4 mr-2" /> Leave
           </Button>
