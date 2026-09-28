@@ -12,7 +12,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrCode';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
-import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2, Captions } from 'lucide-react';
+import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2, Captions, MessageCircle, Pin, User } from 'lucide-react';
 import { ObsCaptionSetupDialog } from '@rekindle/live/components/ObsCaptionSetupDialog';
 import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
@@ -37,6 +37,19 @@ interface ServiceRow {
   name: string;
   started_at: string | null;
   ended_at: string | null;
+  created_at: string;
+}
+
+// "Conversation" (live Q&A, 2026-09-28) — a pending question awaiting the
+// speaker/admin's pin-or-dismiss call. See migration
+// 0373_translation_questions.sql.
+interface QuestionRow {
+  id: string;
+  service_id: string | null;
+  asker_name: string | null;
+  speaker_text: string | null;
+  original_text: string;
+  status: string;
   created_at: string;
 }
 
@@ -129,15 +142,27 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const [generatingQrFor, setGeneratingQrFor] = useState<string | null>(null);
   const [qrPreview, setQrPreview] = useState<Record<string, string>>({});
 
+  // "Conversation" (live Q&A, 2026-09-28) — pending questions across every
+  // service this ministry has, keyed by service_id when rendered per-card
+  // below. RLS (migration 0373) already scopes this table's admin SELECT
+  // policy to is_group_admin/is_content_admin, so a plain authenticated
+  // read + realtime subscription works here the same way the sessions one
+  // above does — unlike SpeakerPage.tsx, which has no Supabase auth session
+  // at all and has to poll a security-definer RPC instead.
+  const [questions, setQuestions] = useState<QuestionRow[]>([]);
+  const [pinningId, setPinningId] = useState<string | null>(null);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: cfg }, { data: svc, error: svcErr }, { data: sess, error: sessErr }, { data: addonRows }, { data: minutesUsed }] = await Promise.all([
+      const [{ data: cfg }, { data: svc, error: svcErr }, { data: sess, error: sessErr }, { data: addonRows }, { data: minutesUsed }, { data: q }] = await Promise.all([
         supabase.from('language_configs').select('source_language, supported_target_languages, speaker_identity').eq('ministry_id', ministryId).maybeSingle(),
         supabase.from('translation_services').select('id, name, started_at, ended_at, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(20),
         supabase.from('translation_sessions').select('id, service_id, source_type, source_language, target_language, status, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(100),
         supabase.from('ministry_addons').select('quantity, unit_hours').eq('ministry_id', ministryId).eq('addon_type', 'live_translation').eq('status', 'active'),
         supabase.rpc('get_ministry_translation_minutes_used', { p_ministry_id: ministryId }),
+        supabase.from('translation_questions').select('id, service_id, asker_name, speaker_text, original_text, status, created_at').eq('ministry_id', ministryId).eq('status', 'pending').order('created_at', { ascending: true }),
       ]);
       if (svcErr) throw svcErr;
       if (sessErr) throw sessErr;
@@ -148,6 +173,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       }
       setServices(svc || []);
       setSessions(sess || []);
+      setQuestions((q as QuestionRow[]) || []);
       setTranslationMinutesUsed(typeof minutesUsed === 'number' ? minutesUsed : null);
 
       // Standalone add-on now (migration 0345), not a tier perk — "has the
@@ -187,6 +213,55 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [ministryId]);
+
+  // Conversation — new questions appear live, and one this admin (or the
+  // speaker, on their own device) just pinned/dismissed drops out of the
+  // pending list without waiting for the next poll/reload.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`translation-questions-${ministryId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'translation_questions', filter: `ministry_id=eq.${ministryId}` },
+        (payload) => {
+          setQuestions(prev => {
+            if (payload.eventType === 'DELETE') {
+              return prev.filter(q => q.id !== (payload.old as { id: string }).id);
+            }
+            const row = payload.new as QuestionRow;
+            if (row.status !== 'pending') return prev.filter(q => q.id !== row.id); // pinned/dismissed elsewhere
+            const exists = prev.some(q => q.id === row.id);
+            return exists ? prev.map(q => (q.id === row.id ? row : q)) : [...prev, row];
+          });
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [ministryId]);
+
+  const pinQuestion = async (questionId: string) => {
+    setPinningId(questionId);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-pin-question', { body: { questionId } });
+      if (error || (data as { error?: string })?.error) throw new Error((data as { error?: string })?.error || error?.message);
+      setQuestions(prev => prev.filter(q => q.id !== questionId));
+    } catch (err: any) {
+      toast({ title: "Couldn't pin that question", description: err.message, variant: 'destructive' });
+    } finally {
+      setPinningId(null);
+    }
+  };
+
+  const dismissQuestion = async (questionId: string) => {
+    setDismissingId(questionId);
+    try {
+      const { error } = await supabase.rpc('dismiss_translation_question', { p_question_id: questionId });
+      if (error) throw error;
+      setQuestions(prev => prev.filter(q => q.id !== questionId));
+    } catch (err: any) {
+      toast({ title: "Couldn't dismiss that question", description: err.message, variant: 'destructive' });
+    } finally {
+      setDismissingId(null);
+    }
+  };
 
   const openStartDialog = () => {
     setServiceName('');
@@ -445,6 +520,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   };
 
   const sessionsFor = (serviceId: string) => sessions.filter(s => s.service_id === serviceId);
+  const questionsFor = (serviceId: string) => questions.filter(q => q.service_id === serviceId);
   // Speaker Link sessions aren't attached to a translation_services row —
   // there's no "name this service" step, by design (see openSpeakerDialog's
   // comment) — so they're listed on their own instead of nested under a
@@ -563,6 +639,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
 
       {services.map(service => {
         const rows = sessionsFor(service.id);
+        const pendingQuestions = questionsFor(service.id);
         return (
           <Card key={service.id}>
             <CardHeader className="pb-2">
@@ -677,6 +754,45 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                 </div>
               ))}
               {rows.length === 0 && <p className="text-xs text-muted-foreground">No sessions under this service.</p>}
+
+              {pendingQuestions.length > 0 && (
+                <div className="mt-2 space-y-1.5 rounded-lg border border-dashed p-2.5">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <MessageCircle className="h-3.5 w-3.5" /> Conversation — {pendingQuestions.length} pending
+                  </p>
+                  {pendingQuestions.map(q => (
+                    <div key={q.id} className="flex items-start gap-2 rounded-md bg-muted/40 px-2.5 py-2">
+                      <User className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] text-muted-foreground">{q.asker_name || 'Anonymous'}</p>
+                        <p className="text-sm break-words">{q.speaker_text || q.original_text}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0"
+                          onClick={() => pinQuestion(q.id)}
+                          disabled={pinningId === q.id || dismissingId === q.id}
+                          title="Pin for everyone"
+                        >
+                          {pinningId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pin className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => dismissQuestion(q.id)}
+                          disabled={pinningId === q.id || dismissingId === q.id}
+                          title="Dismiss"
+                        >
+                          {dismissingId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         );

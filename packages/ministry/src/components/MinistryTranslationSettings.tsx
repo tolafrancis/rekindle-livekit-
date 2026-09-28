@@ -152,6 +152,7 @@ interface LanguageConfigState {
   bot_enabled: boolean;
   is_public: boolean;
   speaker_identity: string | null;
+  questions_enabled: boolean;
 }
 
 // RLT pilots Asia first (see docs/rlt-build-checklist.md) — this list just
@@ -331,6 +332,7 @@ const DEFAULT_CONFIG: LanguageConfigState = {
   bot_enabled: false,
   is_public: true,
   speaker_identity: null,
+  questions_enabled: true,
 };
 
 export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsProps> = ({ ministryId }) => {
@@ -651,7 +653,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
 
       const { data, error } = await supabase
         .from('language_configs')
-        .select('source_language, target_language, supported_target_languages, elevenlabs_voice_id, bot_enabled, is_public, speaker_identity, pin_hash')
+        .select('source_language, target_language, supported_target_languages, elevenlabs_voice_id, bot_enabled, is_public, speaker_identity, pin_hash, questions_enabled')
         .eq('ministry_id', ministryId)
         .maybeSingle();
       if (error) throw error;
@@ -664,6 +666,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
           bot_enabled: data.bot_enabled,
           is_public: data.is_public,
           speaker_identity: data.speaker_identity,
+          questions_enabled: data.questions_enabled,
         });
         setHasPin(!!data.pin_hash);
         setSavedTargetLanguages(data.supported_target_languages || []);
@@ -688,6 +691,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
         p_bot_enabled: config.bot_enabled,
         p_is_public: config.is_public,
         p_speaker_identity: config.speaker_identity,
+        p_questions_enabled: config.questions_enabled,
       });
       if (error) throw error;
 
@@ -975,6 +979,17 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
               <p className="text-xs text-muted-foreground">Auto-starts the bot when a meeting begins (Phase 2+).</p>
             </div>
             <Switch checked={config.bot_enabled} onCheckedChange={v => setConfig(c => ({ ...c, bot_enabled: v }))} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label className="text-sm">Enable Conversation (live Q&amp;A)</Label>
+              <p className="text-xs text-muted-foreground">
+                Lets listeners on /display type or speak a question, translated for the speaker and pinnable for
+                everyone to see. Anonymous by default, limited to one question every 20 seconds per listener.
+              </p>
+            </div>
+            <Switch checked={config.questions_enabled} onCheckedChange={v => setConfig(c => ({ ...c, questions_enabled: v }))} />
           </div>
         </CardContent>
       </Card>

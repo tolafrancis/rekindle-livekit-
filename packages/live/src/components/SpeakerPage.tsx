@@ -8,9 +8,23 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
-import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User } from 'lucide-react';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
+
+/** get_speaker_pending_questions' row shape (translation_questions). */
+interface PendingQuestion {
+  id: string;
+  asker_name: string | null;
+  speaker_text: string | null;
+  original_text: string;
+  created_at: string;
+}
+interface PinnedQuestion {
+  id: string;
+  asker_name: string | null;
+  pinned_translations: Record<string, string>;
+}
 
 /** translation-speaker-token's 200 response. */
 interface SpeakerToken {
@@ -74,6 +88,21 @@ export const SpeakerPage: React.FC = () => {
   const [correctionText, setCorrectionText] = useState('');
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
 
+  // "Conversation" (live Q&A, 2026-09-28) — listeners on /display can ask a
+  // question; it's translated into this speaker's language and shown here
+  // to pin (surfaces it, translated, on every listener's /display) or
+  // dismiss. No realtime subscription here (unlike captions above) — the
+  // anon RLS policy on translation_questions only allows reading PINNED
+  // rows directly; the pending queue is only reachable via
+  // get_speaker_pending_questions, a security-definer RPC keyed on this
+  // page's speaker_token, so it's polled instead, same fallback cadence
+  // TranslationDisplayPage.tsx already uses for its own realtime backstop.
+  const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
+  const [pinnedQuestion, setPinnedQuestion] = useState<PinnedQuestion | null>(null);
+  const [pinningId, setPinningId] = useState<string | null>(null);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const serviceIdRef = useRef<string | null>(null);
+
   const roomRef = useRef<Room | null>(null);
   const analyserCleanupRef = useRef<(() => Promise<void>) | null>(null);
   const levelRafRef = useRef<number | null>(null);
@@ -133,6 +162,60 @@ export const SpeakerPage: React.FC = () => {
     }
   }, [sessionId, speakerToken]);
 
+  // Conversation polling — see pendingQuestions' doc comment above for why
+  // this is polled rather than realtime.
+  useEffect(() => {
+    if (phase !== 'live' || !sessionId || !speakerToken) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      const [{ data: pending }, pinnedRes] = await Promise.all([
+        supabase.rpc('get_speaker_pending_questions', { p_session_id: sessionId, p_speaker_token: speakerToken }),
+        serviceIdRef.current
+          ? supabase.from('translation_questions').select('id, asker_name, pinned_translations')
+              .eq('service_id', serviceIdRef.current).eq('status', 'pinned').maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      if (cancelled) return;
+      setPendingQuestions((pending as PendingQuestion[]) || []);
+      setPinnedQuestion((pinnedRes as { data: PinnedQuestion | null }).data);
+    };
+
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [phase, sessionId, speakerToken]);
+
+  const pinQuestion = async (questionId: string) => {
+    if (!speakerToken) return;
+    setPinningId(questionId);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-pin-question', {
+        body: { questionId, speakerToken },
+      });
+      if (error || (data as { error?: string })?.error) throw new Error((data as { error?: string })?.error || error?.message);
+      setPendingQuestions((prev) => prev.filter((q) => q.id !== questionId));
+    } catch (err: any) {
+      toast({ title: "Couldn't pin that question", description: err.message, variant: 'destructive' });
+    } finally {
+      setPinningId(null);
+    }
+  };
+
+  const dismissQuestion = async (questionId: string) => {
+    if (!speakerToken) return;
+    setDismissingId(questionId);
+    try {
+      const { error } = await supabase.rpc('dismiss_translation_question', { p_question_id: questionId, p_speaker_token: speakerToken });
+      if (error) throw error;
+      setPendingQuestions((prev) => prev.filter((q) => q.id !== questionId));
+    } catch (err: any) {
+      toast({ title: "Couldn't dismiss that question", description: err.message, variant: 'destructive' });
+    } finally {
+      setDismissingId(null);
+    }
+  };
+
   const teardownLevelMeter = () => {
     if (levelRafRef.current !== null) cancelAnimationFrame(levelRafRef.current);
     levelRafRef.current = null;
@@ -190,6 +273,8 @@ export const SpeakerPage: React.FC = () => {
       if (micPub?.track) startLevelMeter(micPub.track as LocalAudioTrack);
       setPhase('live');
       startCaptions(sessionId);
+      supabase.from('translation_sessions').select('service_id').eq('id', sessionId).maybeSingle()
+        .then(({ data }) => { serviceIdRef.current = data?.service_id ?? null; });
       console.log('[SpeakerPage] publishing as', identity);
     } catch (err) {
       console.error('[SpeakerPage] connect/publish failed:', err);
@@ -415,6 +500,53 @@ export const SpeakerPage: React.FC = () => {
                   This won't change what's already been translated — it just helps recognition going forward.
                 </p>
               </div>
+
+              {(pendingQuestions.length > 0 || pinnedQuestion) && (
+                <div className="space-y-2 border-t border-white/10 pt-4">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
+                    <MessageCircle className="h-3.5 w-3.5" /> Conversation
+                  </p>
+                  {pinnedQuestion && (
+                    <div className="rounded-lg border border-indigo-400/40 bg-indigo-500/10 px-3 py-2">
+                      <p className="flex items-center gap-1.5 text-[11px] text-indigo-300 mb-1">
+                        <Pin className="h-3 w-3" /> Pinned for everyone
+                      </p>
+                      <p className="text-sm text-white">{pinnedQuestion.asker_name || 'Anonymous'}: {Object.values(pinnedQuestion.pinned_translations)[0]}</p>
+                    </div>
+                  )}
+                  {pendingQuestions.map((q) => (
+                    <div key={q.id} className="flex items-start gap-2 rounded-lg bg-black/30 px-3 py-2">
+                      <User className="h-4 w-4 text-white/40 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-white/40">{q.asker_name || 'Anonymous'}</p>
+                        <p className="text-sm text-white break-words">{q.speaker_text || q.original_text}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
+                          onClick={() => pinQuestion(q.id)}
+                          disabled={pinningId === q.id || dismissingId === q.id}
+                          title="Pin for everyone"
+                        >
+                          {pinningId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pin className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
+                          onClick={() => dismissQuestion(q.id)}
+                          disabled={pinningId === q.id || dismissingId === q.id}
+                          title="Dismiss"
+                        >
+                          {dismissingId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white" onClick={toggleMute}>
