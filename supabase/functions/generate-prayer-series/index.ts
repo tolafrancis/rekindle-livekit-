@@ -13,7 +13,7 @@
 //               the rest of the series.
 //
 // Like the devotional functions, the model only ever proposes a Scripture
-// REFERENCE, never verse text. The caller (AdminPrayerSeriesManager) resolves
+// REFERENCE, never verse text. The caller (AdminPrayerLibrary) resolves
 // the real wording from bible-api.com, so Scripture is never hallucinated.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
