@@ -1052,6 +1052,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     ownsSubtab(g.id) ? activeTab === g.id && SUBTAB[g.id].value === childId : activeTab === childId;
   const isGroupActive = (g: NavGroup) => activeGroup.id === g.id;
 
+  // The app-wide "Find a feature" search (apps/rekindle FeatureFinder) asks
+  // for a screen in here by group + child id. Only screens this user can
+  // actually see (role, plan and modules already applied to GROUPS) are
+  // opened; setting `handled` tells the finder not to fall back.
+  const groupsRef = useRef(GROUPS);
+  groupsRef.current = GROUPS;
+  const goToChildRef = useRef(goToChild);
+  goToChildRef.current = goToChild;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ group: string; child: string; handled: boolean }>).detail;
+      if (!detail) return;
+      const g = groupsRef.current.find((x) => x.id === detail.group);
+      if (!g?.children?.some((c) => c.id === detail.child)) return;
+      goToChildRef.current(g, detail.child);
+      detail.handled = true;
+    };
+    window.addEventListener('rk:ministry-go', handler);
+    return () => window.removeEventListener('rk:ministry-go', handler);
+  }, []);
+
   // Deterministic daily pick: prefer is_daily rows, rotate by day so it varies.
   const pickDaily = (list: any[]): any | null => {
     if (!list.length) return null;
@@ -2506,7 +2527,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
 
             {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
-            {communitySubTab === 'feed' && <CommunityActivityFeed />}
+            {communitySubTab === 'feed' && <CommunityActivityFeed ministryId={ministry.id} />}
             {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
 
             {/* ── REVELATIONS sub-tab ── */}
