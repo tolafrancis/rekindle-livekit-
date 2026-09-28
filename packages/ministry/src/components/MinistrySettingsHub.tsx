@@ -27,6 +27,7 @@ import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
 // extra round trip.
 const MinistryRegistrationSettings = lazy(() => import('./MinistryRegistrationSettings').then((m) => ({ default: m.MinistryRegistrationSettings })));
 const MinistryMembersManager = lazy(() => import('./MinistryMembersManager').then((m) => ({ default: m.MinistryMembersManager })));
+const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
 const MinistryVolunteerTeamsManager = lazy(() => import('./MinistryVolunteerTeamsManager').then((m) => ({ default: m.MinistryVolunteerTeamsManager })));
 const MinistryBirthdayWishes = lazy(() => import('./MinistryBirthdayWishes').then((m) => ({ default: m.MinistryBirthdayWishes })));
 const MinistryDevotionalsManager = lazy(() => import('./MinistryDevotionalsManager').then((m) => ({ default: m.MinistryDevotionalsManager })));
@@ -92,7 +93,7 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'overview',        label: 'Overview',          icon: LayoutDashboard, description: 'Ministry stats & quick actions' },
   { id: 'general',         label: 'General',           icon: Settings,        description: 'Profile, branding & domain' },
-  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, teams & signups' },
+  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, small groups, teams & signups' },
   { id: 'content',         label: 'Content',           icon: BookOpen,        description: 'Devotionals, library & rules' },
   { id: 'engagement',      label: 'Engagement',       icon: MessageSquare,   description: 'Requests, donations & WhatsApp' },
   { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard,      description: 'Gateways & subscription' },
@@ -733,6 +734,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         {currentSection === 'people' && (
           <div className="space-y-6">
             <MinistryMembersManager ministryId={ministry.id} />
+            <MinistrySmallGroupsManager ministryId={ministry.id} />
             <MinistryVolunteerTeamsManager ministryId={ministry.id} />
             <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
             <div id="registration-join-link">

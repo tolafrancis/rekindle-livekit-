@@ -43,6 +43,7 @@ const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default:
 const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
 const DiscoverSmallGroups = lazy(() => import('./DiscoverSmallGroups').then((m) => ({ default: m.DiscoverSmallGroups })));
 const MySmallGroups = lazy(() => import('./MySmallGroups').then((m) => ({ default: m.MySmallGroups })));
+const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
 const BibleReadingPlan = lazy(() => import('@rekindle/features/components/BibleReadingPlan').then((m) => ({ default: m.BibleReadingPlan })));
 const ScriptureMemory = lazy(() => import('@rekindle/features/components/ScriptureMemory').then((m) => ({ default: m.ScriptureMemory })));
 const BookSummaries = lazy(() => import('@rekindle/features/components/BookSummaries').then((m) => ({ default: m.BookSummaries })));
@@ -969,6 +970,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     ...(moduleOn('smallGroups') ? [{ id: 'groups', label: 'Small Groups', icon: Users, gradient: 'from-cyan-500 to-blue-600', children: [
       { id: 'discover-groups', label: 'Discover', icon: Search },
       { id: 'my-groups', label: 'My Groups', icon: Users },
+      // Create/edit/delete groups and assign leaders. It only lived in
+      // MinistryManagement, which nothing renders any more, so leaders had
+      // no way to reach it.
+      ...(canManageMinistry ? [{ id: 'manage-groups', label: 'Manage Groups', icon: Settings }] : []),
     ] }] : []),
     // Gated by the ministry's plan (ministryEntitlements.caps, fix 2) — not
     // just role, unlike most of the 'admin' group's children below. Hidden
@@ -2801,6 +2806,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* Small Groups — My Groups Tab */}
         {activeTab === 'my-groups' && (
           <MySmallGroups ministryId={ministry.id} />
+        )}
+
+        {/* Small Groups — Manage Tab (leaders/admins) */}
+        {activeTab === 'manage-groups' && canManageMinistry && (
+          <MinistrySmallGroupsManager ministryId={ministry.id} />
         )}
 
         {/* Prayer Library Tab */}
