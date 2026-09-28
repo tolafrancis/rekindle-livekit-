@@ -89,6 +89,8 @@ const SponsorshipSystem = lazy(() => import('./SponsorshipSystem').then((m) => (
 const PaymentHistory = lazy(() => import('./PaymentHistory').then((m) => ({ default: m.PaymentHistory })));
 const CounsellorDashboard = lazy(() => import('./CounsellorDashboard').then((m) => ({ default: m.CounsellorDashboard })));
 const GlobalSearch = lazy(() => import('./GlobalSearch'));
+import FeatureFinder, { FEATURE_NAVIGATE_EVENT } from './FeatureFinder';
+import type { FeatureAction } from '@/lib/featureIndex';
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminSystemHealthDashboard = lazy(() => import('./AdminSystemHealthDashboard'));
 const MinistriesHub = lazy(() => import('./MinistriesHub'));
@@ -1027,6 +1029,34 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     }
   };
 
+  // "Find a feature" (FeatureFinder) asks for navigation through this event,
+  // so it can be rendered anywhere, including over a ministry workspace.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent<FeatureAction>).detail;
+      if (!action) return;
+      switch (action.kind) {
+        case 'tab':
+          navigateTab(action.tab);
+          break;
+        case 'ministries':
+          navigateTab('ministries');
+          setMinistryView(action.view);
+          break;
+        case 'live':
+          navigateTab('live-channels');
+          setLiveChannelsTab(action.tab);
+          break;
+        case 'content-search':
+          if (ministryWorkspaceActive) setMinistryView('my-ministries');
+          setSearchOpen(true);
+          break;
+      }
+    };
+    window.addEventListener(FEATURE_NAVIGATE_EVENT, handler);
+    return () => window.removeEventListener(FEATURE_NAVIGATE_EVENT, handler);
+  }, [navigateTab, ministryWorkspaceActive]);
+
   const isSecondaryActive = (item: SecondaryNavItem) => {
     if (item.tab) return activeTab === item.tab;
     if (item.ministryView) return activeTab === 'ministries' && ministryView === item.ministryView;
@@ -1617,6 +1647,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       >
         <Bot className="h-6 w-6" />
       </button>}
+
+      {/* Find a feature — on every screen, ministry workspace included. */}
+      {!isViewerActive && (
+        <FeatureFinder
+          isAdmin={isAdmin}
+          className="bottom-20 left-4 md:bottom-6 md:left-28"
+        />
+      )}
 
       {/* Back-to-top is rendered globally by <BackToTop /> in App.tsx */}
 
