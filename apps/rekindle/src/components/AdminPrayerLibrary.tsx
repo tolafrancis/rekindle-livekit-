@@ -19,6 +19,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { TranslateNowButton } from "@/components/TranslateNowButton";
 import { generatePrayerContent } from '@/lib/generatePrayerContent';
 import {
+  generatePrayerSeriesOutline, generatePrayerSeriesDay,
+  type PrayerOutlineDay, type GeneratedPrayerDay,
+} from '@/lib/generatePrayerSeriesContent';
+import {
   Plus, Edit, Trash2, Save, BookOpen, Clock,
   Loader2, Search, RefreshCw, Star, Eye, EyeOff,
   Calendar, CheckCircle, AlertCircle, X, Timer,
@@ -220,6 +224,14 @@ export const AdminPrayerLibrary: React.FC = () => {
   const [selectedSeriesForDays, setSelectedSeriesForDays] = useState<PrayerSeries | null>(null);
   const [seriesDays, setSeriesDays] = useState<PrayerDay[]>([]);
   const [savingDays, setSavingDays] = useState(false);
+
+  // Whole-series AI drafting (same flow as the devotional library): an
+  // outline from the title + day count, then each day written from it.
+  // Generated days are always saved unpublished for review.
+  const [generatingOutline, setGeneratingOutline] = useState(false);
+  const [seriesOutline, setSeriesOutline] = useState<PrayerOutlineDay[] | null>(null);
+  const [generatingAllDays, setGeneratingAllDays] = useState(false);
+  const [allDaysProgress, setAllDaysProgress] = useState<{ done: number; total: number } | null>(null);
   
   // Form states
   const [topicForm, setTopicForm] = useState<PrayerTopic>({
@@ -875,27 +887,25 @@ export const AdminPrayerLibrary: React.FC = () => {
   };
 
   // ===== PRAYER SERIES CRUD =====
-  const saveSeries = async () => {
-    if (!seriesForm.title.trim()) {
-      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'titleRequired', 'Title is required'), variant: 'destructive' });
-      return;
-    }
-
-    try {
+  /** Inserts or updates the series (with empty day templates on insert) and returns the saved row. */
+  const persistSeries = async (overrides: Partial<PrayerSeries> = {}): Promise<PrayerSeries> => {
+      const { id: _id, ...form } = { ...seriesForm, ...overrides };
       const data = {
-        ...seriesForm,
-        fixed_start_date: seriesForm.start_behavior === 'fixed_date' && seriesForm.fixed_start_date
-          ? new Date(seriesForm.fixed_start_date).toISOString()
+        ...form,
+        fixed_start_date: form.start_behavior === 'fixed_date' && form.fixed_start_date
+          ? new Date(form.fixed_start_date).toISOString()
           : null
       };
 
       if (editingSeries?.id) {
-        const { error } = await supabase
+        const { data: updated, error } = await supabase
           .from('prayer_series')
           .update(data)
-          .eq('id', editingSeries.id);
+          .eq('id', editingSeries.id)
+          .select()
+          .single();
         if (error) throw error;
-        toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'seriesUpdated', 'Series updated') });
+        return updated as PrayerSeries;
       } else {
         const { data: newSeries, error } = await supabase
           .from('prayer_series')
@@ -922,9 +932,24 @@ export const AdminPrayerLibrary: React.FC = () => {
           
           await supabase.from('prayer_series_days').insert(days);
         }
-        
-        toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'seriesCreatedWithTemplates', 'Series created with day templates') });
+        return newSeries as PrayerSeries;
       }
+  };
+
+  const saveSeries = async () => {
+    if (!seriesForm.title.trim()) {
+      toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: t('adminPrayerLibrary', 'titleRequired', 'Title is required'), variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await persistSeries();
+      toast({
+        title: t('adminPrayerLibrary', 'success', 'Success'),
+        description: editingSeries?.id
+          ? t('adminPrayerLibrary', 'seriesUpdated', 'Series updated')
+          : t('adminPrayerLibrary', 'seriesCreatedWithTemplates', 'Series created with day templates'),
+      });
 
       setShowSeriesModal(false);
       setEditingSeries(null);
@@ -932,6 +957,143 @@ export const AdminPrayerLibrary: React.FC = () => {
       loadPrayerSeries();
     } catch (err: any) {
       toast({ title: t('adminPrayerLibrary', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    }
+  };
+
+  // ===== PRAYER SERIES: AI DRAFTING =====
+  const handleGenerateSeriesWithAI = async () => {
+    if (!seriesForm.title.trim()) return;
+    setGeneratingOutline(true);
+    try {
+      const result = await generatePrayerSeriesOutline({
+        title: seriesForm.title,
+        total_days: seriesForm.total_days,
+        categories: [],
+        existing_description: seriesForm.description || undefined,
+      });
+      setSeriesForm(prev => ({
+        ...prev,
+        subtitle: result.subtitle,
+        description: result.description,
+        difficulty_level: result.difficulty_level,
+        is_published: false,
+      }));
+      setSeriesOutline(result.days);
+      toast({
+        title: t('adminPrayerLibrary', 'aiOutlineReady', 'AI draft ready'),
+        description: t('adminPrayerLibrary', 'aiOutlineReadyDesc', 'Review the details below, then generate the days.'),
+      });
+    } catch (err: any) {
+      toast({ title: t('adminPrayerLibrary', 'generationFailed', 'Generation failed'), description: err?.message || 'Could not generate content', variant: 'destructive' });
+    } finally {
+      setGeneratingOutline(false);
+    }
+  };
+
+  const generatedDayFields = (g: GeneratedPrayerDay) => ({
+    title: g.title,
+    prayer_focus: g.prayer_focus,
+    scripture_reference: g.scripture_reference,
+    scripture_text: g.scripture_text,
+    prayer_text: g.prayer_text,
+    prayer_points: g.prayer_points,
+    duration_minutes: g.duration_minutes,
+  });
+
+  /** Saves the series as a draft, then writes every day that has no prayer yet (unpublished). */
+  const handleSaveAndGenerateDays = async () => {
+    if (!seriesOutline || !seriesForm.title.trim()) return;
+    setGeneratingAllDays(true);
+    try {
+      const saved = await persistSeries({ is_published: false });
+      setEditingSeries(saved);
+      setSeriesForm(prev => ({ ...prev, is_published: false }));
+
+      const { data: existing } = await supabase
+        .from('prayer_series_days')
+        .select('id, day_number, title, prayer_focus, prayer_text')
+        .eq('series_id', saved.id!);
+      const byDay = new Map((existing || []).map((d: any) => [d.day_number, d]));
+
+      let previous: { title?: string; focus?: string } = {};
+      for (let i = 0; i < seriesOutline.length; i++) {
+        const o = seriesOutline[i];
+        setAllDaysProgress({ done: i, total: seriesOutline.length });
+        const row: any = byDay.get(o.day_number);
+        if (row?.prayer_text?.trim()) {
+          previous = { title: row.title, focus: row.prayer_focus };
+          continue;
+        }
+        const g = await generatePrayerSeriesDay({
+          series_title: seriesForm.title,
+          series_description: seriesForm.description,
+          day_number: o.day_number,
+          total_days: seriesOutline.length,
+          day_outline: { title: o.title, focus: o.focus },
+          previous_day_title: previous.title,
+          previous_day_focus: previous.focus,
+          difficulty_level: seriesForm.difficulty_level,
+        });
+        const fields = { ...generatedDayFields(g), is_published: false, updated_at: new Date().toISOString() };
+        const { error } = row
+          ? await supabase.from('prayer_series_days').update(fields).eq('id', row.id)
+          : await supabase.from('prayer_series_days').insert({ series_id: saved.id, day_number: o.day_number, audio_url: '', ...fields });
+        if (error) throw error;
+        previous = { title: g.title, focus: g.prayer_focus };
+      }
+      toast({
+        title: t('adminPrayerLibrary', 'success', 'Success'),
+        description: t('adminPrayerLibrary', 'allDaysGenerated', 'All days generated as drafts. Review them under Days, then publish.'),
+      });
+      loadPrayerSeries();
+    } catch (err: any) {
+      toast({ title: t('adminPrayerLibrary', 'generationFailed', 'Generation failed'), description: err?.message || 'Could not generate content', variant: 'destructive' });
+    } finally {
+      setGeneratingAllDays(false);
+      setAllDaysProgress(null);
+    }
+  };
+
+  /** Days manager: drafts every day with no prayer yet into the form. Nothing is saved until Save All Days. */
+  const handleGenerateEmptyDays = async () => {
+    const s = selectedSeriesForDays;
+    if (!s) return;
+    const isBlankTitle = (d: PrayerDay) => !d.title.trim() || d.title === `Day ${d.day_number} Prayer`;
+    const empty = seriesDays.filter(d => !d.prayer_text.trim()).map(d => d.day_number);
+    if (!empty.length) return;
+    setGeneratingAllDays(true);
+    let days = seriesDays;
+    try {
+      for (let i = 0; i < empty.length; i++) {
+        setAllDaysProgress({ done: i, total: empty.length });
+        const dayNumber = empty[i];
+        const day = days.find(d => d.day_number === dayNumber);
+        const prev = days.find(d => d.day_number === dayNumber - 1);
+        const g = await generatePrayerSeriesDay({
+          series_title: s.title,
+          series_description: s.description,
+          day_number: dayNumber,
+          total_days: days.length,
+          day_outline: day && (!isBlankTitle(day) || day.prayer_focus)
+            ? { title: isBlankTitle(day) ? '' : day.title, focus: day.prayer_focus }
+            : undefined,
+          previous_day_title: prev && !isBlankTitle(prev) ? prev.title : undefined,
+          previous_day_focus: prev?.prayer_focus || undefined,
+          difficulty_level: s.difficulty_level,
+        });
+        const fields = {
+          ...generatedDayFields(g),
+          scriptures: g.scripture_reference ? [{ reference: g.scripture_reference, text: g.scripture_text }] : [],
+        };
+        days = days.map(d => (d.day_number === dayNumber ? { ...d, ...fields } : d));
+        setSeriesDays(days);
+      }
+      toast({ title: t('adminPrayerLibrary', 'success', 'Success'), description: t('adminPrayerLibrary', 'emptyDaysGenerated', 'Empty days drafted. Review them, then Save All Days.') });
+    } catch (err: any) {
+      toast({ title: t('adminPrayerLibrary', 'generationFailed', 'Generation failed'), description: err?.message || 'Could not generate content', variant: 'destructive' });
+    } finally {
+      setGeneratingAllDays(false);
+      setAllDaysProgress(null);
     }
   };
 
@@ -948,6 +1110,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   };
 
   const resetSeriesForm = () => {
+    setSeriesOutline(null);
     setSeriesForm({
       title: '', subtitle: '', description: '', cover_image_url: '',
       total_days: 7, difficulty_level: 'beginner', start_behavior: 'user_based',
@@ -956,6 +1119,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   };
 
   const openEditSeries = (series: PrayerSeries) => {
+    setSeriesOutline(null);
     setEditingSeries(series);
     setSeriesForm({
       title: series.title,
@@ -1923,6 +2087,22 @@ export const AdminPrayerLibrary: React.FC = () => {
                 onChange={(e) => setSeriesForm({ ...seriesForm, title: e.target.value })}
                 placeholder={t('adminPrayerLibrary', 'seriesTitlePlaceholder', 'e.g., 7 Days of Fasting Prayer')}
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+                disabled={!seriesForm.title.trim() || generatingOutline || generatingAllDays}
+                onClick={handleGenerateSeriesWithAI}
+              >
+                {generatingOutline ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+                {editingSeries
+                  ? t('adminPrayerLibrary', 'regenerateSeriesWithAi', 'Regenerate with AI')
+                  : t('adminPrayerLibrary', 'generateSeriesWithAi', 'Generate with AI')}
+              </Button>
+              {!seriesForm.title.trim() && (
+                <p className="text-xs text-muted-foreground mt-1">{t('adminPrayerLibrary', 'aiNeedsTitleAndDays', 'Enter a title and number of days, then let AI draft the series.')}</p>
+              )}
             </div>
 
             <div>
@@ -2052,9 +2232,43 @@ export const AdminPrayerLibrary: React.FC = () => {
             </div>
           </div>
 
+          {seriesOutline && (
+            <div className="rounded-lg border p-4 space-y-3 bg-purple-50/40">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-semibold flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-purple-600" />
+                    {t('adminPrayerLibrary', 'aiGeneratedDays', 'AI-Generated Days')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t('adminPrayerLibrary', 'aiDaysHelper', 'Days that already have a prayer are kept. Every new day is saved unpublished for your review.')}
+                  </p>
+                </div>
+                <Button type="button" size="sm" disabled={generatingAllDays || !seriesForm.title.trim()} onClick={handleSaveAndGenerateDays}>
+                  {generatingAllDays ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}
+                  {t('adminPrayerLibrary', 'saveAndGenerateDays', 'Save & Generate All Days')}
+                </Button>
+              </div>
+              {allDaysProgress && (
+                <p className="text-xs text-muted-foreground">
+                  {t('adminPrayerLibrary', 'generatingDayProgress', 'Generating day {done} of {total}…').replace('{done}', String(allDaysProgress.done + 1)).replace('{total}', String(allDaysProgress.total))}
+                </p>
+              )}
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {seriesOutline.map(d => (
+                  <div key={d.day_number} className="rounded-md border bg-background px-3 py-2 text-sm">
+                    <span className="font-medium">{t('adminPrayerLibrary', 'dayN', 'Day {n}').replace('{n}', String(d.day_number))}: </span>
+                    <span>{d.title}</span>
+                    {d.focus && <p className="text-xs text-muted-foreground mt-0.5">{d.focus}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSeriesModal(false)}>{t('adminPrayerLibrary', 'cancel', 'Cancel')}</Button>
-            <Button onClick={saveSeries}>
+            <Button onClick={saveSeries} disabled={generatingAllDays}>
               <Save className="h-4 w-4 mr-2" />
               {editingSeries ? t('adminPrayerLibrary', 'updateSeries', 'Update Series') : t('adminPrayerLibrary', 'createSeries', 'Create Series')}
             </Button>
@@ -2301,7 +2515,21 @@ export const AdminPrayerLibrary: React.FC = () => {
                 {t('adminPrayerLibrary', 'close', 'Close')}
               </Button>
               <div className="flex-1" />
-              <Button variant="outline" onClick={saveDays} disabled={savingDays}>
+              {allDaysProgress && (
+                <span className="text-xs text-muted-foreground">
+                  {t('adminPrayerLibrary', 'generatingDayProgress', 'Generating day {done} of {total}…').replace('{done}', String(allDaysProgress.done + 1)).replace('{total}', String(allDaysProgress.total))}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                onClick={handleGenerateEmptyDays}
+                disabled={savingDays || generatingAllDays || !seriesDays.some(d => !d.prayer_text.trim())}
+              >
+                {generatingAllDays ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                {t('adminPrayerLibrary', 'generateEmptyDays', 'Generate empty days with AI')}
+              </Button>
+              <Button variant="outline" onClick={saveDays} disabled={savingDays || generatingAllDays}>
                 {savingDays ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                 {t('adminPrayerLibrary', 'saveAllDays', 'Save All Days')}
               </Button>
