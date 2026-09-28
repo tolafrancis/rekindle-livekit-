@@ -81,7 +81,7 @@ export function useUserAnalytics() {
               .from('devotional_progress')
               .select('id', { count: 'exact', head: true })
               .eq('user_id', uid)
-              .eq('completed', true),
+              .not('completed_at', 'is', null),
             supabase
               .from('devotional_user_progress')
               .select('completed_days')
