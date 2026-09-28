@@ -2527,7 +2527,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
 
             {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
-            {communitySubTab === 'feed' && <CommunityActivityFeed />}
+            {communitySubTab === 'feed' && <CommunityActivityFeed ministryId={ministry.id} />}
             {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
 
             {/* ── REVELATIONS sub-tab ── */}

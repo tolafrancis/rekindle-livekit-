@@ -195,6 +195,8 @@ export const CommunityRevelations: React.FC = () => {
       const { data, error } = await supabase
         .from('community_revelations')
         .select('*')
+        // Posts made inside a ministry's Community stay in that ministry.
+        .is('ministry_id', null)
         .eq('is_published', true)
         .eq('is_hidden', false)
         .order('created_at', { ascending: false })
@@ -494,6 +496,7 @@ export const CommunityRevelations: React.FC = () => {
       const { data, error } = await supabase
         .from('community_questions')
         .select('*, community_answers(*)')
+        .is('ministry_id', null)
         .order('created_at', { ascending: false })
         .range(from, from + FEED_PAGE_SIZE - 1);
       if (error) throw error;
