@@ -24,12 +24,19 @@ export interface ScriptureSettings {
   preferred_version: string;
   preferred_version_label: string;
   display_seconds: number;
+  /** Scan captions for spoken/typed references and put confirmed ones on
+   *  screen without anyone touching the manual box — the original operator
+   *  workflow (LiveScriptureOperatorCard.tsx), now mirrored here too. */
+  auto_detect: boolean;
+  auto_show: boolean;
 }
 
 export const DEFAULT_SCRIPTURE_SETTINGS: ScriptureSettings = {
   preferred_version: DEFAULT_BIBLE_VERSION,
   preferred_version_label: 'KJV',
   display_seconds: 30,
+  auto_detect: true,
+  auto_show: true,
 };
 
 /** Ministry's Live Scripture preferences — read-only here (writing them is
@@ -40,7 +47,7 @@ export function useScriptureSettings(ministryId: string): ScriptureSettings {
     let cancelled = false;
     supabase
       .from('ministry_scripture_settings')
-      .select('preferred_version, preferred_version_label, display_seconds')
+      .select('preferred_version, preferred_version_label, display_seconds, auto_detect, auto_show')
       .eq('ministry_id', ministryId)
       .maybeSingle()
       .then(({ data }) => {

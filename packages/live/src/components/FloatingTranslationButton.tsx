@@ -11,6 +11,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
 import { ScripturePanel, useCurrentScripture } from './ScripturePanel';
 import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
+import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
 
 // Human-readable name for a language code (e.g. "de" → "German (de)"),
 // falling back to the bare code where the browser has no name for it.
@@ -183,6 +184,16 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     resetKey: captionMode === 'off' ? 'off' : 'on',
     baseTransform: 'translateX(-50%)',
   });
+  // Draggable (2026-09-29, real usability report: the fixed top position sat
+  // right under the "Copy Link" / stream-config buttons every host layout
+  // puts in the top-right corner — WebinarStage.tsx and
+  // MinistryInteractiveMeetings.tsx both anchor those around top-2/top-4).
+  // Same pattern as captionOverlay above: default position clears that
+  // button row, draggable anywhere afterward, resets on a fresh off → on.
+  const scriptureOverlay = useDraggableOverlay({
+    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
+    baseTransform: 'translateX(-50%)',
+  });
   // "Show Captions" (standalone from Live Translate, 2026-08-22) — dispatches
   // a same-language (source==target) session on demand instead of requiring
   // one to already exist. captionsStarting drives the overlay's loading text
@@ -347,6 +358,41 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId]);
+
+  // Auto-detect (2026-09-29) — the original workflow: put a confirmed
+  // reference on screen the moment it's heard, no manual "Show" tap needed.
+  // Mirrors LiveScriptureOperatorCard.tsx's watch-captions effect, scanning
+  // the same translation_logs feed the captions box above reads (its own
+  // realtime channel, separate from that one). Everyone in the room runs
+  // this independently — harmless, since they all write the exact same
+  // translation_scripture_events row for a given detected reference.
+  const scriptureLive = useRef({ settings: scriptureSettings, onScreenRef: onScreenVerse?.reference ?? null });
+  scriptureLive.current = { settings: scriptureSettings, onScreenRef: onScreenVerse?.reference ?? null };
+  useEffect(() => {
+    if (!scriptureSessionId || !scriptureSettings.auto_detect) return;
+    const detector = new ScriptureDetector();
+    const channel = supabase
+      .channel(`scripture-detect-${scriptureSessionId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${scriptureSessionId}` },
+        (payload) => {
+          try {
+            const row = payload.new as { source_text?: string; translated_text?: string };
+            const found = detector.scan(row.source_text || '', row.translated_text);
+            const latest = found[found.length - 1];
+            if (!latest || latest.status !== 'confirmed') return;
+            const { settings: s, onScreenRef } = scriptureLive.current;
+            const referenceText = formatReference(latest.reference);
+            if (s.auto_show && onScreenRef !== referenceText) {
+              showScriptureVerse(scriptureSessionId, ministryId, referenceText, s, sourceLanguage);
+            }
+          } catch (err) {
+            console.warn('[FloatingTranslationButton] scripture detection skipped a line:', err);
+          }
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [scriptureSessionId, scriptureSettings.auto_detect, ministryId, sourceLanguage]);
 
   const showManualVerse = async () => {
     if (!scriptureSessionId || !scriptureManual.trim()) return;
@@ -611,13 +657,28 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           viewport up to a much larger cap, with room for the previous line
           too (context, like any real captions bar) instead of just the
           latest one. */}
-      {/* Live Scripture overlay — positioned above the captions bar (which
-          sits lower-center) so the two never collide; matches the same
-          ScripturePanel "display" card /display renders, positioned above
-          its own captions the same way (see TranslationDisplayPage.tsx). */}
+      {/* Live Scripture overlay — default position sits below the top-right
+          control buttons (Copy Link / stream config) instead of under them,
+          and above the captions bar (which sits lower-center) so the two
+          never collide by default; draggable anywhere afterward, same as
+          the captions box below. Matches the same ScripturePanel "display"
+          card /display renders (see TranslationDisplayPage.tsx). */}
       {scriptureOn && scriptureSessionId && (
-        <div className="fixed top-3 sm:top-4 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2">
-          <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+        <div
+          ref={scriptureOverlay.ref}
+          className="fixed top-16 sm:top-20 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          style={scriptureOverlay.style}
+        >
+          <div
+            onPointerDown={scriptureOverlay.onPointerDown}
+            onPointerMove={scriptureOverlay.onPointerMove}
+            onPointerUp={scriptureOverlay.onPointerUp}
+            onPointerCancel={scriptureOverlay.onPointerCancel}
+            title="Drag to move"
+            className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          >
+            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+          </div>
         </div>
       )}
 

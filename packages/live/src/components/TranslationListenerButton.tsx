@@ -196,6 +196,12 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
     resetKey: captionMode === 'off' ? 'off' : 'on',
     baseTransform: 'translateX(-50%)',
   });
+  // Draggable (2026-09-29) — same fix as FloatingTranslationButton.tsx: the
+  // fixed top position sat right under this layout's own top-right controls.
+  const scriptureOverlay = useDraggableOverlay({
+    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
+    baseTransform: 'translateX(-50%)',
+  });
 
   // Deferred until the picker is actually opened (hasOpened) — a real
   // regression found live (2026-08-20): mounting this for every viewer the
@@ -651,8 +657,21 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
   return (
     <>
       {scriptureOn && scriptureSessionId && (
-        <div className="fixed top-3 sm:top-4 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2">
-          <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+        <div
+          ref={scriptureOverlay.ref}
+          className="fixed top-16 sm:top-20 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          style={scriptureOverlay.style}
+        >
+          <div
+            onPointerDown={scriptureOverlay.onPointerDown}
+            onPointerMove={scriptureOverlay.onPointerMove}
+            onPointerUp={scriptureOverlay.onPointerUp}
+            onPointerCancel={scriptureOverlay.onPointerCancel}
+            title="Drag to move"
+            className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          >
+            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+          </div>
         </div>
       )}
 
