@@ -1082,43 +1082,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     return pool[dayIndex % pool.length];
   };
 
-  // ========== CONDITIONAL RETURNS (AFTER ALL HOOKS TO COMPLY WITH RULES OF HOOKS) ==========
-  
-  // Show loading state while checking entitlements (moved here to prevent hook order violations)
-  if (entitlements.isLoading) {
-    return (
-      <div className="min-h-screen p-6 space-y-6">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-12 w-12 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="h-3 w-24" />
-          </div>
-        </div>
-        <Skeleton className="h-10 w-full rounded-xl" />
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-        </div>
-        <Skeleton className="h-48 rounded-xl" />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="space-y-4 py-6 px-4">
-        <Skeleton className="h-8 w-48" />
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   // ── Load community data when tab becomes active ──
   const loadMinistryCommunity = async () => {
     if (!ministry?.id) return;
@@ -1291,6 +1254,46 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       document.getElementById('daily-declaration')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 350);
   };
+
+  // ========== CONDITIONAL RETURNS (AFTER ALL HOOKS AND HANDLERS) ==========
+  // Effects above call handlers declared further down (loadMinistryCommunity,
+  // etc.). Returning before those `const`s run leaves them uninitialized, and
+  // an effect firing while loading throws "Cannot access … before initialization".
+  
+  // Show loading state while checking entitlements (moved here to prevent hook order violations)
+  if (entitlements.isLoading) {
+    return (
+      <div className="min-h-screen p-6 space-y-6">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+        </div>
+        <Skeleton className="h-48 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4 py-6 px-4">
+        <Skeleton className="h-8 w-48" />
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
