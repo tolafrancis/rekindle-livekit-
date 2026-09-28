@@ -84,6 +84,7 @@ const PILL_LINKS: Array<[string, string]> = [
   ['leader-create', 'Create a ministry'],
   ['leader-meetings', 'Run a meeting'],
   ['leader-translation', 'Live translation'],
+  ['leader-scripture', 'Live Scripture'],
 ];
 
 const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
@@ -100,6 +101,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['member-journal', 'Keep a prayer journal'],
     ['member-live', 'Watch a live service'],
     ['member-captions', 'Follow a service in your language'],
+    ['member-conversation', 'Ask the speaker a question'],
     ['member-meeting', 'Join a video meeting'],
     ['member-groups', 'Join a small group'],
     ['member-give', 'Give with Gift Aid'],
@@ -116,6 +118,8 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['leader-groups', 'Create a small group'],
     ['leader-video', 'Send a pastoral video message'],
     ['leader-translation', 'Run live translation'],
+    ['leader-conversation', 'Take questions from listeners'],
+    ['leader-scripture', 'Show Bible verses on screen'],
     ['leader-giving', 'Set up giving and Gift Aid'],
   ]],
 ];
@@ -274,6 +278,20 @@ const TutorialContent: React.FC = () => (
     />
 
     <TutorialSection
+      id="member-conversation" eyebrow="Members" title="Ask the speaker a question"
+      intro="Some ministries switch on Conversation, so you can ask a question in your own language during a translated service. It’s translated for the speaker and sent privately."
+      path={['Listener link', 'Conversation']}
+      steps={[
+        { text: <>Open the <strong>listener link</strong> or QR code your church shared, as in the step above.</> },
+        { text: <>Tap the <strong>speech-bubble</strong> button at the top of the screen to open <strong>Conversation</strong>. If you don’t see it, your ministry hasn’t switched it on.</> },
+        { text: <>Type your question, or tap the microphone and say it. Add your name if you like; otherwise it’s sent anonymously.</> },
+        { text: <>Tap <strong>Send</strong>. The speaker sees it in their own language.</> },
+        { text: <>If the speaker pins your question, everyone following the service sees it at the top of their screen, in their own language.</> },
+      ]}
+      tip="You can send one question every 20 seconds. Tap the speech-bubble again to go back to the captions."
+    />
+
+    <TutorialSection
       id="member-meeting" eyebrow="Members" title="Join a video meeting"
       path={['Live Broadcast', 'Meetings']}
       steps={[
@@ -410,9 +428,12 @@ const TutorialContent: React.FC = () => (
         { text: <>Add a title, description and cover image. Set the date, time, timezone, duration and maximum attendees.</> },
         { text: <>Choose whether it’s Public and whether people must register. Switch on Recording, Captions or Live translation if you need them.</> },
         { text: <>Under Audience interaction choose Chat, Q&amp;A and Polls, and invite any speakers or co-hosts.</> },
-        { text: <>Share the link from the webinar’s card. At the start time, start it from the card and confirm.</> },
+        { text: <>Share the link from the webinar’s card. At the start time, tap <strong>Enter backstage</strong> on the card. Only you, co-hosts and speakers are in, so check your sound and brief your speakers while registrants wait.</> },
+        { text: <>When you’re ready, tap <strong>Go live</strong>. Attendees are let in and the stream starts.</> },
+        { text: <>Open <strong>People</strong> to mute someone, spotlight a speaker, make someone a co-host, or bring an attendee up to speak.</> },
         { text: <>After it ends, open the <strong>Past</strong> tab for <strong>Participants</strong> and <strong>Analytics</strong>.</> },
       ]}
+      tip="If the host leaves and nobody comes back for 10 minutes, a live webinar ends on its own, and one still backstage goes back to scheduled."
     />
 
     <TutorialSection
@@ -453,6 +474,34 @@ const TutorialContent: React.FC = () => (
         { text: <>When the service ends, tap the stop button on the session.</> },
       ]}
       tip="Start Service stays greyed out until at least one language has been added under Settings › Supported target languages, so add your languages before the day of the service. Also under Settings › Approved Vocabulary, add names, places and church phrases your pastor uses often. The translation engine listens out for them, which cuts down on misheard words."
+    />
+
+    <TutorialSection
+      id="leader-conversation" eyebrow="Leaders" title="Take questions from listeners (Conversation)"
+      intro="Conversation lets people on the listener link ask a question in their own language. It’s translated for the speaker, and you can pin good questions so every listener sees them."
+      path={['Manage', 'Live', 'Live Translation', 'Settings']}
+      steps={[
+        { text: <>In <strong>Live › Live Translation</strong> open the <strong>Settings</strong> tab.</> },
+        { text: <>In the <strong>Languages</strong> card, switch on <strong>Enable Conversation (live Q&amp;A)</strong> and save. It’s on by default for new ministries.</> },
+        { text: <>Start a service as usual. Listeners now see a speech-bubble button on the listener link that opens Conversation.</> },
+        { text: <>New questions appear under <strong>Conversation</strong> on the service in your <strong>Service</strong> tab, and in the Questions panel on the speaker link, already translated.</> },
+        { text: <>Tap <strong>Pin for everyone</strong> to show a question at the top of every listener’s screen, translated into each language. Tap <strong>Dismiss</strong> to clear one.</> },
+      ]}
+      tip="Questions are anonymous unless the listener adds a name, and each listener can send one every 20 seconds."
+    />
+
+    <TutorialSection
+      id="leader-scripture" eyebrow="Leaders" title="Show Bible verses on screen (Live Scripture)"
+      intro="Live Scripture listens to the captions for Bible references, like “John chapter 3 verse 16”, and puts the verse on the listener screen and your OBS caption overlay. Where your listeners’ language has a Bible edition in the app, the verse also shows in their language."
+      path={['Manage', 'Live', 'Live Translation', 'Settings', 'Live Scripture']}
+      steps={[
+        { text: <>In <strong>Live › Live Translation</strong> open <strong>Settings</strong> and scroll to the <strong>Live Scripture</strong> card.</> },
+        { text: <>Choose your <strong>Bible version</strong>. Leave <strong>Detect references automatically</strong> and <strong>Show confirmed verses automatically</strong> on, and set how many seconds a verse stays up (0 keeps it until the next one).</> },
+        { text: <>Start a service. Verses the preacher reads out appear on their own, even when only the speaker link is open.</> },
+        { text: <>To control it by hand, use the <strong>Live Scripture</strong> card on the <strong>Service</strong> tab. Tap <strong>Show</strong> on a suggested verse, type one in (for example “John 3:16”), tap <strong>Hide</strong> to clear it, or tap <strong>Lock</strong> to ignore new references for a while.</> },
+        { text: <>In a meeting, webinar or Live Broadcast, open the <strong>Live Translation</strong> button and use its <strong>Live Scripture</strong> section. It works even with captions switched off.</> },
+      ]}
+      tip="Captions keep running normally whatever Live Scripture is doing. Verses are never machine translated: a listener language only shows a verse when the app has a Bible for it."
     />
 
     <TutorialSection

@@ -127,6 +127,10 @@ export const FEATURES: FeatureEntry[] = [
     keywords: ['livestream', 'stream', 'broadcast', 'go live', 'obs', 'service'], category: 'Ministry leaders', audience: 'leader', action: { kind: 'ministry', group: 'live', child: 'live' } },
   { id: 'ministry-translation', title: 'Live translation and captions', description: 'Translate and caption your live services.', path: ['Ministries', 'your ministry', 'Live', 'Live Translation'],
     keywords: ['translate', 'translation', 'captions', 'subtitles', 'interpreter', 'language'], category: 'Ministry leaders', audience: 'leader', action: { kind: 'ministry', group: 'live', child: 'live-tech' } },
+  { id: 'ministry-live-scripture', title: 'Live Scripture', description: 'Show Bible verses on screen automatically when the preacher reads them out.', path: ['Ministries', 'your ministry', 'Live', 'Live Translation', 'Settings', 'Live Scripture'],
+    keywords: ['bible verse', 'scripture on screen', 'verse display', 'obs', 'projector', 'reference'], category: 'Ministry leaders', audience: 'leader', action: { kind: 'ministry', group: 'live', child: 'live-tech' } },
+  { id: 'ministry-translation-conversation', title: 'Conversation (live Q&A)', description: 'Let listeners ask the speaker questions in their own language during a translated service.', path: ['Ministries', 'your ministry', 'Live', 'Live Translation', 'Settings'],
+    keywords: ['questions', 'q&a', 'ask speaker', 'listener questions', 'pin question', 'conversation'], category: 'Ministry leaders', audience: 'leader', action: { kind: 'ministry', group: 'live', child: 'live-tech' } },
 
   // ── Live & meetings ─────────────────────────────────────────────────────
   { id: 'live-discover', title: 'Watch live broadcasts', description: 'Find channels streaming right now.', path: ['Live Broadcast', 'Discover'],
