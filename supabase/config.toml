@@ -359,3 +359,11 @@ enabled = true
 # auth.getUser() AND is_group_admin(ministryId) internally, so this needs a
 # real user JWT, not just the anon key. Gateway JWT verification stays on.
 verify_jwt = true
+
+[functions.webinar-auto-end]
+enabled = true
+# Called every 5 minutes by pg_cron (cron-setup-webinar-auto-end.sql) with the
+# anon key. It only ends webinars whose host has been gone past the grace
+# period (or that ran far past their booked time), so any valid JWT may call
+# it; gateway verification still keeps unsigned callers out.
+verify_jwt = true

@@ -42,7 +42,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
+type Role = 'host' | 'co-host' | 'speaker' | 'attendee' | 'viewer';
 
 // Meeting participant cap (2026-09-21): a flat, platform-wide ceiling on real
 // LiveKit participants any single ministry meeting may ever have. A meeting
@@ -179,12 +179,14 @@ async function resolveRole(
   if (ctx.kind === 'ministry_webinar' && ctx.meetingId) {
     const { data: confirmed } = await admin
       .from('webinar_speakers')
-      .select('user_id')
+      .select('role')
       .eq('webinar_id', ctx.meetingId)
       .eq('user_id', userId)
       .eq('status', 'confirmed')
       .maybeSingle();
-    if (confirmed) return 'speaker';
+    // A co-host carries 'co-host' in their LiveKit metadata so the room
+    // gives them the host's in-call controls (useDailyRoom's isModerator).
+    if (confirmed) return (confirmed as { role?: string }).role === 'co-host' ? 'co-host' : 'speaker';
 
     const { data: accepted } = await admin
       .from('webinar_speaker_requests')
@@ -272,6 +274,7 @@ function grantFor(role: Role, room: string) {
   switch (role) {
     case 'host':
       return { ...base, canPublish: true, roomAdmin: true };
+    case 'co-host':
     case 'speaker':
     case 'attendee':
       return { ...base, canPublish: true };
@@ -379,7 +382,7 @@ serve(async (req) => {
       const target = body.identity ?? user!.id;
       // Promoting someone else requires host; promoting yourself requires a
       // verified speaker row (you were accepted as a speaker).
-      const allowed = target === user!.id ? role === 'speaker' || isHost : isHost;
+      const allowed = target === user!.id ? role === 'speaker' || role === 'co-host' || isHost : isHost;
       if (!allowed) return json({ error: 'Not permitted to grant publish' }, 403);
       await svc.updateParticipant(body.roomName, target, undefined, {
         canPublish: true,
@@ -397,7 +400,7 @@ serve(async (req) => {
     // Guests arrive via a public share link, so they skip the tenant-membership
     // entitlement check (it is keyed on a user id they don't have). They are
     // still capped at viewer/attendee and remain subject to the locked-room gate.
-    if (!isGuest && role !== 'host' && role !== 'speaker') {
+    if (!isGuest && role !== 'host' && role !== 'co-host' && role !== 'speaker') {
       if (!(await isEntitled(admin, user!.id, body))) {
         return json({ error: 'not_entitled' }, 403);
       }

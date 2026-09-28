@@ -310,8 +310,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const [isRecording, setIsRecording] = useState(false);
   // Shared layout + multi-spotlight (layout/meetingLayout.ts). Room metadata is
   // the source of truth; see applyLayout below.
-  const [layoutState, setLayoutStateRaw] = useState<MeetingLayoutState>(DEFAULT_LAYOUT_STATE);
-  const layoutStateRef = useRef<MeetingLayoutState>(DEFAULT_LAYOUT_STATE);
+  // A webinar's audience watches the stream, not the room, so its stream
+  // follows the spotlight (Speaker) out of the box instead of a grid.
+  const [initialLayout] = useState<MeetingLayoutState>(() => (
+    options.meetingKind === 'ministry_webinar'
+      ? { ...DEFAULT_LAYOUT_STATE, recordingLayout: 'speaker' }
+      : DEFAULT_LAYOUT_STATE
+  ));
+  const [layoutState, setLayoutStateRaw] = useState<MeetingLayoutState>(initialLayout);
+  const layoutStateRef = useRef<MeetingLayoutState>(initialLayout);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [hasSharedLayout, setHasSharedLayout] = useState(false);
   // Only ever move forward: a slower, older message can't undo a newer change.

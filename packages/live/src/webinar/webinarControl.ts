@@ -13,7 +13,7 @@ import { stopMeetingBroadcast } from '../meetingStreamControl';
 // its useEffect and the comment in WebinarLobby.handleStart for why.
 
 export type WebinarStatus =
-  | 'draft' | 'scheduled' | 'registration_open' | 'starting_soon'
+  | 'draft' | 'scheduled' | 'registration_open' | 'starting_soon' | 'backstage'
   | 'live' | 'ending' | 'ended' | 'recording_processing' | 'completed' | 'cancelled';
 
 export type WebinarSpeakerRole = 'host' | 'co-host' | 'speaker';
@@ -53,6 +53,12 @@ export interface MinistryWebinar {
   attendee_count: number;
   started_at: string | null;
   ended_at: string | null;
+  /** Set when the host opens the webinar into its private backstage
+   *  (migration 0375). */
+  backstage_started_at?: string | null;
+  /** Written only by the webinar-auto-end sweep. */
+  host_absent_since?: string | null;
+  ended_reason?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -116,7 +122,7 @@ export async function checkWebinarQuota(ministryId: string): Promise<{ allowed: 
     .from('ministry_webinars')
     .select('id', { count: 'exact', head: true })
     .eq('ministry_id', ministryId)
-    .eq('status', 'live');
+    .in('status', ['backstage', 'live']);
   if ((liveCount ?? 0) >= FREE_TIER_MEETING_LIMITS.maxConcurrentActive) {
     return { allowed: false, used, limit: limitMinutes };
   }
@@ -126,6 +132,7 @@ export async function checkWebinarQuota(ministryId: string): Promise<{ allowed: 
 
 export async function updateWebinarStatus(webinarId: string, status: WebinarStatus): Promise<void> {
   const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+  if (status === 'backstage') patch.backstage_started_at = new Date().toISOString();
   if (status === 'live') patch.started_at = new Date().toISOString();
   if (status === 'ended') patch.ended_at = new Date().toISOString();
   const { error } = await supabase.from('ministry_webinars').update(patch).eq('id', webinarId);
@@ -235,13 +242,131 @@ export async function seatConfirmedWebinarSpeakers(webinarId: string): Promise<v
   if (error) console.error('[webinarControl] seatConfirmedWebinarSpeakers failed:', error.message);
 }
 
-/** Host action: go live — shared by WebinarLobby's own "Start Webinar" button
- *  and WebinarDashboard's "Manage Webinar" confirm dialog (2026-09-21), so
- *  confirming there actually starts the webinar instead of just navigating to
- *  a page with yet another separate Start button to click. Only flips status
- *  (mounts WebinarStage/DailyVideoCall, which is where the Egress itself
- *  starts — see the comment in WebinarLobby.tsx for why it can't start here). */
-export async function startWebinarNow(webinarId: string): Promise<void> {
+/** Host action: open the webinar into its private backstage — shared by
+ *  WebinarLobby's own button and WebinarDashboard's "Manage Webinar" confirm
+ *  dialog. Host, co-hosts and confirmed speakers join the LiveKit room
+ *  (WebinarJoinPage mounts WebinarStage for 'backstage' as well as 'live'),
+ *  but no Egress starts and attendees stay on the waiting screen until
+ *  someone presses Go live (goLiveWebinar). Only moves a webinar that
+ *  hasn't started yet — one already backstage/live is left alone, and one
+ *  that's over is never reopened. */
+export async function openWebinarBackstage(webinarId: string): Promise<void> {
   await seatConfirmedWebinarSpeakers(webinarId);
-  await updateWebinarStatus(webinarId, 'live');
+  const { error } = await supabase
+    .from('ministry_webinars')
+    .update({
+      status: 'backstage',
+      backstage_started_at: new Date().toISOString(),
+      host_absent_since: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', webinarId)
+    .in('status', ['draft', 'scheduled', 'registration_open', 'starting_soon']);
+  if (error) {
+    console.error('[webinarControl] openWebinarBackstage failed:', error.message);
+    throw error;
+  }
+}
+
+/** Host action: Go live. The caller has already started the HLS Egress
+ *  (WebinarStage does that, since it's the component that knows the host is
+ *  in the room); flipping status to 'live' is what lets attendees in. */
+export async function goLiveWebinar(webinarId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('ministry_webinars')
+    .update({ status: 'live', started_at: now, host_absent_since: null, updated_at: now })
+    .eq('id', webinarId)
+    .eq('status', 'backstage');
+  if (error) {
+    console.error('[webinarControl] goLiveWebinar failed:', error.message);
+    throw error;
+  }
+}
+
+/** The viewer's role as the database sees it right now. Used both when the
+ *  join page loads and, while on stage, to notice a mid-webinar change (made
+ *  co-host, sent back to the audience). Client-side only picks the UI;
+ *  livekit-token's resolveRole is the real boundary for publish rights. */
+export async function resolveWebinarRole(
+  webinarId: string, hostId: string, userId: string,
+): Promise<'host' | 'co-host' | 'speaker' | 'attendee'> {
+  if (hostId === userId) return 'host';
+
+  const { data: speaker } = await supabase
+    .from('webinar_speakers').select('role')
+    .eq('webinar_id', webinarId).eq('user_id', userId).eq('status', 'confirmed')
+    .maybeSingle();
+  if (speaker) return (speaker as { role: WebinarSpeakerRole }).role;
+
+  const { data: request } = await supabase
+    .from('webinar_speaker_requests').select('status')
+    .eq('webinar_id', webinarId).eq('user_id', userId).eq('status', 'accepted')
+    .maybeSingle();
+  if (request) return 'speaker';
+
+  return 'attendee';
+}
+
+/** Server-enforced LiveKit moderation for a webinar room (livekit-moderation
+ *  authorizes the caller as the webinar's host or a confirmed co-host). */
+async function moderateWebinar(
+  webinarId: string, roomName: string, action: string, extra: Record<string, unknown>,
+): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('livekit-moderation', {
+    body: { action, roomName, context: { kind: 'ministry_webinar', meetingId: webinarId }, ...extra },
+  });
+  if (error || data?.error) throw new Error(data?.error || error?.message || `${action} failed`);
+}
+
+/** Host action: make someone on stage a co-host, or back to a plain speaker.
+ *  The webinar_speakers row is what makes it stick (RLS via
+ *  is_webinar_manager, livekit-token's role on reconnect); the LiveKit
+ *  set-role makes it take effect in the room right away. */
+export async function setWebinarCoHost(params: {
+  webinarId: string; roomName: string; userId: string; userName: string | null; coHost: boolean;
+}): Promise<void> {
+  const role: WebinarSpeakerRole = params.coHost ? 'co-host' : 'speaker';
+  const { data: existing } = await supabase
+    .from('webinar_speakers').select('id')
+    .eq('webinar_id', params.webinarId).eq('user_id', params.userId)
+    .maybeSingle();
+  const now = new Date().toISOString();
+  const { error } = existing
+    ? await supabase.from('webinar_speakers')
+      .update({ role, status: 'confirmed', responded_at: now })
+      .eq('id', (existing as { id: string }).id)
+    : await supabase.from('webinar_speakers').insert({
+      webinar_id: params.webinarId, user_id: params.userId, invited_name: params.userName,
+      role, status: 'confirmed', responded_at: now,
+    });
+  if (error) throw new Error(error.message);
+
+  await supabase.from('meeting_presenters')
+    .update({ role })
+    .eq('meeting_id', params.webinarId).eq('user_id', params.userId);
+
+  await moderateWebinar(params.webinarId, params.roomName, 'set-role', { identity: params.userId, role });
+}
+
+/** Host action: send someone on stage back to the audience. Covers both a
+ *  pre-assigned speaker (webinar_speakers) and one promoted live
+ *  (webinar_speaker_requests). Their own WebinarStage notices the role change
+ *  and swaps back to the viewer; set-role drops their publish grant at the
+ *  SFU immediately in case their client doesn't cooperate. */
+export async function moveWebinarSpeakerToAudience(params: {
+  webinarId: string; roomName: string; userId: string;
+}): Promise<void> {
+  await supabase.from('meeting_presenters').delete()
+    .eq('meeting_id', params.webinarId).eq('user_id', params.userId);
+  await supabase.from('webinar_speakers').update({ status: 'removed' })
+    .eq('webinar_id', params.webinarId).eq('user_id', params.userId);
+  await supabase.from('webinar_speaker_requests').update({ status: 'revoked' })
+    .eq('webinar_id', params.webinarId).eq('user_id', params.userId);
+  try {
+    await moderateWebinar(params.webinarId, params.roomName, 'set-role', { identity: params.userId, role: 'attendee' });
+  } catch (err) {
+    // Already gone from the room — the DB changes above are what matter.
+    console.warn('[webinarControl] set-role attendee failed:', err);
+  }
 }

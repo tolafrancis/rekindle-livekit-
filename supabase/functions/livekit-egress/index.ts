@@ -687,7 +687,20 @@ serve(async (req) => {
       // Composite in that case so video isn't silently lost.
       const expectVideo = !!body.expectVideo;
       let info: Awaited<ReturnType<typeof egressClient.startRoomCompositeEgress>>;
-      if (isChannel || isWebinarHls) {
+      if (isWebinarHls) {
+        // Webinars render through the recording template in Speaker layout
+        // (2026-09-28). Track Composite locked the audience stream onto the
+        // host's own tracks, so a speaker the host brought up, or anyone they
+        // spotlighted, never reached the audience. The template follows the
+        // spotlight and layout the host sets in the room (room metadata).
+        // Its slower cold start now lands at Go live, after the host has
+        // already checked everything backstage, and the attendee view shows
+        // "Stream is starting…" until the first segment exists.
+        info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, {
+          layout: 'speaker',
+          customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
+        });
+      } else if (isChannel) {
         const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
         const canUseTrackComposite = (audioTrackId || videoTrackId) && (!expectVideo || videoTrackId);
 
@@ -702,10 +715,8 @@ serve(async (req) => {
           // video broadcast and the video track specifically never showed up
           // after retrying — Room Composite doesn't need one upfront and will
           // pick up tracks as they appear, so video is never silently lost.
-          // For a webinar this also correctly covers real co-hosted/multi-
-          // speaker cases (no single "the host's" tracks to lock onto).
           console.warn(
-            `[livekit-egress] ${isChannel ? 'channel broadcast' : 'webinar'} falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
+            `[livekit-egress] channel broadcast falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
           );
           info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
         }

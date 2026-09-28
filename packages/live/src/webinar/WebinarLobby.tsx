@@ -6,7 +6,7 @@ import { Loader2, Radio, Users, Calendar, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
-import { startWebinarNow, type MinistryWebinar } from './webinarControl';
+import { openWebinarBackstage, type MinistryWebinar } from './webinarControl';
 
 export type WebinarViewerRole = 'host' | 'co-host' | 'speaker' | 'attendee';
 
@@ -23,18 +23,14 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
   const [starting, setStarting] = useState(false);
   const canStart = role === 'host' || role === 'co-host';
 
-  // The HLS Egress (startWebinarBroadcast) used to be started from here, but
-  // that's before the host has ever connected to the LiveKit room (that only
-  // happens once WebinarStage mounts, below) — LiveKit auto-creates a room on
-  // the host's first real connection, not on token issuance, so Egress was
-  // reliably targeting a room that didn't exist yet and failing with a 500.
-  // Fixed by only flipping status here (which mounts WebinarStage/DailyVideoCall)
-  // and starting the Egress from WebinarStage itself, once the host is actually
-  // in the room.
+  // Opens the private backstage only — attendees keep waiting and no stream
+  // starts until the host presses Go live inside WebinarStage (which is also
+  // where the Egress starts: LiveKit only creates the room on the host's
+  // first real connection, so starting Egress from here used to 500).
   const handleStart = async () => {
     setStarting(true);
     try {
-      await startWebinarNow(webinar.id);
+      await openWebinarBackstage(webinar.id);
       onLive();
     } catch (e) {
       console.error('[WebinarLobby] start failed:', e);
@@ -67,10 +63,15 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
             {canStart ? (
               <Button onClick={handleStart} disabled={starting} className="w-full bg-purple-600 hover:bg-purple-700">
                 {starting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                Start Webinar
+                Enter backstage
               </Button>
             ) : (
-              <p className="text-sm text-gray-500 text-center">Waiting for the host to start…</p>
+              <p className="text-sm text-gray-500 text-center">Waiting for the host to open the backstage…</p>
+            )}
+            {canStart && (
+              <p className="text-xs text-gray-500 text-center">
+                Only you and your speakers can see and hear each other backstage. Attendees are let in when you press Go live.
+              </p>
             )}
             {webinar.registration_required && (
               <RegisterMeetingButton
@@ -101,7 +102,11 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
               <Calendar className="h-4 w-4" /> {formatMeetingTime(webinar.scheduled_start_at, webinar.timezone)}
             </p>
           )}
-          <p className="text-sm text-gray-500">Waiting for the host to start the webinar…</p>
+          <p className="text-sm text-gray-500">
+            {webinar.status === 'backstage'
+              ? "The host is getting ready. You'll be let in as soon as the webinar goes live…"
+              : 'Waiting for the host to start the webinar…'}
+          </p>
           {webinar.registration_required && (
             <RegisterMeetingButton
               meetingId={webinar.id} meetingKind="webinar" meetingTitle={webinar.title}

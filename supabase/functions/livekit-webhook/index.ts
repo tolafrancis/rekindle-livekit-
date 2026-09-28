@@ -429,6 +429,11 @@ serve(async (req) => {
         await admin.from('ministry_webinars')
           .update({ status: 'ended', ended_at: new Date().toISOString() })
           .eq('room_name', roomName).in('status', ['live', 'ending']);
+        // Everyone left the backstage without going live: nothing happened
+        // for the audience, so it goes back to scheduled for another try.
+        await admin.from('ministry_webinars')
+          .update({ status: 'scheduled', host_absent_since: null })
+          .eq('room_name', roomName).eq('status', 'backstage');
       }
 
       // Server-side backstop for translation/captions cost leak (2026-09-23,
