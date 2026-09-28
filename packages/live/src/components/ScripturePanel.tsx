@@ -48,8 +48,13 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
         if (!cancelled && data?.[0]) take(data[0] as ScriptureEvent);
       }, () => { /* no verse: nothing to show */ });
 
+    // One channel per hook instance: a page can use this hook more than once
+    // for the same session (FloatingTranslationButton reads the verse and
+    // also renders ScripturePanel). supabase.channel() hands back the
+    // already-subscribed channel for a repeated name, and adding callbacks
+    // to it throws "cannot add postgres_changes callbacks after subscribe()".
     const channel = supabase
-      .channel(`scripture-${sessionId}`)
+      .channel(`scripture-${sessionId}-${Math.random().toString(36).slice(2, 10)}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'translation_scripture_events', filter: `session_id=eq.${sessionId}` },
         (payload) => take(payload.new as ScriptureEvent))
