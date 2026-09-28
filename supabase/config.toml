@@ -30,6 +30,11 @@ enabled = true
 # Admin/super_admin only, same pattern as generate-devotional-series.
 verify_jwt = true
 
+[functions.generate-prayer-series]
+enabled = true
+# Admin/super_admin only, same pattern as generate-devotional-series.
+verify_jwt = true
+
 [functions.detect-transcript-corrections]
 enabled = true
 # Ministry admin only (is_group_admin, checked inside the function) —
