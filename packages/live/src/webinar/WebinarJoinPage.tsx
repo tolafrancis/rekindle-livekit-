@@ -7,27 +7,13 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
-import { getWebinar, type MinistryWebinar } from './webinarControl';
+import { getWebinar, resolveWebinarRole, type MinistryWebinar } from './webinarControl';
 import { WebinarLobby, type WebinarViewerRole } from './WebinarLobby';
 import { WebinarStage } from './WebinarStage';
 import { WebinarAttendeeViewer } from './WebinarAttendeeViewer';
 import { WebinarEndScreen } from './WebinarEndScreen';
 
 const ENDED_STATUSES = new Set(['ended', 'recording_processing', 'completed', 'cancelled']);
-
-async function resolveRole(webinarId: string, hostId: string, userId: string): Promise<WebinarViewerRole> {
-  if (hostId === userId) return 'host';
-
-  const { data: speaker } = await supabase
-    .from('webinar_speakers').select('role').eq('webinar_id', webinarId).eq('user_id', userId).eq('status', 'confirmed').maybeSingle();
-  if (speaker) return (speaker as { role: WebinarViewerRole }).role;
-
-  const { data: request } = await supabase
-    .from('webinar_speaker_requests').select('status').eq('webinar_id', webinarId).eq('user_id', userId).eq('status', 'accepted').maybeSingle();
-  if (request) return 'speaker';
-
-  return 'attendee';
-}
 
 /** Public join route (/ministry/:ministryId/webinar/:webinarId) — resolves the
  *  viewer's role server-confirmed-adjacent (client-side check here just picks
@@ -52,7 +38,7 @@ export function WebinarJoinPage() {
     const w = await getWebinar(webinarId);
     if (!w) { setError("This webinar doesn't exist or you don't have access."); setLoading(false); return; }
     setWebinar(w);
-    const r = await resolveRole(webinarId, w.host_id, user.id);
+    const r = await resolveWebinarRole(webinarId, w.host_id, user.id);
     setRole(r);
 
     // Only plain attendees are gated on registration — host/co-host/speaker
@@ -110,7 +96,12 @@ export function WebinarJoinPage() {
   // mini-player sizing — both fixed just by going through startCall() here.
   const { call, startCall, endCall } = useActiveCall();
   const isSpeakerRole = role === 'host' || role === 'co-host' || role === 'speaker';
-  const isOnStage = !!webinar && webinar.status === 'live' && (isSpeakerRole || promoted);
+  // Backstage counts as "on stage" for host/co-host/speakers — they join the
+  // room to check sound and brief each other while attendees keep waiting on
+  // WebinarLobby. A promoted attendee can only exist once it's live.
+  const isOnStage = !!webinar
+    && (webinar.status === 'live' || (webinar.status === 'backstage' && isSpeakerRole))
+    && (isSpeakerRole || promoted);
   const callIsThisWebinar = !!webinar && call?.id === webinar.id;
 
   useEffect(() => {
@@ -123,6 +114,9 @@ export function WebinarJoinPage() {
     // call is null but webinar.status is still stale 'live', re-passing the
     // `callIsThisWebinar` guard above and restarting the just-ended broadcast.
     const endedAndReload = async () => { await load(); endCall(); };
+    // Sent back to the audience by the host (WebinarStage watches for it):
+    // drop the call and fall through to the HLS viewer.
+    const demoted = () => { setPromoted(false); setRole('attendee'); endCall(); };
     startCall({
       id: webinar.id,
       title: webinar.title,
@@ -135,6 +129,7 @@ export function WebinarJoinPage() {
           role={isSpeakerRole ? role! : 'speaker'}
           onEnded={endedAndReload}
           onLeave={leaveAndGoHome}
+          onDemoted={demoted}
         />
       ),
     });

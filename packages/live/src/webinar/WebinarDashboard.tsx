@@ -15,7 +15,7 @@ import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import { publicAppOrigin } from '@rekindle/features/liveShare';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
 import { MeetingParticipantsPanel } from '../components/MeetingParticipantsPanel';
-import { listMinistryWebinars, startWebinarNow, type MinistryWebinar, type WebinarStatus } from './webinarControl';
+import { listMinistryWebinars, openWebinarBackstage, type MinistryWebinar, type WebinarStatus } from './webinarControl';
 import { CreateWebinarWizard } from './CreateWebinarWizard';
 import { WebinarAnalytics } from './WebinarAnalytics';
 
@@ -28,7 +28,7 @@ interface WebinarDashboardProps {
   renderRecordingsTab?: (webinars: MinistryWebinar[]) => React.ReactNode;
 }
 
-const LIVE_STATUSES: WebinarStatus[] = ['live', 'ending', 'starting_soon'];
+const LIVE_STATUSES: WebinarStatus[] = ['backstage', 'live', 'ending', 'starting_soon'];
 const UPCOMING_STATUSES: WebinarStatus[] = ['scheduled', 'registration_open'];
 const PAST_STATUSES: WebinarStatus[] = ['ended', 'recording_processing', 'completed', 'cancelled'];
 // Editable/cancellable up to the moment a webinar actually goes live —
@@ -39,6 +39,7 @@ const statusBadge: Record<string, string> = {
   live: 'bg-red-50 text-red-700 border-red-200',
   ending: 'bg-red-50 text-red-700 border-red-200',
   starting_soon: 'bg-amber-50 text-amber-700 border-amber-200',
+  backstage: 'bg-amber-50 text-amber-700 border-amber-200',
   scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
   registration_open: 'bg-blue-50 text-blue-700 border-blue-200',
   draft: 'bg-gray-100 text-gray-600 border-gray-200',
@@ -68,9 +69,10 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
   const openWebinar = () => navigate(`/ministry/${ministryId}/webinar/${webinar.id}`);
   // Rejoining something already live needs no confirmation; a leader opening a
   // not-yet-live webinar goes through a "Manage Webinar" confirm first
-  // (2026-09-21), which itself starts the webinar (same as the webinar page's
-  // own Start Webinar button) before navigating in — so confirming actually
-  // begins it in one step, rather than landing on yet another Start button.
+  // (2026-09-21), which itself opens the webinar's private backstage (same as
+  // the webinar page's own Enter backstage button) before navigating in, so
+  // confirming lands the host straight in the room. Attendees are only let in
+  // once the host presses Go live from inside.
   // Attendees can't start anything either way, so they go straight through.
   // In selection mode (bulk delete), a card click toggles selection instead
   // of navigating — same reasoning as any bulk-select list.
@@ -109,7 +111,7 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
   const handleConfirmManage = async () => {
     setStarting(true);
     try {
-      await startWebinarNow(webinar.id);
+      await openWebinarBackstage(webinar.id);
       setShowManageConfirm(false);
       await waitForModalCloseHistoryOp();
       openWebinar();
@@ -319,14 +321,14 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
       <Dialog open={showManageConfirm} onOpenChange={(open) => { if (!starting) setShowManageConfirm(open); }}>
         <DialogContent onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle>Start {webinar.title}?</DialogTitle>
-            <DialogDescription>This starts the webinar now — attendees will be able to join. Is this correct?</DialogDescription>
+            <DialogTitle>Open {webinar.title} backstage?</DialogTitle>
+            <DialogDescription>You and your speakers join a private backstage to check sound and get ready. Attendees keep waiting until you press Go live.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" disabled={starting} onClick={(e) => { e.stopPropagation(); setShowManageConfirm(false); }}>Cancel</Button>
             <Button className="bg-purple-600 hover:bg-purple-700" disabled={starting} onClick={(e) => { e.stopPropagation(); handleConfirmManage(); }}>
               {starting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {starting ? 'Starting…' : 'Start Webinar'}
+              {starting ? 'Opening…' : 'Enter backstage'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -107,6 +107,22 @@ interface DailyVideoCallProps {
      *  prop through every caller individually. */
     participants: Array<{ identity: string; name: string }>;
   }) => void;
+  /** Host/co-host controls lifted to the parent, same pattern as
+   *  onTranslationControlsChange — WebinarStage renders its own people panel
+   *  (mute, spotlight) from this instead of the generic HostControlPanel.
+   *  Only fired while the local user is a moderator; null otherwise. */
+  onModeratorControlsChange?: (controls: ModeratorControls | null) => void;
+}
+
+export interface ModeratorControls {
+  /** Everyone in the room, local user included. `id` is the LiveKit identity
+   *  (the user id) — the same id the spotlight and moderation calls take. */
+  participants: Array<{ id: string; name: string; isLocal: boolean; hasAudio: boolean; role: string }>;
+  spotlightIds: string[];
+  mute: (id: string) => void;
+  muteAll: () => void;
+  spotlight: (id: string) => void;
+  removeSpotlight: (id: string) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -1025,6 +1041,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRaiseHandStateChange,
   onBackgroundStateChange,
   onTranslationControlsChange,
+  onModeratorControlsChange,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1312,6 +1329,28 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange, remoteParticipants]);
+
+  useEffect(() => {
+    if (!onModeratorControlsChange) return;
+    if (!isModerator) { onModeratorControlsChange(null); return; }
+    onModeratorControlsChange({
+      participants: participants
+        .filter((p) => !p.sessionId.startsWith('rlt-bot-') && !p.sessionId.endsWith('-screenshare'))
+        .map((p) => ({
+          id: p.sessionId,
+          name: p.userName,
+          isLocal: p.isLocal,
+          hasAudio: p.hasAudio,
+          role: getParticipantRole(p.sessionId),
+        })),
+      spotlightIds: layoutState.spotlightParticipants,
+      mute: (id) => { muteParticipant(id); },
+      muteAll: () => { muteAll(); },
+      spotlight: (id) => { spotlightParticipant(id); },
+      removeSpotlight: (id) => { removeFromSpotlight(id); },
+    });
+  }, [onModeratorControlsChange, isModerator, participants, layoutState.spotlightParticipants, getParticipantRole,
+    muteParticipant, muteAll, spotlightParticipant, removeFromSpotlight]);
 
   // Legacy Daily-engine RTMP push path, superseded by the LiveKit migration
   // (see isLiveKitBackend() below, hardcoded true — that path records/
