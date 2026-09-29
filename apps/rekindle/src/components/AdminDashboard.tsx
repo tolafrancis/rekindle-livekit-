@@ -22,7 +22,7 @@ import {
   Heart, MessageSquare, Bell, Bookmark, Mic, Video, DollarSign,
   Send, Mail, Phone, Star, Book, UserCheck, Settings, Radio,
   BarChart3, TrendingUp, Crown, Lock, AlertTriangle, Loader2, Church,
-  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers
+  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers, Inbox
 } from 'lucide-react';
 import { fetchScripture, BIBLE_VERSIONS } from '@/lib/bibleApi';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -44,6 +44,7 @@ const CommunityPrayerManager = lazy(() => import('./CommunityPrayerManager').the
 const PrayerChallengeBackendManager = lazy(() => import('./PrayerChallengeBackendManager').then((m) => ({ default: m.PrayerChallengeBackendManager })));
 const AdminCounsellorManager = lazy(() => import('./AdminCounsellorManager').then((m) => ({ default: m.AdminCounsellorManager })));
 const AdminBookManager = lazy(() => import('./AdminBookManager').then((m) => ({ default: m.AdminBookManager })));
+const AdminContentSubmissions = lazy(() => import('./AdminContentSubmissions').then((m) => ({ default: m.AdminContentSubmissions })));
 const AICompanionAdminSettings = lazy(() => import('./AiCompanionAdminSettings').then((m) => ({ default: m.AICompanionAdminSettings })));
 const ReferralAdminManager = lazy(() => import('./ReferralAdminManager').then((m) => ({ default: m.ReferralAdminManager })));
 const ReadingPlanManager = lazy(() => import('./ReadingPlanManager').then((m) => ({ default: m.ReadingPlanManager })));
@@ -351,6 +352,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     { value: 'ministry-groups', label: t('adminDashboard', 'tabMinistryGroups', 'Ministry Groups'), icon: Users },
     { value: 'mentors', label: t('adminDashboard', 'tabCounsellors', 'Counsellors'), icon: UserCheck },
     { value: 'books', label: t('adminDashboard', 'tabBooks', 'Books'), icon: Book },
+    { value: 'submissions', label: t('adminDashboard', 'tabSubmissions', 'Submissions'), icon: Inbox },
     { value: 'reading-plans', label: t('adminDashboard', 'tabReadingPlans', 'Reading Plans'), icon: Calendar },
     { value: 'live-channels', label: t('adminDashboard', 'tabLiveChannels', 'Live Channels'), icon: Radio },
     { value: 'analytics', label: t('adminDashboard', 'tabAnalytics', 'Analytics'), icon: TrendingUp },
@@ -1777,6 +1779,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
           {activeTab === 'books' && (
             <AdminBookManager />
+          )}
+
+          {activeTab === 'submissions' && (
+            <AdminContentSubmissions />
           )}
 
           {activeTab === 'affirmations' && (

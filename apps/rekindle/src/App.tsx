@@ -29,6 +29,7 @@ const MemberMinistryProfile = lazy(() => import("@/components/registration/Membe
 const PrivacyPolicyPage = lazy(() => import("@rekindle/features/components/PrivacyPolicyPage"));
 const TermsOfServicePage = lazy(() => import("@rekindle/features/components/TermsOfServicePage"));
 const RekindleTutorialPage = lazy(() => import("@rekindle/features/components/RekindleTutorialPage"));
+const SubmitContentPage = lazy(() => import("./components/SubmitContentPage"));
 const UnsubscribePage = lazy(() => import("@rekindle/features/components/UnsubscribePage"));
 const Skeleton = lazy(() => import("./components/Skeleton"));
 const WebinarJoinShim = lazy(() => import("./components/WebinarJoinShim"));
@@ -176,6 +177,7 @@ const App = () => {
                   <Route path="/terms" element={<TermsOfServicePage />} />
                   <Route path="/guide" element={<RekindleTutorialPage />} />
                   <Route path="/tutorial" element={<RekindleTutorialPage />} />
+                  <Route path="/write-for-us" element={<SubmitContentPage />} />
                   <Route path="/landing" element={
                     <LandingPage
                       onSignIn={() => window.location.href = '/'}
