@@ -37,6 +37,8 @@ interface Submission {
   days: DayEntry[];
   status: 'pending' | 'approved' | 'changes_requested' | 'rejected';
   admin_notes: string | null;
+  published_table: 'book_summaries' | 'devotional_series' | 'prayer_series' | null;
+  published_id: string | null;
   created_at: string;
 }
 
@@ -57,14 +59,87 @@ const STATUS_BADGE: Record<Submission['status'], { label: string; variant: 'seco
 const SUBMIT_LINK = `${typeof window !== 'undefined' ? window.location.origin : ''}/write-for-us`;
 
 /**
+ * Publishes an approved submission into the real content it maps to —
+ * book_summaries for a Book, or a devotional_series/devotional_entries
+ * (Daily Devotional and Devotional Series alike — a daily devotional is
+ * just a one-day series) or prayer_series/prayer_series_days pair for the
+ * others. Field names/tables verified directly against the live schema
+ * (AdminDevotionalLibraryManager.tsx / AdminPrayerLibrary.tsx /
+ * AdminBookManager.tsx use the exact same tables). Throws on failure —
+ * the caller keeps the submission's status unchanged so the admin can
+ * retry rather than silently losing the "it's approved" state.
+ */
+async function publishSubmission(s: Submission): Promise<{ table: Submission['published_table']; id: string }> {
+  if (s.content_type === 'book') {
+    const { data, error } = await supabase.from('book_summaries').insert({
+      title: s.title,
+      author: s.author_name,
+      category: s.category,
+      summary: s.description,
+      key_takeaways: s.key_takeaways,
+      is_published: true,
+    }).select('id').single();
+    if (error) throw error;
+    return { table: 'book_summaries', id: data.id };
+  }
+
+  if (s.content_type === 'daily_devotional' || s.content_type === 'devotional_series') {
+    const { data: series, error: seriesErr } = await supabase.from('devotional_series').insert({
+      title: s.title,
+      description: s.description,
+      author: s.author_name,
+      total_days: s.days.length,
+      is_published: true,
+    }).select('id').single();
+    if (seriesErr) throw seriesErr;
+    const { error: entriesErr } = await supabase.from('devotional_entries').insert(s.days.map((d) => ({
+      series_id: series.id,
+      day_number: d.day,
+      title: d.title,
+      subtitle: d.subtitle,
+      scripture_reference: d.scripture_reference,
+      scripture_version: d.scripture_version,
+      introduction: d.introduction,
+      content: d.main_content, // legacy NOT NULL column, kept in sync with main_content
+      main_content: d.main_content,
+      reflection_questions: d.reflection_questions,
+      guided_prayer: d.guided_prayer,
+      action_steps: d.action_steps,
+      additional_thoughts: d.additional_thoughts,
+      is_published: true,
+    })));
+    if (entriesErr) throw entriesErr;
+    return { table: 'devotional_series', id: series.id };
+  }
+
+  // prayer_series
+  const { data: series, error: seriesErr } = await supabase.from('prayer_series').insert({
+    title: s.title,
+    description: s.description,
+    author: s.author_name,
+    total_days: s.days.length,
+    is_published: true,
+  }).select('id').single();
+  if (seriesErr) throw seriesErr;
+  const { error: daysErr } = await supabase.from('prayer_series_days').insert(s.days.map((d) => ({
+    series_id: series.id,
+    day_number: d.day,
+    title: d.title,
+    prayer_text: d.main_content,
+    scripture_reference: d.scripture_reference,
+    prayer_focus: d.prayer_focus,
+    prayer_points: d.prayer_points,
+    is_published: true,
+  })));
+  if (daysErr) throw daysErr;
+  return { table: 'prayer_series', id: series.id };
+}
+
+/**
  * Review queue for public "Write for Us" submissions (SubmitContentPage.tsx
- * -> content_submissions, migrations 0378/0379). Approve/Recommend
- * changes/Reject are the whole review workflow the link exists for.
- * Approve currently just marks status (see the migrations' scope note) —
- * publishing into book_summaries / the devotional or prayer series tables
- * from here is a fast-follow; for now the admin copies the reviewed
- * content into the existing AdminBookManager / AdminDevotionalLibraryManager
- * / AdminPrayerLibrary tools, whose own field shapes this form mirrors.
+ * -> content_submissions, migrations 0378-0380). Approve publishes the
+ * submission straight into the live content (see publishSubmission above);
+ * Recommend changes / Reject just update status with a note for the author.
  */
 export const AdminContentSubmissions: React.FC = () => {
   const { user } = useAuth();
@@ -89,17 +164,30 @@ export const AdminContentSubmissions: React.FC = () => {
   const review = async (id: string, status: Submission['status']) => {
     setBusy(true);
     try {
+      let published: { table: Submission['published_table']; id: string } | null = null;
+      if (status === 'approved') {
+        const submission = submissions.find((s) => s.id === id);
+        if (!submission) throw new Error('Submission not found');
+        published = await publishSubmission(submission);
+      }
+
       const { error } = await supabase
         .from('content_submissions')
-        .update({ status, admin_notes: notes.trim() || null, reviewed_by: user?.id ?? null, reviewed_at: new Date().toISOString() })
+        .update({
+          status,
+          admin_notes: notes.trim() || null,
+          reviewed_by: user?.id ?? null,
+          reviewed_at: new Date().toISOString(),
+          ...(published ? { published_table: published.table, published_id: published.id } : {}),
+        })
         .eq('id', id);
       if (error) throw error;
-      toast({ title: 'Submission updated' });
+      toast({ title: published ? 'Approved and published' : 'Submission updated' });
       setActive(null);
       setNotes('');
       await load();
     } catch (err: any) {
-      toast({ title: 'Could not update submission', description: err.message, variant: 'destructive' });
+      toast({ title: status === 'approved' ? 'Could not publish submission' : 'Could not update submission', description: err.message, variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -141,6 +229,7 @@ export const AdminContentSubmissions: React.FC = () => {
                     <span className="font-medium truncate">{s.title}</span>
                     <Badge variant="outline">{TYPE_LABELS[s.content_type]}</Badge>
                     <Badge variant={STATUS_BADGE[s.status].variant}>{STATUS_BADGE[s.status].label}</Badge>
+                    {s.published_id && <Badge variant="outline" className="text-green-700 border-green-300">Published</Badge>}
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{s.author_name} &middot; {s.author_email}</p>
                 </div>
@@ -236,7 +325,7 @@ export const AdminContentSubmissions: React.FC = () => {
                   <MessageSquareWarning className="h-4 w-4 mr-1.5" /> Recommend changes
                 </Button>
                 <Button disabled={busy} onClick={() => review(active.id, 'approved')}>
-                  <Check className="h-4 w-4 mr-1.5" /> Approve
+                  {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Check className="h-4 w-4 mr-1.5" />} Approve &amp; Publish
                 </Button>
               </DialogFooter>
             </>
