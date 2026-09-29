@@ -12,7 +12,7 @@ import DailyVideoCall, { type ModeratorControls } from '../components/DailyVideo
 import { useActiveCallOptional } from '../ActiveCallContext';
 import { ChannelStreamConfig } from '../components/ChannelStreamConfig';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
-import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
+import { FloatingTranslationButton, type TranslationControls, type ScriptureControlState } from '../components/FloatingTranslationButton';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingChat } from '../useMeetingChat';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
@@ -176,6 +176,10 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   const [streamConfigOpen, setStreamConfigOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+  // Live Scripture control state (2026-09-29) — same lift-to-parent pattern
+  // as callTranslation, so DailyVideoCall can render its own toggle button +
+  // side panel instead of it living in FloatingTranslationButton's popover.
+  const [callScripture, setCallScripture] = useState<ScriptureControlState | null>(null);
   // Minimized mini-player awareness (2026-09-21) — mirrors
   // MinistryInteractiveMeetings.tsx's isPiP: this component is now mounted by
   // WebinarJoinPage via startCall()/ActiveCallHost (see that file), the same
@@ -322,6 +326,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           showChatButton={false}
           showHostControlsButton={false}
           extraControlButtons={extraControlButtons}
+          scriptureControl={callScripture}
         />
 
         {/* Was gated on (webinar.enable_captions || webinar.enable_translation)
@@ -341,6 +346,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
               roomName={webinar.room_name}
               isHost={isHost}
               userId={userId}
+              onScriptureStateChange={setCallScripture}
             />
           </div>
         )}

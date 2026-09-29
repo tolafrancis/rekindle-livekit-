@@ -2,19 +2,25 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
+import { Popover, PopoverTrigger, PopoverContent } from '@rekindle/ui/popover';
 import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
 import { trackMeetingParticipant } from '../meetingStreamControl';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
-import { LayoutMenuButton, ParticipantTileMenu, SpotlightPanelButton, type LayoutActions } from './MeetingLayoutControls';
+import { ParticipantTileMenu, type LayoutActions } from './MeetingLayoutControls';
+import { MeetingControlsMenu } from './MeetingControlsMenu';
+import { LiveScriptureSidebar } from './LiveScriptureSidebar';
+import { MeetingBackstage, type BackstageReadyState } from './MeetingBackstage';
+import type { ScriptureControlState } from './FloatingTranslationButton';
 import { gridColumns, resolveStage } from '../layout/meetingLayout';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, VolumeX, Volume2, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, WifiOff
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, WifiOff,
+  LogOut, BookOpen,
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -112,6 +118,12 @@ interface DailyVideoCallProps {
    *  (mute, spotlight) from this instead of the generic HostControlPanel.
    *  Only fired while the local user is a moderator; null otherwise. */
   onModeratorControlsChange?: (controls: ModeratorControls | null) => void;
+  /** Live Scripture's control state, lifted from FloatingTranslationButton.tsx
+   *  (see its ScriptureControlState doc comment) — the toggle button lives
+   *  in the control bar (replacing the old Layout slot) and its panel opens
+   *  as a side panel like Chat/Host Controls, both rendered here so they sit
+   *  among the call's own real controls instead of buried in a popover. */
+  scriptureControl?: ScriptureControlState | null;
 }
 
 export interface ModeratorControls {
@@ -1042,6 +1054,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onBackgroundStateChange,
   onTranslationControlsChange,
   onModeratorControlsChange,
+  scriptureControl,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1058,6 +1071,15 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const [audioStatus, setAudioStatus] = useState<'detecting' | 'active' | 'blocked' | 'inactive'>('inactive');
   const [hostHasJoined, setHostHasJoined] = useState(isHost);
   const [meetingEnded, setMeetingEnded] = useState(false);
+  // Real bug found live (2026-09-29): clicking "End for All" dropped the
+  // connection (leaveRoom() flips isConnected false) before meetingEnded got
+  // set — handleMeetingEnded (the realtime-broadcast path other participants
+  // take) already set it, but the ACTING host's own direct click never did,
+  // so the generic "You've been disconnected" card flashed instead of
+  // "Meeting Ended" for the one person who just chose to end it. A ref (not
+  // state) is enough: it only needs to be true by the next render, which the
+  // isConnected state flip already triggers.
+  const isExitingRef = useRef(false);
   // Real bug found live (2026-09-22): a webinar host's LiveKit connection
   // silently dropped mid-broadcast (RoomEvent.Disconnected -> isConnected
   // false) with ZERO visible feedback — no banner, no frozen indicator,
@@ -1072,6 +1094,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // Track whether we've EVER connected so a later drop can be told apart
   // from the normal initial-connect spinner, and surface it explicitly.
   const [wasEverConnected, setWasEverConnected] = useState(false);
+  // Private backstage (2026-09-29) — a local-only camera/mic/background check
+  // before anyone else in the room can see or hear this person, for every
+  // participant. Auto-join is gated on this being true; see MeetingBackstage.
+  const [backstageComplete, setBackstageComplete] = useState(false);
+  const backstageInitialRef = useRef<BackstageReadyState | null>(null);
   const [waitingParticipants, setWaitingParticipants] = useState<DailyParticipantInfo[]>([]);
   const [recordingStatus, setRecordingStatus] = useState<'idle' | 'starting' | 'recording' | 'stopping' | 'error'>('idle');
   // True while this meeting is being recorded — on the live LiveKit path (see
@@ -1083,6 +1110,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // Enhanced control panels
   const [showHostControls, setShowHostControls] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showScripturePanel, setShowScripturePanel] = useState(false);
 
   // Tell the parent overlay whenever a side panel is open so it can hide its own
   // top-right chrome (Copy Link / End for All), which would otherwise sit under it.
@@ -1630,7 +1658,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
   const handleMeetingEnded = async () => {
     console.log('[DailyVideoCall] Handling meeting ended');
-    
+    isExitingRef.current = true;
+
     toast({
       title: t('dailyVideoCall', 'meetingEnded', 'Meeting Ended'),
       description: t('dailyVideoCall', 'hostEndedThisMeeting', 'The host has ended this meeting'),
@@ -1648,12 +1677,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }, 500);
   };
 
-  const handleEndCall = async () => {
-    if (isHost && meetingId) {
+  /** endForAll (default true): a host/co-host's own "End meeting for
+   *  everyone" click. Passing false is "Leave meeting" — the host steps out
+   *  and the meeting keeps running for everyone else, same as a non-host's
+   *  single "Leave" click (which always calls this with the default, but
+   *  the isHost guard below already no-ops the DB update for them either
+   *  way). isExitingRef is set synchronously, before leaveRoom() flips
+   *  isConnected, so the generic disconnect card never has a state gap to
+   *  flash through, regardless of which action this is. */
+  const handleEndCall = async (endForAll: boolean = true) => {
+    isExitingRef.current = true;
+    if (isHost && meetingId && endForAll) {
       try {
         await supabase
           .from('meetings')
-          .update({ 
+          .update({
             status: 'ended',
             ended_at: new Date().toISOString()
           })
@@ -1709,15 +1747,38 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   };
 
-  // Auto-join on mount — skip the pre-join screen entirely
+  // Join once backstage is done (or immediately for a caller with no
+  // backstage — see the backstageComplete default/render gate below).
   useEffect(() => {
-    if (!isConnected && !isConnecting && !isJoining) {
+    if (backstageComplete && !isConnected && !isConnecting && !isJoining) {
       handleJoinRoom();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [backstageComplete]);
 
   useEffect(() => { if (isConnected) setWasEverConnected(true); }, [isConnected]);
+
+  // Apply backstage's chosen initial mic/camera/background state once the
+  // room actually connects — setVideoBackground needs the real LiveKit
+  // wrapper, which useDailyRoom only creates inside joinRoom() itself, so
+  // this can't run any earlier than isConnected (calling it pre-join hits
+  // the wrapper-not-ready branch and surfaces a spurious "Not supported"
+  // toast). toggleMic/toggleCamera default to on, so only flip what the
+  // person actually turned off in the preview.
+  useEffect(() => {
+    if (!isConnected || !backstageInitialRef.current) return;
+    const initial = backstageInitialRef.current;
+    backstageInitialRef.current = null;
+    if (initial.micEnabled !== isMicOn) toggleMic();
+    if (initial.cameraEnabled !== isCameraOn) toggleCamera();
+    if (initial.cameraBackground !== 'none') setVideoBackground(initial.cameraBackground);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
+
+  const handleBackstageReady = (state: BackstageReadyState) => {
+    backstageInitialRef.current = state;
+    setBackstageComplete(true);
+  };
 
   // Whoever is actively screen-sharing (local or remote) — their screen becomes
   // the main stage. Require the track to be LIVE: when a share stops, the track
@@ -1816,6 +1877,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     setShowThumbnails,
   }), [spotlightParticipant, addToSpotlight, removeFromSpotlight, clearSpotlights, swapSpeakers, setLayoutMode, setScreenShareMode, setRecordingLayout, setShowThumbnails]);
 
+  // Private backstage — before anything else, including the connecting
+  // spinner: nobody else in the room sees or hears this person until they
+  // click "Join now" (MeetingBackstage creates its own standalone preview
+  // tracks, entirely separate from the real call).
+  if (!backstageComplete) {
+    return <MeetingBackstage userName={userName} onReady={handleBackstageReady} />;
+  }
+
   // Show meeting ended screen
   if (meetingEnded) {
     return (
@@ -1845,6 +1914,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         isHost={isHost}
         hostHasJoined={hostHasJoined}
         onCancel={() => {
+          isExitingRef.current = true;
           leaveRoom();
           onCallEnd?.();
         }}
@@ -1862,7 +1932,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // fact, gone empty from LiveKit's side (confirmed live via the Egress API:
   // the audience's HLS feed ended with "Source closed" — the room was empty
   // this whole time even though the host's screen looked fine).
-  if (wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded) {
+  if (wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded && !isExitingRef.current) {
     return (
       <Card className="w-full max-w-lg mx-auto">
         <CardContent className="p-8 text-center">
@@ -2419,6 +2489,23 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <Users className="h-4 w-4" />
                 <span>{participantCount}</span>
               </div>
+              {/* Meeting Controls (2026-09-29) — Layout, Spotlight, Background and
+                  Host Controls consolidated into one flyout instead of crowding the
+                  bottom control bar; sits beside the parent page's own Copy Link /
+                  Stream Config buttons (reserved padding to the right, see the pr-36
+                  sm:pr-96 comment above). */}
+              <MeetingControlsMenu
+                isModerator={isModerator}
+                showHostControlsButton={showHostControlsButton}
+                layoutState={layoutState}
+                layoutActions={layoutActions}
+                participants={participants.map((p: any) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
+                isNative={isNative}
+                videoBackground={videoBackground}
+                onBackgroundChange={setVideoBackground}
+                waitingRoomCount={waitingRoomParticipants.length}
+                onOpenHostControls={() => { setShowHostControls(true); setShowChat(false); setShowScripturePanel(false); }}
+              />
               {/* Shrink into a floating mini-player so the user can browse other tabs
                   while the call keeps running (only when hosted by ActiveCallHost). */}
               {activeCallCtx && !activeCallCtx.minimized && (
@@ -2560,7 +2647,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 panel shows at a time (they otherwise overlap on the right edge). */}
             {showChatButton && (
             <button
-              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); }}
+              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); setShowScripturePanel(false); }}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
@@ -2583,40 +2670,36 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             </button>
             )}
 
-            {/* Layout and Spotlight (host or co-host): what everyone sees. */}
-            {isModerator && (
-              <>
-                <LayoutMenuButton layout={layoutState} actions={layoutActions} />
-                <SpotlightPanelButton
-                  layout={layoutState}
-                  actions={layoutActions}
-                  people={participants.map((p: any) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
-                />
-              </>
-            )}
-
-            {/* Host Controls button (host or co-host) */}
-            {isModerator && showHostControlsButton && (
+            {/* Live Scripture — moved here from a buried Live Translation
+                popover section (2026-09-29), replacing Layout/Spotlight's
+                old slot (those moved into the top-right Meeting Controls
+                menu, see MeetingControlsMenu). Opens a side panel like Chat,
+                not a popover, so the operator can keep an eye on it while
+                the call runs. */}
+            {scriptureControl && (
               <button
-                onClick={() => { setShowHostControls((v) => !v); setShowChat(false); }}
+                onClick={() => {
+                  setShowScripturePanel((v) => {
+                    const next = !v;
+                    if (next && !scriptureControl.on) scriptureControl.toggle();
+                    return next;
+                  });
+                  setShowChat(false);
+                  setShowHostControls(false);
+                }}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`
                   w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                   transition-all duration-200 transform group-hover:scale-105
-                  ${showHostControls 
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
+                  ${showScripturePanel || scriptureControl.on
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
                     : 'bg-gray-700 hover:bg-gray-600 text-white'}
                 `}>
-                  <Users className="h-5 w-5 sm:h-7 sm:w-7" />
-                  {waitingRoomParticipants.length > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                      {waitingRoomParticipants.length}
-                    </span>
-                  )}
+                  {scriptureControl.starting ? <Loader2 className="h-5 w-5 sm:h-7 sm:w-7 animate-spin" /> : <BookOpen className="h-5 w-5 sm:h-7 sm:w-7" />}
                 </div>
                 <span className="hidden sm:block text-xs font-medium text-gray-300">
-                  {t('dailyVideoCall', 'manage', 'Manage')}
+                  {t('dailyVideoCall', 'scripture', 'Scripture')}
                 </span>
               </button>
             )}
@@ -2657,22 +2740,62 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </button>
             )}
 
-            {/* End call button */}
-            <button
-              onClick={handleEndCall}
-              className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
-            >
-              <div className="
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                bg-red-600 hover:bg-red-700 text-white
-                transition-all duration-200 transform group-hover:scale-105
-              ">
-                <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
-              </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
-                {isHost ? t('dailyVideoCall', 'endForAll', 'End for All') : t('dailyVideoCall', 'leave', 'Leave')}
-              </span>
-            </button>
+            {/* End call button — host/co-host gets a choice (Leave vs End for
+                Everyone, real gap: a host stepping out had no way to leave
+                without ending it for everyone else); everyone else just
+                leaves, same as before. */}
+            {isHost ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                    <div className="
+                      w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                      bg-red-600 hover:bg-red-700 text-white
+                      transition-all duration-200 transform group-hover:scale-105
+                    ">
+                      <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                    </div>
+                    <span className="hidden sm:block text-xs font-medium text-gray-300">
+                      {t('dailyVideoCall', 'endForAll', 'End for All')}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="center" className="w-56 p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleEndCall(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    {t('dailyVideoCall', 'leaveMeeting', 'Leave meeting')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEndCall(true)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <PhoneOff className="h-4 w-4" />
+                    {t('dailyVideoCall', 'endForEveryone', 'End meeting for everyone')}
+                  </button>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <button
+                onClick={() => handleEndCall()}
+                className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+              >
+                <div className="
+                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                  bg-red-600 hover:bg-red-700 text-white
+                  transition-all duration-200 transform group-hover:scale-105
+                ">
+                  <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                </div>
+                <span className="hidden sm:block text-xs font-medium text-gray-300">
+                  {t('dailyVideoCall', 'leave', 'Leave')}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2727,6 +2850,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           canAttach={!!authUser}
           meetingId={meetingId}
           participants={participants.map((p) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
+        />
+      )}
+
+      {/* Live Scripture Sidebar */}
+      {showScripturePanel && scriptureControl && (
+        <LiveScriptureSidebar
+          {...scriptureControl}
+          onClose={() => setShowScripturePanel(false)}
         />
       )}
     </div>

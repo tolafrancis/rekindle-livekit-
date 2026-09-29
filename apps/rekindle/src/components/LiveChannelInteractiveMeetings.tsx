@@ -60,7 +60,6 @@ import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@/components/MeetingReactions';
-import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
 import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
@@ -500,13 +499,8 @@ const EnhancedVideoCallWrapper = ({
       {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
         <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
-          {callBackground && (
-            <FloatingBackgroundButton
-              isNative={callBackground.isNative}
-              value={callBackground.videoBackground}
-              onChange={callBackground.setVideoBackground}
-            />
-          )}
+          {/* Background moved into DailyVideoCall's own Meeting Controls menu
+              (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
           {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
           <ReactionButton onReact={sendReaction} />
           {callHandRaise && (

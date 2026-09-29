@@ -2,14 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Button } from '@rekindle/ui/button';
-import { Input } from '@rekindle/ui/input';
-import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X, BookOpen, EyeOff } from 'lucide-react';
+import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
-import { ScripturePanel, useCurrentScripture } from './ScripturePanel';
+import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './ScripturePanel';
 import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
 import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
 
@@ -35,14 +34,6 @@ interface CaptionLine {
  *  mute translated audio but still read along, same as any video app's
  *  separate CC menu. */
 type CaptionMode = 'off' | 'original' | string;
-
-const liveTranslateTips = [
-  'Use a better mic',
-  'Reduce background noise',
-  'Keep the speaker close to the mic',
-  'Pause slightly between sentences',
-  'If possible, use a directional mic or clean room audio',
-];
 
 export interface TranslationControls {
   tracks: Array<{ language: string; botIdentity: string }>;
@@ -75,9 +66,36 @@ interface FloatingTranslationButtonProps {
    *  literally the caller's own auth.uid(), so the button is hidden
    *  entirely without this. */
   userId?: string;
+  /** Fired on mount and whenever Live Scripture's control state changes, so
+   *  the parent can render the toggle button + side panel itself (see
+   *  ScriptureControlState doc comment above). */
+  onScriptureStateChange?: (state: ScriptureControlState) => void;
 }
 
 const sessionIdFromBotIdentity = (botIdentity: string): string => botIdentity.replace(/^rlt-bot-/, '');
+
+/** Lifted Live Scripture control state (2026-09-29) — the toggle button
+ *  moved into DailyVideoCall's own control bar (replacing the old Layout
+ *  slot) and its panel into a side panel there too (matching Chat/Host
+ *  Controls), same "lift state to the parent, parent renders its own UI"
+ *  pattern already used for background/raise-hand below. All the actual
+ *  data logic (session start/stop, auto-detect) stays here, unchanged —
+ *  only the control surface moved. */
+export interface ScriptureControlState {
+  on: boolean;
+  starting: boolean;
+  toggle: () => void;
+  manual: string;
+  setManual: (v: string) => void;
+  manualError: string | null;
+  onSubmit: () => void;
+  onScreenVerse: ScriptureEvent | null;
+  hiding: boolean;
+  onHide: () => void;
+  /** Only the host sees the manual-entry/hide controls (matches the old
+   *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
+  canControl: boolean;
+}
 
 /** Live-translation language picker + status, styled to match the other
  *  floating pills (FloatingSpeakerButton, FloatingBackgroundButton) that sit
@@ -94,6 +112,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   roomName,
   isHost = false,
   userId,
+  onScriptureStateChange,
 }) => {
   const { user } = useAuth();
   const { tracks, currentLanguage, setLanguage, participants } = translation;
@@ -182,16 +201,6 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // reset a position someone just dragged).
   const captionOverlay = useDraggableOverlay({
     resetKey: captionMode === 'off' ? 'off' : 'on',
-    baseTransform: 'translateX(-50%)',
-  });
-  // Draggable (2026-09-29, real usability report: the fixed top position sat
-  // right under the "Copy Link" / stream-config buttons every host layout
-  // puts in the top-right corner — WebinarStage.tsx and
-  // MinistryInteractiveMeetings.tsx both anchor those around top-2/top-4).
-  // Same pattern as captionOverlay above: default position clears that
-  // button row, draggable anywhere afterward, resets on a fresh off → on.
-  const scriptureOverlay = useDraggableOverlay({
-    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
     baseTransform: 'translateX(-50%)',
   });
   // "Show Captions" (standalone from Live Translate, 2026-08-22) — dispatches
@@ -314,6 +323,16 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureHiding, setScriptureHiding] = useState(false);
   const scriptureSettings = useScriptureSettings(ministryId);
   const onScreenVerse = useCurrentScripture(scriptureSessionId ?? undefined);
+  // Draggable (2026-09-29, real usability report: the fixed top position sat
+  // right under the "Copy Link" / stream-config buttons every host layout
+  // puts in the top-right corner — WebinarStage.tsx and
+  // MinistryInteractiveMeetings.tsx both anchor those around top-2/top-4).
+  // Same pattern as captionOverlay above: default position clears that
+  // button row, draggable anywhere afterward, resets on a fresh off → on.
+  const scriptureOverlay = useDraggableOverlay({
+    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
+    baseTransform: 'translateX(-50%)',
+  });
 
   useEffect(() => {
     if (!scriptureOn) { setScriptureSessionId(null); return; }
@@ -411,6 +430,23 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       setScriptureHiding(false);
     }
   };
+
+  useEffect(() => {
+    onScriptureStateChange?.({
+      on: scriptureOn,
+      starting: scriptureStarting,
+      toggle: () => setScriptureOn(!scriptureOn),
+      manual: scriptureManual,
+      setManual: (v: string) => { setScriptureManual(v); setScriptureManualError(null); },
+      manualError: scriptureManualError,
+      onSubmit: showManualVerse,
+      onScreenVerse,
+      hiding: scriptureHiding,
+      onHide: hideVerse,
+      canControl: !!(scriptureOn && isHost && scriptureSessionId),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId]);
 
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
@@ -892,71 +928,9 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             ))}
           </div>
 
-          {/* Live Scripture — standalone from Captions (2026-09-28): turning
-              this on never dispatches a bot on its own (see the effect
-              above), so it costs nothing and needs no STT running. If
-              Captions/Translation is also on (or gets turned on afterward)
-              for this room, they share the same session automatically. */}
-          <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Live Scripture</p>
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={() => setScriptureOn(!scriptureOn)}
-              disabled={scriptureStarting}
-              className={`${row} ${sel(scriptureOn)} disabled:opacity-50`}
-            >
-              {scriptureStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-              <span className="flex-1">{scriptureOn ? 'On' : 'Off — tap to turn on'}</span>
-              {scriptureOn && !scriptureStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
-            </button>
-            {scriptureOn && isHost && scriptureSessionId && (
-              <div className="px-2.5 space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    value={scriptureManual}
-                    onChange={(e) => { setScriptureManual(e.target.value); setScriptureManualError(null); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') showManualVerse(); }}
-                    placeholder='e.g. "John 3:16"'
-                    className="h-8 text-xs flex-1"
-                  />
-                  <Button size="sm" className="h-8" onClick={showManualVerse} disabled={!scriptureManual.trim()}>Show</Button>
-                </div>
-                {scriptureManualError && <p className="text-xs text-destructive">{scriptureManualError}</p>}
-                {onScreenVerse && (
-                  <Button size="sm" variant="outline" className="h-7 w-full" onClick={hideVerse} disabled={scriptureHiding}>
-                    {scriptureHiding ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5 mr-1.5" />}
-                    Hide
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {isHost && (
-            <div className="mt-2 border-t pt-2 px-2.5 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Best audio tips</p>
-              <ul className="space-y-1 text-[11px] text-gray-600">
-                {liveTranslateTips.map((tip) => (
-                  <li key={tip} className="flex items-start gap-2">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                    <span>{tip}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Approved phrases</p>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Approved ministry phrases are managed in Live Translation settings.
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => window.open(`${window.location.origin}/ministries/${ministryId}/live`, '_blank')}>
-                    Edit in Settings
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Live Scripture — moved to its own control-bar button + side
+              panel (2026-09-29, LiveScriptureSidebar), matching Chat/Host
+              Controls, so it's no longer buried in this popover. */}
 
           {/* Ask a question — bidirectional Q&A (build plan). Only makes
               sense once we know MY language (inferred from Audio/Captions

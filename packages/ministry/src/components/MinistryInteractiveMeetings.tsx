@@ -60,9 +60,8 @@ import { getRoomOccupancy, leavePatch } from '@rekindle/live/roomOccupancy';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from '@rekindle/live/components/MeetingReactions';
-import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
-import { FloatingTranslationButton, type TranslationControls } from '@rekindle/live/components/FloatingTranslationButton';
+import { FloatingTranslationButton, type TranslationControls, type ScriptureControlState } from '@rekindle/live/components/FloatingTranslationButton';
 import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner';
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
@@ -193,6 +192,10 @@ const EnhancedVideoCallWrapper = ({
   const [callBackground, setCallBackground] = useState<{ videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean } | null>(null);
   // ReKindle Live Translation — same lift-to-parent pattern as callBackground.
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+  // Live Scripture control state (2026-09-29) — same lift-to-parent pattern,
+  // so DailyVideoCall can render its own toggle button + side panel instead
+  // of it living in FloatingTranslationButton's popover.
+  const [callScripture, setCallScripture] = useState<ScriptureControlState | null>(null);
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -616,6 +619,7 @@ const EnhancedVideoCallWrapper = ({
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
         onTranslationControlsChange={setCallTranslation}
+        scriptureControl={callScripture}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
@@ -628,13 +632,8 @@ const EnhancedVideoCallWrapper = ({
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
         <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
-          {callBackground && (
-            <FloatingBackgroundButton
-              isNative={callBackground.isNative}
-              value={callBackground.videoBackground}
-              onChange={callBackground.setVideoBackground}
-            />
-          )}
+          {/* Background moved into DailyVideoCall's own Meeting Controls menu
+              (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
           {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
           {callTranslation && (
             <FloatingTranslationButton
@@ -643,6 +642,7 @@ const EnhancedVideoCallWrapper = ({
               roomName={meeting.room_name}
               isHost={isHost}
               userId={userId}
+              onScriptureStateChange={setCallScripture}
             />
           )}
           <ReactionButton onReact={sendReaction} />
