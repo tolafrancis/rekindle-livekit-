@@ -2,6 +2,7 @@ import React from 'react';
 import { CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
+import { Switch } from '@rekindle/ui/switch';
 import { BookOpen, X, Loader2, EyeOff } from 'lucide-react';
 import type { ScriptureControlState } from './FloatingTranslationButton';
 
@@ -18,6 +19,7 @@ interface LiveScriptureSidebarProps extends ScriptureControlState {
 export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
   on,
   starting,
+  toggle,
   manual,
   setManual,
   manualError,
@@ -36,9 +38,20 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
             <BookOpen className="h-5 w-5 text-indigo-400" />
             <CardTitle className="text-white">Live Scripture</CardTitle>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-gray-400 hover:text-white">
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* The only off switch: the toolbar's Scripture button just opens
+                this panel (turning Scripture on the first time), and closing
+                the panel deliberately leaves Scripture running. */}
+            <Switch
+              checked={on}
+              disabled={starting}
+              onCheckedChange={toggle}
+              aria-label={on ? 'Turn off Live Scripture' : 'Turn on Live Scripture'}
+            />
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-gray-400 hover:text-white">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
@@ -49,7 +62,7 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
           </p>
         ) : !on ? (
           <p className="text-sm text-gray-400">
-            Live Scripture is off. Turn it on from Live Translation to put Bible references on screen
+            Live Scripture is off. Use the switch above to turn it on and put Bible references on screen
             automatically as they're spoken, or type one in here once it's on.
           </p>
         ) : (
