@@ -312,7 +312,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureOn, setScriptureOnState] = useState(() => {
     try { return localStorage.getItem(SCRIPTURE_STORAGE_KEY) === 'on'; } catch { return false; }
   });
+  // Set only by a user tap (not a restored-from-localStorage "on"), so the
+  // captions tip below shows once per toggle rather than on every reload.
+  const scriptureJustToggledOnRef = useRef(false);
   const setScriptureOn = (on: boolean) => {
+    scriptureJustToggledOnRef.current = on;
     setScriptureOnState(on);
     try { localStorage.setItem(SCRIPTURE_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* non-fatal */ }
   };
@@ -346,14 +350,26 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         // genuinely has nothing yet.
         const { data: existing } = await supabase
           .from('translation_sessions')
-          .select('id')
+          .select('id, session_kind')
           .eq('livekit_room_name', roomName)
           .in('status', ['initialising', 'joining', 'active', 'paused'])
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         if (cancelled) return;
-        if (existing) { setScriptureSessionId(existing.id); return; }
+        // Auto-detect reads the caption bot's transcript, so a bot-less
+        // (scripture_only) anchor can't detect anything until captions start.
+        const tipIfNoCaptions = (hasCaptionBot: boolean) => {
+          if (scriptureJustToggledOnRef.current && !hasCaptionBot && captionMode === 'off') {
+            toast({ title: 'Turn on captions to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without them, only verses the host types in will show.' });
+          }
+          scriptureJustToggledOnRef.current = false;
+        };
+        if (existing) {
+          setScriptureSessionId(existing.id);
+          tipIfNoCaptions(existing.session_kind !== 'scripture_only');
+          return;
+        }
 
         const { data, error } = await supabase.rpc('start_bot_session', {
           p_ministry_id: ministryId,
@@ -366,6 +382,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         if (cancelled) return;
         if (error) throw error;
         setScriptureSessionId((data as { session_id: string } | null)?.session_id ?? null);
+        tipIfNoCaptions(false);
       } catch (err: any) {
         console.error('[FloatingTranslationButton] could not start Live Scripture:', err);
         toast({ title: 'Could not turn on Live Scripture', description: err.message, variant: 'destructive' });
