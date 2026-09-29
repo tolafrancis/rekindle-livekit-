@@ -693,16 +693,18 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           viewport up to a much larger cap, with room for the previous line
           too (context, like any real captions bar) instead of just the
           latest one. */}
-      {/* Live Scripture overlay — default position sits below the top-right
-          control buttons (Copy Link / stream config) instead of under them,
-          and above the captions bar (which sits lower-center) so the two
-          never collide by default; draggable anywhere afterward, same as
-          the captions box below. Matches the same ScripturePanel "display"
-          card /display renders (see TranslationDisplayPage.tsx). */}
+      {/* Live Scripture overlay (2026-09-29, real usability report: a
+          top-anchored position was landing under/behind whichever top
+          toolbar the host page renders, forcing a drag every time) —
+          default position now sits low, stacked above the captions bar so
+          the two never collide, squarely inside the video stage instead of
+          near any toolbar; still draggable anywhere afterward, same as the
+          captions box below. Matches the same ScripturePanel "display" card
+          /display renders (see TranslationDisplayPage.tsx). */}
       {scriptureOn && scriptureSessionId && (
         <div
           ref={scriptureOverlay.ref}
-          className="fixed top-16 sm:top-20 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
           style={scriptureOverlay.style}
         >
           <div

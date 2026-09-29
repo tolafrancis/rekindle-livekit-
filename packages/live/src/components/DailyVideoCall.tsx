@@ -1115,8 +1115,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // Tell the parent overlay whenever a side panel is open so it can hide its own
   // top-right chrome (Copy Link / End for All), which would otherwise sit under it.
   useEffect(() => {
-    onSidePanelToggle?.(showChat || showHostControls);
-  }, [showChat, showHostControls, onSidePanelToggle]);
+    onSidePanelToggle?.(showChat || showHostControls || showScripturePanel);
+  }, [showChat, showHostControls, showScripturePanel, onSidePanelToggle]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();

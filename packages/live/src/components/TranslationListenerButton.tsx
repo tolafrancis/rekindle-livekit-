@@ -659,7 +659,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
       {scriptureOn && scriptureSessionId && (
         <div
           ref={scriptureOverlay.ref}
-          className="fixed top-16 sm:top-20 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
           style={scriptureOverlay.style}
         >
           <div
