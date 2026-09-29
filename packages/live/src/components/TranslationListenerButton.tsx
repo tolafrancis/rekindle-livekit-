@@ -3,6 +3,7 @@ import { Room, RoomEvent, type RemoteTrack, type RemoteTrackPublication, type Re
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Languages, Check, Volume2, Captions, X, Loader2, BookOpen } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
+import { toast } from '@rekindle/ui/use-toast';
 import { useDraggableOverlay } from '../useDraggableOverlay';
 import { ScripturePanel } from './ScripturePanel';
 
@@ -150,7 +151,11 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
   const [scriptureOn, setScriptureOnState] = useState(() => {
     try { return localStorage.getItem(SCRIPTURE_STORAGE_KEY) === 'on'; } catch { return false; }
   });
+  // Set only by a user tap (not a restored-from-localStorage "on"), so the
+  // captions tip below shows once per toggle rather than on every reload.
+  const scriptureJustToggledOnRef = useRef(false);
   const setScriptureOn = (on: boolean) => {
+    scriptureJustToggledOnRef.current = on;
     setScriptureOnState(on);
     try { localStorage.setItem(SCRIPTURE_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* non-fatal */ }
   };
@@ -165,14 +170,26 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
       try {
         const { data: existingSession } = await supabase
           .from('translation_sessions')
-          .select('id')
+          .select('id, session_kind')
           .eq('livekit_room_name', roomName)
           .in('status', ['initialising', 'joining', 'active', 'paused'])
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         if (cancelled) return;
-        if (existingSession) { setScriptureSessionId(existingSession.id); return; }
+        // Auto-detect reads the caption bot's transcript, so a bot-less
+        // (scripture_only) anchor can't detect anything until captions start.
+        const tipIfNoCaptions = (hasCaptionBot: boolean) => {
+          if (scriptureJustToggledOnRef.current && !hasCaptionBot && captionMode === 'off') {
+            toast({ title: 'Turn on captions to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without them, only verses the host types in will show.' });
+          }
+          scriptureJustToggledOnRef.current = false;
+        };
+        if (existingSession) {
+          setScriptureSessionId(existingSession.id);
+          tipIfNoCaptions(existingSession.session_kind !== 'scripture_only');
+          return;
+        }
 
         const { data, error } = await supabase.rpc(startCaptionsSession.rpc, {
           ...startCaptionsSession.params,
@@ -181,6 +198,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
         if (cancelled) return;
         if (error) throw error;
         setScriptureSessionId((data as { session_id: string } | null)?.session_id ?? null);
+        tipIfNoCaptions(false);
       } catch (err) {
         console.error(`[${logTag}] could not start Live Scripture:`, err);
         setScriptureOn(false);
