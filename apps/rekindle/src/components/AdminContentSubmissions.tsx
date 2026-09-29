@@ -9,16 +9,30 @@ import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Check, X, MessageSquareWarning, Loader2, Copy } from 'lucide-react';
 
-interface DayEntry { day: number; title: string; scripture: string; content: string }
+interface DayEntry {
+  day: number;
+  title: string;
+  subtitle: string | null;
+  scripture_reference: string | null;
+  scripture_version: string;
+  introduction: string | null;
+  main_content: string;
+  reflection_questions: string[];
+  guided_prayer: string | null;
+  action_steps: string[];
+  additional_thoughts: string | null;
+  prayer_focus: string | null;
+  prayer_points: string[];
+}
 
 interface Submission {
   id: string;
-  content_type: 'book' | 'devotional_series' | 'prayer_series';
+  content_type: 'book' | 'daily_devotional' | 'devotional_series' | 'prayer_series';
   title: string;
   author_name: string;
   author_email: string;
   category: string | null;
-  description: string;
+  description: string | null;
   key_takeaways: string[];
   days: DayEntry[];
   status: 'pending' | 'approved' | 'changes_requested' | 'rejected';
@@ -28,6 +42,7 @@ interface Submission {
 
 const TYPE_LABELS: Record<Submission['content_type'], string> = {
   book: 'Book Summary',
+  daily_devotional: 'Daily Devotional',
   devotional_series: 'Devotional Series',
   prayer_series: 'Prayer Library Series',
 };
@@ -43,12 +58,13 @@ const SUBMIT_LINK = `${typeof window !== 'undefined' ? window.location.origin : 
 
 /**
  * Review queue for public "Write for Us" submissions (SubmitContentPage.tsx
- * -> content_submissions, migration 0378). Approve/Recommend changes/Reject
- * are the whole review workflow the link exists for. Approve currently just
- * marks status (see the migration's scope note) — publishing into
- * book_summaries / the devotional or prayer series tables from here is a
- * fast-follow; for now the admin copies the reviewed content into the
- * existing AdminBookManager / devotional / prayer series tools.
+ * -> content_submissions, migrations 0378/0379). Approve/Recommend
+ * changes/Reject are the whole review workflow the link exists for.
+ * Approve currently just marks status (see the migrations' scope note) —
+ * publishing into book_summaries / the devotional or prayer series tables
+ * from here is a fast-follow; for now the admin copies the reviewed
+ * content into the existing AdminBookManager / AdminDevotionalLibraryManager
+ * / AdminPrayerLibrary tools, whose own field shapes this form mirrors.
  */
 export const AdminContentSubmissions: React.FC = () => {
   const { user } = useAuth();
@@ -95,6 +111,9 @@ export const AdminContentSubmissions: React.FC = () => {
       () => toast({ title: 'Could not copy link', variant: 'destructive' }),
     );
   };
+
+  const isDevotionalShape = active?.content_type === 'daily_devotional' || active?.content_type === 'devotional_series';
+  const isPrayerShape = active?.content_type === 'prayer_series';
 
   return (
     <div className="space-y-4">
@@ -145,10 +164,12 @@ export const AdminContentSubmissions: React.FC = () => {
               <div className="space-y-3 text-sm">
                 <p><span className="font-medium">Author:</span> {active.author_name} ({active.author_email})</p>
                 {active.category && <p><span className="font-medium">Category:</span> {active.category}</p>}
-                <div>
-                  <p className="font-medium mb-1">{active.content_type === 'book' ? 'Summary' : 'Description'}</p>
-                  <p className="whitespace-pre-wrap text-muted-foreground">{active.description}</p>
-                </div>
+                {active.description && (
+                  <div>
+                    <p className="font-medium mb-1">{active.content_type === 'book' ? 'Summary' : 'Series description'}</p>
+                    <p className="whitespace-pre-wrap text-muted-foreground">{active.description}</p>
+                  </div>
+                )}
                 {active.content_type === 'book' && active.key_takeaways?.length > 0 && (
                   <div>
                     <p className="font-medium mb-1">Key takeaways</p>
@@ -157,14 +178,47 @@ export const AdminContentSubmissions: React.FC = () => {
                     </ul>
                   </div>
                 )}
-                {active.content_type !== 'book' && active.days?.length > 0 && (
+                {active.days?.length > 0 && (
                   <div className="space-y-2">
-                    <p className="font-medium">Days ({active.days.length})</p>
+                    {active.content_type !== 'daily_devotional' && <p className="font-medium">Days ({active.days.length})</p>}
                     {active.days.map((d) => (
-                      <div key={d.day} className="border rounded-lg p-2">
-                        <p className="font-medium">Day {d.day}: {d.title}</p>
-                        {d.scripture && <p className="text-xs text-muted-foreground">{d.scripture}</p>}
-                        <p className="text-muted-foreground whitespace-pre-wrap">{d.content}</p>
+                      <div key={d.day} className="border rounded-lg p-3 space-y-1.5">
+                        <p className="font-medium">{active.content_type === 'daily_devotional' ? d.title : `Day ${d.day}: ${d.title}`}</p>
+                        {d.subtitle && <p className="text-xs text-muted-foreground italic">{d.subtitle}</p>}
+                        {d.scripture_reference && (
+                          <p className="text-xs text-muted-foreground">{d.scripture_reference} ({d.scripture_version})</p>
+                        )}
+                        {isDevotionalShape && d.introduction && (
+                          <p className="text-muted-foreground"><span className="font-medium text-foreground">Introduction: </span>{d.introduction}</p>
+                        )}
+                        {isPrayerShape && d.prayer_focus && (
+                          <p className="text-muted-foreground"><span className="font-medium text-foreground">Focus: </span>{d.prayer_focus}</p>
+                        )}
+                        <p className="text-muted-foreground whitespace-pre-wrap">{d.main_content}</p>
+                        {isDevotionalShape && d.reflection_questions?.length > 0 && (
+                          <div>
+                            <p className="font-medium text-foreground">Reflection questions</p>
+                            <ul className="list-disc list-inside text-muted-foreground">{d.reflection_questions.map((q, i) => <li key={i}>{q}</li>)}</ul>
+                          </div>
+                        )}
+                        {isDevotionalShape && d.guided_prayer && (
+                          <p className="text-muted-foreground"><span className="font-medium text-foreground">Guided prayer: </span>{d.guided_prayer}</p>
+                        )}
+                        {isDevotionalShape && d.action_steps?.length > 0 && (
+                          <div>
+                            <p className="font-medium text-foreground">Action steps</p>
+                            <ul className="list-disc list-inside text-muted-foreground">{d.action_steps.map((a, i) => <li key={i}>{a}</li>)}</ul>
+                          </div>
+                        )}
+                        {isDevotionalShape && d.additional_thoughts && (
+                          <p className="text-muted-foreground"><span className="font-medium text-foreground">Additional thoughts: </span>{d.additional_thoughts}</p>
+                        )}
+                        {isPrayerShape && d.prayer_points?.length > 0 && (
+                          <div>
+                            <p className="font-medium text-foreground">Prayer points</p>
+                            <ul className="list-disc list-inside text-muted-foreground">{d.prayer_points.map((p, i) => <li key={i}>{p}</li>)}</ul>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
