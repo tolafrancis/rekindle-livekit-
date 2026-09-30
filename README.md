@@ -1,4 +1,4 @@
-# REKINDLE DISCIPLESHIP AND CHURCH MANAGEENT APP
+ REKINDLE DISCIPLESHIP AND CHURCH MANAGEENT APP
 
 A React + TypeScript + Vite application for spiritual mentorship and prayer communities.
 
