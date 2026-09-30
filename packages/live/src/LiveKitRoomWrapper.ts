@@ -450,6 +450,18 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
   }
 
+  async switchActiveDevice(kind: MediaDeviceKind, deviceId: string): Promise<boolean> {
+    if (!this.room || !this.joined) return false;
+    try {
+      await this.room.switchActiveDevice(kind, deviceId);
+      return true;
+    } catch (e) {
+      console.warn(`[LiveKitRoomWrapper] Failed to switch active ${kind} device to ${deviceId}:`, e);
+      this.callbacks.onError?.(e);
+      return false;
+    }
+  }
+
   isJoined(): boolean { return this.joined; }
   isJoining(): boolean { return this.joining; }
   isVideoEnabled(): boolean { return this.localVideoEnabled; }

@@ -82,6 +82,7 @@ export interface IVideoRoomWrapper {
 
   getVideoDevices(): Promise<MediaDeviceInfo[]>;
   getAudioInputDevices(): Promise<MediaDeviceInfo[]>;
+  switchActiveDevice?(kind: MediaDeviceKind, deviceId: string): Promise<boolean>;
   isJoined(): boolean;
   isJoining(): boolean;
   isVideoEnabled(): boolean;

@@ -22,6 +22,7 @@ import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@rekindle/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@rekindle/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { LiveChannelChat } from './LiveChannelChat';
 import { FloatingTranslationButton } from './FloatingTranslationButton';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
@@ -141,6 +142,25 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   const entitlements = useUserEntitlements();
   
   const [isVideoMode, setIsVideoMode] = useState(channel.is_video_enabled);
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+
+  useEffect(() => {
+    const getCameras = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter((d) => d.kind === 'videoinput');
+        setAvailableCameras(cameras);
+        if (cameras.length > 0 && !selectedCameraId) {
+          setSelectedCameraId(cameras[0].deviceId);
+        }
+      } catch (err) {
+        console.error('Failed to enumerate camera devices:', err);
+      }
+    };
+    getCameras();
+  }, []);
+
   // Recording is governed by the channel's setting and performed by Mux (it
   // auto-records the ingested RTMP). Seeded from the channel; synced below.
   const [isRecording, setIsRecording] = useState(channel.enable_recording !== false);
@@ -324,12 +344,6 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     // to HLS. No Mux provision, no callObject.startLiveStreaming — just start the
     // HLS Egress (which also sets hls_playback_url + is_hls_live server-side).
     if (isLiveKitBackend()) {
-      // Cold-start fix (2026-08-19): the host joins MUTED — mic/camera start
-      // OFF, and they have to tap to enable them (see the "You're live —
-      // you're muted" toast below). Only mic is required to trigger this at
-      // all now — see below for why camera used to gate it too and why that
-      // was wrong.
-      if (!dailyRoom.isMicOn) return;
       if (muxBridgeStartedRef.current) return;
       muxBridgeStartedRef.current = true;
       (async () => {
@@ -829,21 +843,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       console.log('[Broadcast] Waiting for room to be fully ready...');
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // The room now joins MUTED — mic + camera start OFF (no auto-publish race),
-      // by deliberate design (nothing auto-publishes without an explicit tap — same
-      // "join muted, prompt" rule meetings follow). Point the host at the single
-      // "Start Broadcasting" button (rendered over the video area below) rather
-      // than the two separate mic/camera buttons: those still exist for muting
-      // mid-broadcast, but for the INITIAL start they used to require two taps —
-      // and channel broadcasts wait for BOTH tracks to exist before starting HLS
-      // Egress (Track Composite locks onto whatever's there and can't add a track
-      // later), so a pause between those two taps directly became a pause the
-      // whole audience sat through. One combined action removes that gap.
+      // Auto-enable media immediately after join so Go Live is a single step
+      console.log('[Broadcast] Enabling speaker media automatically...');
+      await dailyRoom.enableSpeakerMedia(isVideoMode, selectedCameraId);
+
       toast({
-        title: t('liveChannelBroadcast', 'youreLiveMuted', "You're live — you're muted"),
+        title: t('liveChannelBroadcast', 'youreLive', "You're live"),
         description: isVideoMode
-          ? t('liveChannelBroadcast', 'tapStartBroadcastingToStart', 'Tap "Start Broadcasting" over your video to start your audio and video.')
-          : t('liveChannelBroadcast', 'tapMicToStart', 'Tap the microphone button below to start speaking.'),
+          ? t('liveChannelBroadcast', 'broadcastingVideoAudio', 'Broadcasting video and audio to viewers.')
+          : t('liveChannelBroadcast', 'broadcastingAudio', 'Broadcasting audio to viewers.'),
       });
 
       await supabase
@@ -1296,6 +1304,27 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                   />
                 </div>
 
+                {isVideoMode && availableCameras.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-gray-700">
+                    <Label className="text-white text-xs flex items-center gap-2">
+                      <Video className="h-3.5 w-3.5 text-purple-400" />
+                      {t('liveChannelBroadcast', 'selectCamera', 'Camera Device')}
+                    </Label>
+                    <Select value={selectedCameraId} onValueChange={setSelectedCameraId}>
+                      <SelectTrigger className="w-full bg-gray-900 border-gray-700 text-white text-xs h-9">
+                        <SelectValue placeholder="Select a camera" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-800 border-gray-700 text-white">
+                        {availableCameras.map((camera) => (
+                          <SelectItem key={camera.deviceId} value={camera.deviceId} className="text-xs focus:bg-gray-700">
+                            {camera.label || `Camera (${camera.deviceId.slice(0, 8)})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Circle className="h-5 w-5 text-red-400" />
@@ -1486,27 +1515,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               <MeetingNotesBanner active={notesActive} />
             </div>
 
-            {/* Single-tap start — see startBroadcastingMedia above for why this
-                exists instead of leaving the host to find the mic + camera
-                buttons separately. Disappears once either is on; the control
-                bar's individual buttons keep working normally after that. */}
-            {!dailyRoom.isMicOn && !dailyRoom.isCameraOn && (
-              <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60">
-                <Button
-                  size="lg"
-                  onClick={startBroadcastingMedia}
-                  disabled={startingMedia}
-                  className="rounded-full px-6 sm:px-8 h-12 sm:h-14 text-base sm:text-lg bg-red-500 hover:bg-red-600 text-white flex items-center gap-2 shadow-xl"
-                >
-                  {startingMedia ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <Radio className="h-5 w-5" />
-                  )}
-                  {t('liveChannelBroadcast', 'startBroadcasting', 'Start Broadcasting')}
-                </Button>
-              </div>
-            )}
+
 
             {(() => {
               const remoteSpeakers = dailyRoom.remoteParticipants.filter(

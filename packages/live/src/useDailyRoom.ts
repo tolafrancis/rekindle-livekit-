@@ -116,7 +116,7 @@ export interface UseDailyRoomReturn {
   translationLanguage: string | null;
   setTranslationLanguage: (language: string | null, originalSpeakerIdentity?: string) => Promise<void>;
   /** Directly enables mic+optional video for an accepted speaker, bypassing the permission gate */
-  enableSpeakerMedia: (withVideo: boolean) => Promise<void>;
+  enableSpeakerMedia: (withVideo: boolean, videoDeviceId?: string) => Promise<void>;
   startScreenShare: () => Promise<void>;
   stopScreenShare: () => Promise<void>;
   
@@ -1774,14 +1774,14 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // enableSpeakerMedia — called by LiveChannelViewer after an invitation is accepted.
   // Bypasses the hasSpeakerPermission gate (the DB row was just written, Realtime fires async).
   // Directly calls setLocalAudio(true) / setLocalVideo(true) on the Daily call object.
-  const enableSpeakerMedia = useCallback(async (withVideo: boolean) => {
+  const enableSpeakerMedia = useCallback(async (withVideo: boolean, videoDeviceId?: string) => {
     const wrapper = wrapperRef.current;
     if (!wrapper) {
       console.warn('[Daily] enableSpeakerMedia: no wrapper');
       return;
     }
     try {
-      console.log('[Daily] enableSpeakerMedia: enabling audio', withVideo ? '+ video' : '');
+      console.log('[Daily] enableSpeakerMedia: enabling audio', withVideo ? '+ video' : '', videoDeviceId ? `with device ${videoDeviceId}` : '');
       // Optimistically grant permission so toggleMic/toggleCamera stop being blocked
       setHasSpeakerPermission(true);
 
@@ -1797,7 +1797,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       setIsMicOn(audioOn);
 
       if (withVideo) {
+        if (videoDeviceId && wrapper.switchActiveDevice) {
+          await wrapper.switchActiveDevice('videoinput', videoDeviceId);
+        }
         const videoOn = await wrapper.setVideo(true);
+        if (videoDeviceId && wrapper.switchActiveDevice) {
+          await wrapper.switchActiveDevice('videoinput', videoDeviceId);
+        }
         setIsCameraOn(videoOn);
         if (videoOn) {
           setTimeout(() => attachLocalVideoTrack(), 200);
