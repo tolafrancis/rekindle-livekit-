@@ -119,6 +119,7 @@ export interface UseDailyRoomReturn {
   enableSpeakerMedia: (withVideo: boolean, videoDeviceId?: string) => Promise<void>;
   startScreenShare: () => Promise<void>;
   stopScreenShare: () => Promise<void>;
+  switchActiveDevice: (kind: MediaDeviceKind, deviceId: string) => Promise<boolean>;
   
   // Room actions
   joinRoom: () => Promise<boolean>;
@@ -2413,7 +2414,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const remoteParticipants = participants.filter(p => !p.isLocal);
   const participantCount = participants.length;
 
+  const switchActiveDevice = useCallback(async (kind: MediaDeviceKind, deviceId: string) => {
+    if (!wrapperRef.current?.switchActiveDevice) return false;
+    return wrapperRef.current.switchActiveDevice(kind, deviceId);
+  }, []);
+
   return {
+    isJoined: isConnected,
     isConnected,
     isConnecting,
     isJoining,
@@ -2437,6 +2444,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     isCameraOn,
     isScreenSharing,
     handRaised,
+    switchActiveDevice,
     raisedHands,
     audioInputState,
     hasSpeakerPermission: effectiveSpeakerPermission,

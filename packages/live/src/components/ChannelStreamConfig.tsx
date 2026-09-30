@@ -426,11 +426,55 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
   }, [open, targetId, contextKind]);
 
   const copy = async (label: string, value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
+    let success = false;
+
+    // 1. Try modern navigator.clipboard API
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        success = true;
+      } catch (e) {
+        console.warn('[ChannelStreamConfig] navigator.clipboard.writeText failed, trying fallback:', e);
+      }
+    }
+
+    // 2. Fallback to document.execCommand('copy') for mobile browsers / non-HTTPS contexts
+    if (!success) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = value;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.width = '2em';
+        textArea.style.height = '2em';
+        textArea.style.padding = '0';
+        textArea.style.border = 'none';
+        textArea.style.outline = 'none';
+        textArea.style.boxShadow = 'none';
+        textArea.style.background = 'transparent';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        textArea.setSelectionRange(0, 999999);
+        success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch (err) {
+        console.error('[ChannelStreamConfig] Fallback copy failed:', err);
+      }
+    }
+
+    if (success) {
       setCopied(label);
       setTimeout(() => setCopied(null), 1500);
-    } catch { /* clipboard blocked */ }
+      toast({ title: t('channelStreamConfig', 'copiedToClipboard', 'Copied to clipboard'), description: label });
+    } else {
+      toast({
+        title: t('channelStreamConfig', 'failedToCopy', 'Failed to copy'),
+        description: t('channelStreamConfig', 'pleaseCopyManually', 'Please select and copy text manually.'),
+        variant: 'destructive',
+      });
+    }
   };
 
   const disableStream = async () => {

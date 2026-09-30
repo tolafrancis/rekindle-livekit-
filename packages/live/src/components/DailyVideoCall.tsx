@@ -349,7 +349,8 @@ interface CameraDevice {
 const TestCamera: React.FC<{
   onTestComplete: (success: boolean) => void;
   onStopTest?: () => void;
-}> = ({ onTestComplete, onStopTest }) => {
+  onCameraSelect?: (deviceId: string) => void;
+}> = ({ onTestComplete, onStopTest, onCameraSelect }) => {
   const { t } = useLanguage();
   const [isTesting, setIsTesting] = useState(false);
   const [status, setStatus] = useState<'inactive' | 'detecting' | 'active' | 'blocked'>('inactive');
@@ -357,6 +358,11 @@ const TestCamera: React.FC<{
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Populate available cameras on mount so selection is ready before testing
+  useEffect(() => {
+    getAvailableCameras();
+  }, []);
 
   // Effect to attach stream to video element when both are available
   useEffect(() => {
@@ -418,6 +424,7 @@ const TestCamera: React.FC<{
       
       if (cameras.length > 0 && !selectedCameraId) {
         setSelectedCameraId(cameras[0].deviceId);
+        onCameraSelect?.(cameras[0].deviceId);
       }
       
       return cameras;
@@ -494,6 +501,7 @@ const TestCamera: React.FC<{
   const switchCamera = async (newCameraId: string) => {
     console.log('[TestCamera] Switching to camera:', newCameraId);
     setSelectedCameraId(newCameraId);
+    onCameraSelect?.(newCameraId);
     if (isTesting) {
       await startTest(newCameraId);
     }
@@ -556,8 +564,8 @@ const TestCamera: React.FC<{
       
       <VideoStatusIndicator status={status} />
       
-      {/* Camera selector - only show when testing and multiple cameras available */}
-      {isTesting && availableCameras.length > 1 && (
+      {/* Camera selector - show whenever cameras are available */}
+      {availableCameras.length > 0 && (
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">{t('dailyVideoCall', 'selectCamera', 'Select Camera')}</label>
           <select
@@ -1076,6 +1084,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     setVideoBackground,
     startScreenShare,
     stopScreenShare,
+    switchActiveDevice,
     joinRoom,
     leaveRoom,
     sessionDuration,
@@ -1148,6 +1157,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         title: t('dailyVideoCall', 'joinedMuted', "You've joined muted"),
         description: t('dailyVideoCall', 'tapMicCamToStart', 'Tap the microphone and camera buttons below to turn on your audio and video.'),
       });
+
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+
+  // Apply selected camera device upon joining/connecting to the room
+  useEffect(() => {
+    if (isConnected && selectedCameraId && switchActiveDevice) {
+      console.log('[DailyVideoCall] Applying selected camera device:', selectedCameraId);
+      switchActiveDevice('videoinput', selectedCameraId);
+    }
+  }, [isConnected, selectedCameraId, switchActiveDevice]);
     }
   }, [isConnected, toast, t]);
 
