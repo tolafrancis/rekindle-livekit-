@@ -761,8 +761,16 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <MinistryPrayerRequestsManager ministryId={ministry.id} />
             <MinistryDonationsManager ministryId={ministry.id} ministryName={ministry.name} themeColor={ministry.theme_color} isLeader={true} />
             <MinistryEventsManager ministryId={ministry.id} />
-            <EvangelismInbox ministryId={ministry.id} ministryName={ministry.name} isLeader={true} />
-            <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
+            <EvangelismInbox
+              ministryId={ministry.id}
+              ministryName={ministry.name}
+              isLeader={true}
+              // Wait for the channels dialog to close and release its scroll lock.
+              onOpenWhatsApp={() => setTimeout(() => document.getElementById('ministry-whatsapp-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)}
+            />
+            <div id="ministry-whatsapp-hub">
+              <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
+            </div>
           </div>
         )}
 

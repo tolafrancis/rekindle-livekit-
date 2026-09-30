@@ -205,7 +205,14 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
         );
 
       case 'inbox':
-        return <EvangelismInbox ministryId={ministryId} ministryName={ministry.name} isLeader={isLeader} />;
+        return (
+          <EvangelismInbox
+            ministryId={ministryId}
+            ministryName={ministry.name}
+            isLeader={isLeader}
+            onOpenWhatsApp={() => handleTabChange('whatsapp')}
+          />
+        );
 
       case 'birthdays':
         return <MinistryBirthdayWishes ministryId={ministryId} ministryName={ministry.name} />;

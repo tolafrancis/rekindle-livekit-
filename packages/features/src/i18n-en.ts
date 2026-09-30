@@ -2009,6 +2009,8 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "linkChannelsIntro": "Link your channels so messages from members and seekers land in the {ministryName} inbox.",
     "manageWhatsappBefore": "Manage your WhatsApp connection in the",
     "manageWhatsappAfter": "tab. Once connected, inbound messages appear here automatically.",
+    "manageWhatsapp": "Manage WhatsApp",
+    "setUpWhatsapp": "Set up WhatsApp",
     "on": "On",
     "off": "Off",
     "onlyLeadersCanConnect": "Only ministry leaders can connect channels.",
