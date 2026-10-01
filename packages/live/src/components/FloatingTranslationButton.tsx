@@ -11,6 +11,7 @@ import { useDraggableOverlay } from '../useDraggableOverlay';
 import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './ScripturePanel';
 import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
 import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
+import type { LiveCaptionsBridge } from '../useLiveCaptions';
 
 // Human-readable name for a language code (e.g. "de" → "German (de)"),
 // falling back to the bare code where the browser has no name for it.
@@ -66,6 +67,16 @@ interface FloatingTranslationButtonProps {
    *  literally the caller's own auth.uid(), so the button is hidden
    *  entirely without this. */
   userId?: string;
+  /** Show the same-language "Show Captions" row. Meetings pass false: they
+   *  use on-demand captions (CaptionsButton / agents/captions) instead.
+   *  Translated-language caption rows are unaffected either way. */
+  showCaptionsOption?: boolean;
+  /** On-demand captions (CC) for this room. Live Scripture's auto-detect
+   *  also scans its final lines, so verses are still found where the old
+   *  "Show Captions" row is hidden (showCaptionsOption false). */
+  captionsBridge?: LiveCaptionsBridge | null;
+  /** Whether this user has CC on — only used to word the auto-detect tip. */
+  ccEnabled?: boolean;
   /** Fired on mount and whenever Live Scripture's control state changes, so
    *  the parent can render the toggle button + side panel itself (see
    *  ScriptureControlState doc comment above). */
@@ -112,6 +123,9 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   roomName,
   isHost = false,
   userId,
+  showCaptionsOption = true,
+  captionsBridge = null,
+  ccEnabled = false,
   onScriptureStateChange,
 }) => {
   const { user } = useAuth();
@@ -360,8 +374,10 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         // Auto-detect reads the caption bot's transcript, so a bot-less
         // (scripture_only) anchor can't detect anything until captions start.
         const tipIfNoCaptions = (hasCaptionBot: boolean) => {
-          if (scriptureJustToggledOnRef.current && !hasCaptionBot && captionMode === 'off') {
-            toast({ title: 'Turn on captions to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without them, only verses the host types in will show.' });
+          if (scriptureJustToggledOnRef.current && !hasCaptionBot && captionMode === 'off' && !ccEnabled) {
+            toast(captionsBridge
+              ? { title: 'Turn on CC to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without CC on, only verses the host types in will show.' }
+              : { title: 'Turn on captions to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without them, only verses the host types in will show.' });
           }
           scriptureJustToggledOnRef.current = false;
         };
@@ -429,6 +445,35 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [scriptureSessionId, scriptureSettings.auto_detect, ministryId, sourceLanguage]);
+
+  // Same auto-detect, fed by on-demand captions (CC) instead of
+  // translation_logs. Only final lines are scanned, once each. The agent
+  // runs while anyone in the room has CC on, and its transcription events
+  // reach everyone, so this works even if this user's own CC is off.
+  useEffect(() => {
+    if (!scriptureSessionId || !scriptureSettings.auto_detect || !captionsBridge) return;
+    const detector = new ScriptureDetector();
+    const scanned = new Set<string>();
+    return captionsBridge.subscribe((segments) => {
+      for (const seg of segments) {
+        if (!seg.final || !seg.text || scanned.has(seg.id)) continue;
+        if (scanned.size > 500) scanned.clear();
+        scanned.add(seg.id);
+        try {
+          const found = detector.scan(seg.text);
+          const latest = found[found.length - 1];
+          if (!latest || latest.status !== 'confirmed') continue;
+          const { settings: s, onScreenRef } = scriptureLive.current;
+          const referenceText = formatReference(latest.reference);
+          if (s.auto_show && onScreenRef !== referenceText) {
+            showScriptureVerse(scriptureSessionId, ministryId, referenceText, s, sourceLanguage);
+          }
+        } catch (err) {
+          console.warn('[FloatingTranslationButton] scripture detection skipped a caption:', err);
+        }
+      }
+    });
+  }, [scriptureSessionId, scriptureSettings.auto_detect, captionsBridge, ministryId, sourceLanguage]);
 
   const showManualVerse = async () => {
     if (!scriptureSessionId || !scriptureManual.trim()) return;
@@ -916,6 +961,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               Also independent of Audio the same way it always was: keep the
               real voice and still read captions, or mute translated audio
               but read along, same idea as any video app's separate CC menu. */}
+          {(showCaptionsOption || realTranslationTracks.length > 0) && (<>
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Captions</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
             <button type="button" onClick={() => setCaptionMode('off')} className={`${row} ${sel(captionMode === 'off')}`}>
@@ -923,6 +969,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <span className="flex-1">Off</span>
               {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            {showCaptionsOption && (
             <button
               type="button"
               onClick={startCaptionsSession}
@@ -933,6 +980,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <span className="flex-1">Show Captions</span>
               {captionMode === 'original' && !captionsStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            )}
             {realTranslationTracks.map((track) => (
               <button
                 key={`caption-${track.botIdentity}`}
@@ -946,6 +994,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               </button>
             ))}
           </div>
+          </>)}
 
           {/* Live Scripture — moved to its own control-bar button + side
               panel (2026-09-29, LiveScriptureSidebar), matching Chat/Host

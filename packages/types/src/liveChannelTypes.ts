@@ -27,6 +27,10 @@ export interface LiveChannel {
   // ADDED: New fields
   is_ministry?: boolean;
   replayAccessLevel?: ReplayAccessLevel;
+  /** Owning ministry, when this is a ministry channel. */
+  ministry_id?: string | null;
+  /** Caption (speech-to-text) language for on-demand captions — migration 0374. */
+  source_language?: string;
 }
 
 export interface ChannelEvent {

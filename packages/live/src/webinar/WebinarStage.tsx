@@ -13,6 +13,9 @@ import { useActiveCallOptional } from '../ActiveCallContext';
 import { ChannelStreamConfig } from '../components/ChannelStreamConfig';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
 import { FloatingTranslationButton, type TranslationControls, type ScriptureControlState } from '../components/FloatingTranslationButton';
+import { CaptionOverlay } from '../components/CaptionOverlay';
+import { CaptionsButton } from '../components/CaptionsButton';
+import { useLiveCaptions, type LiveCaptionsBridge } from '../useLiveCaptions';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingChat } from '../useMeetingChat';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
@@ -176,6 +179,11 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   const [streamConfigOpen, setStreamConfigOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+  // On-demand captions for the host and speakers (they're in the LiveKit
+  // room, so this is the same in-room path Interactive Meetings use). The
+  // same agent also broadcasts to the HLS audience — see useHlsCaptions.
+  const [callCaptionsBridge, setCallCaptionsBridge] = useState<LiveCaptionsBridge | null>(null);
+  const captions = useLiveCaptions(callCaptionsBridge, { roomName: webinar.room_name, kind: 'ministry_webinar' });
   // Live Scripture control state (2026-09-29) — same lift-to-parent pattern
   // as callTranslation, so DailyVideoCall can render its own toggle button +
   // side panel instead of it living in FloatingTranslationButton's popover.
@@ -312,6 +320,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           autoJoin
           enableRecording={webinar.enable_recording}
           onTranslationControlsChange={setCallTranslation}
+          onCaptionsBridgeChange={setCallCaptionsBridge}
           onModeratorControlsChange={setModeratorControls}
           // Real bug found live (2026-09-22, screenshotted): DailyVideoCall's
           // own generic Chat and Host Controls ("Manage") buttons were
@@ -329,6 +338,18 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           scriptureControl={callScripture}
         />
 
+        {!isPiP && captions.enabled && (
+          <CaptionOverlay
+            lines={captions.lines}
+            size={captions.size}
+            placeholder={
+              captions.status === 'starting' || captions.status === 'waiting'
+                ? 'Captions are on — they’ll appear when someone speaks.'
+                : null
+            }
+          />
+        )}
+
         {/* Was gated on (webinar.enable_captions || webinar.enable_translation)
             — that hid the button (Live Scripture included) entirely for any
             webinar that had both off. Neither flag is enforced server-side
@@ -338,16 +359,30 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
             reachable independently of Captions/Translation here too
             (2026-09-28), matching MinistryInteractiveMeetings.tsx's own
             FloatingTranslationButton, which was already unconditional. */}
-        {!isPiP && callTranslation && (
-          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50">
-            <FloatingTranslationButton
-              translation={callTranslation}
-              ministryId={webinar.ministry_id}
-              roomName={webinar.room_name}
-              isHost={isHost}
-              userId={userId}
-              onScriptureStateChange={setCallScripture}
-            />
+        {!isPiP && (callCaptionsBridge || callTranslation) && (
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+            {callCaptionsBridge && (
+              <CaptionsButton
+                enabled={captions.enabled}
+                status={captions.status}
+                size={captions.size}
+                onToggle={captions.toggle}
+                onSizeChange={captions.setSize}
+              />
+            )}
+            {callTranslation && (
+              <FloatingTranslationButton
+                translation={callTranslation}
+                ministryId={webinar.ministry_id}
+                roomName={webinar.room_name}
+                isHost={isHost}
+                userId={userId}
+                showCaptionsOption={false}
+                captionsBridge={callCaptionsBridge}
+                ccEnabled={captions.enabled}
+                onScriptureStateChange={setCallScripture}
+              />
+            )}
           </div>
         )}
 
