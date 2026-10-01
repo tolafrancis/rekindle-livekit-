@@ -378,6 +378,8 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                 isHost={isHost}
                 userId={userId}
                 showCaptionsOption={false}
+                captionsBridge={callCaptionsBridge}
+                ccEnabled={captions.enabled}
                 onScriptureStateChange={setCallScripture}
               />
             )}

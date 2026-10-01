@@ -1737,6 +1737,8 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 isHost
                 userId={user?.id}
                 showCaptionsOption={false}
+                captionsBridge={captionsAvailable && dailyRoom.isConnected ? dailyRoom.captionsBridge : null}
+                ccEnabled={captions.enabled}
               />
             )}
             {captionsAvailable && dailyRoom.isConnected && (

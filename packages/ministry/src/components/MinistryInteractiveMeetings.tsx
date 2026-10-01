@@ -667,6 +667,8 @@ const EnhancedVideoCallWrapper = ({
               userId={userId}
               onScriptureStateChange={setCallScripture}
               showCaptionsOption={false}
+              captionsBridge={callCaptionsBridge}
+              ccEnabled={captions.enabled}
             />
           )}
           {callCaptionsBridge && (
