@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.rekindlebc.app',
-  appName: 'ReKindle',
+  appName: 'ReKindleBC',
   webDir: 'dist',
 
   android: {
@@ -12,6 +12,7 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     iosScheme: 'https',
+    allowNavigation: ['rekindlebc.com', 'app.rekindlebc.com', '*.rekindlebc.com'],
   },
 
   plugins: {

@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1051029806700-3pnf9qbqdg10ut4bdhs2ddjbfjishiel.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rekindlebc.app",
+            "certificate_hash": "835e985494a01127042235b2a3d4c93c7a17c51e"
+          }
+        },
+        {
           "client_id": "1051029806700-cfguuqf00hvt19atva62c7utv63k15ue.apps.googleusercontent.com",
           "client_type": 3
         }
