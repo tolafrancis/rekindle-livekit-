@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // Supabase Edge Function: whatsapp-webhook
 // =====================================================================
 // Meta Cloud API webhook receiver for a ministry's own connected WhatsApp
@@ -204,11 +205,19 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   // ── Meta webhook verification (GET hub.challenge) ─────────────────────────
+=======
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+
+const VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN') ?? 'rekindle_meta_webhook_2026';
+
+serve(async (req) => {
+>>>>>>> Stashed changes
   if (req.method === 'GET') {
     const url = new URL(req.url);
     const mode = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
+<<<<<<< Updated upstream
     const expected = Deno.env.get('WHATSAPP_VERIFY_TOKEN');
     if (!expected) {
       console.error('[whatsapp-webhook] WHATSAPP_VERIFY_TOKEN is not set — refusing to verify');
@@ -318,4 +327,17 @@ serve(async (req) => {
     console.error('[whatsapp-webhook] error:', err);
     return json({ error: err.message ?? 'Internal error' }, 500);
   }
+=======
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      return new Response(challenge, { status: 200 });
+    }
+    return new Response('Forbidden', { status: 403 });
+  }
+  if (req.method === 'POST') {
+    const body = await req.json();
+    console.log('[whatsapp-webhook]', JSON.stringify(body));
+    return new Response('OK', { status: 200 });
+  }
+  return new Response('Method not allowed', { status: 405 });
+>>>>>>> Stashed changes
 });
