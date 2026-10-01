@@ -30,6 +30,11 @@ enabled = true
 # Admin/super_admin only, same pattern as generate-devotional-series.
 verify_jwt = true
 
+[functions.generate-prayer-series]
+enabled = true
+# Admin/super_admin only, same pattern as generate-devotional-series.
+verify_jwt = true
+
 [functions.detect-transcript-corrections]
 enabled = true
 # Ministry admin only (is_group_admin, checked inside the function) —
@@ -92,6 +97,13 @@ enabled = true
 # fine (it's a validly-signed project JWT, just role:anon), while the
 # function's own anon-scoped Postgres lookup is the real access-control gate
 # (see the file's header comment — same RLS the page's own row fetch uses).
+verify_jwt = true
+
+[functions.scripture-passage]
+enabled = true
+# Live Scripture: proxies licensed Bible text from API.Bible so its key
+# never reaches the browser. Checks for a real signed-in ministry member
+# itself, since every call counts against the platform's API.Bible quota.
 verify_jwt = true
 
 [functions.translation-list-voices]
@@ -360,4 +372,12 @@ enabled = true
 # (EvangelismInbox.tsx). The function verifies the caller via
 # auth.getUser() AND is_group_admin(ministryId) internally, so this needs a
 # real user JWT, not just the anon key. Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.webinar-auto-end]
+enabled = true
+# Called every 5 minutes by pg_cron (cron-setup-webinar-auto-end.sql) with the
+# anon key. It only ends webinars whose host has been gone past the grace
+# period (or that ran far past their booked time), so any valid JWT may call
+# it; gateway verification still keeps unsigned callers out.
 verify_jwt = true

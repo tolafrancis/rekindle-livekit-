@@ -95,6 +95,10 @@ export interface VideoWrapperCallbacks {
   /** On-demand captions: LiveKit RoomEvent.TranscriptionReceived, already
    *  resolved to the speaker's identity and display name. */
   onTranscription?: (segments: LiveCaptionSegment[]) => void;
+  /** LiveKit room metadata (JSON string) — on connect and on every
+   *  RoomEvent.RoomMetadataChanged. Carries the host's shared meeting layout
+   *  and spotlight list (packages/live/src/layout/meetingLayout.ts). */
+  onRoomMetadataChanged?: (metadata: string) => void;
 }
 
 /**

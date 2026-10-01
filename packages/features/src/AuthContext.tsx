@@ -132,6 +132,14 @@ const isTokenExpired = (tokenData: any): boolean => {
   return Date.now() > tokenData.exp;
 };
 
+// Keep the existing user object when nothing meaningful changed. The periodic
+// session refresh and Supabase's SIGNED_IN re-emits (e.g. on tab focus) used to
+// hand out a brand-new object each time, which re-ran every `[user]` effect in
+// the app — re-fetching whole screens and re-opening realtime channels every
+// few minutes.
+const sameUser = (a: any, b: any): boolean =>
+  !!a && !!b && a.id === b.id && a.email === b.email && (a.full_name ?? '') === (b.full_name ?? '');
+
 const clearAuthStorage = () => {
   clearSupabaseAuth();
 };
@@ -199,7 +207,10 @@ export const useAuth = () => {
 // ============================================
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUserState] = useState<any>(null);
+  const setUser = useCallback((next: any) => {
+    setUserState((prev: any) => (sameUser(prev, next) ? prev : next));
+  }, []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
@@ -212,6 +223,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const sessionRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const profileFetchInProgressRef = useRef(false);
   const authStateChangeHandledRef = useRef(false);
+  const profileUserIdRef = useRef<string | null>(null);
 
   const clearAuthState = useCallback(() => {
     console.log('[AUTH] Clearing auth state');
@@ -422,10 +434,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       if (mountedRef.current) {
-        setUser({
-          id: data.session.user.id,
-          email: data.session.user.email || '',
-        });
+        // Only the tokens changed on refresh; keep the current user (and its
+        // full_name) unless the session actually belongs to someone else.
+        setUserState((prev: any) =>
+          prev && prev.id === data.session!.user.id
+            ? prev
+            : { id: data.session!.user.id, email: data.session!.user.email || '' });
       }
       
       return true;
@@ -577,11 +591,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(userData);
         }
         
-        setTimeout(async () => {
-          if (mountedRef.current) {
-            await fetchProfileWithTimeout(session.user.id, session.user.email || '');
-          }
-        }, 100);
+        // Supabase re-emits SIGNED_IN for an already-signed-in session (e.g. when
+        // the tab regains focus); the profile is already loaded then, so skip
+        // the redundant user_profiles round trip.
+        if (profileUserIdRef.current !== session.user.id) {
+          setTimeout(async () => {
+            if (mountedRef.current) {
+              await fetchProfileWithTimeout(session.user.id, session.user.email || '');
+            }
+          }, 100);
+        }
       }
 
       if (event === 'SIGNED_OUT' && mountedRef.current) {
@@ -607,6 +626,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     };
   }, [fetchProfileWithTimeout, refreshSession]);
+
+  useEffect(() => {
+    profileUserIdRef.current = profile?.user_id ?? null;
+  }, [profile]);
 
   useEffect(() => {
     if (user && !isRecoveryMode) {

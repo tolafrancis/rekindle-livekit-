@@ -8,6 +8,19 @@ import { toast } from '@rekindle/ui/use-toast';
 import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './ScripturePanel';
+import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
+import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
+
+// Human-readable name for a language code (e.g. "de" → "German (de)"),
+// falling back to the bare code where the browser has no name for it.
+const languageName = (code: string): string => {
+  try {
+    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+    if (name && name.toLowerCase() !== code.toLowerCase()) return `${name} (${code})`;
+  } catch { /* invalid or unsupported code */ }
+  return code.toUpperCase();
+};
 
 interface CaptionLine {
   id: string;
@@ -21,14 +34,6 @@ interface CaptionLine {
  *  mute translated audio but still read along, same as any video app's
  *  separate CC menu. */
 type CaptionMode = 'off' | 'original' | string;
-
-const liveTranslateTips = [
-  'Use a better mic',
-  'Reduce background noise',
-  'Keep the speaker close to the mic',
-  'Pause slightly between sentences',
-  'If possible, use a directional mic or clean room audio',
-];
 
 export interface TranslationControls {
   tracks: Array<{ language: string; botIdentity: string }>;
@@ -65,9 +70,36 @@ interface FloatingTranslationButtonProps {
    *  use on-demand captions (CaptionsButton / agents/captions) instead.
    *  Translated-language caption rows are unaffected either way. */
   showCaptionsOption?: boolean;
+  /** Fired on mount and whenever Live Scripture's control state changes, so
+   *  the parent can render the toggle button + side panel itself (see
+   *  ScriptureControlState doc comment above). */
+  onScriptureStateChange?: (state: ScriptureControlState) => void;
 }
 
 const sessionIdFromBotIdentity = (botIdentity: string): string => botIdentity.replace(/^rlt-bot-/, '');
+
+/** Lifted Live Scripture control state (2026-09-29) — the toggle button
+ *  moved into DailyVideoCall's own control bar (replacing the old Layout
+ *  slot) and its panel into a side panel there too (matching Chat/Host
+ *  Controls), same "lift state to the parent, parent renders its own UI"
+ *  pattern already used for background/raise-hand below. All the actual
+ *  data logic (session start/stop, auto-detect) stays here, unchanged —
+ *  only the control surface moved. */
+export interface ScriptureControlState {
+  on: boolean;
+  starting: boolean;
+  toggle: () => void;
+  manual: string;
+  setManual: (v: string) => void;
+  manualError: string | null;
+  onSubmit: () => void;
+  onScreenVerse: ScriptureEvent | null;
+  hiding: boolean;
+  onHide: () => void;
+  /** Only the host sees the manual-entry/hide controls (matches the old
+   *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
+  canControl: boolean;
+}
 
 /** Live-translation language picker + status, styled to match the other
  *  floating pills (FloatingSpeakerButton, FloatingBackgroundButton) that sit
@@ -85,6 +117,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   isHost = false,
   userId,
   showCaptionsOption = true,
+  onScriptureStateChange,
 }) => {
   const { user } = useAuth();
   const { tracks, currentLanguage, setLanguage, participants } = translation;
@@ -271,6 +304,171 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     const timer = setTimeout(() => { setCaptionLines([]); setInterimText(''); }, CLEAR_AFTER_SILENCE_MS);
     return () => clearTimeout(timer);
   }, [captionLines, interimText]);
+
+  // Live Scripture, standalone from Captions (2026-09-28) — independent
+  // toggle, own session. Persisted per room like captionMode above.
+  // Deliberately NOT derived from `tracks` the way captionMode is: a
+  // scripture-only session never gets a bot, so it never publishes a
+  // LiveKit track — sessionIdForCaptionMode's track-matching approach would
+  // never find it. This queries translation_sessions directly instead (see
+  // the effect below), the same way TranslationListenerButton.tsx already
+  // does for its own (HLS-viewer) captions picker.
+  const SCRIPTURE_STORAGE_KEY = `rk-scripture-mode-${roomName}`;
+  const [scriptureOn, setScriptureOnState] = useState(() => {
+    try { return localStorage.getItem(SCRIPTURE_STORAGE_KEY) === 'on'; } catch { return false; }
+  });
+  // Set only by a user tap (not a restored-from-localStorage "on"), so the
+  // captions tip below shows once per toggle rather than on every reload.
+  const scriptureJustToggledOnRef = useRef(false);
+  const setScriptureOn = (on: boolean) => {
+    scriptureJustToggledOnRef.current = on;
+    setScriptureOnState(on);
+    try { localStorage.setItem(SCRIPTURE_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* non-fatal */ }
+  };
+  const [scriptureSessionId, setScriptureSessionId] = useState<string | null>(null);
+  const [scriptureStarting, setScriptureStarting] = useState(false);
+  const [scriptureManual, setScriptureManual] = useState('');
+  const [scriptureManualError, setScriptureManualError] = useState<string | null>(null);
+  const [scriptureHiding, setScriptureHiding] = useState(false);
+  const scriptureSettings = useScriptureSettings(ministryId);
+  const onScreenVerse = useCurrentScripture(scriptureSessionId ?? undefined);
+  // Draggable (2026-09-29, real usability report: the fixed top position sat
+  // right under the "Copy Link" / stream-config buttons every host layout
+  // puts in the top-right corner — WebinarStage.tsx and
+  // MinistryInteractiveMeetings.tsx both anchor those around top-2/top-4).
+  // Same pattern as captionOverlay above: default position clears that
+  // button row, draggable anywhere afterward, resets on a fresh off → on.
+  const scriptureOverlay = useDraggableOverlay({
+    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
+    baseTransform: 'translateX(-50%)',
+  });
+
+  useEffect(() => {
+    if (!scriptureOn) { setScriptureSessionId(null); return; }
+    let cancelled = false;
+    (async () => {
+      setScriptureStarting(true);
+      try {
+        // Any already-running session for this room (real translation or
+        // captions, any target language) is already a perfectly good
+        // Scripture anchor — only dispatch a new (bot-less) one if the room
+        // genuinely has nothing yet.
+        const { data: existing } = await supabase
+          .from('translation_sessions')
+          .select('id, session_kind')
+          .eq('livekit_room_name', roomName)
+          .in('status', ['initialising', 'joining', 'active', 'paused'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        // Auto-detect reads the caption bot's transcript, so a bot-less
+        // (scripture_only) anchor can't detect anything until captions start.
+        const tipIfNoCaptions = (hasCaptionBot: boolean) => {
+          if (scriptureJustToggledOnRef.current && !hasCaptionBot && captionMode === 'off') {
+            toast({ title: 'Turn on captions to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without them, only verses the host types in will show.' });
+          }
+          scriptureJustToggledOnRef.current = false;
+        };
+        if (existing) {
+          setScriptureSessionId(existing.id);
+          tipIfNoCaptions(existing.session_kind !== 'scripture_only');
+          return;
+        }
+
+        const { data, error } = await supabase.rpc('start_bot_session', {
+          p_ministry_id: ministryId,
+          p_room_name: roomName,
+          p_source_language: sourceLanguage,
+          p_target_language: sourceLanguage,
+          p_speaker_identity: isHost ? null : (userId || null),
+          p_session_kind: 'scripture_only',
+        });
+        if (cancelled) return;
+        if (error) throw error;
+        setScriptureSessionId((data as { session_id: string } | null)?.session_id ?? null);
+        tipIfNoCaptions(false);
+      } catch (err: any) {
+        console.error('[FloatingTranslationButton] could not start Live Scripture:', err);
+        toast({ title: 'Could not turn on Live Scripture', description: err.message, variant: 'destructive' });
+        setScriptureOn(false);
+      } finally {
+        if (!cancelled) setScriptureStarting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId]);
+
+  // Auto-detect (2026-09-29) — the original workflow: put a confirmed
+  // reference on screen the moment it's heard, no manual "Show" tap needed.
+  // Mirrors LiveScriptureOperatorCard.tsx's watch-captions effect, scanning
+  // the same translation_logs feed the captions box above reads (its own
+  // realtime channel, separate from that one). Everyone in the room runs
+  // this independently — harmless, since they all write the exact same
+  // translation_scripture_events row for a given detected reference.
+  const scriptureLive = useRef({ settings: scriptureSettings, onScreenRef: onScreenVerse?.reference ?? null });
+  scriptureLive.current = { settings: scriptureSettings, onScreenRef: onScreenVerse?.reference ?? null };
+  useEffect(() => {
+    if (!scriptureSessionId || !scriptureSettings.auto_detect) return;
+    const detector = new ScriptureDetector();
+    const channel = supabase
+      .channel(`scripture-detect-${scriptureSessionId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${scriptureSessionId}` },
+        (payload) => {
+          try {
+            const row = payload.new as { source_text?: string; translated_text?: string };
+            const found = detector.scan(row.source_text || '', row.translated_text);
+            const latest = found[found.length - 1];
+            if (!latest || latest.status !== 'confirmed') return;
+            const { settings: s, onScreenRef } = scriptureLive.current;
+            const referenceText = formatReference(latest.reference);
+            if (s.auto_show && onScreenRef !== referenceText) {
+              showScriptureVerse(scriptureSessionId, ministryId, referenceText, s, sourceLanguage);
+            }
+          } catch (err) {
+            console.warn('[FloatingTranslationButton] scripture detection skipped a line:', err);
+          }
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [scriptureSessionId, scriptureSettings.auto_detect, ministryId, sourceLanguage]);
+
+  const showManualVerse = async () => {
+    if (!scriptureSessionId || !scriptureManual.trim()) return;
+    setScriptureManualError(null);
+    const err = await showScriptureVerse(scriptureSessionId, ministryId, scriptureManual.trim(), scriptureSettings, sourceLanguage);
+    if (err) setScriptureManualError(err);
+    else setScriptureManual('');
+  };
+
+  const hideVerse = async () => {
+    if (!scriptureSessionId) return;
+    setScriptureHiding(true);
+    try {
+      await hideScriptureVerse(scriptureSessionId, ministryId);
+    } finally {
+      setScriptureHiding(false);
+    }
+  };
+
+  useEffect(() => {
+    onScriptureStateChange?.({
+      on: scriptureOn,
+      starting: scriptureStarting,
+      toggle: () => setScriptureOn(!scriptureOn),
+      manual: scriptureManual,
+      setManual: (v: string) => { setScriptureManual(v); setScriptureManualError(null); },
+      manualError: scriptureManualError,
+      onSubmit: showManualVerse,
+      onScreenVerse,
+      hiding: scriptureHiding,
+      onHide: hideVerse,
+      canControl: !!(scriptureOn && isHost && scriptureSessionId),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId]);
 
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
@@ -517,6 +715,33 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           viewport up to a much larger cap, with room for the previous line
           too (context, like any real captions bar) instead of just the
           latest one. */}
+      {/* Live Scripture overlay (2026-09-29, real usability report: a
+          top-anchored position was landing under/behind whichever top
+          toolbar the host page renders, forcing a drag every time) —
+          default position now sits low, stacked above the captions bar so
+          the two never collide, squarely inside the video stage instead of
+          near any toolbar; still draggable anywhere afterward, same as the
+          captions box below. Matches the same ScripturePanel "display" card
+          /display renders (see TranslationDisplayPage.tsx). */}
+      {scriptureOn && scriptureSessionId && (
+        <div
+          ref={scriptureOverlay.ref}
+          className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          style={scriptureOverlay.style}
+        >
+          <div
+            onPointerDown={scriptureOverlay.onPointerDown}
+            onPointerMove={scriptureOverlay.onPointerMove}
+            onPointerUp={scriptureOverlay.onPointerUp}
+            onPointerCancel={scriptureOverlay.onPointerCancel}
+            title="Drag to move"
+            className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          >
+            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+          </div>
+        </div>
+      )}
+
       {captionMode !== 'off' && (
         <div
           ref={captionOverlay.ref}
@@ -731,31 +956,9 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           </div>
           </>)}
 
-          {isHost && (
-            <div className="mt-2 border-t pt-2 px-2.5 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Best audio tips</p>
-              <ul className="space-y-1 text-[11px] text-gray-600">
-                {liveTranslateTips.map((tip) => (
-                  <li key={tip} className="flex items-start gap-2">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                    <span>{tip}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-2">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-700">Approved phrases</p>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Approved ministry phrases are managed in Live Translation settings.
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => window.open(`${window.location.origin}/ministries/${ministryId}/live`, '_blank')}>
-                    Edit in Settings
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Live Scripture — moved to its own control-bar button + side
+              panel (2026-09-29, LiveScriptureSidebar), matching Chat/Host
+              Controls, so it's no longer buried in this popover. */}
 
           {/* Ask a question — bidirectional Q&A (build plan). Only makes
               sense once we know MY language (inferred from Audio/Captions
@@ -828,7 +1031,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                     {supportedLanguages
                       .filter((code) => !tracks.some((t) => t.language === code))
                       .map((code) => (
-                        <SelectItem key={code} value={code}>{code.toUpperCase()}</SelectItem>
+                        <SelectItem key={code} value={code}>{languageName(code)}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>

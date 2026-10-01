@@ -57,60 +57,74 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Load ministry members count
-      const { count: membersCount } = await supabase
-        .from('ministry_group_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('group_id', ministryId);
-
-      // Load devotionals count
-      const { count: devotionalsCount } = await supabase
-        .from('ministry_devotionals')
-        .select('*', { count: 'exact', head: true })
-        .eq('ministry_id', ministryId)
-        .eq('is_published', true);
-
-      // Load prayer requests
-      const { data: prayerData } = await supabase
-        .from('ministry_prayer_requests')
-        .select('status')
-        .eq('ministry_id', ministryId);
-
-      const newRequests = prayerData?.filter(p => p.status === 'active').length || 0;
-      const answeredRequests = prayerData?.filter(p => p.status === 'answered').length || 0;
-
-      // Load upcoming events
-      const { count: eventsCount } = await supabase
-        .from('ministry_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('ministry_id', ministryId)
-        .gte('start_time', new Date().toISOString());
-
-      // Load upcoming webinars — a wholly separate meeting type from
-      // ministry_video_meetings (see packages/live/src/webinar).
-      const { count: upcomingWebinarsCount } = await supabase
-        .from('ministry_webinars')
-        .select('*', { count: 'exact', head: true })
-        .eq('ministry_id', ministryId)
-        .in('status', ['scheduled', 'registration_open', 'starting_soon'])
-        .gte('scheduled_start_at', new Date().toISOString());
-
-      // Load donations total
-      const { data: donationsData } = await supabase
-        .from('ministry_donations')
-        .select('amount_cents')
-        .eq('ministry_id', ministryId)
-        .eq('status', 'completed');
+      // All of these are independent — run them together. They used to run
+      // one after another (8 sequential round trips), which is what made the
+      // ministry Settings tab take seconds to open on its Overview page.
+      const nowIso = new Date().toISOString();
+      const [
+        { count: membersCount },
+        { count: devotionalsCount },
+        { count: newRequests },
+        { count: answeredRequests },
+        { count: eventsCount },
+        { count: upcomingWebinarsCount },
+        { data: donationsData },
+        { data: analyticsData },
+        { data: recentPrayers },
+      ] = await Promise.all([
+        supabase
+          .from('ministry_group_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('group_id', ministryId),
+        supabase
+          .from('ministry_devotionals')
+          .select('*', { count: 'exact', head: true })
+          .eq('ministry_id', ministryId)
+          .eq('is_published', true),
+        // Counted in the database rather than downloading every request.
+        supabase
+          .from('ministry_prayer_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('ministry_id', ministryId)
+          .eq('status', 'active'),
+        supabase
+          .from('ministry_prayer_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('ministry_id', ministryId)
+          .eq('status', 'answered'),
+        supabase
+          .from('ministry_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('ministry_id', ministryId)
+          .gte('start_time', nowIso),
+        // Upcoming webinars — a wholly separate meeting type from
+        // ministry_video_meetings (see packages/live/src/webinar).
+        supabase
+          .from('ministry_webinars')
+          .select('*', { count: 'exact', head: true })
+          .eq('ministry_id', ministryId)
+          .in('status', ['scheduled', 'registration_open', 'starting_soon'])
+          .gte('scheduled_start_at', nowIso),
+        supabase
+          .from('ministry_donations')
+          .select('amount_cents')
+          .eq('ministry_id', ministryId)
+          .eq('status', 'completed'),
+        supabase
+          .from('ministry_analytics')
+          .select('*')
+          .eq('ministry_id', ministryId)
+          .order('date', { ascending: false })
+          .limit(7),
+        supabase
+          .from('ministry_prayer_requests')
+          .select('id, title, created_at, status')
+          .eq('ministry_id', ministryId)
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]);
 
       const totalDonations = donationsData?.reduce((sum, d) => sum + (d.amount_cents || 0), 0) || 0;
-
-      // Load analytics for engagement
-      const { data: analyticsData } = await supabase
-        .from('ministry_analytics')
-        .select('*')
-        .eq('ministry_id', ministryId)
-        .order('date', { ascending: false })
-        .limit(7);
 
       const engagement = analyticsData?.reduce((acc, a) => ({
         likes: acc.likes + (a.engagement_likes || 0),
@@ -124,8 +138,8 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
         followers: Math.floor((membersCount || 0) * 1.5),
         dailyActiveUsers: engagement.activeUsers || Math.floor((membersCount || 0) * 0.3),
         devotionalsPublished: devotionalsCount || 0,
-        prayerRequestsNew: newRequests,
-        prayerRequestsAnswered: answeredRequests,
+        prayerRequestsNew: newRequests || 0,
+        prayerRequestsAnswered: answeredRequests || 0,
         upcomingEvents: eventsCount || 0,
         upcomingWebinars: upcomingWebinarsCount || 0,
         totalDonations: totalDonations,
@@ -133,14 +147,6 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
         engagementComments: engagement.comments || Math.floor(Math.random() * 200),
         engagementShares: engagement.shares || Math.floor(Math.random() * 100)
       });
-
-      // Load recent activity
-      const { data: recentPrayers } = await supabase
-        .from('ministry_prayer_requests')
-        .select('id, title, created_at, status')
-        .eq('ministry_id', ministryId)
-        .order('created_at', { ascending: false })
-        .limit(5);
 
       setRecentActivity(recentPrayers || []);
 

@@ -17,7 +17,11 @@
 //   4. Run migration 0146_livekit_recordings.sql.
 //
 // ── Actions (POST JSON body) ─────────────────────────────────────────────────
-//   { action:'start-recording', roomName, meetingId?, context? }   → { egressId, recordingId, playbackUrl }
+//   { action:'start-recording', roomName, meetingId?, context?, recordingLayout? }   → { egressId, recordingId, playbackUrl }
+//       recordingLayout: 'gallery' (default, LiveKit's built-in grid) | 'speaker' | 'dual' |
+//       'screen-speaker' | 'screen-dual' — the last four render the app's recording
+//       template (RECORDING_TEMPLATE_URL, default https://app.rekindlebc.com/recording-template),
+//       which follows the host's spotlight order from the room metadata.
 //   { action:'stop-recording',  roomName, egressId?, context? }
 //   { action:'list-recordings', channelId? , meetingId?, roomName? } → { recordings: [...] }
 //   { action:'delete-webinar', webinarId } → { success: true }  (webinar manager/ministry admin only —
@@ -36,6 +40,10 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 import { AwsClient } from 'https://esm.sh/aws4fetch@1';
+
+// The host's recording layout choices (packages/live/src/layout/meetingLayout.ts).
+// Every one but 'gallery' renders packages/live/src/components/RecordingTemplatePage.tsx.
+const RECORDING_LAYOUTS = ['gallery', 'speaker', 'dual', 'screen-speaker', 'screen-dual'];
 
 // Plain S3 REST delete helpers (2026-09-23, delete-webinar action) — S3Upload
 // above is livekit-server-sdk's egress-output config, not a general client;
@@ -537,7 +545,16 @@ serve(async (req) => {
         filepath: `${prefix}/recording.mp4`,
         output: { case: 's3', value: s3 },
       });
-      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output, file: fileOutput }, { layout: 'grid' });
+      // The recording's own layout, set by the host (Layout → Recording layout).
+      // Gallery keeps LiveKit's built-in grid; the rest use our template page.
+      const recordingLayout = RECORDING_LAYOUTS.includes(body.recordingLayout) ? body.recordingLayout as string : 'gallery';
+      const compositeOpts = recordingLayout === 'gallery'
+        ? { layout: 'grid' }
+        : {
+            layout: recordingLayout,
+            customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
+          };
+      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output, file: fileOutput }, compositeOpts);
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
       const downloadUrl = `${publicBase}/${prefix}/recording.mp4`;
 
@@ -670,7 +687,20 @@ serve(async (req) => {
       // Composite in that case so video isn't silently lost.
       const expectVideo = !!body.expectVideo;
       let info: Awaited<ReturnType<typeof egressClient.startRoomCompositeEgress>>;
-      if (isChannel || isWebinarHls) {
+      if (isWebinarHls) {
+        // Webinars render through the recording template in Speaker layout
+        // (2026-09-28). Track Composite locked the audience stream onto the
+        // host's own tracks, so a speaker the host brought up, or anyone they
+        // spotlighted, never reached the audience. The template follows the
+        // spotlight and layout the host sets in the room (room metadata).
+        // Its slower cold start now lands at Go live, after the host has
+        // already checked everything backstage, and the attendee view shows
+        // "Stream is starting…" until the first segment exists.
+        info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, {
+          layout: 'speaker',
+          customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
+        });
+      } else if (isChannel) {
         const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
         const canUseTrackComposite = (audioTrackId || videoTrackId) && (!expectVideo || videoTrackId);
 
@@ -685,10 +715,8 @@ serve(async (req) => {
           // video broadcast and the video track specifically never showed up
           // after retrying — Room Composite doesn't need one upfront and will
           // pick up tracks as they appear, so video is never silently lost.
-          // For a webinar this also correctly covers real co-hosted/multi-
-          // speaker cases (no single "the host's" tracks to lock onto).
           console.warn(
-            `[livekit-egress] ${isChannel ? 'channel broadcast' : 'webinar'} falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
+            `[livekit-egress] channel broadcast falling back to Room Composite (expectVideo=${expectVideo}, audio=${!!audioTrackId}, video=${!!videoTrackId})`,
           );
           info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
         }

@@ -8,7 +8,6 @@ import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { Radio, Loader2, Save } from 'lucide-react';
 import { MinistryTranslationHub } from './MinistryTranslationHub';
-import { MinistryTranslationSettings } from './MinistryTranslationSettings';
 
 interface Ministry {
   id: string;
@@ -72,7 +71,6 @@ export const MinistryLiveTechSettings: React.FC<MinistryLiveTechSettingsProps> =
   return (
     <div className="space-y-6">
       <MinistryTranslationHub ministryId={ministry.id} ministryName={ministry.name} />
-      <MinistryTranslationSettings ministryId={ministry.id} />
 
       <Card>
         <CardHeader>

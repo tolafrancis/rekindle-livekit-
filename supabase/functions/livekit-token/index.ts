@@ -27,6 +27,7 @@
 //       → { success: true }
 //   { action: 'delete-room',  roomName, context? }          // endMeetingForAll (§1E)
 //   { action: 'create-room',  roomName, maxParticipants?, emptyTimeout?, context? }  // presets (§1E)
+//   { action: 'room-occupancy', roomName }                 // how many OTHER real people are in the room
 //
 //   context = { kind?: 'meeting'|'ministry_meeting'|'channel_meeting'|'channel',
 //               meetingId?, channelId? }  — used ONLY for server-side role derivation.
@@ -41,7 +42,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
+type Role = 'host' | 'co-host' | 'speaker' | 'attendee' | 'viewer';
 
 // Meeting participant cap (2026-09-21): a flat, platform-wide ceiling on real
 // LiveKit participants any single ministry meeting may ever have. A meeting
@@ -56,7 +57,7 @@ type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
 const MEETING_PARTICIPANT_CAP = 100;
 
 interface RequestBody {
-  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room';
+  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room' | 'room-occupancy';
   roomName: string;
   userName?: string;
   viewerOnly?: boolean;
@@ -178,12 +179,14 @@ async function resolveRole(
   if (ctx.kind === 'ministry_webinar' && ctx.meetingId) {
     const { data: confirmed } = await admin
       .from('webinar_speakers')
-      .select('user_id')
+      .select('role')
       .eq('webinar_id', ctx.meetingId)
       .eq('user_id', userId)
       .eq('status', 'confirmed')
       .maybeSingle();
-    if (confirmed) return 'speaker';
+    // A co-host carries 'co-host' in their LiveKit metadata so the room
+    // gives them the host's in-call controls (useDailyRoom's isModerator).
+    if (confirmed) return (confirmed as { role?: string }).role === 'co-host' ? 'co-host' : 'speaker';
 
     const { data: accepted } = await admin
       .from('webinar_speaker_requests')
@@ -271,6 +274,7 @@ function grantFor(role: Role, room: string) {
   switch (role) {
     case 'host':
       return { ...base, canPublish: true, roomAdmin: true };
+    case 'co-host':
     case 'speaker':
     case 'attendee':
       return { ...base, canPublish: true };
@@ -315,7 +319,7 @@ serve(async (req) => {
     // stays closed because guest role is derived here, not from the client. The
     // admin actions (delete/create room, grant-publish) still require a real user.
     const isGuest = !user;
-    if (isGuest && action !== 'token') {
+    if (isGuest && action !== 'token' && action !== 'room-occupancy') {
       return json({ error: 'Unauthorized' }, 401);
     }
     // Stable per-connection identity: real users key on their uid; guests get a
@@ -326,6 +330,34 @@ serve(async (req) => {
       ? (body.viewerOnly ? 'viewer' : 'attendee')
       : await resolveRole(admin, user!.id, body);
     const isHost = role === 'host';
+
+    // ── Room occupancy (read-only) ─────────────────────────────────────────
+    // The meetings tables' participant_count / is_active are maintained by
+    // clients and drift (stale read-modify-write). Clients ask LiveKit itself
+    // — the source of truth for who is actually connected — before marking a
+    // meeting ended on leave, and before telling someone "the host ended
+    // this meeting". Counts real people other than the caller: excludes the
+    // caller's own identity and screen-share shadow, translation bots
+    // (rlt-bot-*), hidden participants and recording/egress participants.
+    // A room that doesn't exist (deleted by "End for all", or never created)
+    // is simply 0. Deliberately needs no role: it only reveals a head count.
+    if (action === 'room-occupancy') {
+      let participants: Array<{ identity: string; kind?: number; permission?: { hidden?: boolean } }> = [];
+      try {
+        participants = (await svc.listParticipants(body.roomName)) as typeof participants;
+      } catch {
+        participants = []; // room not found = nobody there
+      }
+      const EGRESS_KIND = 2; // livekit ParticipantInfo.Kind.EGRESS
+      const others = participants.filter((p) =>
+        !p.permission?.hidden &&
+        p.kind !== EGRESS_KIND &&
+        !p.identity.startsWith('rlt-bot-') &&
+        !p.identity.endsWith('-screenshare') &&
+        (isGuest || p.identity !== user!.id),
+      );
+      return json({ occupants: others.length });
+    }
 
     // ── Non-token admin actions ────────────────────────────────────────────
     if (action === 'delete-room') {
@@ -350,7 +382,7 @@ serve(async (req) => {
       const target = body.identity ?? user!.id;
       // Promoting someone else requires host; promoting yourself requires a
       // verified speaker row (you were accepted as a speaker).
-      const allowed = target === user!.id ? role === 'speaker' || isHost : isHost;
+      const allowed = target === user!.id ? role === 'speaker' || role === 'co-host' || isHost : isHost;
       if (!allowed) return json({ error: 'Not permitted to grant publish' }, 403);
       await svc.updateParticipant(body.roomName, target, undefined, {
         canPublish: true,
@@ -368,7 +400,7 @@ serve(async (req) => {
     // Guests arrive via a public share link, so they skip the tenant-membership
     // entitlement check (it is keyed on a user id they don't have). They are
     // still capped at viewer/attendee and remain subject to the locked-room gate.
-    if (!isGuest && role !== 'host' && role !== 'speaker') {
+    if (!isGuest && role !== 'host' && role !== 'co-host' && role !== 'speaker') {
       if (!(await isEntitled(admin, user!.id, body))) {
         return json({ error: 'not_entitled' }, 403);
       }

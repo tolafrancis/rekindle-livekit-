@@ -1,6 +1,6 @@
 // Postgres access: a pooled client for queries, plus one dedicated
 // connection that LISTENs on "caption_dispatch" (claim_caption_session,
-// migrations 0372/0373, sends it). Supabase Realtime doesn't relay arbitrary
+// migrations 0381/0382, sends it). Supabase Realtime doesn't relay arbitrary
 // pg_notify channels, so this needs a real session-mode connection.
 
 import pg from 'pg';
@@ -41,7 +41,7 @@ export async function claimSession(sessionId: string): Promise<RoomKind | null> 
 /** Keeps the session alive and reports whether an HLS viewer (webinar
  *  audience) has had CC on in the last 90 seconds — they can't set a
  *  LiveKit attribute, so they heartbeat caption_hls_viewer_heartbeat
- *  (migration 0373) instead. */
+ *  (migration 0382) instead. */
 export async function heartbeat(sessionId: string): Promise<{ hlsViewerRecent: boolean }> {
   const { rows } = await pool.query<{ hls_recent: boolean }>(
     `update public.caption_sessions set last_heartbeat_at = now()

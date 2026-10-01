@@ -1,11 +1,9 @@
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Radio, HardDrive, Settings as SettingsIcon, LibraryBig } from 'lucide-react';
+import { Radio, HardDrive, Settings as SettingsIcon } from 'lucide-react';
 import { MinistryTranslationServiceManager } from './MinistryTranslationServiceManager';
 import { MinistryTranslationDeviceList } from './MinistryTranslationDeviceList';
 import { MinistryTranslationSettings } from './MinistryTranslationSettings';
-import { MinistrySermonLibrary } from './MinistrySermonLibrary';
-import AdminSermonQueue from './AdminSermonQueue';
 
 interface MinistryTranslationHubProps {
   ministryId: string;
@@ -39,14 +37,6 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
             <HardDrive className="h-4 w-4" />
             Devices
           </TabsTrigger>
-          <TabsTrigger value="sermons" className="gap-2">
-            <LibraryBig className="h-4 w-4" />
-            Sermons
-          </TabsTrigger>
-          <TabsTrigger value="queue" className="gap-2">
-            <LibraryBig className="h-4 w-4" />
-            Queue
-          </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2">
             <SettingsIcon className="h-4 w-4" />
             Settings
@@ -58,12 +48,6 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
         </TabsContent>
         <TabsContent value="devices" className="mt-5">
           <MinistryTranslationDeviceList ministryId={ministryId} />
-        </TabsContent>
-        <TabsContent value="sermons" className="mt-5">
-          <MinistrySermonLibrary ministryId={ministryId} />
-        </TabsContent>
-        <TabsContent value="queue" className="mt-5">
-          <AdminSermonQueue ministryId={ministryId} />
         </TabsContent>
         <TabsContent value="settings" className="mt-5">
           <MinistryTranslationSettings ministryId={ministryId} />

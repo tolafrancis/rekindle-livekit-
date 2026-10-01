@@ -10,7 +10,7 @@ Translation bot (`rekindle-translation-bot`): it never reads or writes any
    `captions=on` and calls the `captions-start` edge function with its own
    LiveKit room token.
 2. `captions-start` verifies that token, checks the caller is really connected
-   to the room, and calls `claim_caption_session` (migration `0372`). A partial
+   to the room, and calls `claim_caption_session` (migration `0381`). A partial
    unique index allows one live session per room, so simultaneous taps start
    exactly one agent. A new session sends `pg_notify('caption_dispatch', …)`.
 3. This process `LISTEN`s on `caption_dispatch`, joins the room as a **hidden**
@@ -30,7 +30,7 @@ Translation bot (`rekindle-translation-bot`): it never reads or writes any
    moment (`packages/live/src/hlsCaptionSync.ts`), using the stream's own
    program-date-time when present, or the player's measured latency otherwise.
    HLS viewers with CC on call `caption_hls_viewer_heartbeat` (webinars,
-   migration `0373`) or `caption_channel_viewer_heartbeat` (channels, `0374`)
+   migration `0382`) or `caption_channel_viewer_heartbeat` (channels, `0383`)
    about every 45 s; the agent counts a heartbeat in the last 90 s as a
    caption viewer.
 6. The agent stops 3 minutes after the last participant turns CC off (and no
@@ -55,9 +55,9 @@ pm2 save
 
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are needed for webinar
   audiences (Realtime broadcast). Without them, in-room captions still work.
-- Run migrations `0372`, `0373`, `0374` and `0375` before starting this version.
+- Run migrations `0381`, `0382`, `0383` and `0384` before starting this version.
 - Personal (non-ministry) channels log usage against the channel owner
-  instead of an org (`0375`).
+  instead of an org (`0384`).
 - `DATABASE_URL` must be the Supabase **session-mode** pooler string
   (port 5432). The transaction pooler doesn't support `LISTEN`.
 - Node 20 needs `--env-file` support (20.6+); the PM2 file passes it.

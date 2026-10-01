@@ -55,8 +55,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   const [hlsLatencySeconds, setHlsLatencySeconds] = useState(HLS_TARGET_LATENCY_SECONDS);
   const [translationActive, setTranslationActive] = useState(false);
   // Captions no longer depend on the host: CC below is on-demand for every
-  // attendee (useHlsCaptions). This picker is now for Live Translation only.
-  const showTranslation = webinar.enable_translation;
+  // attendee (useHlsCaptions).
   const playerRef = useRef<HlsPlayerHandle>(null);
   const captions = useHlsCaptions({
     scope: { kind: 'webinar', webinarId: webinar.id },
@@ -186,15 +185,18 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
             onToggle={captions.toggle}
             onSizeChange={captions.setSize}
           />
-          {showTranslation && (
-            <WebinarTranslationButton
-              webinarId={webinar.id}
-              roomName={webinar.room_name}
-              delaySeconds={hlsLatencySeconds}
-              onActiveChange={setTranslationActive}
-              showCaptionsOption={false}
-            />
-          )}
+          {/* Unconditional — see LiveChannelViewer.tsx's own identical
+              button, whose matching "Enable translation?" toggle was
+              already pulled out for the same reason (not server-enforced,
+              and it made Live Scripture unreachable when both flags were
+              off, 2026-09-28). */}
+          <WebinarTranslationButton
+            webinarId={webinar.id}
+            roomName={webinar.room_name}
+            delaySeconds={hlsLatencySeconds}
+            onActiveChange={setTranslationActive}
+            showCaptionsOption={false}
+          />
           <Button onClick={onLeave} size="sm" className="bg-red-600 hover:bg-red-700 text-white shadow-lg">
             <PhoneOff className="h-4 w-4 mr-2" /> Leave
           </Button>

@@ -13,7 +13,14 @@ import {
 } from 'lucide-react';
 import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 
-interface Props { ministryId: string; ministryName: string; isLeader: boolean; }
+interface Props {
+  ministryId: string;
+  ministryName: string;
+  isLeader: boolean;
+  // Takes the user to wherever the host renders MinistryWhatsAppHub. WhatsApp
+  // is connected there, not here, so without this the card is a dead end.
+  onOpenWhatsApp?: () => void;
+}
 
 const WEBHOOK_URL = 'https://vpnpembyqbbaaiynfvli.supabase.co/functions/v1/evangelism-inbox-webhook';
 const FB_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined;
@@ -49,7 +56,7 @@ function loadFbSdk(appId: string): Promise<void> {
   return fbSdkPromise;
 }
 
-const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, isLeader }) => {
+const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, isLeader, onOpenWhatsApp }) => {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [configs, setConfigs] = useState<Record<string, string>>({}); // channel -> page_id
@@ -274,6 +281,14 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500">{t('evangelismChannelsPanel', 'manageWhatsappBefore', 'Manage your WhatsApp connection in the')} <span className="font-medium">WhatsApp</span> {t('evangelismChannelsPanel', 'manageWhatsappAfter', 'tab. Once connected, inbound messages appear here automatically.')}</p>
+          {onOpenWhatsApp && (
+            <Button size="sm" className="mt-3 bg-green-600 hover:bg-green-700 text-white" onClick={onOpenWhatsApp}>
+              <MessageSquare className="h-4 w-4 mr-2" />
+              {waConnected
+                ? t('evangelismChannelsPanel', 'manageWhatsapp', 'Manage WhatsApp')
+                : t('evangelismChannelsPanel', 'setUpWhatsapp', 'Set up WhatsApp')}
+            </Button>
+          )}
         </CardContent>
       </Card>
 

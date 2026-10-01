@@ -6,10 +6,12 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
-import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2 } from 'lucide-react';
+import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, MessageCircle, Mic, Pin, Send, User } from 'lucide-react';
+import { ScripturePanel } from './ScripturePanel';
 
 interface SessionInfo {
   id: string;
+  ministry_id: string;
   source_language: string;
   target_language: string;
   status: string;
@@ -18,6 +20,15 @@ interface SessionInfo {
   // to-one relationship), not an array — see migration 0295 for why an
   // anon /display visitor is now allowed to read this at all.
   translation_services: { name: string } | null;
+}
+
+/** translation_questions' pinned-row shape, as read publicly (RLS only
+ *  allows status='pinned' rows through — see migration
+ *  0373_translation_questions.sql). */
+interface PinnedQuestion {
+  id: string;
+  asker_name: string | null;
+  pinned_translations: Record<string, string>;
 }
 
 /** translation-listener-token's 200 response. */
@@ -48,11 +59,18 @@ interface LogLine {
 type ConnStatus = 'connecting' | 'live' | 'reconnecting' | 'ended';
 type FontSize = 'small' | 'large' | 'full';
 
+// Size of the newest line. "large" (the default) matches the speaker
+// link's current line; earlier lines stay on screen smaller and dimmed
+// underneath it, the same way the speaker link shows them.
 const FONT_SIZE_CLASS: Record<FontSize, string> = {
-  small: 'text-lg sm:text-xl',
-  large: 'text-2xl sm:text-3xl',
+  small: 'text-2xl sm:text-3xl',
+  large: 'text-3xl sm:text-5xl',
   full: 'text-4xl sm:text-6xl',
 };
+const OLDER_LINE_CLASS = 'text-base sm:text-lg text-white/40';
+// How many lines stay on screen: the newest plus a few earlier ones for
+// context, like the speaker link (not a full transcript).
+const MAX_LINES = 6;
 const FONT_SIZE_CYCLE: FontSize[] = ['small', 'large', 'full'];
 
 /**
@@ -118,6 +136,46 @@ export const TranslationDisplayPage: React.FC = () => {
     });
   };
   const [presenterMode, setPresenterMode] = useState(false);
+
+  // "Conversation" (live Q&A, 2026-09-28) — tab switcher next to the
+  // existing captions feed, not a replacement for it. Only offered when
+  // the session came from a named service (pin fanout needs service_id to
+  // find sibling sessions — see translation-pin-question) and the
+  // ministry hasn't turned it off in Settings.
+  const [activeTab, setActiveTabState] = useState<'captions' | 'conversation'>(() => {
+    try { return (localStorage.getItem('rk-display-tab') as 'captions' | 'conversation') || 'captions'; } catch { return 'captions'; }
+  });
+  const setActiveTab = (tab: 'captions' | 'conversation') => {
+    setActiveTabState(tab);
+    try { localStorage.setItem('rk-display-tab', tab); } catch { /* non-fatal */ }
+  };
+  const [questionsEnabled, setQuestionsEnabled] = useState(false);
+  const [pinnedQuestion, setPinnedQuestion] = useState<PinnedQuestion | null>(null);
+  const [askText, setAskText] = useState('');
+  const [askerName, setAskerName] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [cooldownNow, setCooldownNow] = useState(Date.now());
+  const [listeningForSpeech, setListeningForSpeech] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
+  // Anonymous per-browser identifier (2026-09-28) — the only thing the
+  // server's 20s rate limit can key on when no name was given; generated
+  // once and reused for every question this browser ever asks, on any
+  // session, same discipline as the font-size/bilingual prefs above.
+  const fingerprintRef = useRef<string>('');
+  if (!fingerprintRef.current) {
+    try {
+      let fp = localStorage.getItem('rk-question-fingerprint');
+      if (!fp) {
+        fp = crypto.randomUUID();
+        localStorage.setItem('rk-question-fingerprint', fp);
+      }
+      fingerprintRef.current = fp;
+    } catch {
+      fingerprintRef.current = `${Date.now()}-${Math.random()}`; // private browsing / quota — session-only fallback
+    }
+  }
   // Joining LiveKit needs an explicit tap — browsers block unmuted
   // autoplay, and the build plan calls for a "Listen" gesture anyway
   // (§2.8). listening = the visitor tapped; audioStatus tracks what
@@ -153,7 +211,7 @@ export const TranslationDisplayPage: React.FC = () => {
   const fetchSession = async (): Promise<SessionInfo | null> => {
     const { data } = await supabase
       .from('translation_sessions')
-      .select('id, source_language, target_language, status, service_id, translation_services(name)')
+      .select('id, ministry_id, source_language, target_language, status, service_id, translation_services(name)')
       .eq('id', sessionId)
       .maybeSingle();
     if (!data) return null;
@@ -199,7 +257,7 @@ export const TranslationDisplayPage: React.FC = () => {
         .select('id, source_text, translated_text, created_at')
         .eq('session_id', sessionId)
         .order('created_at', { ascending: false })
-        .limit(3);
+        .limit(MAX_LINES);
       if (!cancelled && data) setLines([...data].reverse() as LogLine[]);
     };
     loadLines();
@@ -210,7 +268,7 @@ export const TranslationDisplayPage: React.FC = () => {
         { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           const row = payload.new as LogLine;
-          setLines(prev => [...prev, row].slice(-3));
+          setLines(prev => [...prev, row].slice(-MAX_LINES));
         })
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
@@ -238,18 +296,119 @@ export const TranslationDisplayPage: React.FC = () => {
     };
   }, [session, sessionId]);
 
-  // Clear stale captions after silence (2026-09-23, real gap flagged in a
-  // captions pipeline review): without this, the last spoken line(s) sat on
-  // screen forever through any pause. Resets on every new line so an
-  // actively-talking speaker never gets cut off mid-flow. Skipped once the
-  // session has ended — that state already swaps to its own "no longer
-  // available" screen below, this would just be fighting that transition.
+  // Conversation — whether this ministry has it turned on at all (Settings
+  // tab default true). language_configs has no public SELECT policy
+  // (member-only), hence the narrow RPC rather than a direct table read.
   useEffect(() => {
-    if (lines.length === 0 || session?.status === 'ended') return;
-    const CLEAR_AFTER_SILENCE_MS = 8000;
-    const timer = setTimeout(() => setLines([]), CLEAR_AFTER_SILENCE_MS);
-    return () => clearTimeout(timer);
-  }, [lines, session?.status]);
+    if (!session) return;
+    supabase.rpc('get_questions_enabled', { p_ministry_id: session.ministry_id })
+      .then(({ data }) => setQuestionsEnabled(data !== false));
+  }, [session?.ministry_id]);
+
+  // Pinned question — publicly readable (RLS only allows status='pinned'
+  // rows through). Re-fetches on any insert/update for this service rather
+  // than trusting the realtime payload's own fields, since an UPDATE's
+  // `old` record isn't guaranteed to include status without REPLICA
+  // IDENTITY FULL on this table — simplest to just always re-ask for the
+  // current pinned row, cheap and correct either way.
+  useEffect(() => {
+    if (!session?.service_id) { setPinnedQuestion(null); return; }
+    const serviceId = session.service_id;
+
+    const loadPinned = async () => {
+      const { data } = await supabase
+        .from('translation_questions')
+        .select('id, asker_name, pinned_translations')
+        .eq('service_id', serviceId)
+        .eq('status', 'pinned')
+        .maybeSingle();
+      setPinnedQuestion((data as PinnedQuestion | null) || null);
+    };
+    loadPinned();
+
+    const channel = supabase
+      .channel(`translation-questions-${serviceId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'translation_questions', filter: `service_id=eq.${serviceId}` },
+        () => loadPinned())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.service_id]);
+
+  // Cooldown countdown — re-renders once a second while a rate-limit
+  // window is active so "Ask again in Ns" actually ticks down instead of
+  // sitting frozen until the next unrelated re-render.
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    const interval = setInterval(() => setCooldownNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [cooldownUntil]);
+  const cooldownRemainingMs = cooldownUntil ? Math.max(0, cooldownUntil - cooldownNow) : 0;
+
+  const submitQuestion = async () => {
+    if (!sessionId || !askText.trim() || cooldownRemainingMs > 0) return;
+    setAsking(true);
+    setAskError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('translation-submit-question', {
+        body: { sessionId, text: askText.trim(), askerName: askerName.trim() || undefined, fingerprint: fingerprintRef.current },
+      });
+      const errBody = (data as { error?: string; retryAfterMs?: number })?.error;
+      if (error || errBody) {
+        if (errBody === 'rate_limited') {
+          const retryAfterMs = (data as { retryAfterMs?: number })?.retryAfterMs || 20000;
+          setCooldownUntil(Date.now() + retryAfterMs);
+          setAskError("You're asking too quickly — please wait a moment.");
+        } else {
+          setAskError('Could not send your question. Please try again.');
+        }
+        return;
+      }
+      setAskText('');
+      setCooldownUntil(Date.now() + 20000); // matches the server's own 20s window
+    } catch {
+      setAskError('Could not send your question. Please try again.');
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  // Voice input — the browser's own one-shot speech recognition, not the
+  // bot's continuous streaming STT (Deepgram): a single question is a
+  // one-shot capture, not a live stream, so there's no reason to route it
+  // through the VPS bot at all. Not every browser implements this
+  // (notably Firefox) — detected up front, mic button just doesn't render
+  // where it's unsupported rather than offering something that'll throw.
+  const speechRecognitionSupported = typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  const toggleVoiceInput = () => {
+    if (listeningForSpeech) {
+      speechRecognitionRef.current?.stop();
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = session?.target_language || 'en';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (e: any) => {
+      const transcript = e.results?.[0]?.[0]?.transcript;
+      if (transcript) setAskText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    };
+    recognition.onerror = () => setListeningForSpeech(false);
+    recognition.onend = () => setListeningForSpeech(false);
+    speechRecognitionRef.current = recognition;
+    setListeningForSpeech(true);
+    recognition.start();
+  };
+
+  // Earlier lines stay up through pauses (no clearing on silence), so a
+  // listener who looks away for a moment can catch up. Keep the newest line
+  // in view when the lines don't all fit.
+  const mainRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
 
   // WebRTC-only audio (see docs/rlt-build-checklist.md's "WebRTC-only
   // /display" plan): join the LiveKit room directly as a subscribe-only
@@ -584,6 +743,19 @@ export const TranslationDisplayPage: React.FC = () => {
               <p className="text-[11px] text-white/40 truncate">{session.target_language.toUpperCase()} Translation</p>
             )}
           </div>
+          {questionsEnabled && session?.service_id && (
+            <button
+              type="button"
+              onClick={() => setActiveTab(activeTab === 'conversation' ? 'captions' : 'conversation')}
+              className={`${iconBtn} relative ${activeTab === 'conversation' ? 'text-indigo-400' : ''}`}
+              title="Conversation — ask a question"
+            >
+              <MessageCircle className="h-4 w-4" />
+              {pinnedQuestion && activeTab !== 'conversation' && (
+                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-indigo-400" />
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setFontSize(prev => FONT_SIZE_CYCLE[(FONT_SIZE_CYCLE.indexOf(prev) + 1) % FONT_SIZE_CYCLE.length])}
@@ -623,32 +795,111 @@ export const TranslationDisplayPage: React.FC = () => {
         </button>
       )}
 
+      {/* Live Scripture: the verse the operator put up, above the captions. */}
+      {session && <ScripturePanel sessionId={session.id} variant="display" />}
+
       {/* aria-live="polite" (2026-09-23, real gap flagged in a captions
           pipeline review): announces each final caption line to screen
           readers — this page has no growing interim text, only finalized
           lines, so nothing extra to gate out of the live region. */}
-      <main
-        aria-live="polite"
-        aria-atomic="false"
-        className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
-      >
-        {visibleLines.length === 0 ? (
-          // session.status === 'ended' never reaches here — the early
-          // return above swaps to the "no longer available" page first.
-          <p className="text-center text-white/50 text-lg">Translation starting…</p>
-        ) : (
-          visibleLines.map(line => (
-            <div key={line.id} className={presenterMode ? '' : 'w-full'}>
-              {bilingual && (
-                <p className="text-sm sm:text-base text-white/50 mb-1">{line.source_text}</p>
-              )}
-              <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-medium`}>
-                {line.translated_text}
+      {(presenterMode || activeTab === 'captions') ? (
+        <main
+          ref={mainRef}
+          aria-live="polite"
+          aria-atomic="false"
+          className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
+        >
+          {visibleLines.length === 0 ? (
+            // session.status === 'ended' never reaches here — the early
+            // return above swaps to the "no longer available" page first.
+            <p className="text-center text-white/50 text-lg">Translation starting…</p>
+          ) : (
+            visibleLines.map((line, i) => (
+              <div key={line.id} className={presenterMode ? '' : 'w-full'}>
+                {bilingual && (
+                  <p className="text-sm sm:text-base text-white/50 mb-1">{line.source_text}</p>
+                )}
+                <p className={i === visibleLines.length - 1
+                  ? `${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`
+                  : `${OLDER_LINE_CLASS} leading-snug`}>
+                  {line.translated_text}
+                </p>
+              </div>
+            ))
+          )}
+        </main>
+      ) : (
+        <main className="flex-1 min-h-0 overflow-y-auto flex flex-col p-4 gap-4 max-w-2xl mx-auto w-full">
+          {pinnedQuestion && (
+            <div className="rounded-lg border border-indigo-400/40 bg-indigo-500/10 px-4 py-3">
+              <p className="flex items-center gap-1.5 text-xs text-indigo-300 mb-1.5">
+                <Pin className="h-3.5 w-3.5" /> Pinned question
+              </p>
+              <p className="text-sm text-white/60 mb-1">{pinnedQuestion.asker_name || 'Anonymous'} asked:</p>
+              <p className="text-lg text-white font-medium">
+                {session && pinnedQuestion.pinned_translations[session.target_language]}
               </p>
             </div>
-          ))
-        )}
-      </main>
+          )}
+          <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 py-6">
+            <MessageCircle className="h-8 w-8 text-white/20" />
+            <p className="text-sm text-white/40 max-w-xs">
+              {pinnedQuestion
+                ? "Ask another question below — it's sent privately to the speaker."
+                : 'Ask a question below — it\'s translated for the speaker and sent privately. They can pin it here for everyone to see.'}
+            </p>
+          </div>
+        </main>
+      )}
+
+      {!presenterMode && activeTab === 'conversation' && session && session.status !== 'error' && (
+        <div className="border-t border-white/10 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Input
+              value={askText}
+              onChange={(e) => setAskText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitQuestion(); }}
+              placeholder="Type your question…"
+              maxLength={500}
+              className="flex-1 border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+            {speechRecognitionSupported && (
+              <Button
+                variant="outline"
+                size="icon"
+                className={`shrink-0 border-white/20 bg-white/5 hover:bg-white/10 ${listeningForSpeech ? 'text-red-400' : 'text-white'}`}
+                onClick={toggleVoiceInput}
+                title={listeningForSpeech ? 'Listening… tap to stop' : 'Speak your question'}
+              >
+                <Mic className={`h-4 w-4 ${listeningForSpeech ? 'animate-pulse' : ''}`} />
+              </Button>
+            )}
+            <Button
+              size="icon"
+              className="shrink-0"
+              onClick={submitQuestion}
+              disabled={asking || !askText.trim() || cooldownRemainingMs > 0}
+              title="Send"
+            >
+              {asking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <User className="h-3.5 w-3.5 text-white/30 shrink-0" />
+            <Input
+              value={askerName}
+              onChange={(e) => setAskerName(e.target.value)}
+              placeholder="Your name (optional — anonymous by default)"
+              maxLength={60}
+              className="h-8 flex-1 border-white/10 bg-transparent text-xs text-white placeholder:text-white/30"
+            />
+          </div>
+          {cooldownRemainingMs > 0 && (
+            <p className="text-xs text-amber-400">Ask again in {Math.ceil(cooldownRemainingMs / 1000)}s</p>
+          )}
+          {askError && <p className="text-xs text-red-400">{askError}</p>}
+        </div>
+      )}
 
       {/* session.status === 'ended' never reaches here, same as above. */}
       {!presenterMode && session && session.status !== 'error' && (

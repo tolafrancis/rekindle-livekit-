@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Room, RoomEvent, type RemoteTrack, type RemoteTrackPublication, type RemoteParticipant } from 'livekit-client';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
-import { Languages, Check, Volume2, Captions, X, Loader2 } from 'lucide-react';
+import { Languages, Check, Volume2, Captions, X, Loader2, BookOpen } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
+import { toast } from '@rekindle/ui/use-toast';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { ScripturePanel } from './ScripturePanel';
 
 interface AvailableSession {
   id: string;
@@ -147,8 +149,84 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
   // "Show Captions" click, before the just-dispatched session's row has
   // appeared yet. Keyed by mode so switching modes doesn't leak a stale flag.
   const hadSessionForModeRef = useRef<{ mode: CaptionMode; had: boolean }>({ mode: 'off', had: false });
+
+  // Live Scripture, standalone from Captions (2026-09-28) — viewer-side is
+  // watch-only (no manual verse entry; that's host-only, in
+  // FloatingTranslationButton.tsx). Turning this on never dispatches a bot
+  // by itself (session_kind='scripture_only', see the RPCs this calls
+  // below) — same free, anon-safe self-service model "Show Captions"
+  // already has, just without the STT cost since nothing needs to be heard.
+  const SCRIPTURE_STORAGE_KEY = `rk-scripture-mode-${scopeId}`;
+  const [scriptureOn, setScriptureOnState] = useState(() => {
+    try { return localStorage.getItem(SCRIPTURE_STORAGE_KEY) === 'on'; } catch { return false; }
+  });
+  // Set only by a user tap (not a restored-from-localStorage "on"), so the
+  // captions tip below shows once per toggle rather than on every reload.
+  const scriptureJustToggledOnRef = useRef(false);
+  const setScriptureOn = (on: boolean) => {
+    scriptureJustToggledOnRef.current = on;
+    setScriptureOnState(on);
+    try { localStorage.setItem(SCRIPTURE_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* non-fatal */ }
+  };
+  const [scriptureSessionId, setScriptureSessionId] = useState<string | null>(null);
+  const [scriptureStarting, setScriptureStarting] = useState(false);
+
+  useEffect(() => {
+    if (!scriptureOn) { setScriptureSessionId(null); return; }
+    let cancelled = false;
+    (async () => {
+      setScriptureStarting(true);
+      try {
+        const { data: existingSession } = await supabase
+          .from('translation_sessions')
+          .select('id, session_kind')
+          .eq('livekit_room_name', roomName)
+          .in('status', ['initialising', 'joining', 'active', 'paused'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        // Auto-detect reads the caption bot's transcript, so a bot-less
+        // (scripture_only) anchor can't detect anything until captions start.
+        const tipIfNoCaptions = (hasCaptionBot: boolean) => {
+          if (scriptureJustToggledOnRef.current && !hasCaptionBot && captionMode === 'off') {
+            toast({ title: 'Turn on captions to auto-detect verses', description: 'Live Scripture finds Bible references by listening through captions. Without them, only verses the host types in will show.' });
+          }
+          scriptureJustToggledOnRef.current = false;
+        };
+        if (existingSession) {
+          setScriptureSessionId(existingSession.id);
+          tipIfNoCaptions(existingSession.session_kind !== 'scripture_only');
+          return;
+        }
+
+        const { data, error } = await supabase.rpc(startCaptionsSession.rpc, {
+          ...startCaptionsSession.params,
+          p_session_kind: 'scripture_only',
+        });
+        if (cancelled) return;
+        if (error) throw error;
+        setScriptureSessionId((data as { session_id: string } | null)?.session_id ?? null);
+        tipIfNoCaptions(false);
+      } catch (err) {
+        console.error(`[${logTag}] could not start Live Scripture:`, err);
+        setScriptureOn(false);
+      } finally {
+        if (!cancelled) setScriptureStarting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptureOn, roomName]);
+
   const captionOverlay = useDraggableOverlay({
     resetKey: captionMode === 'off' ? 'off' : 'on',
+    baseTransform: 'translateX(-50%)',
+  });
+  // Draggable (2026-09-29) — same fix as FloatingTranslationButton.tsx: the
+  // fixed top position sat right under this layout's own top-right controls.
+  const scriptureOverlay = useDraggableOverlay({
+    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
     baseTransform: 'translateX(-50%)',
   });
 
@@ -605,6 +683,25 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
 
   return (
     <>
+      {scriptureOn && scriptureSessionId && (
+        <div
+          ref={scriptureOverlay.ref}
+          className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+          style={scriptureOverlay.style}
+        >
+          <div
+            onPointerDown={scriptureOverlay.onPointerDown}
+            onPointerMove={scriptureOverlay.onPointerMove}
+            onPointerUp={scriptureOverlay.onPointerUp}
+            onPointerCancel={scriptureOverlay.onPointerCancel}
+            title="Drag to move"
+            className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          >
+            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+          </div>
+        </div>
+      )}
+
       {captionMode !== 'off' && (
         <div
           ref={captionOverlay.ref}
@@ -781,6 +878,20 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
           {captionsError && (
             <p className="text-xs text-red-600 px-2.5 pt-1.5">{captionsError}</p>
           )}
+
+          {/* Live Scripture — standalone from Captions (2026-09-28), watch-only
+              here: writing a verse is host-only (FloatingTranslationButton.tsx). */}
+          <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Live Scripture</p>
+          <button
+            type="button"
+            onClick={() => setScriptureOn(!scriptureOn)}
+            disabled={scriptureStarting}
+            className={`${row} ${sel(scriptureOn)} disabled:opacity-50`}
+          >
+            {scriptureStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+            <span className="flex-1">{scriptureOn ? 'On' : 'Off — tap to turn on'}</span>
+            {scriptureOn && !scriptureStarting && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+          </button>
 
           <p className="text-[10px] text-gray-400 px-2.5 pt-1.5">
             Translated audio is deliberately delayed ~{delaySeconds}s to line up with the video.

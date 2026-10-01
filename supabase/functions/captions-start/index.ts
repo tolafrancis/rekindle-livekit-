@@ -3,7 +3,7 @@
 // On-demand source-language captions. Called when a participant turns CC on.
 // Starts the room's caption agent if one isn't already running — idempotent,
 // so any number of simultaneous calls for the same room start exactly one
-// agent (claim_caption_session's partial unique index, migration 0372).
+// agent (claim_caption_session's partial unique index, migration 0381).
 //
 // No host action is needed: anyone who is genuinely IN the room can start
 // captions. "In the room" is proven by the caller's own LiveKit access token
@@ -21,7 +21,7 @@
 //   3. Uses the same secrets as livekit-token: LIVEKIT_URL, LIVEKIT_API_KEY,
 //      LIVEKIT_API_SECRET, plus the project-wide SUPABASE_URL /
 //      SUPABASE_SERVICE_ROLE_KEY.
-//   4. Run migration 0372_on_demand_captions.sql first.
+//   4. Run migration 0381_on_demand_captions.sql first.
 //
 // ── Request (POST JSON body) ─────────────────────────────────────────────────
 //   In the room (meeting participants, webinar host/speakers):
@@ -37,7 +37,7 @@
 // 0354); a channel broadcast must be live (it's public to anyone watching).
 //
 // Usage is logged per org; personal (non-ministry) channels log it against
-// the channel owner instead (migration 0375).
+// the channel owner instead (migration 0384).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -61,7 +61,7 @@ interface RequestBody {
 }
 
 // Meeting and webinar rooms, keyed by context.kind. Both tables carry
-// room_name, ministry_id and (migration 0372) source_language. Channels are
+// room_name, ministry_id and (migration 0381) source_language. Channels are
 // resolved from the room name instead (CHANNEL_ROOM below).
 const ROOM_TABLE: Record<Exclude<RoomKind, 'channel'>, string> = {
   ministry_meeting: 'ministry_video_meetings',

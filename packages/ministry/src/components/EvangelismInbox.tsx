@@ -88,11 +88,13 @@ interface Props {
   ministryId: string;
   ministryName: string;
   isLeader: boolean;
+  // Opens the host's WhatsApp setup (MinistryWhatsAppHub) from the channels dialog.
+  onOpenWhatsApp?: () => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isLeader }) => {
+export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isLeader, onOpenWhatsApp }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
 
@@ -709,7 +711,12 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
           <DialogHeader>
             <DialogTitle>{t('evangelismInbox', 'setUpMessagingChannels', 'Set up messaging channels')}</DialogTitle>
           </DialogHeader>
-          <EvangelismChannelsPanel ministryId={ministryId} ministryName={ministryName} isLeader={isLeader} />
+          <EvangelismChannelsPanel
+            ministryId={ministryId}
+            ministryName={ministryName}
+            isLeader={isLeader}
+            onOpenWhatsApp={onOpenWhatsApp && (() => { setShowChannels(false); onOpenWhatsApp(); })}
+          />
         </DialogContent>
       </Dialog>
     </div>

@@ -9,6 +9,8 @@ interface UserAnalytics {
   disciples: number          // "Followers"        → members of ministries this user owns/leads
 }
 
+const FOCUS_REFRESH_MIN_MS = 60_000
+
 const sumArrayLengths = (rows: any[] | null, field: string): number =>
   (rows ?? []).reduce(
     (sum, r) => sum + (Array.isArray(r?.[field]) ? r[field].length : 0),
@@ -79,7 +81,7 @@ export function useUserAnalytics() {
               .from('devotional_progress')
               .select('id', { count: 'exact', head: true })
               .eq('user_id', uid)
-              .eq('completed', true),
+              .not('completed_at', 'is', null),
             supabase
               .from('devotional_user_progress')
               .select('completed_days')
@@ -117,13 +119,21 @@ export function useUserAnalytics() {
 
     loadAnalytics()
 
-    // Refresh on window focus and whenever a devotional/prayer is completed
-    window.addEventListener('focus', loadAnalytics)
+    // Refresh whenever a devotional/prayer is completed, and on window focus —
+    // but at most once a minute for focus: each refresh is 8 count queries, and
+    // simply alt-tabbing back to the app used to fire all of them every time.
+    let lastFocusLoad = Date.now()
+    const onFocus = () => {
+      if (Date.now() - lastFocusLoad < FOCUS_REFRESH_MIN_MS) return
+      lastFocusLoad = Date.now()
+      loadAnalytics()
+    }
+    window.addEventListener('focus', onFocus)
     window.addEventListener('streak:updated', loadAnalytics)
 
     return () => {
       active = false
-      window.removeEventListener('focus', loadAnalytics)
+      window.removeEventListener('focus', onFocus)
       window.removeEventListener('streak:updated', loadAnalytics)
     }
   }, [user?.id])

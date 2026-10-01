@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -19,26 +19,39 @@ import {
 
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
-import { MinistryRegistrationSettings } from './MinistryRegistrationSettings';
-import CustomDomainSettings from './CustomDomainSettings';
-import { MinistryMembersManager } from './MinistryMembersManager';
-import { MinistryVolunteerTeamsManager } from './MinistryVolunteerTeamsManager';
-import MinistryRegistrations from './MinistryRegistrations';
-import { MinistryBirthdayWishes } from './MinistryBirthdayWishes';
-import { MinistryDevotionalsManager } from './MinistryDevotionalsManager';
-import { MinistryPrayerLibraryManager } from './MinistryPrayerLibraryManager';
-import { MinistryVideoMessagesManager } from './MinistryVideoMessagesManager';
-import { MinistryRulesManager } from './MinistryRulesManager';
-import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
-import { MinistryTestimoniesManager } from './MinistryTestimoniesManager';
-import { MinistryPrayerRequestsManager } from './MinistryPrayerRequestsManager';
-import { MinistryDonationsManager } from './MinistryDonationsManager';
-import { MinistryEventsManager } from './MinistryEventsManager';
-import { EvangelismInbox } from './EvangelismInbox';
-import { MinistryWhatsAppHub } from './MinistryWhatsAppHub';
-import { MinistryPaymentSettings } from './MinistryPaymentSettings';
-import { MinistryGiftAidSettings } from './MinistryGiftAidSettings';
-import BillingSettings from './BillingSettings';
+
+// Each settings section's managers are their own chunks, fetched when that
+// section is opened. They used to all ship in one ~490 KB file that had to
+// download before the Settings tab could show anything. Overview (the
+// default section) stays in this file so the tab's first view needs no
+// extra round trip.
+const MinistryRegistrationSettings = lazy(() => import('./MinistryRegistrationSettings').then((m) => ({ default: m.MinistryRegistrationSettings })));
+const MinistryMembersManager = lazy(() => import('./MinistryMembersManager').then((m) => ({ default: m.MinistryMembersManager })));
+const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
+const MinistryVolunteerTeamsManager = lazy(() => import('./MinistryVolunteerTeamsManager').then((m) => ({ default: m.MinistryVolunteerTeamsManager })));
+const MinistryBirthdayWishes = lazy(() => import('./MinistryBirthdayWishes').then((m) => ({ default: m.MinistryBirthdayWishes })));
+const MinistryDevotionalsManager = lazy(() => import('./MinistryDevotionalsManager').then((m) => ({ default: m.MinistryDevotionalsManager })));
+const MinistryPrayerLibraryManager = lazy(() => import('./MinistryPrayerLibraryManager').then((m) => ({ default: m.MinistryPrayerLibraryManager })));
+const MinistryVideoMessagesManager = lazy(() => import('./MinistryVideoMessagesManager').then((m) => ({ default: m.MinistryVideoMessagesManager })));
+const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
+const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
+const MinistryTestimoniesManager = lazy(() => import('./MinistryTestimoniesManager').then((m) => ({ default: m.MinistryTestimoniesManager })));
+const MinistryPrayerRequestsManager = lazy(() => import('./MinistryPrayerRequestsManager').then((m) => ({ default: m.MinistryPrayerRequestsManager })));
+const MinistryDonationsManager = lazy(() => import('./MinistryDonationsManager').then((m) => ({ default: m.MinistryDonationsManager })));
+const MinistryEventsManager = lazy(() => import('./MinistryEventsManager').then((m) => ({ default: m.MinistryEventsManager })));
+const EvangelismInbox = lazy(() => import('./EvangelismInbox').then((m) => ({ default: m.EvangelismInbox })));
+const MinistryWhatsAppHub = lazy(() => import('./MinistryWhatsAppHub').then((m) => ({ default: m.MinistryWhatsAppHub })));
+const MinistryPaymentSettings = lazy(() => import('./MinistryPaymentSettings').then((m) => ({ default: m.MinistryPaymentSettings })));
+const MinistryGiftAidSettings = lazy(() => import('./MinistryGiftAidSettings').then((m) => ({ default: m.MinistryGiftAidSettings })));
+const CustomDomainSettings = lazy(() => import('./CustomDomainSettings'));
+const MinistryRegistrations = lazy(() => import('./MinistryRegistrations'));
+const BillingSettings = lazy(() => import('./BillingSettings'));
+
+const SectionFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+  </div>
+);
 
 interface Ministry {
   id: string;
@@ -80,7 +93,7 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'overview',        label: 'Overview',          icon: LayoutDashboard, description: 'Ministry stats & quick actions' },
   { id: 'general',         label: 'General',           icon: Settings,        description: 'Profile, branding & domain' },
-  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, teams & signups' },
+  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, small groups, teams & signups' },
   { id: 'content',         label: 'Content',           icon: BookOpen,        description: 'Devotionals, library & rules' },
   { id: 'engagement',      label: 'Engagement',       icon: MessageSquare,   description: 'Requests, donations & WhatsApp' },
   { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard,      description: 'Gateways & subscription' },
@@ -229,6 +242,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
     <div className="space-y-6">
       {/* Main Content Area */}
       <main className="space-y-6">
+        <Suspense fallback={<SectionFallback />}>
         {/* Section 1: Overview */}
         {currentSection === 'overview' && (
           <MinistryOverviewDashboard
@@ -720,6 +734,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         {currentSection === 'people' && (
           <div className="space-y-6">
             <MinistryMembersManager ministryId={ministry.id} />
+            <MinistrySmallGroupsManager ministryId={ministry.id} />
             <MinistryVolunteerTeamsManager ministryId={ministry.id} />
             <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
             <div id="registration-join-link">
@@ -746,8 +761,16 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <MinistryPrayerRequestsManager ministryId={ministry.id} />
             <MinistryDonationsManager ministryId={ministry.id} ministryName={ministry.name} themeColor={ministry.theme_color} isLeader={true} />
             <MinistryEventsManager ministryId={ministry.id} />
-            <EvangelismInbox ministryId={ministry.id} ministryName={ministry.name} isLeader={true} />
-            <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
+            <EvangelismInbox
+              ministryId={ministry.id}
+              ministryName={ministry.name}
+              isLeader={true}
+              // Wait for the channels dialog to close and release its scroll lock.
+              onOpenWhatsApp={() => setTimeout(() => document.getElementById('ministry-whatsapp-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)}
+            />
+            <div id="ministry-whatsapp-hub">
+              <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
+            </div>
           </div>
         )}
 
@@ -759,6 +782,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <BillingSettings ministryId={ministry.id} />
           </div>
         )}
+        </Suspense>
       </main>
     </div>
   );

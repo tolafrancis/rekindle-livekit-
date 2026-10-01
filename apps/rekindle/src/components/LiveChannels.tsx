@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -18,15 +18,10 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { LiveChannelCard } from './LiveChannelCard';
 import { ChannelStreamConfig } from './ChannelStreamConfig';
-import { LiveChannelBroadcast } from './LiveChannelBroadcast';
-import { LiveChannelViewer } from './LiveChannelViewer';
 import { LiveChannelEventScheduler } from './LiveChannelEventScheduler';
 import { LiveChannelEventsCalendar } from './LiveChannelEventsCalendar';
 import { LiveChannelEventCard } from './LiveChannelEventCard';
 import { LiveChannelEventDetails } from './LiveChannelEventDetails';
-import { LiveChannelAnalyticsDashboard } from './LiveChannelAnalyticsDashboard';
-import { LiveChannelInteractiveMeetings } from './LiveChannelInteractiveMeetings';
-import { ChannelRecordingsViewer } from './ChannelRecordingsViewer';
 import {
   Radio,
   Plus,
@@ -73,6 +68,20 @@ interface ChannelEvent {
 }
 
 type LiveChannelsTab = 'discover' | 'events' | 'following' | 'my-channels' | 'meetings' | 'analytics';
+
+// The broadcast/watch/meeting/recordings views carry the video stack
+// (livekit-client + hls.js, ~2 MB) and the analytics view carries recharts.
+// None of that is needed to show the channel list, so each loads on first use.
+const LiveChannelBroadcast = lazy(() => import('./LiveChannelBroadcast').then((m) => ({ default: m.LiveChannelBroadcast })));
+const LiveChannelViewer = lazy(() => import('./LiveChannelViewer').then((m) => ({ default: m.LiveChannelViewer })));
+const LiveChannelAnalyticsDashboard = lazy(() => import('./LiveChannelAnalyticsDashboard').then((m) => ({ default: m.LiveChannelAnalyticsDashboard })));
+const LiveChannelInteractiveMeetings = lazy(() => import('./LiveChannelInteractiveMeetings').then((m) => ({ default: m.LiveChannelInteractiveMeetings })));
+const ChannelRecordingsViewer = lazy(() => import('./ChannelRecordingsViewer').then((m) => ({ default: m.ChannelRecordingsViewer })));
+const ViewFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+  </div>
+);
 
 interface LiveChannelsProps {
   activeTab?: LiveChannelsTab;
@@ -268,9 +277,19 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
     }
   };
 
-  // Load channels and events
-  const loadChannels = useCallback(async () => {
-    setLoading(true);
+  // Debounce the search box so typing doesn't fire a full reload per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(id);
+  }, [searchQuery]);
+
+  // Load channels and events. The four queries are independent, so they run in
+  // parallel (they used to run one after another, stacking four round trips
+  // before the screen could render). `silent` refreshes (realtime) keep the
+  // current list on screen instead of flashing the loading state.
+  const loadChannels = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       // Load all channels. is_active gates visibility here — real gap found
       // live: an admin deactivating a channel (AdminLiveChannelManager.tsx)
@@ -289,54 +308,56 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
         query = query.eq('category', categoryFilter);
       }
 
-      if (searchQuery) {
-        query = query.ilike('name', `%${searchQuery}%`);
+      if (debouncedSearch) {
+        query = query.ilike('name', `%${debouncedSearch}%`);
       }
 
-      const { data: allChannels, error } = await query;
-      if (error) throw error;
+      const [channelsRes, eventsRes, followsRes, ownedRes] = await Promise.all([
+        query,
+        supabase
+          .from('channel_events')
+          .select(`
+            *,
+            channel:live_channels(*)
+          `)
+          .in('status', ['upcoming', 'live'])
+          .order('scheduled_start', { ascending: true }),
+        user?.id
+          ? supabase
+              .from('channel_followers')
+              .select('channel_id')
+              .eq('user_id', user.id)
+          : Promise.resolve(null),
+        user?.id
+          ? supabase
+              .from('live_channels')
+              .select('*')
+              .eq('owner_id', user.id)
+              .order('created_at', { ascending: false })
+          : Promise.resolve(null),
+      ]);
+
+      if (channelsRes.error) throw channelsRes.error;
+      const allChannels = channelsRes.data || [];
 
       // Include ministry streams in the global directory
       // Removed any exclusion logic for ministry channels
-      setChannels(allChannels || []);
+      setChannels(allChannels);
 
-      // Load events
-      const { data: allEvents } = await supabase
-        .from('channel_events')
-        .select(`
-          *,
-          channel:live_channels(*)
-        `)
-        .in('status', ['upcoming', 'live'])
-        .order('scheduled_start', { ascending: true });
-
-      const eventsList = allEvents || [];
+      const eventsList = eventsRes.data || [];
       setEvents(eventsList);
       setLiveEvents(eventsList.filter(e => e.status === 'live'));
       setUpcomingEvents(eventsList.filter(e => e.status === 'upcoming'));
 
-      // Load user's followed channels
+      // User's followed and own channels
       if (user?.id) {
-        const { data: follows } = await supabase
-          .from('channel_followers')
-          .select('channel_id')
-          .eq('user_id', user.id);
-
-        const followIds = new Set((follows || []).map(f => f.channel_id));
+        const followIds = new Set<string>((followsRes?.data || []).map(f => f.channel_id));
         setFollowingIds(followIds);
 
         // Include ministry channels in followed channels
-        const followed = (allChannels || []).filter(c => followIds.has(c.id));
-        setFollowedChannels(followed);
+        setFollowedChannels(allChannels.filter(c => followIds.has(c.id)));
 
-        // Load user's own channels
-        const { data: owned } = await supabase
-          .from('live_channels')
-          .select('*')
-          .eq('owner_id', user.id)
-          .order('created_at', { ascending: false });
-
-        setMyChannels(owned || []);
+        setMyChannels(ownedRes?.data || []);
       }
     } catch (err) {
       console.error('[LiveChannels] Failed to load:', err);
@@ -348,7 +369,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
     } finally {
       setLoading(false);
     }
-  }, [user?.id, categoryFilter, searchQuery]);
+  }, [user?.id, categoryFilter, debouncedSearch]);
 
   // Initial load
   useEffect(() => {
@@ -388,8 +409,23 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
     }
   }, [loading, channels, autoOpenMeetingId, autoOpenChannelId]);
 
-  // Subscribe to real-time updates
+  // Subscribe to real-time updates. live_channels rows change constantly while
+  // anyone is broadcasting (viewer counts, live flags), so updates are
+  // coalesced into one silent refresh per 2s, and the subscription is opened
+  // once — it used to be torn down and re-created on every search keystroke
+  // or filter change because it depended on loadChannels directly.
+  const loadChannelsRef = React.useRef(loadChannels);
+  loadChannelsRef.current = loadChannels;
   useEffect(() => {
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer !== null) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        loadChannelsRef.current({ silent: true });
+      }, 2000);
+    };
+
     const channel = supabase
       .channel('live-channels-updates')
       .on(
@@ -399,9 +435,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           schema: 'public',
           table: 'live_channels'
         },
-        () => {
-          loadChannels();
-        }
+        scheduleRefresh
       )
       .on(
         'postgres_changes',
@@ -410,16 +444,15 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           schema: 'public',
           table: 'channel_events'
         },
-        () => {
-          loadChannels();
-        }
+        scheduleRefresh
       )
       .subscribe();
 
     return () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
-  }, [loadChannels]);
+  }, []);
 
   // Create channel
   const createChannel = async () => {
@@ -634,23 +667,27 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Render broadcast view
   if (viewMode === 'broadcast' && selectedChannel) {
     return (
-      <LiveChannelBroadcast
-        channel={selectedChannel}
-        onEndBroadcast={handleEndBroadcast}
-      />
+      <Suspense fallback={<ViewFallback />}>
+        <LiveChannelBroadcast
+          channel={selectedChannel}
+          onEndBroadcast={handleEndBroadcast}
+        />
+      </Suspense>
     );
   }
 
   // Render viewer
   if (viewMode === 'watch' && selectedChannel) {
     return (
-      <LiveChannelViewer
-        channel={selectedChannel}
-        onLeave={handleLeaveViewer}
-        isFollowing={followingIds.has(selectedChannel.id)}
-        onToggleFollow={() => toggleFollow(selectedChannel)}
-        onViewRecordings={() => setViewMode('recordings')}
-      />
+      <Suspense fallback={<ViewFallback />}>
+        <LiveChannelViewer
+          channel={selectedChannel}
+          onLeave={handleLeaveViewer}
+          isFollowing={followingIds.has(selectedChannel.id)}
+          onToggleFollow={() => toggleFollow(selectedChannel)}
+          onViewRecordings={() => setViewMode('recordings')}
+        />
+      </Suspense>
     );
   }
 
@@ -674,7 +711,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           <p className="text-gray-400">{selectedChannel.description}</p>
         </div>
         {/* Channel recordings */}
-        <ChannelRecordingsViewer channelId={selectedChannel.id} isOwner={isOwner} />
+        <Suspense fallback={<ViewFallback />}>
+          <ChannelRecordingsViewer channelId={selectedChannel.id} isOwner={isOwner} />
+        </Suspense>
       </div>
     );
   }
@@ -714,7 +753,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           <Button
             variant="outline"
             size="icon"
-            onClick={loadChannels}
+            onClick={() => loadChannels()}
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -1078,11 +1117,13 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                       </div>
                     </CardHeader>
                     <CardContent className="pt-6">
-                      <LiveChannelAnalyticsDashboard
-                        channelId={channel.id}
-                        userId={user?.id}
-                        channelName={channel.name}
-                      />
+                      <Suspense fallback={<ViewFallback />}>
+                        <LiveChannelAnalyticsDashboard
+                          channelId={channel.id}
+                          userId={user?.id}
+                          channelName={channel.name}
+                        />
+                      </Suspense>
                     </CardContent>
                   </Card>
                 ))}
@@ -1144,7 +1185,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                       </div>
                     </CardHeader>
                     <CardContent className="pt-6">
-                      <LiveChannelInteractiveMeetings channelId={channel.id} />
+                      <Suspense fallback={<ViewFallback />}>
+                        <LiveChannelInteractiveMeetings channelId={channel.id} />
+                      </Suspense>
                     </CardContent>
                   </Card>
                 ))}
@@ -1172,7 +1215,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                           </div>
                         </CardHeader>
                         <CardContent className="pt-6">
-                          <LiveChannelInteractiveMeetings channelId={channel.id} />
+                          <Suspense fallback={<ViewFallback />}>
+                            <LiveChannelInteractiveMeetings channelId={channel.id} />
+                          </Suspense>
                         </CardContent>
                       </Card>
                     );

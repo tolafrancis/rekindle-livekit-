@@ -9,7 +9,7 @@
 //
 // Webinar and channel-broadcast rooms: every update is also broadcast over
 // Supabase Realtime for the HLS audience (HlsBroadcaster), who count as caption viewers through
-// their heartbeat (caption_sessions.hls_viewer_seen_at, migration 0373).
+// their heartbeat (caption_sessions.hls_viewer_seen_at, migration 0382).
 //
 // Stops when:
 //   - no participant has the attribute captions=on, and no HLS viewer has

@@ -1,4 +1,4 @@
-# REKINDLE DISCIPLESHIP AND CHURCH MANAGEENT APP
+ REKINDLE DISCIPLESHIP AND CHURCH MANAGEENT APP
 
 A React + TypeScript + Vite application for spiritual mentorship and prayer communities.
 
@@ -29,6 +29,7 @@ npm run dev
 - Cloudfare
 
 
-# Login Credntials on Local
-tolafrancis4biz@gmail.com
-123456
+## Local test accounts
+
+Don't commit credentials to this file. Share test-account logins through a
+password manager or your team's secrets store instead.

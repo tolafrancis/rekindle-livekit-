@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -6,12 +6,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@rekindle/ui/dialog';
-import { PhoneOff, X, Hand, Settings2, HelpCircle, BarChart3, Radio, MessageSquare } from 'lucide-react';
-import DailyVideoCall from '../components/DailyVideoCall';
+import { PhoneOff, X, Settings2, HelpCircle, BarChart3, Radio, MessageSquare, Users, Loader2 } from 'lucide-react';
+import { supabase } from '@rekindle/supabase';
+import DailyVideoCall, { type ModeratorControls } from '../components/DailyVideoCall';
 import { useActiveCallOptional } from '../ActiveCallContext';
 import { ChannelStreamConfig } from '../components/ChannelStreamConfig';
 import { MeetingChatPanel } from '../components/MeetingChatPanel';
-import { FloatingTranslationButton, type TranslationControls } from '../components/FloatingTranslationButton';
+import { FloatingTranslationButton, type TranslationControls, type ScriptureControlState } from '../components/FloatingTranslationButton';
 import { CaptionOverlay } from '../components/CaptionOverlay';
 import { CaptionsButton } from '../components/CaptionsButton';
 import { useLiveCaptions, type LiveCaptionsBridge } from '../useLiveCaptions';
@@ -20,11 +21,12 @@ import { useMeetingChat } from '../useMeetingChat';
 import { useWebinarSpeakerRequests } from './useWebinarSpeakerRequests';
 import { useWebinarQuestions } from './useWebinarQuestions';
 import { useWebinarPolls } from './useWebinarPolls';
-import { stopWebinarBroadcast, type MinistryWebinar } from './webinarControl';
+import { stopWebinarBroadcast, goLiveWebinar, resolveWebinarRole, type MinistryWebinar } from './webinarControl';
 import { startMeetingBroadcast, stopMeetingBroadcast } from '../meetingStreamControl';
 import type { WebinarViewerRole } from './WebinarLobby';
 import { WebinarQAModerationPanel } from './WebinarQAModerationPanel';
 import { WebinarPollHostPanel } from './WebinarPollHostPanel';
+import { WebinarPeoplePanel } from './WebinarPeoplePanel';
 
 interface WebinarStageProps {
   webinar: MinistryWebinar;
@@ -33,14 +35,53 @@ interface WebinarStageProps {
   role: WebinarViewerRole;
   onEnded: () => void;
   onLeave: () => void;
+  /** The host sent this speaker back to the audience. */
+  onDemoted?: () => void;
 }
 
 /** Host/co-host/speaker broadcast view — the only participants who ever hold a
  *  LiveKit token in Phase 1. Attendees never appear here (see
  *  WebinarAttendeeViewer); a promoted attendee re-mounts into this component
  *  once their speaker request is accepted. */
-export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave }: WebinarStageProps) {
-  const isHost = role === 'host' || role === 'co-host';
+export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave, onDemoted }: WebinarStageProps) {
+  // `webinar` is the snapshot taken when the call started (WebinarJoinPage
+  // hands a frozen node to ActiveCallHost), so status changes — backstage →
+  // live above all — are tracked here from the row itself.
+  const [liveStatus, setLiveStatus] = useState(webinar.status);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`webinar-stage-${webinar.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ministry_webinars', filter: `id=eq.${webinar.id}` },
+        (payload) => setLiveStatus((payload.new as MinistryWebinar).status))
+      .subscribe();
+    return () => { try { supabase.removeChannel(channel); } catch { /* noop */ } };
+  }, [webinar.id]);
+  const isBackstage = liveStatus === 'backstage';
+
+  // The role can change mid-webinar: the host makes a speaker co-host, or
+  // sends them back to the audience. The DB is the source of truth (it's what
+  // RLS and livekit-token read); re-check it on a light poll.
+  const [liveRole, setLiveRole] = useState(role);
+  useEffect(() => {
+    if (role === 'host') return;
+    let cancelled = false;
+    const check = async () => {
+      const r = await resolveWebinarRole(webinar.id, webinar.host_id, userId);
+      if (!cancelled) setLiveRole(r);
+    };
+    const poll = setInterval(check, 5000);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [role, webinar.id, webinar.host_id, userId]);
+  useEffect(() => {
+    if (liveRole === 'attendee' && role !== 'host') onDemoted?.();
+  }, [liveRole, role, onDemoted]);
+
+  // Who gets the host's controls right now (co-host included). DailyVideoCall
+  // keeps the role it joined with; a co-host promoted mid-call gets its
+  // in-room controls from their LiveKit metadata instead.
+  const isHost = liveRole === 'host' || liveRole === 'co-host';
+  const joinedAsHost = role === 'host' || role === 'co-host';
+  const [moderatorControls, setModeratorControls] = useState<ModeratorControls | null>(null);
   const speakerRequests = useWebinarSpeakerRequests(webinar.id, userId, userName, isHost);
   // Called here (not just inside WebinarQAModerationPanel, which only exists
   // while the Manage popover happens to be open) so the Manage button can
@@ -69,7 +110,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // unread-watermark effect right after this needs it. Manage popover
   // open/closed + which tab it's on.
   const [showRequests, setShowRequests] = useState(false);
-  const [activeManageTab, setActiveManageTab] = useState('speakers');
+  const [activeManageTab, setActiveManageTab] = useState('people');
 
   // Unread tracking for the control-bar Chat/Polls badges (2026-09-22 — real
   // report: "the webinar chat icon is absent in the control button and...
@@ -143,6 +184,10 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // same agent also broadcasts to the HLS audience — see useHlsCaptions.
   const [callCaptionsBridge, setCallCaptionsBridge] = useState<LiveCaptionsBridge | null>(null);
   const captions = useLiveCaptions(callCaptionsBridge, { roomName: webinar.room_name, kind: 'ministry_webinar' });
+  // Live Scripture control state (2026-09-29) — same lift-to-parent pattern
+  // as callTranslation, so DailyVideoCall can render its own toggle button +
+  // side panel instead of it living in FloatingTranslationButton's popover.
+  const [callScripture, setCallScripture] = useState<ScriptureControlState | null>(null);
   // Minimized mini-player awareness (2026-09-21) — mirrors
   // MinistryInteractiveMeetings.tsx's isPiP: this component is now mounted by
   // WebinarJoinPage via startCall()/ActiveCallHost (see that file), the same
@@ -153,43 +198,56 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
   // own logic) — both silently broken before this file ever wired in.
   const isPiP = useActiveCallOptional()?.minimized ?? false;
 
-  // Start the audience-facing HLS Egress once the host is actually here —
-  // this component (with DailyVideoCall autoJoin) is where the host's LiveKit
-  // room connection happens, so the room genuinely exists by the time this
-  // fires (see the comment in WebinarLobby.handleStart for why it used to
-  // 500 when started earlier). Attendees are HLS-only viewers (Phase 1), so a
-  // failure here means the audience sees nothing — worth a visible toast, not
-  // just a console warning.
+  // The audience-facing HLS Egress. It starts when someone presses Go live
+  // (never backstage — that's the point of backstage), by then the room
+  // exists because the host is in it. On (re)mount while already live it's
+  // resumed: skipped when the stream is already running (a remount after the
+  // tab was discarded used to start a redundant egress and hand the audience
+  // a new URL mid-stream), started if it never did. Only the host's own
+  // unmount stops it, so a co-host leaving doesn't cut the stream.
+  const broadcastingRef = useRef(false);
+  const [goingLive, setGoingLive] = useState(false);
+  const startBroadcast = useCallback(async (): Promise<boolean> => {
+    if (broadcastingRef.current) return true;
+    broadcastingRef.current = true;
+    // expectVideo=true: webinars are overwhelmingly presentations with video.
+    const result = await startMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar', undefined, true);
+    if (!result) broadcastingRef.current = false;
+    return !!result;
+  }, [webinar.id, webinar.room_name]);
+
   useEffect(() => {
-    if (!isHost) return;
-    // Guard against starting a REDUNDANT egress (2026-09-22, real bug: an
-    // audience member reported frequent quick breaks over several minutes
-    // watching one webinar — confirmed directly against the DB that there
-    // were actually THREE separate, cleanly-started-and-stopped egress
-    // sessions for that single webinar in that window, each producing a
-    // BRAND NEW hls_playback_url. Every time this component (re)mounts for
-    // the host — a tab getting discarded and reloaded under memory
-    // pressure is the most likely trigger, but any remount has the same
-    // effect — this effect unconditionally started a fresh broadcast, even
-    // when `webinar` (freshly reloaded from the DB by WebinarJoinPage's own
-    // load()) already shows one in progress. Each restart handed the
-    // audience a whole new URL to reconnect to — a real, disruptive break,
-    // not a client-side false alarm. If a broadcast already appears to be
-    // live for this webinar, reconnecting the host's own LiveKit room
-    // (autoJoin, above) is all that's needed — skip re-starting the Egress.
-    if (webinar.status === 'live' && webinar.hls_playback_url) {
-      return () => { stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar'); };
+    if (!joinedAsHost) return;
+    if (webinar.status === 'live') {
+      if (webinar.hls_playback_url) broadcastingRef.current = true;
+      else startBroadcast().then((ok) => {
+        if (!ok) toast.error("The stream couldn't start — attendees won't see anything yet. Try ending and restarting the webinar.");
+      });
     }
-    // expectVideo=true: webinars are overwhelmingly presentations with video,
-    // and this is what makes livekit-egress's Track Composite fallback (added
-    // below for the cold-start fix) actually fall back to Room Composite if
-    // the host's camera isn't on yet, instead of silently locking audio-only.
-    startMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar', undefined, true).then((result) => {
-      if (!result) toast.error("The stream couldn't start — attendees won't see anything yet. Try ending and restarting the webinar.");
-    });
-    return () => { stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar'); };
+    return () => {
+      if (role === 'host' && broadcastingRef.current) stopMeetingBroadcast(webinar.id, webinar.room_name, 'ministry_webinar');
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost, webinar.id, webinar.room_name]);
+  }, [joinedAsHost, webinar.id, webinar.room_name]);
+
+  const handleGoLive = async () => {
+    setGoingLive(true);
+    try {
+      const ok = await startBroadcast();
+      if (!ok) {
+        toast.error("The stream couldn't start, so attendees weren't let in. Try Go live again.");
+        return;
+      }
+      await goLiveWebinar(webinar.id);
+      setLiveStatus('live');
+      toast.success("You're live. Attendees are being let in now.");
+    } catch (err) {
+      console.error('[WebinarStage] go live failed:', err);
+      toast.error("Couldn't go live. Try again.");
+    } finally {
+      setGoingLive(false);
+    }
+  };
 
   const openManageTab = (tab: string) => { setActiveManageTab(tab); setShowRequests(true); };
 
@@ -254,7 +312,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           roomName={webinar.room_name}
           userName={userName}
           userId={userId}
-          isHost={isHost}
+          isHost={joinedAsHost}
           meetingId={webinar.id}
           meetingKind="ministry_webinar"
           onCallEnd={onLeave}
@@ -263,6 +321,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           enableRecording={webinar.enable_recording}
           onTranslationControlsChange={setCallTranslation}
           onCaptionsBridgeChange={setCallCaptionsBridge}
+          onModeratorControlsChange={setModeratorControls}
           // Real bug found live (2026-09-22, screenshotted): DailyVideoCall's
           // own generic Chat and Host Controls ("Manage") buttons were
           // showing in the control bar alongside this page's OWN correctly-
@@ -276,6 +335,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           showChatButton={false}
           showHostControlsButton={false}
           extraControlButtons={extraControlButtons}
+          scriptureControl={callScripture}
         />
 
         {!isPiP && captions.enabled && (
@@ -290,7 +350,16 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
           />
         )}
 
-        {!isPiP && (callCaptionsBridge || (webinar.enable_translation && callTranslation)) && (
+        {/* Was gated on (webinar.enable_captions || webinar.enable_translation)
+            — that hid the button (Live Scripture included) entirely for any
+            webinar that had both off. Neither flag is enforced server-side
+            (start_webinar_captions_session only checks language_configs.
+            is_public), so it was purely a client convenience toggle, not a
+            real permission boundary — dropped it so Live Scripture is
+            reachable independently of Captions/Translation here too
+            (2026-09-28), matching MinistryInteractiveMeetings.tsx's own
+            FloatingTranslationButton, which was already unconditional. */}
+        {!isPiP && (callCaptionsBridge || callTranslation) && (
           <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
             {callCaptionsBridge && (
               <CaptionsButton
@@ -301,9 +370,7 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                 onSizeChange={captions.setSize}
               />
             )}
-            {/* Live Translation only — captions no longer depend on the
-                host's Captions setting (CaptionsButton above is on-demand). */}
-            {webinar.enable_translation && callTranslation && (
+            {callTranslation && (
               <FloatingTranslationButton
                 translation={callTranslation}
                 ministryId={webinar.ministry_id}
@@ -311,13 +378,34 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                 isHost={isHost}
                 userId={userId}
                 showCaptionsOption={false}
+                onScriptureStateChange={setCallScripture}
               />
             )}
           </div>
         )}
 
+        {!isPiP && isBackstage && (
+          <div className="absolute top-3 left-3 z-50 max-w-[60vw] rounded-lg bg-amber-500/95 px-3 py-2 text-sm text-gray-950 shadow-lg">
+            <span className="font-semibold">Backstage.</span>{' '}
+            {isHost
+              ? 'Only you and your speakers can see and hear this. Attendees are let in when you press Go live.'
+              : "You're backstage. Attendees can't see or hear you until the host goes live."}
+          </div>
+        )}
+
         {!isPiP && (
           <div className="absolute top-3 right-3 z-50 flex gap-2">
+            {isHost && isBackstage && (
+              <Button
+                onClick={handleGoLive}
+                disabled={goingLive}
+                size="sm"
+                className="h-10 px-4 text-sm bg-green-600 hover:bg-green-700 text-white shadow-lg"
+              >
+                {goingLive ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Radio className="h-5 w-5 mr-2" />}
+                {goingLive ? 'Going live…' : 'Go live'}
+              </Button>
+            )}
             {isHost && (
               <Button
                 onClick={() => setStreamConfigOpen(true)}
@@ -366,7 +454,12 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
             </div>
             <Tabs value={activeManageTab} onValueChange={setActiveManageTab} className="flex-1 flex flex-col min-h-0">
               <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-white/10 h-auto p-0 px-2">
-                <TabsTrigger value="speakers" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3"><Hand className="h-4 w-4" /> Speakers</TabsTrigger>
+                <TabsTrigger value="people" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3 relative">
+                  <Users className="h-4 w-4" /> People
+                  {speakerRequests.pendingRequests.length > 0 && (
+                    <Badge className="h-4 min-w-4 px-1 bg-purple-600 text-white text-[10px]">{speakerRequests.pendingRequests.length}</Badge>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="chat" className="gap-1.5 text-sm data-[state=active]:bg-white/10 py-3 relative">
                   <MessageSquare className="h-4 w-4" /> Chat
                   {chatUnread > 0 && (
@@ -387,70 +480,15 @@ export function WebinarStage({ webinar, userId, userName, role, onEnded, onLeave
                 </TabsTrigger>
               </TabsList>
               <div className="p-4 overflow-y-auto">
-                <TabsContent value="speakers" className="m-0 space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-300 mb-2">Requesting to speak</p>
-                    {speakerRequests.pendingRequests.length === 0 ? (
-                      <p className="text-sm text-gray-500">No pending requests.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {speakerRequests.pendingRequests.map((r) => (
-                          <div key={r.id} className="flex items-center justify-between gap-2">
-                            <span className="text-sm truncate">{r.user_name || 'Attendee'}</span>
-                            <Button size="sm" className="h-9 px-3 bg-purple-600 hover:bg-purple-700" onClick={() => speakerRequests.hostInvite(r.user_id, r.user_name)}>
-                              Invite up
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-300 mb-2">On stage</p>
-                    {speakerRequests.requests.filter((r) => r.status === 'accepted').length === 0 ? (
-                      <p className="text-sm text-gray-500">No promoted speakers yet.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {speakerRequests.requests.filter((r) => r.status === 'accepted').map((r) => (
-                          <div key={r.id} className="flex items-center justify-between gap-2">
-                            <span className="text-sm truncate">{r.user_name || 'Attendee'}</span>
-                            <Button size="icon" variant="ghost" className="h-9 w-9 text-gray-400 hover:text-white" title="Send back to viewer" onClick={() => speakerRequests.revoke(r.user_id)}>
-                              <X className="h-5 w-5" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {(() => {
-                    const onStageIds = new Set(speakerRequests.requests.filter((r) => r.status === 'accepted').map((r) => r.user_id));
-                    const audience = presenceMembers.filter((m) => m.userId !== userId && !onStageIds.has(m.userId));
-                    return (
-                      <div>
-                        <p className="text-sm font-medium text-gray-300 mb-2">Audience ({audience.length})</p>
-                        {audience.length === 0 ? (
-                          <p className="text-sm text-gray-500">No one watching yet.</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {audience.map((m) => {
-                              const requested = speakerRequests.pendingRequests.some((r) => r.user_id === m.userId);
-                              return (
-                                <div key={m.userId} className="flex items-center justify-between gap-2">
-                                  <span className="text-sm truncate">
-                                    {requested && <Hand className="inline h-3.5 w-3.5 text-purple-300 mr-1" />}
-                                    {m.userName}
-                                  </span>
-                                  <Button size="sm" className="h-9 px-3 bg-purple-600 hover:bg-purple-700" onClick={() => speakerRequests.hostInvite(m.userId, m.userName)}>
-                                    Invite up
-                                  </Button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                <TabsContent value="people" className="m-0">
+                  <WebinarPeoplePanel
+                    webinar={{ ...webinar, status: liveStatus }}
+                    userId={userId}
+                    isHost={liveRole === 'host'}
+                    controls={moderatorControls}
+                    speakerRequests={speakerRequests}
+                    presenceMembers={presenceMembers}
+                  />
                 </TabsContent>
                 <TabsContent value="chat" className="m-0 h-96 -m-4 p-0">
                   {webinar.enable_chat ? (
