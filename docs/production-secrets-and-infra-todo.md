@@ -67,7 +67,7 @@ Edge Functions → Secrets**, not `.env`, which is client-build-time only).
 
 - [ ] `RESEND_API_KEY` — `send-ministry-email`, `send-email-broadcast`, `process-meeting-reminders`
 - [ ] `SENDGRID_API_KEY` — `send-email-broadcast` (fallback provider alongside Resend)
-- [ ] `FROM_EMAIL` — inconsistent defaults across functions (`announcements@gracecounsel.app`, `noreply@example.com`, `notifications@rekindlebc.com`) — **set explicitly everywhere**, don't rely on defaults
+- [ ] `FROM_EMAIL` — set to `notifications@rekindlebc.com` (must be on the Resend-verified `rekindlebc.com` domain). Every email function falls back to that same address if it's unset
 - [ ] `FROM_NAME` — `send-email-broadcast`
 - [ ] `UNSUBSCRIBE_SECRET` — `send-email-broadcast`. **Defaults to the literal string `'changeme'`** — must be overridden before launch or unsubscribe links are forgeable
 - [ ] `MEETING_APP_ORIGIN`, `MINISTRY_APP_ORIGIN` — link-building origins for reminder emails (`process-meeting-reminders`)

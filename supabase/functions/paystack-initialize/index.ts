@@ -1,0 +1,155 @@
+// Supabase Edge Function: paystack-initialize
+// =====================================================================
+// Individual "Premium"/"Premium Plus" consumer subscription checkout via
+// Paystack (NGN/GHS/ZAR region). Mirrored here from the untracked
+// supabase/paystack-initialize/index.sql (never actually deployed via the
+// CLI, which requires index.ts) so it's part of the real, trackable deploy
+// pipeline. Cleaned of the dead 'family'/'ministry_plus' tier pricing
+// (subscription_tiers.is_active = false per migration 0350/0271 —
+// ministries are billed via the separate ministry-checkout/
+// ministry-billing-webhook tenant pipeline instead, which has its own
+// Paystack integration).
+//
+// Secrets: PAYSTACK_SECRET_KEY, PAYSTACK_PLAN_<PLANTYPE>_<CURRENCY> (optional,
+// enables recurring billing for that plan+currency).
+// =====================================================================
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'paystack-initialize');
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+};
+
+// Plan prices in different currencies (in smallest unit - kobo, pesewas, cents)
+const PLAN_PRICES: Record<string, Record<string, number>> = {
+  'premium': {
+    // Individual Partner Tier 1 — live broadcast, AI note taker, video
+    // conferencing, no recording.
+    'NGN': 500000,  // 5,000 NGN
+    'USD': 1000     // $10.00
+  },
+  'premium_plus': {
+    // Individual Partner Tier 2 — Tier 1 + recording access.
+    'NGN': 900000,  // 9,000 NGN
+    'USD': 1800     // $18.00
+  },
+};
+
+// Paystack plan codes — create these in your Paystack dashboard
+// then set them as Supabase secrets (env vars), or use the placeholders below
+const getPaystackPlanCode = (planType: string, currency: string): string | undefined => {
+  const key = `PAYSTACK_PLAN_${planType.toUpperCase()}_${currency.toUpperCase()}`;
+  return Deno.env.get(key);
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY");
+    if (!paystackSecretKey) throw new Error("Paystack secret key not configured");
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { planType, userId, userEmail, currency = 'NGN', callbackUrl } = await req.json();
+
+    if (!planType || !PLAN_PRICES[planType]) {
+      throw new Error('Invalid plan type');
+    }
+
+    if (!userEmail) {
+      throw new Error('Email is required');
+    }
+
+    const amount = PLAN_PRICES[planType][currency];
+    if (!amount) {
+      throw new Error(`Currency ${currency} not supported for this plan`);
+    }
+
+    // Generate unique reference
+    const reference = `sub_${userId}_${planType}_${Date.now()}`;
+
+    // Get Paystack plan code if one exists for this plan+currency
+    // (enables recurring billing via Paystack subscriptions)
+    const planCode = getPaystackPlanCode(planType, currency);
+
+    // Tier mapping for user_profiles.subscription_tier
+    const tierMapping: Record<string, string> = {
+      'premium':       'premium',
+      'premium_plus':  'premium_plus',
+    };
+
+    // Initialize transaction for subscription
+    const initPayload: Record<string, any> = {
+      email: userEmail,
+      amount: amount,
+      currency: currency,
+      reference: reference,
+      callback_url: callbackUrl || `${Deno.env.get('SITE_URL') || 'https://rekindlebc.com'}?payment=success`,
+      metadata: {
+        user_id: userId,
+        plan_type: planType,
+        subscription_tier: tierMapping[planType] || planType,
+        subscription: true,
+        custom_fields: [
+          { display_name: 'Plan',    variable_name: 'plan_type', value: planType },
+          { display_name: 'User ID', variable_name: 'user_id',   value: userId   },
+        ]
+      },
+      channels: ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'],
+    };
+
+    // Add plan code for recurring billing if configured
+    if (planCode) {
+      initPayload.plan = planCode;
+    }
+
+    // Initialize transaction for subscription
+    const initResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${paystackSecretKey}`
+      },
+      body: JSON.stringify(initPayload)
+    });
+
+    const initData = await initResponse.json();
+
+    if (!initData.status) {
+      throw new Error(initData.message || 'Failed to initialize payment');
+    }
+
+    // Store pending transaction reference
+    await supabase
+      .from('user_profiles')
+      .update({
+        paystack_reference: reference,
+        pending_plan_type: planType
+      })
+      .eq('user_id', userId);
+
+    return new Response(JSON.stringify({
+      authorizationUrl: initData.data.authorization_url,
+      accessCode: initData.data.access_code,
+      reference: initData.data.reference
+    }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+
+  } catch (error: any) {
+    console.error('Paystack initialize error:', error);
+    Sentry.captureException(error);
+    await Sentry.flush(2000);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+});

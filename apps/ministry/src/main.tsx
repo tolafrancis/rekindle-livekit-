@@ -3,8 +3,11 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { closeTopModal } from '@rekindle/ui/modal-stack';
+import { initSentry } from '@rekindle/features/sentry';
 import App from './App.tsx';
 import './index.css';
+
+initSentry({ dsn: import.meta.env.VITE_SENTRY_DSN, appName: 'ministry' });
 
 let callIsActive = false;
 let pendingPushNav: string | null = null;
@@ -46,6 +49,19 @@ if (Capacitor.isNativePlatform()) {
       } else {
         pendingPushNav = link;
       }
+    }
+  });
+
+  // "Open in App" handoff (MeetingJoinPage.tsx) and any other
+  // rekindleministry:// deep link — see apps/rekindle/src/main.tsx's
+  // identical listener for the full explanation. Same pushNotificationNav
+  // pipeline, same cold-start readyState guard.
+  CapacitorApp.addListener('appUrlOpen', (event) => {
+    console.log('[DeepLink] appUrlOpen:', event.url);
+    if (document.readyState === 'complete') {
+      window.dispatchEvent(new CustomEvent('pushNotificationNav', { detail: { link: event.url } }));
+    } else {
+      pendingPushNav = event.url;
     }
   });
 }

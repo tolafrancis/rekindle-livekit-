@@ -119,7 +119,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
 
   const handleToggleBookmark = async () => {
     if (!user?.id) {
-      toast({ title: t('auth', 'signInRequired'), description: t('devotionals', 'signInToBookmark'), variant: 'destructive' });
+      toast({ title: t('auth', 'signInRequired', 'Sign In Required'), description: t('devotionals', 'signInToBookmark', 'Please sign in to bookmark devotionals'), variant: 'destructive' });
       return;
     }
 
@@ -133,7 +133,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
           .eq('entry_id', entry.id);
 
         setBookmarked(false);
-        toast({ title: t('devotionals', 'bookmarkRemoved') });
+        toast({ title: t('devotionals', 'bookmarkRemoved', 'Bookmark removed') });
       } else {
         // Add bookmark
         await supabase
@@ -146,11 +146,11 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
           });
 
         setBookmarked(true);
-        toast({ title: t('common', 'saved'), description: t('devotionals', 'bookmarkAdded') });
+        toast({ title: t('common', 'saved', 'Saved'), description: t('devotionals', 'bookmarkAdded', 'Devotional added to your bookmarks') });
       }
     } catch (err: any) {
       console.error('Error toggling bookmark:', err);
-      toast({ title: t('errors', 'generic'), description: err.message, variant: 'destructive' });
+      toast({ title: t('errors', 'generic', 'An error occurred. Please try again.'), description: err.message, variant: 'destructive' });
     }
   };
 
@@ -164,10 +164,10 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
         .eq('user_id', user.id)
         .eq('entry_id', entry.id);
 
-      toast({ title: t('devotionals', 'notesSaved') });
+      toast({ title: t('devotionals', 'notesSaved', 'Notes saved') });
     } catch (err: any) {
       console.error('Error saving notes:', err);
-      toast({ title: t('errors', 'generic'), description: err.message, variant: 'destructive' });
+      toast({ title: t('errors', 'generic', 'An error occurred. Please try again.'), description: err.message, variant: 'destructive' });
     }
   };
 
@@ -175,15 +175,15 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
     setCompleted(true);
     onComplete();
     toast({ 
-      title: t('devotionals', 'dayComplete'), 
-      description: `${t('devotionals', 'completedDay')} ${entry.day_number} ${t('devotionals', 'of')} ${seriesTitle}` 
+      title: t('devotionals', 'dayComplete', 'Day Complete'), 
+      description: `${t('devotionals', 'completedDay', 'You\'ve completed Day')} ${entry.day_number} ${t('devotionals', 'of', 'of')} ${seriesTitle}` 
     });
   };
 
   const handleShare = async () => {
     const shareData = {
-      title: `${seriesTitle} - ${t('devotionals', 'day')} ${entry.day_number}`,
-      text: `${localizedEntry.title}\n\n${localizedEntry.scripture_reference || ''}\n\n${t('devotionals', 'joinJourney')}`,
+      title: `${seriesTitle} - ${t('devotionals', 'day', 'Day')} ${entry.day_number}`,
+      text: `${localizedEntry.title}\n\n${localizedEntry.scripture_reference || ''}\n\n${t('devotionals', 'joinJourney', 'Join me on this devotional journey on ReKindle!')}`,
       url: window.location.href
     };
 
@@ -192,7 +192,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}\n${shareData.url}`);
-        toast({ title: t('common', 'copied') });
+        toast({ title: t('common', 'copied', 'Copied') });
       }
     } catch (err) {
       console.error('Error sharing:', err);
@@ -224,11 +224,11 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
             <div className="min-w-0">
               <h2 className="font-semibold text-sm text-gray-600 truncate">{seriesTitle}</h2>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <Badge>{t('devotionals', 'day')} {entry.day_number} {t('devotionals', 'of')} {totalDays}</Badge>
+                <Badge>{t('devotionals', 'day', 'Day')} {entry.day_number} {t('devotionals', 'of', 'of')} {totalDays}</Badge>
                 {completed && (
                   <Badge variant="default" className="bg-green-600">
                     <CheckCircle className="h-3 w-3 mr-1" />
-                    {t('devotionals', 'completed')}
+                    {t('devotionals', 'completed', 'Completed')}
                   </Badge>
                 )}
               </div>
@@ -256,10 +256,10 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
         <div className="flex items-center gap-4 text-sm text-gray-600">
           <span className="flex items-center gap-1">
             <Clock className="h-4 w-4" />
-            {localizedEntry.estimated_reading_time} {t('devotionals', 'minRead')}
+            {localizedEntry.estimated_reading_time} {t('devotionals', 'minRead', 'min read')}
           </span>
           <span>•</span>
-          <span>{t('devotionals', 'time')}: {formatTime(readingTime)}</span>
+          <span>{t('devotionals', 'time', 'Time')}: {formatTime(readingTime)}</span>
         </div>
 
         {/* Main Content */}
@@ -301,7 +301,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
                 text={`${localizedEntry.title}\n\n${localizedEntry.scripture_reference ? localizedEntry.scripture_reference + '\n' : ''}${localizedEntry.scripture_text ? localizedEntry.scripture_text + '\n\n' : ''}${localizedEntry.content}${localizedEntry.prayer ? '\n\nPrayer:\n' + localizedEntry.prayer : ''}`}
                 contentId={entry.id}
                 contentType="devotional"
-                title={t('devotionals', 'listen')}
+                title={t('devotionals', 'listen', 'Listen')}
                 autoLoad={false}
               />
             </div>
@@ -315,7 +315,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
                   onClick={() => window.open(localizedEntry.video_url, '_blank')}
                 >
                   <Video className="h-4 w-4 mr-2" />
-                  {t('devotionals', 'watchVideo')}
+                  {t('devotionals', 'watchVideo', 'Watch Video')}
                 </Button>
               </div>
             )}
@@ -332,7 +332,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
                 <h3 className="font-semibold text-blue-900 mb-4 flex items-center gap-2">
                   <MessageSquare className="h-5 w-5" />
-                  {t('devotionals', 'reflectionQuestions')}
+                  {t('devotionals', 'reflectionQuestions', 'Reflection Questions:')}
                 </h3>
                 <ol className="list-decimal list-inside space-y-3 text-blue-800">
                   {localizedEntry.reflection_questions.map((q, idx) => (
@@ -347,7 +347,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 mb-6">
                 <h3 className="font-semibold text-amber-900 mb-4 flex items-center gap-2">
                   <Heart className="h-5 w-5" />
-                  {t('devotionals', 'prayer')}
+                  {t('devotionals', 'prayer', 'Prayer')}
                 </h3>
                 <p className="text-amber-800 italic leading-relaxed">{localizedEntry.prayer}</p>
               </div>
@@ -360,8 +360,8 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
                 className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3"
               >
                 <MessageSquare className="h-4 w-4" />
-                {t('devotionals', 'personalNotes')}
-                {bookmarked && <Badge variant="outline" className="text-xs">{t('common', 'saved')}</Badge>}
+                {t('devotionals', 'personalNotes', 'Personal Notes')}
+                {bookmarked && <Badge variant="outline" className="text-xs">{t('common', 'saved', 'Saved')}</Badge>}
               </button>
               
               {showNotes && (
@@ -369,15 +369,15 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
                   <Textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder={t('devotionals', 'writeThoughts')}
+                    placeholder={t('devotionals', 'writeThoughts', 'Write your thoughts and reflections...')}
                     rows={4}
                     className="w-full"
                   />
                   <Button size="sm" onClick={handleSaveNotes} disabled={!bookmarked}>
-                    {t('devotionals', 'saveNotes')}
+                    {t('devotionals', 'saveNotes', 'Save Notes')}
                   </Button>
                   {!bookmarked && (
-                    <p className="text-xs text-gray-500">{t('devotionals', 'bookmarkToSave')}</p>
+                    <p className="text-xs text-gray-500">{t('devotionals', 'bookmarkToSave', 'Bookmark this devotional to save your notes')}</p>
                   )}
                 </div>
               )}
@@ -393,13 +393,13 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
             disabled={entry.day_number === 1}
           >
             <ChevronLeft className="h-4 w-4 mr-2" />
-            {t('devotionals', 'previousDay')}
+            {t('devotionals', 'previousDay', 'Previous Day')}
           </Button>
 
           {!completed && (
             <Button onClick={handleComplete} className="bg-green-600 hover:bg-green-700">
               <CheckCircle className="h-4 w-4 mr-2" />
-              {t('devotionals', 'markComplete')}
+              {t('devotionals', 'markComplete', 'Mark Complete')}
             </Button>
           )}
 
@@ -408,7 +408,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
             onClick={() => onNavigate('next')}
             disabled={entry.day_number === totalDays}
           >
-            {t('devotionals', 'nextDay')}
+            {t('devotionals', 'nextDay', 'Next Day')}
             <ChevronRight className="h-4 w-4 ml-2" />
           </Button>
         </div>
@@ -419,7 +419,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
             <CardContent className="p-6 text-center">
               <div className="text-4xl mb-3">🎉</div>
               <h3 className="text-xl font-bold text-green-900 mb-2">
-                {t('devotionals', 'congratulations')}
+                {t('devotionals', 'congratulations', 'Congratulations')}
               </h3>
               <p className="text-green-700">
                 {t('devotionals', 'completedSeries', { series: seriesTitle })}

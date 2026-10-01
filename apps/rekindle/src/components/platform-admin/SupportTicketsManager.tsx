@@ -101,10 +101,15 @@ export const SupportTicketsManager: React.FC<SupportTicketsManagerProps> = ({ on
         updates.assigned_to = user?.id;
       }
 
-      await supabase
+      const { data, error } = await supabase
         .from('ministry_support_tickets')
         .update(updates)
-        .eq('id', ticketId);
+        .eq('id', ticketId)
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) throw new Error(t('supportTicketsManager', 'updateBlocked', 'Update was blocked (no permission or ticket not found) — nothing was changed.'));
 
       toast({ title: t('supportTicketsManager', 'successTitle', 'Success'), description: newStatus === 'resolved' ? t('supportTicketsManager', 'ticketResolved', 'Ticket resolved') : t('supportTicketsManager', 'ticketUpdated', 'Ticket updated') });
       setShowTicketModal(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -6,14 +6,16 @@ import { Label } from '@rekindle/ui/label';
 import { Textarea } from '@rekindle/ui/textarea';
 import { Switch } from '@rekindle/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@rekindle/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Badge } from '@rekindle/ui/badge';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { detectRegion, COUNTRY_OPTIONS } from '@rekindle/features/regionDetection';
 import {
   CreditCard, Globe, ExternalLink, Loader2, Save, Eye, EyeOff,
-  CheckCircle, AlertCircle, Settings, Link2, DollarSign, Info, Shield
+  CheckCircle, AlertCircle, Settings, Link2, DollarSign, Info, Shield, Landmark
 } from 'lucide-react';
 
 interface MinistryPaymentSettingsProps {
@@ -71,6 +73,78 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
+
+  // Stripe Connect (Express) donation onboarding — independent of the
+  // payment_mode radio above, which only governs Paystack/custom/external.
+  interface ConnectStatus {
+    connected: boolean;
+    chargesEnabled?: boolean;
+    payoutsEnabled?: boolean;
+    detailsSubmitted?: boolean;
+    disabledReason?: string | null;
+    currentlyDue?: string[];
+  }
+  const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(null);
+  const [connectLoading, setConnectLoading] = useState(true);
+  const [connectBusy, setConnectBusy] = useState(false);
+  // Country the ministry's bank account is in — Stripe locks this in
+  // permanently on the connected account once onboarding starts, so it's
+  // only editable before that (see the 'not started' branch below).
+  const [connectCountry, setConnectCountry] = useState('US');
+
+  useEffect(() => {
+    detectRegion().then((r) => setConnectCountry(r.countryCode)).catch(() => {});
+  }, []);
+
+  const loadConnectStatus = useCallback(async () => {
+    setConnectLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ministry-connect-onboarding', {
+        body: { action: 'status', ministryId }
+      });
+      if (!error && data) setConnectStatus(data as ConnectStatus);
+    } catch (err) {
+      console.error('Error loading Stripe Connect status:', err);
+    } finally {
+      setConnectLoading(false);
+    }
+  }, [ministryId]);
+
+  useEffect(() => {
+    // Re-check status immediately on mount rather than waiting on the
+    // account.updated webhook, which can lag a few seconds behind the
+    // redirect back from Stripe's hosted onboarding. (The ?connect=return
+    // query param itself — and restoring this as the visible settings tab —
+    // is handled by MinistrySpace, which owns browser history state here;
+    // clearing it a second time from this component would wipe that.)
+    loadConnectStatus();
+  }, [loadConnectStatus]);
+
+  const startStripeConnect = async (action: 'start' | 'refresh') => {
+    setConnectBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ministry-connect-onboarding', {
+        body: { action, ministryId, returnUrl: window.location.href, country: connectCountry }
+      });
+      if (error || data?.error) {
+        toast({
+          title: t('ministryPaymentSettings', 'connectErrorTitle', 'Could not start Stripe setup'),
+          description: data?.error || error?.message,
+          variant: 'destructive'
+        });
+        setConnectBusy(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch (err: any) {
+      setConnectBusy(false);
+      toast({
+        title: t('ministryPaymentSettings', 'connectErrorTitle', 'Could not start Stripe setup'),
+        description: err.message,
+        variant: 'destructive'
+      });
+    }
+  };
 
   useEffect(() => {
     loadSettings();
@@ -254,6 +328,91 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
         </CardContent>
       </Card>
 
+      {/* Stripe Connect (Express) donations — independent of payment_mode
+          above, which only governs Paystack/custom/external. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Landmark className="h-5 w-5 text-purple-600" />
+            {t('ministryPaymentSettings', 'acceptStripeDonations', 'Accept Stripe Donations')}
+          </CardTitle>
+          <CardDescription>
+            {t('ministryPaymentSettings', 'acceptStripeDonationsDesc', 'Connect your own bank account to receive card donations directly. A 3% platform fee applies to each donation; the rest is transferred to you automatically.')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {connectLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('ministryPaymentSettings', 'checkingStatus', 'Checking status...')}
+            </div>
+          ) : !connectStatus?.connected ? (
+            <div className="space-y-3">
+              <div>
+                <Label className="mb-1 block">{t('ministryPaymentSettings', 'bankCountry', "Which country is your ministry's bank account in?")}</Label>
+                <Select value={connectCountry} onValueChange={setConnectCountry}>
+                  <SelectTrigger className="h-9 w-56"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_OPTIONS.map((c) => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {t('ministryPaymentSettings', 'bankCountryNote', "This can't be changed later — make sure it matches where your bank account actually is.")}
+                </p>
+              </div>
+              <Button onClick={() => startStripeConnect('start')} disabled={connectBusy} className="bg-purple-600 hover:bg-purple-700">
+                {connectBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
+                {t('ministryPaymentSettings', 'connectWithStripe', 'Connect with Stripe')}
+              </Button>
+            </div>
+          ) : !connectStatus.detailsSubmitted ? (
+            <div className="space-y-3">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  {t('ministryPaymentSettings', 'onboardingInProgress', "You started setup but haven't finished Stripe's onboarding yet.")}
+                </AlertDescription>
+              </Alert>
+              <Button onClick={() => startStripeConnect('refresh')} disabled={connectBusy} className="bg-purple-600 hover:bg-purple-700">
+                {connectBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
+                {t('ministryPaymentSettings', 'continueSetup', 'Continue Setup')}
+              </Button>
+            </div>
+          ) : !connectStatus.chargesEnabled || !connectStatus.payoutsEnabled ? (
+            <div className="space-y-3">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  {connectStatus.disabledReason?.includes('past_due') || (connectStatus.currentlyDue?.length ?? 0) > 0
+                    ? t('ministryPaymentSettings', 'needsMoreInfo', "Stripe needs a bit more information from you to finish setting up your account.")
+                    : t('ministryPaymentSettings', 'pendingReview', 'Stripe is verifying your account — this can take 1-2 business days.')}
+                  {connectStatus.disabledReason ? ` (${connectStatus.disabledReason})` : ''}
+                </AlertDescription>
+              </Alert>
+              <div className="flex gap-2">
+                <Button onClick={() => startStripeConnect('refresh')} disabled={connectBusy} className="bg-purple-600 hover:bg-purple-700">
+                  {connectBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CreditCard className="h-4 w-4 mr-2" />}
+                  {t('ministryPaymentSettings', 'updateInfo', 'Update Info')}
+                </Button>
+                <Button variant="outline" onClick={loadConnectStatus} disabled={connectLoading}>
+                  {t('ministryPaymentSettings', 'refreshStatus', 'Refresh status')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Badge className="bg-green-600">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                {t('ministryPaymentSettings', 'connected', 'Connected')}
+              </Badge>
+              <span className="text-sm text-gray-500">
+                {t('ministryPaymentSettings', 'readyToReceive', "You're ready to receive Stripe donations.")}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Custom Payment Provider Settings */}
       {settings.payment_mode === 'custom' && (
         <Card>
@@ -307,6 +466,10 @@ export const MinistryPaymentSettings: React.FC<MinistryPaymentSettingsProps> = (
                 </p>
               </div>
 
+              {/* Unrelated to the real Stripe Connect flow above ("Accept Stripe
+                  Donations") — this manual field predates it and isn't read by
+                  any Stripe code today; kept only for the custom-Paystack-key
+                  use case this section otherwise covers. */}
               <div className="border-t pt-4 mt-4">
                 <Label>{t('ministryPaymentSettings', 'stripeAccountId', 'Stripe Account ID (Optional)')}</Label>
                 <Input

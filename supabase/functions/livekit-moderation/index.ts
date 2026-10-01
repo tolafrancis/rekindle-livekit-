@@ -20,6 +20,11 @@
 //   { action:'remove-participant', roomName, identity }
 //   { action:'set-role',    roomName, identity, role }         // metadata + publish grant
 //   { action:'lock',        roomName, locked:boolean }          // room metadata
+//   { action:'set-layout',  roomName, layout }                  // room metadata .layout
+//     layout = { layoutMode, spotlightParticipants[], screenShareMode,
+//                recordingLayout, showThumbnails, rev } — the shared meeting
+//     layout / multi-spotlight state (packages/live/src/layout/meetingLayout.ts).
+//     → { success:false, stale:true, layout } when a newer rev is already stored.
 //   { action:'admit-waiting',  roomName, identity, context? }   // waiting-room → admitted
 //   { action:'reject-waiting', roomName, identity, context? }   // waiting-room → rejected
 //   context = { kind?, meetingId?, channelId? } — for server-side host derivation.
@@ -49,6 +54,7 @@ interface Body {
   except?: string[];
   role?: string;
   locked?: boolean;
+  layout?: Record<string, unknown>;
   context?: { kind?: string; meetingId?: string; channelId?: string };
 }
 
@@ -56,6 +62,40 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
+
+// Room metadata holds more than one thing (the lock, the layout), so every
+// write reads the current object and changes only its own key.
+async function readRoomMetadata(svc: RoomServiceClient, roomName: string): Promise<Record<string, unknown>> {
+  try {
+    const rooms = await svc.listRooms([roomName]);
+    const raw = rooms[0]?.metadata;
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Mirrors sanitizeLayoutState in packages/live/src/layout/meetingLayout.ts.
+const LAYOUT_MODES = ['gallery', 'speaker', 'dual', 'multi', 'presentation', 'webinar'];
+const SCREEN_MODES = ['screen-only', 'screen-speaker', 'screen-dual', 'screen-gallery'];
+const RECORDING_LAYOUTS = ['gallery', 'speaker', 'dual', 'screen-speaker', 'screen-dual'];
+function sanitizeLayout(raw: Record<string, unknown> | undefined) {
+  if (!raw || typeof raw !== 'object') return null;
+  const layoutMode = LAYOUT_MODES.includes(raw.layoutMode as string) ? raw.layoutMode as string : 'speaker';
+  const seen = new Set<string>();
+  const spotlightParticipants = (Array.isArray(raw.spotlightParticipants) ? raw.spotlightParticipants : [])
+    .filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 128 && !seen.has(id) && !!seen.add(id))
+    .slice(0, layoutMode === 'dual' ? 2 : 9);
+  return {
+    layoutMode,
+    spotlightParticipants,
+    screenShareMode: SCREEN_MODES.includes(raw.screenShareMode as string) ? raw.screenShareMode : 'screen-speaker',
+    recordingLayout: RECORDING_LAYOUTS.includes(raw.recordingLayout as string) ? raw.recordingLayout : 'gallery',
+    showThumbnails: typeof raw.showThumbnails === 'boolean' ? raw.showThumbnails : true,
+    rev: typeof raw.rev === 'number' && Number.isFinite(raw.rev) ? raw.rev : 0,
+  };
+}
 
 async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, ctx: Body['context']): Promise<boolean> {
   const c = ctx ?? {};
@@ -70,6 +110,24 @@ async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, 
         .from('counsellors').select('user_id').eq('id', counsellorId).maybeSingle();
       if ((cr as { user_id?: string } | null)?.user_id === userId) return true;
     }
+  }
+
+  // Webinar: the host, a confirmed co-host, or a ministry admin — the same
+  // is_webinar_manager/is_group_admin check livekit-egress uses. Without this
+  // a webinar co-host (who joins as a plain speaker in LiveKit) couldn't mute
+  // anyone or change the spotlight.
+  if (c.kind === 'ministry_webinar' && c.meetingId) {
+    const { data } = await admin.from('ministry_webinars').select('host_id, ministry_id').eq('id', c.meetingId).maybeSingle();
+    const row = data as { host_id?: string; ministry_id?: string } | null;
+    if (row?.host_id === userId) return true;
+    if (row?.ministry_id) {
+      const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+        admin.rpc('is_webinar_manager', { p_webinar_id: c.meetingId, p_user_id: userId }),
+        admin.rpc('is_group_admin', { p_ministry_id: row.ministry_id, p_user_id: userId }),
+      ]);
+      if (isManager || isAdmin) return true;
+    }
+    return false;
   }
 
   const table = HOST_TABLE[c.kind ?? 'meeting'];
@@ -177,8 +235,21 @@ serve(async (req) => {
       }
 
       case 'lock': {
-        await svc.updateRoomMetadata(body.roomName, JSON.stringify({ locked: !!body.locked }));
+        const meta = await readRoomMetadata(svc, body.roomName);
+        await svc.updateRoomMetadata(body.roomName, JSON.stringify({ ...meta, locked: !!body.locked }));
         return json({ success: true });
+      }
+
+      case 'set-layout': {
+        const layout = sanitizeLayout(body.layout);
+        if (!layout) return json({ error: 'layout required' }, 400);
+        const meta = await readRoomMetadata(svc, body.roomName);
+        const current = sanitizeLayout(meta.layout as Record<string, unknown> | undefined);
+        // Two moderators changing it at once: the older change loses and gets
+        // the stored state back to render from.
+        if (current && current.rev >= layout.rev) return json({ success: false, stale: true, layout: current });
+        await svc.updateRoomMetadata(body.roomName, JSON.stringify({ ...meta, layout }));
+        return json({ success: true, layout });
       }
 
       case 'admit-waiting':

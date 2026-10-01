@@ -42,7 +42,15 @@ const REACTION_EMOJIS = {
   raised_hands: '🙌'
 };
 
-export const CommunityActivityFeed: React.FC = () => {
+interface CommunityActivityFeedProps {
+  /** Inside a ministry: only that ministry's members' activity, via an RPC
+   *  that also checks the viewer belongs to the ministry. */
+  ministryId?: string;
+}
+
+const ACTIVITY_LIMIT = 50;
+
+export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ ministryId }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -61,7 +69,7 @@ export const CommunityActivityFeed: React.FC = () => {
 
     // Set up realtime subscription
     const subscription = supabase
-      .channel('community_activities_channel')
+      .channel(`community_activities_channel:${ministryId ?? 'public'}`)
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'community_activities' },
         () => {
@@ -76,7 +84,7 @@ export const CommunityActivityFeed: React.FC = () => {
       isMounted.current = false;
       subscription.unsubscribe();
     };
-  }, [filter]);
+  }, [filter, ministryId]);
 
   const loadActivities = async () => {
     if (loadingRef.current) return;
@@ -85,17 +93,27 @@ export const CommunityActivityFeed: React.FC = () => {
     setLoading(true);
 
     try {
-      let query = supabase
-        .from('community_activities')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
+      let activitiesData: Activity[] | null;
+      let activitiesError: unknown;
+      if (ministryId) {
+        ({ data: activitiesData, error: activitiesError } = await supabase.rpc('get_ministry_community_activities', {
+          p_ministry_id: ministryId,
+          p_activity_type: filter === 'all' ? null : filter,
+          p_limit: ACTIVITY_LIMIT,
+        }));
+      } else {
+        let query = supabase
+          .from('community_activities')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(ACTIVITY_LIMIT);
 
-      if (filter !== 'all') {
-        query = query.eq('activity_type', filter);
+        if (filter !== 'all') {
+          query = query.eq('activity_type', filter);
+        }
+
+        ({ data: activitiesData, error: activitiesError } = await query);
       }
-
-      const { data: activitiesData, error: activitiesError } = await query;
       if (activitiesError) throw activitiesError;
 
       // Load user's reactions
@@ -145,11 +163,22 @@ export const CommunityActivityFeed: React.FC = () => {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      const { data, error } = await supabase
-        .from('community_activities')
-        .select('title, content, metadata')
-        .eq('activity_type', 'prayer')
-        .gte('created_at', sevenDaysAgo.toISOString());
+      let data: Array<{ title: string; content?: string | null; created_at?: string }> | null;
+      let error: unknown;
+      if (ministryId) {
+        ({ data, error } = await supabase.rpc('get_ministry_community_activities', {
+          p_ministry_id: ministryId,
+          p_activity_type: 'prayer',
+          p_limit: 100,
+        }));
+        data = (data ?? []).filter((a) => !a.created_at || new Date(a.created_at) >= sevenDaysAgo);
+      } else {
+        ({ data, error } = await supabase
+          .from('community_activities')
+          .select('title, content, metadata')
+          .eq('activity_type', 'prayer')
+          .gte('created_at', sevenDaysAgo.toISOString()));
+      }
 
       if (error) throw error;
 

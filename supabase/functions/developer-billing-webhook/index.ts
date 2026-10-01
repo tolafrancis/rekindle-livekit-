@@ -31,6 +31,10 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'developer-billing-webhook');
 
 const enc = new TextEncoder();
 
@@ -91,7 +95,10 @@ serve(async (req) => {
           stripe_subscription_item_id: itemId,
         })
         .eq('owner_user_id', ownerUserId);
-      if (error) console.error('[developer-billing-webhook] developer_accounts update failed:', error);
+      if (error) {
+        console.error('[developer-billing-webhook] developer_accounts update failed:', error);
+        Sentry.captureMessage(`developer-billing-webhook: developer_accounts update failed — ${error.message}`, 'error');
+      }
 
       return new Response('ok', { status: 200 });
     }
@@ -105,7 +112,10 @@ serve(async (req) => {
         .from('developer_accounts')
         .update({ plan: 'free', stripe_subscription_item_id: null })
         .eq('owner_user_id', ownerUserId);
-      if (error) console.error('[developer-billing-webhook] downgrade-to-free failed:', error);
+      if (error) {
+        console.error('[developer-billing-webhook] downgrade-to-free failed:', error);
+        Sentry.captureMessage(`developer-billing-webhook: downgrade-to-free failed — ${error.message}`, 'error');
+      }
 
       return new Response('ok', { status: 200 });
     }
@@ -113,6 +123,8 @@ serve(async (req) => {
     return new Response('ignored (unhandled event type)', { status: 200 });
   } catch (error) {
     console.error('developer-billing-webhook error:', error);
+    Sentry.captureException(error);
+    await Sentry.flush(2000);
     return new Response('error', { status: 500 });
   }
 });

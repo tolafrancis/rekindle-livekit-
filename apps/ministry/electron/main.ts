@@ -11,19 +11,45 @@ const PORT = 5181;
 
 let mainWindow: BrowserWindow | null = null;
 
+// ── Deep link (rekindleministry:// — see apps/rekindle/electron/main.ts's
+// identical setup for the full explanation of why both halves are needed).
+const DEEP_LINK_SCHEME = 'rekindleministry';
+app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
+
+const extractDeepLink = (argv: string[]): string | null =>
+  argv.find((a) => a.startsWith(`${DEEP_LINK_SCHEME}://`)) ?? null;
+
+let pendingDeepLink: string | null = extractDeepLink(process.argv);
+
+function sendDeepLink(url: string) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('deep-link', url);
+  } else {
+    pendingDeepLink = url;
+  }
+}
+
 // ── Single instance lock ────────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
     }
+    const url = extractDeepLink(commandLine);
+    if (url) sendDeepLink(url);
   });
 }
+
+// macOS delivers a protocol launch via this event instead of argv/second-instance.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  sendDeepLink(url);
+});
 
 // ── Encrypted local settings store (same shape as apps/desktop's) ──────
 const getStoreFilePath = () => path.join(app.getPath('userData'), 'rekindle-ministry-store.enc.json');

@@ -12,6 +12,7 @@ import {
   fetchAddonCatalog,
   fetchMinistryAddons,
   purchaseAddon,
+  totalParticipantsPurchased,
   type MinistryPartnerPlan,
   type MinistryAddonCatalogItem,
   type MinistryAddon,
@@ -33,6 +34,13 @@ import { toast } from '@rekindle/ui/use-toast';
 
 const money = (amount: number, currency: string) =>
   currency === 'NGN' ? `₦${amount.toLocaleString()}` : `$${amount.toLocaleString()}`;
+
+// Billing-page participant cap display — "+" for the two upper tiers whose
+// cap is meant to read as open-ended (Ministry Partner "300+", Ministry Plus
+// "500+"), plain for the two lower ones (Starter "100", Growth "150"). A
+// simple threshold rather than a per-slug list, so it stays correct if the
+// underlying numbers move later without a code change.
+const formatParticipantCap = (cap: number) => (cap >= 300 ? `${cap.toLocaleString()}+` : cap.toLocaleString());
 
 // Recording retention is a storage_pack perk — everyone else stays on the
 // sweep's fixed 7/30-day defaults (see recordingRetention.ts). 'never' maps
@@ -147,6 +155,11 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
   const isPaid = currentSlug !== 'free';
   const isNigeria = country === 'NG';
   const hasStoragePack = myAddons.some((a) => a.addonType === 'storage_pack');
+  const currentPlan = plans.find((p) => p.slug === currentSlug) ?? null;
+  const purchasedParticipants = totalParticipantsPurchased(myAddons);
+  const effectiveParticipantCap = currentPlan?.participantCap != null
+    ? currentPlan.participantCap + purchasedParticipants
+    : null;
 
   const selectPlan = (plan: MinistryPartnerPlan) => {
     setSelectedPlan(plan);
@@ -325,6 +338,11 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
+                {plan.participantCap != null && (
+                  <Badge variant="outline" className="font-normal">
+                    {formatParticipantCap(plan.participantCap)} participants
+                  </Badge>
+                )}
                 <ul className="space-y-1 text-sm text-muted-foreground">
                   {plan.features.map((f) => <li key={f}>• {f}</li>)}
                 </ul>
@@ -337,6 +355,9 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         })}
       </div>
       <p className="text-xs text-muted-foreground">
+        Participant caps apply across both Meetings and Webinars.
+      </p>
+      <p className="text-xs text-muted-foreground">
         Nigeria pays in Naira via Paystack; everywhere else pays in USD via Stripe or PayPal. Your plan activates
         automatically after payment (PayPal is confirmed manually — see note at checkout).
       </p>
@@ -346,7 +367,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
           <CardHeader>
             <CardTitle className="text-base">Add-ons</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Extra storage, members, or Live Translation hours on top of your plan. Billed monthly alongside your subscription.
+              Extra storage, members, participants, or Live Translation hours on top of your plan. Billed monthly alongside your subscription.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -363,12 +384,25 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                 Subscribe to a paid plan above to purchase add-ons — pricing below is visible either way.
               </p>
             )}
+            {isPaid && effectiveParticipantCap != null && (
+              <p className="text-xs text-muted-foreground rounded-md border border-dashed px-3 py-2">
+                Your current cap: <span className="font-medium text-foreground">{formatParticipantCap(effectiveParticipantCap)} participants</span>
+                {purchasedParticipants > 0 && ` (${formatParticipantCap(currentPlan!.participantCap!)} plan + ${purchasedParticipants} add-on)`}.
+                {' '}Participant add-ons stack on top of your plan's base limit — they don't replace it.
+              </p>
+            )}
             {myAddons.length > 0 && (
               <ul className="space-y-1 text-sm">
                 {myAddons.map((a) => (
                   <li key={a.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <span>{a.addonType === 'storage_pack' ? `+${a.unitGb} GB storage` : a.addonType === 'member_block' ? `+${a.unitMembers} members` : a.addonType === 'live_translation' ? `Live Translation — ${a.unitHours}h/month` : 'Gift Aid & HMRC submission'}</span>
-                    <Badge variant="secondary">Active — ${a.priceUsd}/mo</Badge>
+                    <span>
+                      {a.addonType === 'storage_pack' ? `+${a.unitGb} GB storage`
+                        : a.addonType === 'member_block' ? `+${a.unitMembers} members`
+                        : a.addonType === 'participant_block' ? `+${a.unitParticipants} participants`
+                        : a.addonType === 'live_translation' ? `Live Translation — ${a.unitHours}h/month`
+                        : 'Gift Aid & HMRC submission'}
+                    </span>
+                    <Badge variant="secondary">Active — {money(isNigeria && a.priceNgn != null ? a.priceNgn : a.priceUsd, isNigeria && a.priceNgn != null ? 'NGN' : 'USD')}/mo</Badge>
                   </li>
                 ))}
               </ul>
@@ -378,7 +412,9 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                 <div key={item.id} className="flex items-center justify-between rounded-md border p-3">
                   <div>
                     <p className="text-sm font-medium">{item.label}</p>
-                    <p className="text-xs text-muted-foreground">${item.priceUsd}/mo</p>
+                    <p className="text-xs text-muted-foreground">
+                      {money(isNigeria && item.priceNgn != null ? item.priceNgn : item.priceUsd, isNigeria && item.priceNgn != null ? 'NGN' : 'USD')}/mo
+                    </p>
                   </div>
                   <Button
                     size="sm"

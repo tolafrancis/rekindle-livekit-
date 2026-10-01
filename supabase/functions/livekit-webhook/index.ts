@@ -98,15 +98,25 @@ async function autoStartHlsBroadcast(
   const ts = Date.now();
   const prefix = `broadcasts/${channelId}/${ts}`;
   const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
+  // livePlaylistName (2026-09-22, same fix as livekit-egress's start-hls
+  // action — see its comment for the full root cause): without this,
+  // playlistName alone is an ever-growing EVENT manifest that never trims
+  // old segments, which for a long OBS broadcast eventually made periodic
+  // playlist refreshes slow/heavy enough to intermittently trip hls.js's
+  // load-time budgets — showing up live as repeated "disconnecting and
+  // reconnecting". live.m3u8 is a proper bounded sliding-window manifest;
+  // playlistName is kept unchanged as the eventual VOD/recording source.
   const output = new SegmentedFileOutput({
     filenamePrefix: `${prefix}/seg`,
     playlistName: `${prefix}/index.m3u8`,
+    livePlaylistName: `${prefix}/live.m3u8`,
     segmentDuration: 4,
     output: { case: 's3', value: s3 },
   });
 
   const info = await egressClient.startRoomCompositeEgress(roomName, { segments: output }, { layout: 'grid' });
   const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+  const livePlaybackUrl = `${publicBase}/${prefix}/live.m3u8`;
 
   const { error: hlsInsertError } = await admin.from('livekit_recordings').insert({
     egress_id: info.egressId,
@@ -128,7 +138,7 @@ async function autoStartHlsBroadcast(
 
   // Set is_live = true and update HLS playback URL
   await admin.from('live_channels').update({
-    hls_playback_url: playbackUrl,
+    hls_playback_url: livePlaybackUrl,
     is_hls_live: true,
     is_live: true,
   }).eq('id', channelId);
@@ -188,6 +198,10 @@ async function resolveMinistryId(
     if (!channelId) return null;
     const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', channelId).maybeSingle();
     return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (rec.meeting_table === 'ministry_webinars' && rec.meeting_id) {
+    const { data } = await admin.from('ministry_webinars').select('ministry_id').eq('id', rec.meeting_id).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
   }
   return null;
 }
@@ -259,27 +273,74 @@ serve(async (req) => {
         const ended = event.event === 'egress_ended';
         const failed = info.status === EgressStatus.EGRESS_FAILED || !!info.error;
 
-        const patch: Record<string, unknown> = {
-          status: ended ? (failed ? 'failed' : 'completed') : 'processing',
-        };
-        if (ended) patch.ended_at = new Date().toISOString();
-        if (duration) patch.duration_seconds = duration;
+        // Real bug found live (2026-09-23): the old unconditional
+        // `status: ended ? ... : 'processing'` mislabeled a perfectly
+        // healthy, still-recording egress as "processing" on every ordinary
+        // egress_updated tick — confirmed live against an actively-recording
+        // row. Worse, a duplicate or out-of-order webhook delivery (this
+        // codebase's own pre-test review flagged this as untested) could
+        // silently revert an already-finalized row from 'completed'/'failed'
+        // back to 'processing', and a REDELIVERED egress_ended would re-run
+        // every one-time downstream effect below — including usage
+        // metering, double-counting minutes/bytes. Reading the current
+        // status first closes both gaps: a row that's already finalized is
+        // never touched again, by any later event for that egress_id.
+        const { data: currentRow } = await admin
+          .from('livekit_recordings').select('status').eq('egress_id', info.egressId).maybeSingle();
+        const alreadyFinal = (currentRow as { status?: string } | null)?.status === 'completed'
+          || (currentRow as { status?: string } | null)?.status === 'failed';
 
-        const { data: rows } = await admin
-          .from('livekit_recordings')
-          .update(patch)
-          .eq('egress_id', info.egressId)
-          .select('kind, channel_id, meeting_table, meeting_id, playback_url');
+        let rows: { kind?: string; channel_id?: string; meeting_table?: string; meeting_id?: string; playback_url?: string }[] | null = null;
+        if (!alreadyFinal) {
+          const patch: Record<string, unknown> = {};
+          if (ended) {
+            patch.status = failed ? 'failed' : 'completed';
+            patch.ended_at = new Date().toISOString();
+          } else if (info.status === EgressStatus.EGRESS_ENDING) {
+            patch.status = 'processing';
+          } else {
+            // EGRESS_STARTING / EGRESS_ACTIVE or anything else non-terminal —
+            // genuinely still recording, not "processing".
+            patch.status = 'recording';
+          }
+          if (duration) patch.duration_seconds = duration;
+
+          const { data } = await admin
+            .from('livekit_recordings')
+            .update(patch)
+            .eq('egress_id', info.egressId)
+            .select('kind, channel_id, meeting_table, meeting_id, playback_url');
+          rows = data;
+        }
         const rec = (rows ?? [])[0] as
           { kind?: string; channel_id?: string; meeting_table?: string; meeting_id?: string; playback_url?: string } | undefined;
 
-        if (ended && !failed && rec?.meeting_table && rec.meeting_id) {
-          await admin.from(rec.meeting_table).update({
-            recording_url: rec.playback_url,
-            recording_status: 'completed',
-            recording_duration_seconds: duration,
-            recording_ended_at: new Date().toISOString(),
-          }).eq('id', rec.meeting_id);
+        if (ended && !alreadyFinal && !failed && rec?.meeting_table && rec.meeting_id) {
+          // Webinar-only gate (2026-09-22, real bug reported live: toggling
+          // Recording off at creation still showed "Watch the recording"
+          // after the webinar ended). A webinar's HLS Egress (start-hls) is
+          // what the AUDIENCE watches live — it always runs and always
+          // doubles as a VOD in livekit_recordings, regardless of
+          // enable_recording (there's no separate "live but not recorded"
+          // mode for webinars the way a plain meeting's manual Record
+          // button is fully optional). That's fine for the underlying
+          // livekit_recordings row (service-role-only, not host-facing) —
+          // but the HOST-FACING signal on ministry_webinars must respect
+          // the toggle they actually chose, so skip exposing it there when
+          // they turned recording off.
+          let shouldExpose = true;
+          if (rec.kind === 'webinar') {
+            const { data: w } = await admin.from('ministry_webinars').select('enable_recording').eq('id', rec.meeting_id).maybeSingle();
+            shouldExpose = (w as { enable_recording?: boolean } | null)?.enable_recording !== false;
+          }
+          if (shouldExpose) {
+            await admin.from(rec.meeting_table).update({
+              recording_url: rec.playback_url,
+              recording_status: 'completed',
+              recording_duration_seconds: duration,
+              recording_ended_at: new Date().toISOString(),
+            }).eq('id', rec.meeting_id);
+          }
         }
 
         // Real bug found live (2026-08-21): a channel broadcast's live status
@@ -306,6 +367,25 @@ serve(async (req) => {
           await admin.from('live_channels').update({ is_hls_live: false, is_live: false }).eq('id', rec.channel_id);
         }
 
+        // Same backstop as the channel one above, extended to webinars
+        // (2026-09-21) — found live: a webinar left open in another tab with
+        // no explicit "End webinar" click (browser closed, crash, lost
+        // connection — anything short of that button) still makes LiveKit
+        // end the egress and fire this webhook, but nothing was flipping
+        // ministry_webinars.status off 'live', so it stayed "live" and
+        // joinable indefinitely even though nothing was actually streaming.
+        // Only touches rows still stuck in 'live'/'ending' — never overwrites
+        // an explicit 'cancelled', or a status this same webhook/client
+        // already finished transitioning.
+        if (ended && rec?.kind === 'webinar' && rec.meeting_id) {
+          await admin.from('webinar_polls')
+            .update({ status: 'closed', closed_at: new Date().toISOString() })
+            .eq('webinar_id', rec.meeting_id).eq('status', 'open');
+          await admin.from('ministry_webinars')
+            .update({ status: 'ended', ended_at: new Date().toISOString() })
+            .eq('id', rec.meeting_id).in('status', ['live', 'ending']);
+        }
+
         if (ended && !failed && rec) {
           const ministryId = await resolveMinistryId(admin, rec);
           if (ministryId) {
@@ -317,11 +397,69 @@ serve(async (req) => {
               p_ministry_id: ministryId,
               p_bytes_delta: bytes,
               p_meeting_minutes_delta: rec.kind === 'meeting' ? minutes : 0,
-              p_broadcast_minutes_delta: rec.kind === 'channel' ? minutes : 0,
+              // A webinar is one-to-many like a channel broadcast, not a
+              // two-way meeting — meters against broadcast hours.
+              p_broadcast_minutes_delta: rec.kind === 'channel' || rec.kind === 'webinar' ? minutes : 0,
             }).then(({ error }: { error: unknown }) => {
               if (error) console.error('[livekit-webhook] usage metering failed:', error);
             });
           }
+        }
+      }
+    }
+
+    // ── 2b. Room Finished (safety net, no egress dependency) ────────────────
+    // Real gap found in a pre-test pipeline review (2026-09-23): "is live"
+    // was derived entirely from application-level writes and the egress
+    // backstop above — neither fires if a webinar's HLS Egress never
+    // actually started (e.g. it failed immediately, expectVideo mismatch,
+    // quota gate) but the host's room still genuinely closed. room_finished
+    // is LiveKit's own authoritative "this room is completely empty and
+    // closed" signal, independent of whether any egress ever ran — a
+    // last-resort backstop underneath the egress-based ones, not a
+    // replacement for them (egress-driven paths above already cover the
+    // common case and also close out the recording/VOD side, which this
+    // can't). Scoped to webinars only (ministry_webinars.room_name is a
+    // confirmed, unique column to look up by) — channels/meetings have no
+    // equally reliable room-name-to-row mapping available here without
+    // risking a wrong guess.
+    if (event.event === 'room_finished') {
+      const roomName = event.room?.name;
+      if (roomName?.startsWith('webinar-')) {
+        await admin.from('ministry_webinars')
+          .update({ status: 'ended', ended_at: new Date().toISOString() })
+          .eq('room_name', roomName).in('status', ['live', 'ending']);
+        // Everyone left the backstage without going live: nothing happened
+        // for the audience, so it goes back to scheduled for another try.
+        await admin.from('ministry_webinars')
+          .update({ status: 'scheduled', host_absent_since: null })
+          .eq('room_name', roomName).eq('status', 'backstage');
+      }
+
+      // Server-side backstop for translation/captions cost leak (2026-09-23,
+      // captions pipeline review, F-CAP-5) — the client-side
+      // stopTranslationForRoom (webinarControl.ts / MinistryInteractiveMeetings.tsx)
+      // is the primary path and already covers a clean end-meeting/end-webinar
+      // click; this catches the case that has none of that client code run
+      // at all (crash, force-quit, killed tab). room_finished only fires once
+      // LiveKit itself confirms the room is genuinely empty and closed, so
+      // this can't fire while a session is still legitimately in progress.
+      // Room-agnostic (not scoped to webinar- rooms) since any room kind can
+      // carry an active translation session.
+      if (roomName) {
+        const { data: liveSessions } = await admin
+          .from('translation_sessions')
+          .select('id')
+          .eq('livekit_room_name', roomName)
+          .in('status', ['initialising', 'joining', 'active', 'paused']);
+        if (liveSessions && liveSessions.length > 0) {
+          await Promise.all(
+            liveSessions.map((s: { id: string }) =>
+              admin.rpc('stop_bot_session', { p_session_id: s.id }).then(({ error }) => {
+                if (error) console.error(`[livekit-webhook] room_finished stop_bot_session failed for ${s.id}:`, error.message);
+              }),
+            ),
+          );
         }
       }
     }
@@ -367,6 +505,159 @@ serve(async (req) => {
             if (openRow) {
               await admin.from('api_meeting_participants').update({ left_at: new Date().toISOString() }).eq('id', openRow.id);
             }
+          }
+        }
+      }
+    }
+
+    // ── 3b. Webinar Attendance (server-side backstop, close-only) ───────────
+    // Real gap found in a pre-test pipeline review (2026-09-23): attendance
+    // for every meeting kind except Developer API rooms relies ENTIRELY on
+    // client-side self-reporting (trackMeetingParticipant, meeting_attendance
+    // table — see 0356's own doc comment acknowledging "an inherent limit of
+    // any client-side leave signal: tab-close won't fire cleanup"). A
+    // crashed tab, force-quit app, or killed process leaves a row with no
+    // left_at/is_active=false forever, permanently inflating "currently
+    // watching" counts and skewing average-duration analytics.
+    //
+    // Deliberately does NOT insert on participant_joined — the client's own
+    // trackMeetingParticipant already does that with richer context
+    // (is_guest at the true moment of join, etc.), and inserting here too
+    // would double-count every normal join (both writers firing for the
+    // same real attendee). This only CLOSES a row the client already
+    // created, whenever LiveKit itself confirms that identity actually left
+    // the room — a floor under the existing self-reporting, not a second
+    // writer competing with it. Scoped to webinars for the same reason as
+    // the room_finished backstop above (ministry_webinars.room_name is a
+    // confirmed, reliable lookup key).
+    if (event.event === 'participant_left') {
+      const roomName = event.room?.name;
+      const identity = event.participant?.identity;
+      if (roomName?.startsWith('webinar-') && identity
+        && !identity.startsWith('rlt-bot-') && !identity.endsWith('-screenshare')) {
+        const { data: webinar } = await admin
+          .from('ministry_webinars').select('id').eq('room_name', roomName).maybeSingle();
+        const webinarId = (webinar as { id?: string } | null)?.id;
+        if (webinarId) {
+          const { data: openRow } = await admin
+            .from('meeting_attendance')
+            .select('id')
+            .eq('meeting_id', webinarId)
+            .eq('meeting_table', 'ministry_webinars')
+            .eq('user_id', identity)
+            .eq('is_active', true)
+            .order('joined_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (openRow) {
+            await admin.from('meeting_attendance')
+              .update({ left_at: new Date().toISOString(), is_active: false })
+              .eq('id', (openRow as { id: string }).id);
+          }
+        }
+      }
+    }
+
+    // ── 3c. Ministry meeting attendance + is_active (server-side backstop) ──
+    // Same gap as 3b above, generalized to plain ministry meetings — and
+    // worse here, because ministry_video_meetings.is_active/participant_count
+    // (not just attendance rows) depend entirely on the same client self-
+    // report (leaveMeetingDb, MinistryInteractiveMeetings.tsx). A participant
+    // whose network drops can't possibly tell Supabase "I left" — their own
+    // browser has no connection to do it with — so without this, a meeting
+    // whose last participant disconnects that way (rather than cleanly
+    // clicking Leave) stays is_active:true forever, silently consuming one
+    // of the free tier's 3-concurrent-active-meeting slots (real incident,
+    // 2026-09-23: exactly this left a ministry stuck at the cap, unable to
+    // create any new meeting, for up to a month before it was noticed).
+    //
+    // Only touches participant_count/is_active when it ALSO finds (and
+    // closes) a genuinely-still-open meeting_attendance row for this exact
+    // identity — that's the signal the client's own leave-time self-report
+    // never got to run. A normal graceful leave already closed that row
+    // itself before this webhook fires, so this intentionally no-ops for
+    // the common case instead of double-decrementing a count the client
+    // already correctly updated.
+    if (event.event === 'participant_left') {
+      const roomName = event.room?.name;
+      const identity = event.participant?.identity;
+      if (roomName?.startsWith('ministry-') && identity
+        && !identity.startsWith('rlt-bot-') && !identity.endsWith('-screenshare')) {
+        const { data: meeting } = await admin
+          .from('ministry_video_meetings')
+          .select('id, participant_count')
+          .eq('room_name', roomName)
+          .maybeSingle();
+        const m = meeting as { id?: string; participant_count?: number } | null;
+        if (m?.id) {
+          const { data: openRow } = await admin
+            .from('meeting_attendance')
+            .select('id')
+            .eq('meeting_id', m.id)
+            .eq('meeting_table', 'ministry_video_meetings')
+            .eq('user_id', identity)
+            .eq('is_active', true)
+            .order('joined_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (openRow) {
+            await admin.from('meeting_attendance')
+              .update({ left_at: new Date().toISOString(), is_active: false })
+              .eq('id', (openRow as { id: string }).id);
+
+            const newCount = Math.max(0, (m.participant_count ?? 1) - 1);
+            const patch: Record<string, unknown> = { participant_count: newCount };
+            if (newCount === 0) {
+              patch.is_active = false;
+              patch.ended_at = new Date().toISOString();
+            }
+            await admin.from('ministry_video_meetings').update(patch).eq('id', m.id);
+          }
+        }
+      }
+    }
+
+    // ── 3d. Live channel meeting attendance + is_active (server-side backstop) ──
+    // Same fix as 3c above, mirrored for apps/rekindle's
+    // LiveChannelInteractiveMeetings.tsx (room_name prefix "channel-" instead
+    // of "ministry-", table live_channel_video_meetings instead of
+    // ministry_video_meetings) — the exact same class of gap exists there
+    // for the exact same reason (leaveMeetingDb's own client-side self-
+    // report can't run if the disconnecting client's network is down).
+    if (event.event === 'participant_left') {
+      const roomName = event.room?.name;
+      const identity = event.participant?.identity;
+      if (roomName?.startsWith('channel-') && identity
+        && !identity.startsWith('rlt-bot-') && !identity.endsWith('-screenshare')) {
+        const { data: meeting } = await admin
+          .from('live_channel_video_meetings')
+          .select('id, participant_count')
+          .eq('room_name', roomName)
+          .maybeSingle();
+        const m = meeting as { id?: string; participant_count?: number } | null;
+        if (m?.id) {
+          const { data: openRow } = await admin
+            .from('meeting_attendance')
+            .select('id')
+            .eq('meeting_id', m.id)
+            .eq('meeting_table', 'live_channel_video_meetings')
+            .eq('user_id', identity)
+            .eq('is_active', true)
+            .order('joined_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (openRow) {
+            await admin.from('meeting_attendance')
+              .update({ left_at: new Date().toISOString(), is_active: false })
+              .eq('id', (openRow as { id: string }).id);
+
+            const newCount = Math.max(0, (m.participant_count ?? 1) - 1);
+            const patch: Record<string, unknown> = { participant_count: newCount };
+            if (newCount === 0) {
+              patch.is_active = false;
+              patch.ended_at = new Date().toISOString();
+            }
+            await admin.from('live_channel_video_meetings').update(patch).eq('id', m.id);
           }
         }
       }

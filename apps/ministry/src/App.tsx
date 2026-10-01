@@ -17,7 +17,7 @@ import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWi
 import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSettings';
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
-import RekindleGuidePage from '@rekindle/features/components/RekindleGuidePage';
+import RekindleTutorialPage from '@rekindle/features/components/RekindleTutorialPage';
 import PrivacyPolicyPage from '@rekindle/features/components/PrivacyPolicyPage';
 import TermsOfServicePage from '@rekindle/features/components/TermsOfServicePage';
 import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
@@ -30,7 +30,10 @@ import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import { WebinarJoinPage } from '@rekindle/live/webinar/WebinarJoinPage';
+import { WebinarSpeakerInvitePage } from '@rekindle/live/webinar/WebinarSpeakerInvitePage';
 import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDisplayPage';
+import { ObsCaptionOverlay } from '@rekindle/live/components/ObsCaptionOverlay';
 import { TranslationDisplayLanding } from '@rekindle/live/components/TranslationDisplayLanding';
 import { SpeakerPage } from '@rekindle/live/components/SpeakerPage';
 import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
@@ -233,6 +236,8 @@ function AppRoutes() {
           routes into the live room below. All OUTSIDE the auth gate. */}
       <Route path="/ministry/:ministryId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/channel/:channelId/meeting/:meetingId" element={<MeetingJoinPage />} />
+      <Route path="/ministry/:ministryId/webinar/:webinarId" element={<WebinarJoinPage />} />
+      <Route path="/webinar-invite/:token" element={<WebinarSpeakerInvitePage />} />
       <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />
 
       {/* ReKindle Live Translation — public /display links. Anyone with the
@@ -241,6 +246,9 @@ function AppRoutes() {
           private, not this route gate. */}
       <Route path="/display/:sessionId" element={<TranslationDisplayPage />} />
       <Route path="/display" element={<TranslationDisplayLanding />} />
+      {/* Transparent live-caption overlay for an OBS Browser Source (see
+          docs/obs-live-captions.md). Public for the same reason as /display. */}
+      <Route path="/obs-captions/:sessionId" element={<ObsCaptionOverlay />} />
 
       {/* "Speaker Link" (migration 0288) — a browser-only alternative to
           Meetings/the PA edge agent for starting a translation session.
@@ -263,7 +271,8 @@ function AppRoutes() {
         <Route path="/ministry-videos/:id" element={<MinistriesHub />} />
         <Route path="/small-group/:id" element={<MinistriesHub />} />
         <Route path="/books/:id" element={<MinistriesHub />} />
-        <Route path="/guide" element={<RekindleGuidePage />} />
+        <Route path="/guide" element={<RekindleTutorialPage />} />
+        <Route path="/tutorial" element={<RekindleTutorialPage />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
         {/* Billing is web-only: native builds ship without purchase surfaces
             (Phase 0 — Apple 3.1.1). Deep-linking it natively lands on Home. */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { buildJoinUrl } from '@rekindle/features/qrCode';
 import {
   LayoutDashboard, Settings, Users, BookOpen, MessageSquare, CreditCard,
   Palette, Shield, Loader2, Save, Link as LinkIcon, Image, Upload
@@ -18,30 +19,46 @@ import {
 
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
-import { MinistryRegistrationSettings } from './MinistryRegistrationSettings';
-import CustomDomainSettings from './CustomDomainSettings';
-import { MinistryMembersManager } from './MinistryMembersManager';
-import { MinistryVolunteerTeamsManager } from './MinistryVolunteerTeamsManager';
-import MinistryRegistrations from './MinistryRegistrations';
-import { MinistryBirthdayWishes } from './MinistryBirthdayWishes';
-import { MinistryDevotionalsManager } from './MinistryDevotionalsManager';
-import { MinistryPrayerLibraryManager } from './MinistryPrayerLibraryManager';
-import { MinistryVideoMessagesManager } from './MinistryVideoMessagesManager';
-import { MinistryRulesManager } from './MinistryRulesManager';
-import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
-import { MinistryTestimoniesManager } from './MinistryTestimoniesManager';
-import { MinistryPrayerRequestsManager } from './MinistryPrayerRequestsManager';
-import { MinistryDonationsManager } from './MinistryDonationsManager';
-import { MinistryEventsManager } from './MinistryEventsManager';
-import { EvangelismInbox } from './EvangelismInbox';
-import { MinistryWhatsAppHub } from './MinistryWhatsAppHub';
-import { MinistryPaymentSettings } from './MinistryPaymentSettings';
-import { MinistryGiftAidSettings } from './MinistryGiftAidSettings';
-import BillingSettings from './BillingSettings';
+
+// Each settings section's managers are their own chunks, fetched when that
+// section is opened. They used to all ship in one ~490 KB file that had to
+// download before the Settings tab could show anything. Overview (the
+// default section) stays in this file so the tab's first view needs no
+// extra round trip.
+const MinistryRegistrationSettings = lazy(() => import('./MinistryRegistrationSettings').then((m) => ({ default: m.MinistryRegistrationSettings })));
+const MinistryMembersManager = lazy(() => import('./MinistryMembersManager').then((m) => ({ default: m.MinistryMembersManager })));
+const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
+const MinistryVolunteerTeamsManager = lazy(() => import('./MinistryVolunteerTeamsManager').then((m) => ({ default: m.MinistryVolunteerTeamsManager })));
+const MinistryBirthdayWishes = lazy(() => import('./MinistryBirthdayWishes').then((m) => ({ default: m.MinistryBirthdayWishes })));
+const MinistryDevotionalsManager = lazy(() => import('./MinistryDevotionalsManager').then((m) => ({ default: m.MinistryDevotionalsManager })));
+const MinistryPrayerLibraryManager = lazy(() => import('./MinistryPrayerLibraryManager').then((m) => ({ default: m.MinistryPrayerLibraryManager })));
+const MinistryVideoMessagesManager = lazy(() => import('./MinistryVideoMessagesManager').then((m) => ({ default: m.MinistryVideoMessagesManager })));
+const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
+const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
+const MinistryTestimoniesManager = lazy(() => import('./MinistryTestimoniesManager').then((m) => ({ default: m.MinistryTestimoniesManager })));
+const MinistryPrayerRequestsManager = lazy(() => import('./MinistryPrayerRequestsManager').then((m) => ({ default: m.MinistryPrayerRequestsManager })));
+const MinistryDonationsManager = lazy(() => import('./MinistryDonationsManager').then((m) => ({ default: m.MinistryDonationsManager })));
+const MinistryEventsManager = lazy(() => import('./MinistryEventsManager').then((m) => ({ default: m.MinistryEventsManager })));
+const EvangelismInbox = lazy(() => import('./EvangelismInbox').then((m) => ({ default: m.EvangelismInbox })));
+const MinistryWhatsAppHub = lazy(() => import('./MinistryWhatsAppHub').then((m) => ({ default: m.MinistryWhatsAppHub })));
+const MinistryPaymentSettings = lazy(() => import('./MinistryPaymentSettings').then((m) => ({ default: m.MinistryPaymentSettings })));
+const MinistryGiftAidSettings = lazy(() => import('./MinistryGiftAidSettings').then((m) => ({ default: m.MinistryGiftAidSettings })));
+const CustomDomainSettings = lazy(() => import('./CustomDomainSettings'));
+const MinistryRegistrations = lazy(() => import('./MinistryRegistrations'));
+const BillingSettings = lazy(() => import('./BillingSettings'));
+
+const SectionFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+  </div>
+);
 
 interface Ministry {
   id: string;
   name: string;
+  slug?: string;
+  invite_code?: string;
+  qr_code_version?: number;
   description: string;
   category: string;
   location: string;
@@ -76,7 +93,7 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'overview',        label: 'Overview',          icon: LayoutDashboard, description: 'Ministry stats & quick actions' },
   { id: 'general',         label: 'General',           icon: Settings,        description: 'Profile, branding & domain' },
-  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, teams & signups' },
+  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, small groups, teams & signups' },
   { id: 'content',         label: 'Content',           icon: BookOpen,        description: 'Devotionals, library & rules' },
   { id: 'engagement',      label: 'Engagement',       icon: MessageSquare,   description: 'Requests, donations & WhatsApp' },
   { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard,      description: 'Gateways & subscription' },
@@ -134,7 +151,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
       secondary: '#4f46e5',
       accent: '#f59e0b'
     },
-    white_label_domain: ministry.white_label_domain || '',
     settings: ministry.settings || {
       allow_broadcasts: true,
       public_join: true,
@@ -205,7 +221,6 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
           is_public: formData.is_public,
           social_links: formData.social_links,
           brand_colors: formData.brand_colors,
-          white_label_domain: formData.white_label_domain,
           settings: formData.settings,
           updated_at: new Date().toISOString()
         })
@@ -227,6 +242,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
     <div className="space-y-6">
       {/* Main Content Area */}
       <main className="space-y-6">
+        <Suspense fallback={<SectionFallback />}>
         {/* Section 1: Overview */}
         {currentSection === 'overview' && (
           <MinistryOverviewDashboard
@@ -247,7 +263,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                 registrations: 'people',
                 whatsapp: 'engagement',
                 inbox: 'engagement',
-                birthdays: 'people',
+                birthdays: 'general',
                 rules: 'content',
                 settings: 'general',
               };
@@ -286,6 +302,42 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                       placeholder={t('ministrySettingsHub', 'cityCountryPlaceholder', 'City, Country')}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <Label>{t('ministrySettingsHub', 'ministrySlug', 'Ministry Slug')}</Label>
+                  {/* Read-only here on purpose — the editable slug (with live-availability
+                      checking, collision handling and its own Save button) lives in the
+                      Registration & Join Link section, under the People tab. A second
+                      independent editable copy here — each with its own local state and
+                      its own Save button — previously let an edit made in one field get
+                      silently discarded if the OTHER section's Save button was clicked
+                      instead (real bug, hit in testing: edited here, saved down there,
+                      this field reverted). One editable field, one Save button — this one
+                      just links to it (switching tabs first since it now lives under People). */}
+                  <div className="flex items-center gap-2">
+                    <Input value={ministry.slug || ''} readOnly disabled className="bg-gray-50" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => {
+                        setCurrentSection('people');
+                        setTimeout(() => document.getElementById('registration-join-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                      }}
+                    >
+                      {t('ministrySettingsHub', 'changeSlug', 'Change')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Registration & Join Link under the People tab — changing it updates the join link everywhere; old links using the previous address will stop working.')}
+                  </p>
+                  {ministry.slug && (
+                    <p className="text-xs text-gray-400 mt-1 break-all">
+                      {buildJoinUrl(ministry.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -494,12 +546,24 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
 
                 <div>
                   <Label>{t('ministrySettingsHub', 'customDomain', 'Custom Domain (White Label)')}</Label>
-                  <Input
-                    value={formData.white_label_domain}
-                    onChange={(e) => setFormData({ ...formData, white_label_domain: e.target.value })}
-                    placeholder="ministry.yourdomain.com"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">{t('ministrySettingsHub', 'customDomainHint', 'Contact support to configure custom domains')}</p>
+                  {/* This used to be a free-text input that wrote white_label_domain
+                      directly — no validation, no Cloudflare provisioning, nothing
+                      reading it back except its own placeholder text ("Contact support
+                      to configure custom domains"). The REAL custom-domain flow
+                      (provision -> DNS records -> verify -> live) is the Custom domain
+                      card below, which reads/writes this same column through Cloudflare.
+                      Two editors on one column produced exactly the bad state you'd
+                      expect: a live ministry had white_label_domain silently set to its
+                      own rekindlebc.com subdomain — not a real custom domain — with no
+                      Cloudflare hostname ever provisioned for it. One editor now. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById('custom-domain-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  >
+                    {t('ministrySettingsHub', 'manageCustomDomain', 'Manage custom domain below')}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -659,8 +723,10 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
               </Button>
             </div>
 
-            <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
-            <CustomDomainSettings ministryId={ministry.id} />
+            <div id="custom-domain-settings">
+              <CustomDomainSettings ministryId={ministry.id} />
+            </div>
+            <MinistryBirthdayWishes ministryId={ministry.id} ministryName={ministry.name} />
           </div>
         )}
 
@@ -668,9 +734,12 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
         {currentSection === 'people' && (
           <div className="space-y-6">
             <MinistryMembersManager ministryId={ministry.id} />
+            <MinistrySmallGroupsManager ministryId={ministry.id} />
             <MinistryVolunteerTeamsManager ministryId={ministry.id} />
             <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
-            <MinistryBirthdayWishes ministryId={ministry.id} ministryName={ministry.name} />
+            <div id="registration-join-link">
+              <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+            </div>
           </div>
         )}
 
@@ -692,8 +761,16 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <MinistryPrayerRequestsManager ministryId={ministry.id} />
             <MinistryDonationsManager ministryId={ministry.id} ministryName={ministry.name} themeColor={ministry.theme_color} isLeader={true} />
             <MinistryEventsManager ministryId={ministry.id} />
-            <EvangelismInbox ministryId={ministry.id} ministryName={ministry.name} isLeader={true} />
-            <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
+            <EvangelismInbox
+              ministryId={ministry.id}
+              ministryName={ministry.name}
+              isLeader={true}
+              // Wait for the channels dialog to close and release its scroll lock.
+              onOpenWhatsApp={() => setTimeout(() => document.getElementById('ministry-whatsapp-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)}
+            />
+            <div id="ministry-whatsapp-hub">
+              <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
+            </div>
           </div>
         )}
 
@@ -705,6 +782,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             <BillingSettings ministryId={ministry.id} />
           </div>
         )}
+        </Suspense>
       </main>
     </div>
   );

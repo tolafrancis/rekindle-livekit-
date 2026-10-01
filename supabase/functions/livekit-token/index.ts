@@ -27,6 +27,7 @@
 //       → { success: true }
 //   { action: 'delete-room',  roomName, context? }          // endMeetingForAll (§1E)
 //   { action: 'create-room',  roomName, maxParticipants?, emptyTimeout?, context? }  // presets (§1E)
+//   { action: 'room-occupancy', roomName }                 // how many OTHER real people are in the room
 //
 //   context = { kind?: 'meeting'|'ministry_meeting'|'channel_meeting'|'channel',
 //               meetingId?, channelId? }  — used ONLY for server-side role derivation.
@@ -41,22 +42,44 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-type Role = 'host' | 'speaker' | 'attendee' | 'viewer';
+type Role = 'host' | 'co-host' | 'speaker' | 'attendee' | 'viewer';
+
+// Meeting participant cap (2026-09-21): a flat, platform-wide ceiling on real
+// LiveKit participants any single ministry meeting may ever have. A meeting
+// expecting more than this must be created as a Webinar instead — enforced
+// at creation time in the UI (CreateMeetingForm) and, authoritatively, here
+// at token-issuance. No fallback of any kind past this cap: the 101st join
+// is simply denied with 'meeting_full', not redirected anywhere. (An earlier
+// version of this reactively redirected overflow joiners to an HLS stream of
+// the meeting — removed 2026-09-21: too fragile in practice or a real broadcast
+// event, and the product decision is now "Webinar is the only path for 100+
+// attendance," not a fallback a plain meeting degrades into.)
+const MEETING_PARTICIPANT_CAP = 100;
 
 interface RequestBody {
-  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room';
+  action?: 'token' | 'grant-publish' | 'delete-room' | 'create-room' | 'room-occupancy';
   roomName: string;
   userName?: string;
   viewerOnly?: boolean;
   enableWaitingRoom?: boolean;
   context?: {
-    kind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling';
+    kind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'counselling' | 'ministry_webinar';
     meetingId?: string;
     channelId?: string;
   };
   identity?: string;        // grant-publish target (defaults to caller)
   maxParticipants?: number; // create-room preset
   emptyTimeout?: number;    // create-room preset (seconds)
+  // Native Android screen share (MediaProjection): the WebView's getDisplayMedia
+  // is a non-functional stub on Android (exists, always rejects — see
+  // LiveKitRoomWrapper.ts's isLikelyMobileDevice), so the native layer joins the
+  // SAME room as a second, publish-only connection under a derived identity and
+  // publishes the screen capture with LiveKit's native Android SDK. Mirrors the
+  // RLT translation bot's existing "second real participant, filtered out of the
+  // normal list, track merged back in" pattern (see LiveKitRoomWrapper.ts's
+  // rlt-bot- handling) — never a client-chosen identity, always `<caller's own
+  // resolved identity>-screenshare`, so this can't be used to spoof anyone else.
+  asScreenShareShadow?: boolean;
 }
 
 // meetings tables that carry host_id, keyed by context.kind.
@@ -70,6 +93,7 @@ const HOST_TABLE: Record<string, string> = {
   meeting: 'meetings',
   ministry_meeting: 'ministry_video_meetings',
   channel_meeting: 'live_channel_video_meetings',
+  ministry_webinar: 'ministry_webinars',
 };
 
 const json = (body: unknown, status = 200) =>
@@ -80,6 +104,22 @@ const json = (body: unknown, status = 200) =>
 
 // ws(s):// (browser signaling URL) → http(s):// (server API URL for RoomServiceClient).
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
+
+// Deno's fetch (which the LiveKit server SDK calls under the hood) has no
+// default timeout. If LIVEKIT_URL points at a host that accepts the TCP
+// connection but never responds (a stale IP, a firewalled port), an awaited
+// SDK call hangs forever, the whole function invocation hangs with it, and
+// the client's own invoke() never gets a response to catch — the "Connecting…"
+// spinner spins forever with nothing logged anywhere. Race every such call
+// against a timer so a misbehaving LiveKit server always surfaces as an error.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
 
 /**
  * Derive the caller's role from the DB. NEVER trusts the client. Absent any
@@ -130,6 +170,34 @@ async function resolveRole(
     if (data) return 'speaker';
   }
 
+  // Webinar speaker: either pre-assigned and confirmed (webinar_speakers,
+  // set before the event) or live-promoted (webinar_speaker_requests, the
+  // request-to-speak handshake — see packages/live/src/webinar). Attendees
+  // never resolve past this to anything but 'attendee'/'viewer' — Phase 1
+  // never mints them a room-join token at all (they're HLS-only), but this
+  // still guards the case a client calls livekit-token directly anyway.
+  if (ctx.kind === 'ministry_webinar' && ctx.meetingId) {
+    const { data: confirmed } = await admin
+      .from('webinar_speakers')
+      .select('role')
+      .eq('webinar_id', ctx.meetingId)
+      .eq('user_id', userId)
+      .eq('status', 'confirmed')
+      .maybeSingle();
+    // A co-host carries 'co-host' in their LiveKit metadata so the room
+    // gives them the host's in-call controls (useDailyRoom's isModerator).
+    if (confirmed) return (confirmed as { role?: string }).role === 'co-host' ? 'co-host' : 'speaker';
+
+    const { data: accepted } = await admin
+      .from('webinar_speaker_requests')
+      .select('user_id')
+      .eq('webinar_id', ctx.meetingId)
+      .eq('user_id', userId)
+      .eq('status', 'accepted')
+      .maybeSingle();
+    if (accepted) return 'speaker';
+  }
+
   return body.viewerOnly ? 'viewer' : 'attendee';
 }
 
@@ -167,6 +235,27 @@ async function isEntitled(
     return !!g;
   }
 
+  // Ministry webinar — public webinars bypass membership (anyone can watch/
+  // join per its own is_public flag); private ones require membership like
+  // a ministry meeting. Only host/co-host/speakers ever reach this function
+  // in Phase 1 (attendees are HLS-only), but the same gate applies to them.
+  if (ctx.kind === 'ministry_webinar' && ctx.meetingId) {
+    const { data: w } = await admin
+      .from('ministry_webinars').select('ministry_id, is_public').eq('id', ctx.meetingId).maybeSingle();
+    const webinar = w as { ministry_id?: string; is_public?: boolean } | null;
+    if (webinar?.is_public) return true;
+    const mid = webinar?.ministry_id;
+    if (!mid) return false;
+    const { data: mem } = await admin
+      .from('ministry_group_members').select('user_id')
+      .eq('ministry_id', mid).eq('user_id', userId).maybeSingle();
+    if (mem) return true;
+    const { data: g } = await admin
+      .from('ministry_groups').select('id')
+      .eq('id', mid).or(`owner_id.eq.${userId},leader_id.eq.${userId}`).maybeSingle();
+    return !!g;
+  }
+
   // Counselling — the session's client (the counsellor already resolves to host).
   if (ctx.kind === 'counselling' && ctx.meetingId) {
     const { data: s } = await admin
@@ -185,6 +274,7 @@ function grantFor(role: Role, room: string) {
   switch (role) {
     case 'host':
       return { ...base, canPublish: true, roomAdmin: true };
+    case 'co-host':
     case 'speaker':
     case 'attendee':
       return { ...base, canPublish: true };
@@ -229,7 +319,7 @@ serve(async (req) => {
     // stays closed because guest role is derived here, not from the client. The
     // admin actions (delete/create room, grant-publish) still require a real user.
     const isGuest = !user;
-    if (isGuest && action !== 'token') {
+    if (isGuest && action !== 'token' && action !== 'room-occupancy') {
       return json({ error: 'Unauthorized' }, 401);
     }
     // Stable per-connection identity: real users key on their uid; guests get a
@@ -240,6 +330,34 @@ serve(async (req) => {
       ? (body.viewerOnly ? 'viewer' : 'attendee')
       : await resolveRole(admin, user!.id, body);
     const isHost = role === 'host';
+
+    // ── Room occupancy (read-only) ─────────────────────────────────────────
+    // The meetings tables' participant_count / is_active are maintained by
+    // clients and drift (stale read-modify-write). Clients ask LiveKit itself
+    // — the source of truth for who is actually connected — before marking a
+    // meeting ended on leave, and before telling someone "the host ended
+    // this meeting". Counts real people other than the caller: excludes the
+    // caller's own identity and screen-share shadow, translation bots
+    // (rlt-bot-*), hidden participants and recording/egress participants.
+    // A room that doesn't exist (deleted by "End for all", or never created)
+    // is simply 0. Deliberately needs no role: it only reveals a head count.
+    if (action === 'room-occupancy') {
+      let participants: Array<{ identity: string; kind?: number; permission?: { hidden?: boolean } }> = [];
+      try {
+        participants = (await svc.listParticipants(body.roomName)) as typeof participants;
+      } catch {
+        participants = []; // room not found = nobody there
+      }
+      const EGRESS_KIND = 2; // livekit ParticipantInfo.Kind.EGRESS
+      const others = participants.filter((p) =>
+        !p.permission?.hidden &&
+        p.kind !== EGRESS_KIND &&
+        !p.identity.startsWith('rlt-bot-') &&
+        !p.identity.endsWith('-screenshare') &&
+        (isGuest || p.identity !== user!.id),
+      );
+      return json({ occupants: others.length });
+    }
 
     // ── Non-token admin actions ────────────────────────────────────────────
     if (action === 'delete-room') {
@@ -264,7 +382,7 @@ serve(async (req) => {
       const target = body.identity ?? user!.id;
       // Promoting someone else requires host; promoting yourself requires a
       // verified speaker row (you were accepted as a speaker).
-      const allowed = target === user!.id ? role === 'speaker' || isHost : isHost;
+      const allowed = target === user!.id ? role === 'speaker' || role === 'co-host' || isHost : isHost;
       if (!allowed) return json({ error: 'Not permitted to grant publish' }, 403);
       await svc.updateParticipant(body.roomName, target, undefined, {
         canPublish: true,
@@ -282,7 +400,7 @@ serve(async (req) => {
     // Guests arrive via a public share link, so they skip the tenant-membership
     // entitlement check (it is keyed on a user id they don't have). They are
     // still capped at viewer/attendee and remain subject to the locked-room gate.
-    if (!isGuest && role !== 'host' && role !== 'speaker') {
+    if (!isGuest && role !== 'host' && role !== 'co-host' && role !== 'speaker') {
       if (!(await isEntitled(admin, user!.id, body))) {
         return json({ error: 'not_entitled' }, 403);
       }
@@ -293,10 +411,30 @@ serve(async (req) => {
     // (auto-create), it isn't locked.
     if (!isHost) {
       try {
-        const rooms = await svc.listRooms([body.roomName]);
+        const rooms = await withTimeout(svc.listRooms([body.roomName]), 8000, 'listRooms');
         const meta = rooms[0]?.metadata ? JSON.parse(rooms[0].metadata) : {};
         if (meta.locked) return json({ error: 'locked' }, 403);
-      } catch { /* room not present / API blip → treat as unlocked */ }
+      } catch { /* room not present / API blip / timeout → treat as unlocked */ }
+    }
+
+    // Screen-share shadow connection (native Android only — see RequestBody's
+    // asScreenShareShadow doc comment): mint immediately with a derived identity
+    // and a minimal publish-only grant, skipping the waiting-room re-enqueue below
+    // entirely — the caller is already IN the room under their real identity by
+    // the time they'd ever request this, so queueing a second time would be wrong,
+    // not just redundant. A viewer can't publish at all (grantFor already denies
+    // canPublish for that role), so screen share is denied here the same way.
+    if (body.asScreenShareShadow) {
+      if (role === 'viewer') return json({ error: 'Viewers cannot share their screen' }, 403);
+      const shadowIdentity = `${identity}-screenshare`;
+      const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity: shadowIdentity,
+        name: `${body.userName ?? user?.email ?? 'Guest'} (screen share)`,
+        metadata: JSON.stringify({ role, guest: isGuest, screenShareShadow: true }),
+        ttl: '2h',
+      });
+      at.addGrant({ room: body.roomName, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: false });
+      return json({ url: LIVEKIT_URL, token: await at.toJwt(), role });
     }
 
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,
@@ -329,11 +467,45 @@ serve(async (req) => {
       // admitted → continue to mint the token below.
     }
 
+    // Gate: meeting participant cap — a meeting may never exceed
+    // MEETING_PARTICIPANT_CAP real participants. Host always gets a real seat
+    // regardless of headcount (so the meeting can always be ended/managed).
+    // Scoped to ministry_meeting only — channels/counselling/webinars have
+    // their own, different capacity models (webinars are HLS-only for
+    // attendees from the start; see packages/live/src/webinar). No fallback:
+    // the join is simply denied.
+    if (!isHost && body.context?.kind === 'ministry_meeting') {
+      let realCount = 0;
+      try {
+        const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
+        realCount = participants.length;
+      } catch { /* room not up yet → 0 real participants */ }
+
+      if (realCount >= MEETING_PARTICIPANT_CAP) {
+        return json({ error: 'meeting_full' }, 403);
+      }
+    }
+
+    // Display picture (shown in place of the initial-letter avatar when a
+    // participant's camera is off) — looked up once here at join time and
+    // carried in LiveKit metadata (same channel role/guest already ride), so
+    // every other participant's tile reads it off p.metadata for free instead
+    // of each tile doing its own profile lookup. Guests have no profile row.
+    let avatarUrl: string | undefined;
+    if (!isGuest) {
+      const { data: prof } = await admin
+        .from('user_profiles')
+        .select('avatar_url')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      avatarUrl = (prof as { avatar_url?: string } | null)?.avatar_url || undefined;
+    }
+
     // Mint the JWT.
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity,
       name: body.userName ?? user?.email ?? 'Guest',
-      metadata: JSON.stringify({ role, guest: isGuest }),
+      metadata: JSON.stringify({ role, guest: isGuest, avatarUrl }),
       ttl: '2h',
     });
     at.addGrant(grantFor(role, body.roomName));

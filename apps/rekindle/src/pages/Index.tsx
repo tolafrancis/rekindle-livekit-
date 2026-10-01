@@ -1,18 +1,27 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useLocation } from 'react-router-dom';
-import AppLayout from '@/components/AppLayout';
 import { AppProvider } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { SignupForm } from '@/components/auth/SignupForm';
-import { OnboardingFlow } from '@/components/auth/OnboardingFlow';
 import { PasswordResetForm } from '@/components/auth/PasswordResetForm';
-import LandingPage from '@/pages/LandingPage';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { setDeepLink, DEEP_LINK_TAB } from '@/lib/deepLink';
-import { SharedContentPreview } from '@/components/SharedContentPreview';
+import RouteFallback from '@/components/RouteFallback';
+
+// Signed-out visitors only ever need the landing page / shared preview, and
+// signed-in users only ever need the app shell — so each side is its own chunk
+// instead of both being parsed up front on every launch.
+const AppLayout = lazy(() => import('@/components/AppLayout'));
+const LandingPage = lazy(() => import('@/pages/LandingPage'));
+const OnboardingFlow = lazy(() =>
+  import('@/components/auth/OnboardingFlow').then((m) => ({ default: m.OnboardingFlow }))
+);
+const SharedContentPreview = lazy(() =>
+  import('@/components/SharedContentPreview').then((m) => ({ default: m.SharedContentPreview }))
+);
 
 // Constants
 const LOADING_TIMEOUT = 8000; // 8 seconds max loading time
@@ -388,7 +397,9 @@ const Index: React.FC = () => {
   return (
     <ErrorBoundary>
       <AppProvider>
-        <AuthGate />
+        <Suspense fallback={<RouteFallback />}>
+          <AuthGate />
+        </Suspense>
       </AppProvider>
     </ErrorBoundary>
   );

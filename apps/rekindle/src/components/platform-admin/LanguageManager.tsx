@@ -9,10 +9,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   SUPPORTED_LANGUAGES,
-  DEFAULT_TRANSLATIONS,
   translationService,
   type Translations,
 } from '@/lib/i18n';
+import { DEFAULT_TRANSLATIONS } from '@rekindle/features/i18n-en';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

@@ -54,18 +54,19 @@ import { ChannelStreamConfig } from '@rekindle/live/components/ChannelStreamConf
 // Import the DailyVideoCall component - this is the SOLE controller of all media
 import DailyVideoCall from '@rekindle/live/components/DailyVideoCall';
 import { HlsPlayer } from '@rekindle/live/components/HlsPlayer';
-import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/muxMeetingStream';
+import { createMeetingStream, getMeetingIngest, deleteMeetingStream, stopMeetingStream, reprovisionMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@rekindle/live/videoBackend';
+import { getRoomOccupancy, leavePatch } from '@rekindle/live/roomOccupancy';
 import { useMeetingStage } from '@rekindle/live/useMeetingStage';
 import { useMeetingReactions } from '@rekindle/live/useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from '@rekindle/live/components/MeetingReactions';
-import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
-import { FloatingTranslationButton, type TranslationControls } from '@rekindle/live/components/FloatingTranslationButton';
+import { FloatingTranslationButton, type TranslationControls, type ScriptureControlState } from '@rekindle/live/components/FloatingTranslationButton';
 import { MeetingNotesBanner } from '@rekindle/live/components/MeetingNotesBanner';
 import { useMeetingPresence } from '@rekindle/live/useMeetingPresence';
 import { MeetingChatPanel } from '@rekindle/live/components/MeetingChatPanel';
 import { MeetingRecordings } from '@rekindle/live/components/MeetingRecordings';
+import { MeetingParticipantsPanel } from '@rekindle/live/components/MeetingParticipantsPanel';
 import { MinistryRecordingsTab } from './MinistryRecordingsTab';
 import { getEffectiveRecordingRetentionDays } from '@rekindle/features/ministryBilling';
 
@@ -82,6 +83,14 @@ import {
 // canHostInteractiveMeeting used to gate this off the wrong (legacy,
 // individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
 import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@rekindle/auth/ministryEntitlements';
+
+// Flat, platform-wide ceiling on real participants a single Interactive
+// Meeting may ever have (2026-09-21) — same value livekit-token/index.ts
+// enforces authoritatively (MEETING_PARTICIPANT_CAP there). No per-tier
+// variation. A host expecting more must create a Webinar instead (its own,
+// separate product with its own, much larger audience cap — audience never
+// touches LiveKit there, so it isn't this same cost/capacity constraint).
+const MEETING_PARTICIPANT_CAP = 100;
 
 // Minutes -> a trimmed hours string for the free-tier notice (e.g. 90 -> "1.5", 600 -> "10").
 const formatHours = (minutes: number): string => {
@@ -163,8 +172,8 @@ const EnhancedVideoCallWrapper = ({
   onLeave: () => void;
   onEndMeeting?: () => void;
 }) => {
-  // Webinar mode: attendees watch the Cloudflare HLS stream; only the host
-  // (presenter) joins the Daily call and pushes the RTMP stream out.
+  // Webinar mode: attendees watch the LiveKit HLS Egress stream; only the
+  // host (presenter) actually joins the LiveKit room.
   const { t } = useLanguage();
   const isWebinar = meeting.mode === 'webinar';
   const hlsUrl = meeting.hls_playback_url;
@@ -183,6 +192,10 @@ const EnhancedVideoCallWrapper = ({
   const [callBackground, setCallBackground] = useState<{ videoBackground: string; setVideoBackground: (mode: string) => void; isNative: boolean } | null>(null);
   // ReKindle Live Translation — same lift-to-parent pattern as callBackground.
   const [callTranslation, setCallTranslation] = useState<TranslationControls | null>(null);
+  // Live Scripture control state (2026-09-29) — same lift-to-parent pattern,
+  // so DailyVideoCall can render its own toggle button + side panel instead
+  // of it living in FloatingTranslationButton's popover.
+  const [callScripture, setCallScripture] = useState<ScriptureControlState | null>(null);
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -240,13 +253,27 @@ const EnhancedVideoCallWrapper = ({
   useEffect(() => {
     if (isHost) return;
     let cancelled = false;
+    // A false is_active isn't proof the host ended it: the flag is client-
+    // maintained, and a participant dropping off could flip it while the
+    // host was still live (then everyone else was told "the host has ended
+    // this meeting"). For regular meetings, confirm with LiveKit that the
+    // room is actually empty — "End for all" deletes the room, so a real end
+    // reads 0. If occupancy can't be checked (e.g. our own network is what
+    // dropped), don't end — the 4s poll re-checks once we're back.
+    // Webinar audiences are HLS-only viewers, never in the room, so they
+    // keep trusting the flag.
+    const onInactive = async () => {
+      if (isWebinar) { if (!cancelled) setMeetingEnded(true); return; }
+      const others = await getRoomOccupancy(meeting.room_name);
+      if (!cancelled && others === 0) setMeetingEnded(true);
+    };
     const check = async () => {
       const { data } = await supabase
         .from('ministry_video_meetings')
         .select('is_active')
         .eq('id', meeting.id)
         .maybeSingle();
-      if (!cancelled && data && data.is_active === false) setMeetingEnded(true);
+      if (!cancelled && data && data.is_active === false) await onInactive();
     };
     check();
     const poll = setInterval(check, 4000);
@@ -257,7 +284,7 @@ const EnhancedVideoCallWrapper = ({
         .channel(`meeting-status-${meeting.id}`)
         .on('postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'ministry_video_meetings', filter: `id=eq.${meeting.id}` },
-          (payload) => { if ((payload.new as any)?.is_active === false) setMeetingEnded(true); })
+          (payload) => { if ((payload.new as any)?.is_active === false) onInactive(); })
         .subscribe();
     } catch { statusChannel = null; }
 
@@ -266,7 +293,7 @@ const EnhancedVideoCallWrapper = ({
       clearInterval(poll);
       try { if (statusChannel) supabase.removeChannel(statusChannel); } catch { /* noop */ }
     };
-  }, [isWebinar, isHost, meeting.id]);
+  }, [isWebinar, isHost, meeting.id, meeting.room_name]);
 
   // When the host ends the meeting, notify the audience and close automatically
   // instead of leaving them stuck on a dead screen.
@@ -294,7 +321,7 @@ const EnhancedVideoCallWrapper = ({
 
     // createMeetingStream reuses the existing input, or re-provisions one if a
     // previous session was torn down. A webinar needs it for the HLS audience
-    // feed; a recording-enabled meeting needs it so Mux records the call.
+    // feed; a recording-enabled meeting needs it so the call gets recorded.
     const needsStream = isWebinar || meeting.enable_recording !== false;
     if (!needsStream) return;
     createMeetingStream(meeting.id, meeting.enable_recording !== false).then(p => {
@@ -365,11 +392,12 @@ const EnhancedVideoCallWrapper = ({
     if (!isHost && isWebinar) {
       stage.removePresenter(userId);
     }
-    // A webinar's host IS the sole broadcaster (the Daily→Mux push is theirs), so
-    // if they hang up — via the call's leave button, not just "End for All" — the
-    // stream dies and the audience would otherwise sit on a blank Mux slate with
-    // no notice. End it for everyone: stop the stream + flip is_active so the
-    // audience's ended-detection fires and auto-closes them out.
+    // A webinar's host IS the sole broadcaster (the HLS Egress composites
+    // their published tracks), so if they hang up — via the call's leave
+    // button, not just "End for All" — the stream dies and the audience
+    // would otherwise sit on a frozen/blank feed with no notice. End it for
+    // everyone: stop the stream + flip is_active so the audience's
+    // ended-detection fires and auto-closes them out.
     if (isHost && isWebinar) {
       try {
         stopMeetingStream(meeting.id);
@@ -406,6 +434,22 @@ const EnhancedVideoCallWrapper = ({
         .eq('id', meeting.id);
 
       await stopTranslationForRoom(meeting.room_name);
+
+      // Real bug found live (2026-09-23, meeting architecture review): this
+      // only ever flipped the DB flag above — the LiveKit room itself was
+      // never actually closed, so anyone whose client couldn't self-evict
+      // on the flag change (frozen tab, momentary disconnect) stayed
+      // connected to a live, host-less room. Best-effort — the meeting is
+      // already correctly marked ended above regardless, and delete-room is
+      // itself idempotent.
+      const { error: closeErr } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'ministry_meeting', meetingId: meeting.id },
+        },
+      });
+      if (closeErr) console.error('[handleHostEndMeeting] Failed to close LiveKit room:', closeErr);
 
       toast.success(t('ministryInteractiveMeetings', 'meetingEndedForAll', 'Meeting ended for all participants'));
 
@@ -480,7 +524,7 @@ const EnhancedVideoCallWrapper = ({
               <div className="flex flex-col items-center justify-center h-full text-gray-300 p-6 text-center gap-3">
                 <PhoneOff className="h-8 w-8 text-gray-400" />
                 <div>
-                  <p className="font-medium">{t('ministryInteractiveMeetings', 'webinarEnded', 'The webinar has ended')}</p>
+                  <p className="font-medium">{t('ministryInteractiveMeetings', 'presentationEnded', 'The presentation has ended')}</p>
                   <p className="text-sm text-gray-500">{t('ministryInteractiveMeetings', 'thanksForJoining', 'Thanks for joining.')}</p>
                 </div>
               </div>
@@ -488,7 +532,7 @@ const EnhancedVideoCallWrapper = ({
               <HlsPlayer src={hlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
-                {t('ministryInteractiveMeetings', 'waitingForHostWebinar', 'Waiting for the host to start the webinar…')}
+                {t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
               </div>
             )}
           </div>
@@ -575,6 +619,7 @@ const EnhancedVideoCallWrapper = ({
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
         onTranslationControlsChange={setCallTranslation}
+        scriptureControl={callScripture}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
@@ -586,22 +631,10 @@ const EnhancedVideoCallWrapper = ({
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
-        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2">
-          {callBackground && (
-            <FloatingBackgroundButton
-              isNative={callBackground.isNative}
-              value={callBackground.videoBackground}
-              onChange={callBackground.setVideoBackground}
-            />
-          )}
-          {callBackground && !callBackground.isNative ? (
-            <div className="relative flex flex-col items-center gap-2">
-              <ReactionButton onReact={sendReaction} />
-              <FloatingSpeakerButton />
-            </div>
-          ) : (
-            <ReactionButton onReact={sendReaction} />
-          )}
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+          {/* Background moved into DailyVideoCall's own Meeting Controls menu
+              (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
+          {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
           {callTranslation && (
             <FloatingTranslationButton
               translation={callTranslation}
@@ -609,8 +642,10 @@ const EnhancedVideoCallWrapper = ({
               roomName={meeting.room_name}
               isHost={isHost}
               userId={userId}
+              onScriptureStateChange={setCallScripture}
             />
           )}
+          <ReactionButton onReact={sendReaction} />
           {callHandRaise && (
             <button
               type="button"
@@ -976,6 +1011,19 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
       return;
     }
 
+    // Meetings cannot exceed MEETING_PARTICIPANT_CAP real participants under
+    // any circumstance (2026-09-21) — no overflow/livestream fallback exists
+    // for this anymore. Block creation here, before the room ever exists,
+    // rather than let a host discover it live.
+    if (formData.max_participants > MEETING_PARTICIPANT_CAP) {
+      toast.error(t(
+        'ministryInteractiveMeetings',
+        'meetingCapExceeded',
+        "Meetings are limited to {cap} participants. For a larger audience, create a Webinar instead — it's built for that.",
+      ).replace('{cap}', String(MEETING_PARTICIPANT_CAP)));
+      return;
+    }
+
     // A scheduled meeting stores a real UTC instant computed from the host's
     // wall-clock time in the chosen zone. Instant meetings carry no schedule.
     const isScheduled = formData.meeting_type === 'scheduled';
@@ -1052,7 +1100,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
 
       if (error) throw error;
 
-      // Webinar mode: auto-provision a Cloudflare live input (platform-managed,
+      // Webinar mode: auto-provision the LiveKit HLS Egress (platform-managed,
       // no host setup). This stores the HLS playback URL on the meeting.
       if (formData.mode === 'webinar') {
         const provisioned = await createMeetingStream(data.id, formData.enable_recording);
@@ -1279,7 +1327,39 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
             </Select>
           </div>
 
-          {/* Mode: Meeting vs Webinar */}
+          <div className="space-y-2">
+            <Label htmlFor="max-participants">{t('ministryInteractiveMeetings', 'maxParticipantsLabel', 'Expected number of participants')}</Label>
+            <Input
+              id="max-participants"
+              type="number"
+              min={1}
+              max={isFreeTier ? FREE_TIER_MEETING_LIMITS.maxParticipants : undefined}
+              value={formData.max_participants}
+              onChange={(e) => setFormData({ ...formData, max_participants: Math.max(1, parseInt(e.target.value) || 1) })}
+            />
+            <p className="text-xs text-gray-500">
+              {t('ministryInteractiveMeetings', 'maxParticipantsTip', 'This decides whether Meeting or Presentation mode is auto-selected below.')}
+            </p>
+            {formData.max_participants > MEETING_PARTICIPANT_CAP && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="text-xs text-red-800">
+                  {t(
+                    'ministryInteractiveMeetings',
+                    'meetingCapBlockTip',
+                    "Meetings are limited to {cap} participants — this can't be created as a meeting. For a larger audience, use the ministry's Webinars tab instead: it's built for that, with registration, reminders, Q&A, polls, and analytics this meeting mode doesn't have.",
+                  ).replace('{cap}', String(MEETING_PARTICIPANT_CAP))}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Mode: Meeting vs Presentation (an Interactive-Meetings-native large-group
+              sub-mode — distinct from the separate, dedicated Webinar meeting type
+              under the Webinars tab, which has its own roster, Q&A, polls, registration
+              and analytics. Label kept as "Presentation" specifically so hosts don't
+              confuse the two; the underlying mode value stays 'webinar' unchanged
+              (ministry_video_meetings.mode — renaming the stored value would be a much
+              bigger, unnecessary schema-wide change for a label-only distinction). */}
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -1296,15 +1376,10 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
                 onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'webinar' }); }}
                 className={`rounded-lg border p-3 text-left transition ${formData.mode === 'webinar' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
               >
-                <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modeWebinar', 'Webinar')}</p>
-                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modeWebinarDesc', 'Host presents, audience watches.')}</p>
+                <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modePresentation', 'Presentation')}</p>
+                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modePresentationDesc', 'Host presents, audience watches.')}</p>
               </button>
             </div>
-            {!modeTouched && formData.mode === 'webinar' && formData.max_participants >= WEBINAR_AUTO_THRESHOLD && (
-              <p className="text-xs text-amber-600">
-                {t('ministryInteractiveMeetings', 'autoSelectedWebinar', 'Auto-selected Webinar because this session allows {count} people. Switch to Meeting if you want everyone on camera.').replace('{count}', String(formData.max_participants))}
-              </p>
-            )}
 
             {formData.mode === 'webinar' && (
               <div className="rounded-lg bg-purple-50 border border-purple-100 p-3 mt-2">
@@ -1448,6 +1523,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const { call, startCall, endCall, maximize } = useActiveCall();
   const activeCallId = call?.id ?? null;
   const [recordingsMeeting, setRecordingsMeeting] = useState<MinistryVideoMeeting | null>(null);
+  const [participantsMeeting, setParticipantsMeeting] = useState<MinistryVideoMeeting | null>(null);
   const [subTab, setSubTab] = useState<'meetings' | 'recordings'>('meetings');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<MinistryVideoMeeting | null>(null);
@@ -1493,13 +1569,19 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         return;
       }
 
-      // Fall back to ministry_members role check
+      // Fall back to ministry_group_members role check — the canonical
+      // membership table (see MinistryMembersManager.tsx/is_group_admin SQL
+      // helper). ministry_members is a best-effort MIRROR of it that can
+      // silently fail to write (see MinistryMembersManager's own comment on
+      // that insert/update) — checking it directly here meant a promoted
+      // admin/leader whose mirror row never landed could never see this
+      // ministry's "Create Meeting" button, with no visible error anywhere.
       const { data, error } = await supabase
-        .from('ministry_members')
-        .select('role')
+        .from('ministry_group_members')
+        .select('role, is_leader')
         .eq('ministry_id', ministryId)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.warn('Leadership check failed:', error);
@@ -1510,6 +1592,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       setIsLeader(
         data?.role === 'leader' ||
         data?.role === 'admin' ||
+        data?.is_leader === true ||
         meetings.some(m => m.host_id === user.id)
       );
     };
@@ -1627,7 +1710,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     try {
       const { data: freshMeeting } = await supabase
         .from('ministry_video_meetings')
-        .select('is_active')
+        .select('is_active, participant_count')
         .eq('id', meeting.id)
         .single();
       
@@ -1644,8 +1727,11 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
         if (error) throw error;
 
-        // Trigger push notification to ministry members
-        if (ministryId) {
+        // "Meeting Started" goes out only when the HOST starts it. A
+        // participant (re)joining a meeting that merely looked inactive —
+        // e.g. after their connection dropped — used to broadcast it too,
+        // which read to everyone as that participant starting/hosting it.
+        if (ministryId && meeting.host_id === user?.id) {
           supabase.functions.invoke('send-push-notification', {
             body: {
               targetAudience: 'ministry_members',
@@ -1665,7 +1751,9 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       const { error: countError } = await supabase
         .from('ministry_video_meetings')
         .update({ 
-          participant_count: meeting.participant_count + 1 
+          // From the fresh row, not the list's snapshot — a stale snapshot
+          // is how the count drifted low enough for a leave to end a live meeting.
+          participant_count: (freshMeeting?.participant_count ?? meeting.participant_count) + 1 
         })
         .eq('id', meeting.id);
 
@@ -1680,10 +1768,24 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
 
   // DB side of leaving/ending — self-contained (takes the meeting) so it still works
   // if this list component has since unmounted (e.g. left from the mini-player).
+  //
+  // Real bug found live (2026-09-23): this only ever decremented
+  // participant_count — nothing here (or anywhere else, for a non-webinar
+  // meeting) ever flipped is_active back to false once the count reached
+  // zero. The webinar case just above (handleLeave) explicitly ends the
+  // meeting when its sole broadcaster leaves, but a plain meeting has no
+  // equivalent — the overwhelmingly common way people actually leave a call
+  // is closing the tab, not clicking "End Meeting for All", so a meeting
+  // whose last participant left that way stayed is_active:true forever.
+  // Confirmed live: a ministry had 3 meetings stuck "active" for anywhere
+  // from days to a month, silently pinned at the free tier's 3-concurrent-
+  // active-meeting cap and blocking every new meeting from being created.
   const leaveMeetingDb = async (meeting: MinistryVideoMeeting) => {
     try {
-      const newCount = Math.max(0, meeting.participant_count - 1);
-      await supabase.from('ministry_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+      await supabase
+        .from('ministry_video_meetings')
+        .update(await leavePatch('ministry_video_meetings', meeting))
+        .eq('id', meeting.id);
     } catch (error) {
       console.error('Error leaving meeting:', error);
     }
@@ -1695,6 +1797,26 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         .from('ministry_video_meetings')
         .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
         .eq('id', meeting.id);
+
+      // Real bug found live (2026-09-23, meeting architecture review):
+      // "End Meeting for All" only ever flipped this DB flag — the LiveKit
+      // room itself was never actually closed. Well-behaved clients notice
+      // the flag change (realtime/poll) and self-evict within a few
+      // seconds, but anyone whose client can't run that — a frozen tab, a
+      // momentary disconnect, a client that never mounted the meeting UI —
+      // stayed connected to a live, host-less room indefinitely, and any
+      // active recording kept running. Closing the room server-side evicts
+      // everyone immediately regardless of client state. Best-effort: the
+      // meeting is already correctly marked ended above either way, and
+      // livekit-token's delete-room call is itself idempotent.
+      const { error } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'ministry_meeting', meetingId: meeting.id },
+        },
+      });
+      if (error) console.error('[endMeetingDb] Failed to close LiveKit room:', error);
     } catch (error) {
       console.error('Error ending meeting:', error);
     }
@@ -1742,9 +1864,12 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
   const [recordingBusyId, setRecordingBusyId] = useState<string | null>(null);
 
-  // Flip a meeting's recording on/off after it exists. Mux can't toggle
-  // recording on an existing live stream, so re-provision (delete + create).
-  // Mints a new stream key + playback URL, so it's meant for use before going live.
+  // Flip a meeting's recording on/off before it exists. reprovisionMeetingStream
+  // is a confirmed no-op on the LiveKit path (kept only so this call site keeps
+  // compiling — see meetingStreamControl.ts); the enable_recording DB write
+  // below is what this setting actually persists. (Not independently verified
+  // here: exactly how enable_recording is consulted when the meeting later
+  // goes live.)
   const toggleMeetingRecording = async (meeting: MinistryVideoMeeting, enabled: boolean) => {
     if (meeting.is_active) {
       toast.error(t('ministryInteractiveMeetings', 'cantChangeRecordingLive', "Can't change recording while the meeting is live — end it first."));
@@ -1768,7 +1893,8 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
     
     setDeletingMeetingId(meetingId);
     try {
-      // Permanently tear down the Cloudflare live input first (best-effort)
+      // deleteMeetingStream is a confirmed no-op on the LiveKit path (kept
+      // only so this call site keeps compiling — see meetingStreamControl.ts)
       await deleteMeetingStream(meetingId);
 
       const { error } = await supabase
@@ -1889,7 +2015,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <h4 className="text-lg font-semibold">{meeting.title}</h4>
                           {meeting.mode === 'webinar' && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'webinarBadge', 'Webinar')}</Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Presentation')}</Badge>
                           )}
                           <Badge className="bg-green-500 text-white border-0">
                             <span className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse" />
@@ -2008,6 +2134,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             )}
                             <Button
                               variant="outline"
+                              size="sm"
+                              onClick={() => setParticipantsMeeting(meeting)}
+                              title={t('ministryInteractiveMeetings', 'viewParticipants', 'View participants')}
+                            >
+                              <Users className="h-4 w-4 mr-1" />
+                              {t('ministryInteractiveMeetings', 'participantsBtn', 'Participants')}
+                            </Button>
+                            <Button
+                              variant="outline"
                               size="icon"
                               onClick={() => handleDeleteMeeting(meeting.id)}
                               disabled={deletingMeetingId === meeting.id}
@@ -2055,7 +2190,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <h4 className="text-lg font-semibold">{meeting.title}</h4>
                           {meeting.mode === 'webinar' && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'webinarBadge', 'Webinar')}</Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Presentation')}</Badge>
                           )}
                           <Badge variant="outline" className="border-gray-300">
                             <Globe className="h-3 w-3 mr-1" />
@@ -2181,6 +2316,15 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                             )}
                             <Button
                               variant="outline"
+                              size="sm"
+                              onClick={() => setParticipantsMeeting(meeting)}
+                              title={t('ministryInteractiveMeetings', 'viewParticipants', 'View participants')}
+                            >
+                              <Users className="h-4 w-4 mr-1" />
+                              {t('ministryInteractiveMeetings', 'participantsBtn', 'Participants')}
+                            </Button>
+                            <Button
+                              variant="outline"
                               size="icon"
                               onClick={() => handleDeleteMeeting(meeting.id)}
                               disabled={deletingMeetingId === meeting.id}
@@ -2233,6 +2377,14 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
         open={!!recordingsMeeting}
         onClose={() => setRecordingsMeeting(null)}
         retentionDaysOverride={retentionDaysOverride}
+      />
+
+      {/* Per-meeting attendance: total participants, names, join times */}
+      <MeetingParticipantsPanel
+        meetingId={participantsMeeting?.id || ''}
+        open={!!participantsMeeting}
+        onClose={() => setParticipantsMeeting(null)}
+        meetingKind="ministry_meeting"
       />
 
       {/* AI Insights Dialog - view post-session insights for any meeting */}

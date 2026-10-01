@@ -3,8 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { initSentry } from '@rekindle/features/sentry';
 import App from './App.tsx'
 import './index.css'
+
+initSentry({ dsn: import.meta.env.VITE_SENTRY_DSN, appName: 'rekindle' });
 
 let callIsActive = false;
 let pendingPushNav: string | null = null;
@@ -47,6 +50,28 @@ if (Capacitor.isNativePlatform()) {
       } else {
         pendingPushNav = link;
       }
+    }
+  });
+
+  // "Open in App" handoff (MeetingJoinPage.tsx) and any other rekindle://
+  // deep link — the intent-filter for this scheme has been registered in
+  // AndroidManifest.xml all along, so Android already launches the app
+  // correctly; nothing was ever listening for the incoming URL once it got
+  // here, so the app just opened to its default route and did nothing with
+  // it. Feeds the exact same pushNotificationNav pipeline push notifications
+  // already use — App.tsx's PushNotificationNavHandler turns event.url
+  // (e.g. "rekindle://app/join/abc123?code=xyz") into an in-app
+  // navigate('/join/abc123?code=xyz') via `new URL()`, which parses a
+  // custom-scheme URL's path/query exactly like an http(s) one. Also fires
+  // for a cold start (the app opened BY tapping the link, not already
+  // running), so it needs the same readyState guard as the notification-tap
+  // handler above.
+  CapacitorApp.addListener('appUrlOpen', (event) => {
+    console.log('[DeepLink] appUrlOpen:', event.url);
+    if (document.readyState === 'complete') {
+      window.dispatchEvent(new CustomEvent('pushNotificationNav', { detail: { link: event.url } }));
+    } else {
+      pendingPushNav = event.url;
     }
   });
 }

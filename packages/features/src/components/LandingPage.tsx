@@ -16,9 +16,11 @@ interface LandingPageProps {
 // logged-out visitors, so both domains present the same marketing site.
 const MINISTRY_APP_URL = import.meta.env.VITE_MINISTRY_APP_URL || 'https://rekindlebc.com';
 const CONSUMER_APP_URL = import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.rekindlebc.com';
-// Each app (ministry / rekindle) ships its own Capacitor Android build, so each
-// sets its own APK release URL. The download row is hidden until this is set.
+// Each app (ministry / rekindle) ships its own Capacitor Android build and its
+// own Windows desktop build, so each sets its own release URLs. Each button in
+// the download row is hidden independently until its URL is configured.
 const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL || '';
+const WINDOWS_INSTALLER_URL = import.meta.env.VITE_WINDOWS_INSTALLER_URL || '';
 
 const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContext = 'consumer' }) => {
   const { t } = useLanguage();
@@ -193,20 +195,40 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
             {t('landing', 'freeForever', "Free forever · No credit card required")}
           </p>
 
-          {/* Android APK download — hidden until the app-specific release URL is configured */}
-          {ANDROID_APK_URL && (
-            <a href={ANDROID_APK_URL} download className="rk-a rk-d3" style={{
-              display: 'inline-flex', alignItems: 'center', gap: 10, marginTop: 22,
-              background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)',
-              color: '#fff', padding: '10px 22px', borderRadius: 100, fontSize: '.88rem', fontWeight: 500,
-              textDecoration: 'none', transition: 'background .2s',
-            }}
-              onMouseOver={e => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
-              onMouseOut={e => (e.currentTarget.style.background = 'rgba(255,255,255,.06)')}
-            >
-              <span aria-hidden style={{ fontSize: '1.1rem' }}>🤖</span>
-              {t('landing', 'androidDownload', "Download for Android (APK)")}
-            </a>
+          {/* Native app downloads — each button is hidden independently until its
+              app-specific release URL is configured, so this row can show one,
+              both, or neither depending on what's been released. */}
+          {(ANDROID_APK_URL || WINDOWS_INSTALLER_URL) && (
+            <div className="rk-a rk-d3" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginTop: 22 }}>
+              {ANDROID_APK_URL && (
+                <a href={ANDROID_APK_URL} download style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)',
+                  color: '#fff', padding: '10px 22px', borderRadius: 100, fontSize: '.88rem', fontWeight: 500,
+                  textDecoration: 'none', transition: 'background .2s',
+                }}
+                  onMouseOver={e => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
+                  onMouseOut={e => (e.currentTarget.style.background = 'rgba(255,255,255,.06)')}
+                >
+                  <span aria-hidden style={{ fontSize: '1.1rem' }}>🤖</span>
+                  {t('landing', 'androidDownload', "Download for Android (APK)")}
+                </a>
+              )}
+              {WINDOWS_INSTALLER_URL && (
+                <a href={WINDOWS_INSTALLER_URL} download style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)',
+                  color: '#fff', padding: '10px 22px', borderRadius: 100, fontSize: '.88rem', fontWeight: 500,
+                  textDecoration: 'none', transition: 'background .2s',
+                }}
+                  onMouseOver={e => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
+                  onMouseOut={e => (e.currentTarget.style.background = 'rgba(255,255,255,.06)')}
+                >
+                  <span aria-hidden style={{ fontSize: '1.1rem' }}>🪟</span>
+                  {t('landing', 'windowsDownload', "Download for Windows")}
+                </a>
+              )}
+            </div>
           )}
 
           {/* Stats */}
@@ -286,6 +308,24 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                     </li>
                   ))}
                 </ul>
+                {/* Not everyone landing here came through a ministry invite —
+                    someone just visiting rekindlebc.com directly, with no
+                    ministry affiliation, belongs in the individual app
+                    (app.rekindlebc.com), not this one. Only shown on the
+                    Ministry app: on the consumer app itself onSignUp already
+                    goes to the right place. */}
+                {appContext === 'ministry' && (
+                  <div style={{ marginTop: 28 }}>
+                    <button onClick={() => { window.location.href = CONSUMER_APP_URL; }} style={{
+                      background: 'rgba(255,255,255,.08)', color: '#fff', padding: '11px 22px', borderRadius: 100,
+                      fontSize: '.88rem', fontWeight: 600, border: '1.5px solid rgba(255,255,255,.25)', cursor: 'pointer',
+                      fontFamily: 'DM Sans, sans-serif', transition: 'all .2s',
+                    }}
+                      onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,.16)'; }}
+                      onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; }}
+                    >{t('landing', 'indivNotMinistryCta', "Not part of a ministry? Go to the ReKindle app")} →</button>
+                  </div>
+                )}
               </div>
               <div style={{ padding: '60px 48px', background: '#ede9fe' }}>
                 <span style={{ display: 'inline-block', background: 'rgba(124,58,237,.12)', color: '#7c3aed', fontSize: '.75rem', fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', padding: '5px 14px', borderRadius: 100, marginBottom: 24 }}>{t('landing', 'forMinistries', "For Ministries")}</span>

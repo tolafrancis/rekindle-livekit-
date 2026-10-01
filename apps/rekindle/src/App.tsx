@@ -1,13 +1,10 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
-import MinistryJoinLanding from "@/components/registration/MinistryJoinLanding";
-import MinistryKiosk from "@/components/registration/MinistryKiosk";
-import MemberMinistryProfile from "@/components/registration/MemberMinistryProfile";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
@@ -16,19 +13,34 @@ import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
 import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
-import AdminPage from "./pages/AdminPage";
-import LandingPage from "./pages/LandingPage";
-import MetaWhatsAppCallback from "./pages/MetaWhatsAppCallback";
-import PrivacyPolicyPage from "@rekindle/features/components/PrivacyPolicyPage";
-import TermsOfServicePage from "@rekindle/features/components/TermsOfServicePage";
-import RekindleGuidePage from "@rekindle/features/components/RekindleGuidePage";
-import UnsubscribePage from "@rekindle/features/components/UnsubscribePage";
-import Skeleton from "./components/Skeleton";
-import NotFound from "./pages/NotFound";
 import { BackToTop } from "./components/BackToTop";
-// Import the wrapper component that renders MLiveChannel (same architecture as LiveChannels)
-import MinistryLiveWrapper from "./components/MinistryLiveWrapper";
-import { ChannelWatchPage } from "@rekindle/live/components/ChannelWatchPage";
+import RouteFallback from "./components/RouteFallback";
+
+// Every route other than the main app shell is code-split: a visitor opening
+// /join/:slug or /privacy shouldn't download (and parse) the whole app, and the
+// app shell shouldn't carry the admin, kiosk, webinar or legal pages either.
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const MetaWhatsAppCallback = lazy(() => import("./pages/MetaWhatsAppCallback"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const MinistryJoinLanding = lazy(() => import("@/components/registration/MinistryJoinLanding"));
+const MinistryKiosk = lazy(() => import("@/components/registration/MinistryKiosk"));
+const MemberMinistryProfile = lazy(() => import("@/components/registration/MemberMinistryProfile"));
+const PrivacyPolicyPage = lazy(() => import("@rekindle/features/components/PrivacyPolicyPage"));
+const TermsOfServicePage = lazy(() => import("@rekindle/features/components/TermsOfServicePage"));
+const RekindleTutorialPage = lazy(() => import("@rekindle/features/components/RekindleTutorialPage"));
+const SubmitContentPage = lazy(() => import("./components/SubmitContentPage"));
+const UnsubscribePage = lazy(() => import("@rekindle/features/components/UnsubscribePage"));
+const Skeleton = lazy(() => import("./components/Skeleton"));
+const WebinarJoinShim = lazy(() => import("./components/WebinarJoinShim"));
+const WebinarSpeakerInviteShim = lazy(() => import("./components/WebinarSpeakerInviteShim"));
+// MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels)
+const MinistryLiveWrapper = lazy(() => import("./components/MinistryLiveWrapper"));
+const ObsCaptionOverlay = lazy(() => import("@rekindle/live/components/ObsCaptionOverlay"));
+const RecordingTemplatePage = lazy(() => import("@rekindle/live/components/RecordingTemplatePage"));
+const ChannelWatchPage = lazy(() =>
+  import("@rekindle/live/components/ChannelWatchPage").then((m) => ({ default: m.ChannelWatchPage }))
+);
 
 // Configure QueryClient with better defaults for stability
 // FIXED: Added refetchOnMount: false and refetchInterval: false to prevent auto-refreshes
@@ -97,6 +109,7 @@ const App = () => {
                 <Sonner />
                 <BrowserRouter>
                   <PushNotificationNavHandler />
+                  <Suspense fallback={<RouteFallback />}>
                   <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />
@@ -121,10 +134,24 @@ const App = () => {
                   
                   {/* Meeting join routes - Ministry meetings */}
                   <Route path="/ministry/:ministryId/meeting/:meetingId" element={<Skeleton />} />
-                  
+
+                  {/* Webinar join route — a wholly separate meeting type from
+                      Interactive Meetings, see packages/live/src/webinar */}
+                  <Route path="/ministry/:ministryId/webinar/:webinarId" element={<WebinarJoinShim />} />
+                  <Route path="/webinar-invite/:token" element={<WebinarSpeakerInviteShim />} />
+
                   {/* Public live-broadcast watch link (channel Share builds /channels/:id).
                       Renders LiveChannelViewer directly — guests can watch without signing in. */}
                   <Route path="/channels/:id" element={<ChannelWatchPage />} />
+
+                  {/* Transparent live-caption overlay for an OBS Browser Source
+                      (see docs/obs-live-captions.md). Public, like /display. */}
+                  <Route path="/obs-captions/:sessionId" element={<ObsCaptionOverlay />} />
+
+                  {/* LiveKit Egress recording template: the recording's own layout
+                      (Speaker / Dual / Screen + …), opened by the recorder with its
+                      own room token. Public, like /obs-captions. */}
+                  <Route path="/recording-template" element={<RecordingTemplatePage />} />
 
                   {/* MinistryLiveWrapper renders MLiveChannel (same architecture as LiveChannels) */}
                   <Route path="/ministries/:ministryId/live" element={<MinistryLiveWrapper />} />
@@ -148,7 +175,9 @@ const App = () => {
                   <Route path="/unsubscribe" element={<UnsubscribePage />} />
                   <Route path="/privacy" element={<PrivacyPolicyPage />} />
                   <Route path="/terms" element={<TermsOfServicePage />} />
-                  <Route path="/guide" element={<RekindleGuidePage />} />
+                  <Route path="/guide" element={<RekindleTutorialPage />} />
+                  <Route path="/tutorial" element={<RekindleTutorialPage />} />
+                  <Route path="/write-for-us" element={<SubmitContentPage />} />
                   <Route path="/landing" element={
                     <LandingPage
                       onSignIn={() => window.location.href = '/'}
@@ -158,6 +187,7 @@ const App = () => {
                   <Route path="/api/meta-whatsapp-callback" element={<MetaWhatsAppCallback />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
+                  </Suspense>
                 {/* Universal back-to-top — available on every route, no per-page wiring */}
                 <BackToTop />
                 {/* Persistent meeting layer — keeps a live call mounted across tab

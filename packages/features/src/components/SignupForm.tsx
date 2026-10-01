@@ -9,6 +9,9 @@ import { Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 interface SignupFormProps {
   onSwitchToLogin: () => void;
   onSuccess: () => void;
+  /** See LoginForm.tsx's matching prop for the full explanation — same
+   *  bug, same fix, same 4-standalone/2-embedded caller split. */
+  compact?: boolean;
 }
 
 // See the matching note in LoginForm.tsx: desktop (Electron) builds hide
@@ -18,7 +21,7 @@ interface SignupFormProps {
 const isElectronApp = (): boolean =>
   typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
-export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSuccess }) => {
+export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSuccess, compact = false }) => {
   const { signUp, signInWithGoogle, signInWithFacebook } = useAuth();
   const showSocialLogin = !isElectronApp();
   const [fullName, setFullName] = useState('');
@@ -71,24 +74,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
     }
   };
 
-  return (
-    <div className="min-h-screen w-full flex flex-col md:flex-row bg-gray-50">
-      {/* Mobile / Tablet Header (hidden on desktop) */}
-      <div className="md:hidden bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-6 text-center">
-        <div className="inline-flex items-center gap-2 mb-2">
-          <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-white font-bold text-lg backdrop-blur-sm">
-            R
-          </div>
-          <span className="text-xl font-bold tracking-tight">ReKindle</span>
-        </div>
-        <p className="text-xs text-white/80">Join your faith community</p>
-      </div>
-
-      {/* Left Panel: Form Container */}
-      <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-6 sm:p-8 md:p-12 min-h-[calc(100vh-100px)] md:min-h-screen">
-        <div className="w-full max-w-md space-y-5 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-          {/* Logo Header (Desktop only) */}
-          <div className="hidden md:flex items-center gap-2.5 mb-2">
+  const card = (
+        <div className={compact ? 'w-full space-y-5' : 'w-full max-w-md space-y-5 bg-white p-8 rounded-2xl shadow-sm border border-gray-100'}>
+          {/* Logo header — see LoginForm.tsx's matching comment for why this
+              is unconditional in compact mode instead of hidden md:flex. */}
+          <div className={compact ? 'flex items-center gap-2.5 mb-2' : 'hidden md:flex items-center gap-2.5 mb-2'}>
             <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md">
               R
             </div>
@@ -232,14 +222,34 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
             </p>
           </form>
         </div>
+  );
+
+  if (compact) return card;
+
+  return (
+    <div className="min-h-screen w-full flex flex-col md:flex-row bg-gray-50">
+      {/* Mobile / Tablet Header (hidden on desktop) */}
+      <div className="md:hidden bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-6 text-center">
+        <div className="inline-flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-white font-bold text-lg backdrop-blur-sm">
+            R
+          </div>
+          <span className="text-xl font-bold tracking-tight">ReKindle</span>
+        </div>
+        <p className="text-xs text-white/80">Join your faith community</p>
+      </div>
+
+      {/* Left Panel: Form Container */}
+      <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-6 sm:p-8 md:p-12 min-h-[calc(100vh-100px)] md:min-h-screen">
+        {card}
       </div>
 
       {/* Right Panel: Background Image + Overlay (Desktop only) */}
-      <div 
+      <div
         className="hidden md:flex md:w-1/2 relative bg-cover bg-center flex-col justify-end p-12 text-white overflow-hidden"
         style={{ backgroundImage: "url('/auth-bg.jpg')" }}
       >
-        <div 
+        <div
           className="absolute inset-0"
           style={{ background: 'linear-gradient(to top, rgba(30,15,60,0.92) 0%, rgba(30,15,60,0.55) 60%, rgba(30,15,60,0.15) 100%)' }}
         />

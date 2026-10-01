@@ -53,13 +53,13 @@ import SavedMeetingInsights from './SavedMeetingInsights';
 // Import the DailyVideoCall component - SOLE CONTROLLER OF ALL MEDIA
 import DailyVideoCall from './DailyVideoCall';
 import { HlsPlayer } from './HlsPlayer';
-import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@/lib/muxMeetingStream';
+import { createMeetingStream, reprovisionMeetingStream, stopMeetingStream, startMeetingBroadcast, stopMeetingBroadcast } from '@rekindle/live/meetingStreamControl';
 import { isLiveKitBackend } from '@/lib/videoBackend';
+import { getRoomOccupancy, leavePatch } from '@rekindle/live/roomOccupancy';
 import { useMeetingStage } from '@/hooks/useMeetingStage';
 import { useMeetingReactions } from '@/hooks/useMeetingReactions';
 import { useMeetingPresence } from '@/hooks/useMeetingPresence';
 import { MeetingReactionsLayer, ReactionBar, ReactionButton } from '@/components/MeetingReactions';
-import { FloatingBackgroundButton } from '@rekindle/live/components/FloatingBackgroundButton';
 import { FloatingSpeakerButton } from '@rekindle/live/components/FloatingSpeakerButton';
 import { MeetingNotesBanner } from '@/components/MeetingNotesBanner';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
@@ -257,13 +257,27 @@ const EnhancedVideoCallWrapper = ({
   useEffect(() => {
     if (isHost) return;
     let cancelled = false;
+    // A false is_active isn't proof the host ended it: the flag is client-
+    // maintained, and a participant dropping off could flip it while the
+    // host was still live (then everyone else was told "the host has ended
+    // this meeting"). For regular meetings, confirm with LiveKit that the
+    // room is actually empty — "End for all" deletes the room, so a real end
+    // reads 0. If occupancy can't be checked (e.g. our own network is what
+    // dropped), don't end — the 4s poll re-checks once we're back.
+    // Webinar audiences are HLS-only viewers, never in the room, so they
+    // keep trusting the flag.
+    const onInactive = async () => {
+      if (isWebinar) { if (!cancelled) setMeetingEnded(true); return; }
+      const others = await getRoomOccupancy(meeting.room_name);
+      if (!cancelled && others === 0) setMeetingEnded(true);
+    };
     const check = async () => {
       const { data } = await supabase
         .from('live_channel_video_meetings')
         .select('is_active')
         .eq('id', meeting.id)
         .maybeSingle();
-      if (!cancelled && data && data.is_active === false) setMeetingEnded(true);
+      if (!cancelled && data && data.is_active === false) await onInactive();
     };
     check();
     const poll = setInterval(check, 4000);
@@ -274,7 +288,7 @@ const EnhancedVideoCallWrapper = ({
         .channel(`lc-meeting-status-${meeting.id}`)
         .on('postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'live_channel_video_meetings', filter: `id=eq.${meeting.id}` },
-          (payload) => { if ((payload.new as any)?.is_active === false) setMeetingEnded(true); })
+          (payload) => { if ((payload.new as any)?.is_active === false) onInactive(); })
         .subscribe();
     } catch { statusChannel = null; }
 
@@ -283,7 +297,7 @@ const EnhancedVideoCallWrapper = ({
       clearInterval(poll);
       try { if (statusChannel) supabase.removeChannel(statusChannel); } catch { /* noop */ }
     };
-  }, [isHost, meeting.id]);
+  }, [isWebinar, isHost, meeting.id, meeting.room_name]);
 
   // Notify + auto-close the audience when the host ends the meeting.
   useEffect(() => {
@@ -306,6 +320,18 @@ const EnhancedVideoCallWrapper = ({
           participant_count: 0
         })
         .eq('id', meeting.id);
+
+      // Real bug found live (2026-09-23, meeting architecture review): see
+      // endMeetingDb's own comment below — this only ever flipped the DB
+      // flag, never actually closed the LiveKit room server-side.
+      const { error: closeErr } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'channel_meeting', meetingId: meeting.id },
+        },
+      });
+      if (closeErr) console.error('[handleHostEndMeeting] Failed to close LiveKit room:', closeErr);
 
       toast.success(t('liveChannelInteractiveMeetings', 'meetingEndedForAll', 'Meeting ended for all participants'));
       onEndMeeting();
@@ -472,22 +498,11 @@ const EnhancedVideoCallWrapper = ({
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
       {!isPiP && (
-        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2">
-          {callBackground && (
-            <FloatingBackgroundButton
-              isNative={callBackground.isNative}
-              value={callBackground.videoBackground}
-              onChange={callBackground.setVideoBackground}
-            />
-          )}
-          {callBackground && !callBackground.isNative ? (
-            <div className="relative flex flex-col items-center gap-2">
-              <ReactionButton onReact={sendReaction} />
-              <FloatingSpeakerButton />
-            </div>
-          ) : (
-            <ReactionButton onReact={sendReaction} />
-          )}
+        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+          {/* Background moved into DailyVideoCall's own Meeting Controls menu
+              (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
+          {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
+          <ReactionButton onReact={sendReaction} />
           {callHandRaise && (
             <button
               type="button"
@@ -1454,7 +1469,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
     try {
       const { data: freshMeeting } = await supabase
         .from('live_channel_video_meetings')
-        .select('is_active')
+        .select('is_active, participant_count')
         .eq('id', meeting.id)
         .single();
       
@@ -1475,7 +1490,9 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
       const { error: countError } = await supabase
         .from('live_channel_video_meetings')
         .update({ 
-          participant_count: meeting.participant_count + 1 
+          // From the fresh row, not the list's snapshot — a stale snapshot
+          // is how the count drifted low enough for a leave to end a live meeting.
+          participant_count: (freshMeeting?.participant_count ?? meeting.participant_count) + 1 
         })
         .eq('id', meeting.id);
 
@@ -1490,6 +1507,15 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
 
   // DB side of leaving/ending — self-contained (takes the meeting) so it still works
   // if this list component has since unmounted (e.g. left from the mini-player).
+  //
+  // Real bug found live (2026-09-23, same class already fixed for
+  // MinistryInteractiveMeetings.tsx's own leaveMeetingDb): the non-webinar
+  // else-branch only ever decremented participant_count — nothing flipped
+  // is_active back to false once the count reached zero. The overwhelmingly
+  // common way people actually leave a call is closing the tab, not an
+  // explicit "End Meeting", so a meeting whose last participant left that
+  // way stayed is_active:true forever, silently consuming a concurrent-
+  // active-meeting slot.
   const leaveMeetingDb = async (meeting: LiveChannelVideoMeeting) => {
     const isHost = meeting.host_id === user?.id;
     const isWebinar = meeting.mode === 'webinar';
@@ -1501,8 +1527,10 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
           .eq('id', meeting.id);
       } else {
-        const newCount = Math.max(0, meeting.participant_count - 1);
-        await supabase.from('live_channel_video_meetings').update({ participant_count: newCount }).eq('id', meeting.id);
+        await supabase
+          .from('live_channel_video_meetings')
+          .update(await leavePatch('live_channel_video_meetings', meeting))
+          .eq('id', meeting.id);
       }
     } catch (error) {
       console.error('Error leaving meeting:', error);
@@ -1515,6 +1543,24 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
         .from('live_channel_video_meetings')
         .update({ is_active: false, ended_at: new Date().toISOString(), participant_count: 0 })
         .eq('id', meeting.id);
+
+      // Real bug found live (2026-09-23, meeting architecture review):
+      // "End Meeting for All" only ever flipped this DB flag — the LiveKit
+      // room itself was never actually closed. Well-behaved clients notice
+      // the flag change and self-evict within a few seconds, but anyone
+      // whose client can't run that (frozen tab, momentary disconnect, a
+      // client that never mounted the meeting UI) stayed connected to a
+      // live, host-less room indefinitely, and any active recording kept
+      // running. Best-effort — the meeting is already correctly marked
+      // ended above regardless, and delete-room is itself idempotent.
+      const { error } = await supabase.functions.invoke('livekit-token', {
+        body: {
+          action: 'delete-room',
+          roomName: meeting.room_name,
+          context: { kind: 'channel_meeting', meetingId: meeting.id },
+        },
+      });
+      if (error) console.error('[endMeetingDb] Failed to close LiveKit room:', error);
     } catch (error) {
       console.error('Error ending meeting:', error);
     }

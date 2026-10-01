@@ -97,11 +97,13 @@ export const MinistryPartnerPlansManager: React.FC = () => {
         features: featuresText.split('\n').map((f) => f.trim()).filter(Boolean),
       };
       if (isNew) {
-        const { error } = await supabase.from('ministry_partner_plans').insert(payload);
+        const { data, error } = await supabase.from('ministry_partner_plans').insert(payload).select().maybeSingle();
         if (error) throw error;
+        if (!data) throw new Error(t('partnerPlansManager', 'updateBlocked', 'Save was blocked (no permission) — nothing was changed.'));
       } else if (selected) {
-        const { error } = await supabase.from('ministry_partner_plans').update(payload).eq('id', selected.id);
+        const { data, error } = await supabase.from('ministry_partner_plans').update(payload).eq('id', selected.id).select().maybeSingle();
         if (error) throw error;
+        if (!data) throw new Error(t('partnerPlansManager', 'updateBlocked', 'Save was blocked (no permission) — nothing was changed.'));
       }
       toast({ title: t('partnerPlansManager', 'success', 'Success'), description: t('partnerPlansManager', 'planSaved', 'Plan saved') });
       setShowEditModal(false);
@@ -115,12 +117,14 @@ export const MinistryPartnerPlansManager: React.FC = () => {
 
   const toggleActive = async (plan: PartnerPlan) => {
     try {
-      const { error } = await supabase
-        .from('ministry_partner_plans').update({ is_active: !plan.is_active }).eq('id', plan.id);
+      const { data, error } = await supabase
+        .from('ministry_partner_plans').update({ is_active: !plan.is_active }).eq('id', plan.id).select().maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error(t('partnerPlansManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
       loadData();
     } catch (err: any) {
       toast({ title: t('partnerPlansManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+      loadData(); // revert the Switch back to the real (unchanged) DB value
     }
   };
 

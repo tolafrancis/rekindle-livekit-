@@ -115,6 +115,12 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
   const onLatencyChangeRef = useRef(onLatencyChange);
   useEffect(() => { onLatencyChangeRef.current = onLatencyChange; }, [onLatencyChange]);
+  // The main setup effect below only runs once per `src` change (its own
+  // deps are [src, showDebug]) — a ref lets the stall watchdog it sets up
+  // read the LATEST status on every tick instead of the value frozen at
+  // effect-creation time.
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   // Ticks once a second for as long as we're in the initial 'loading' state
   // — resets fresh each time we (re-)enter it. Drives the graduated message
@@ -124,6 +130,23 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
     if (status !== 'loading') return;
     setLoadingElapsedSec(0);
     const interval = setInterval(() => setLoadingElapsedSec((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [status]);
+
+  // Same idea, for 'waiting' (real report, 2026-09-22: a host's tab closed
+  // mid-webinar — LiveKit's own Egress took ~5 minutes to fully finalize
+  // ("Source closed" -> EGRESS_ENDING -> EGRESS_COMPLETE) before our webhook
+  // ever flipped the meeting row to 'ended'. For that whole window this
+  // component kept silently rebuilding every ~8s (armRecoveryEscalate) with
+  // the SAME "Reconnecting…" text the entire time — indistinguishable from
+  // something being broken. This doesn't change the retry behavior itself
+  // (a genuine transient blip should still just quietly recover), only the
+  // message once it's been going on long enough to stop reading as normal.
+  const [waitingElapsedSec, setWaitingElapsedSec] = useState(0);
+  useEffect(() => {
+    if (status !== 'waiting') return;
+    setWaitingElapsedSec(0);
+    const interval = setInterval(() => setWaitingElapsedSec((s) => s + 1), 1000);
     return () => clearInterval(interval);
   }, [status]);
 
@@ -260,8 +283,24 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (Hls.isSupported()) {
         // Where to START, in seconds behind the edge. hls.js holds this position
         // and corrects drift by playback rate, not by seeking.
-        const target = Math.min(Math.max(targetLatencySeconds, 2), 10);
-        const maxLatency = Math.max(target + 8, 12);
+        //
+        // Tightened (2026-09-22, real bug: audience stuck "frozen"/repeatedly
+        // reconnecting even AFTER switching to LiveKit's bounded live
+        // playlist — see livekit-egress's start-hls comment). Root cause:
+        // LiveKit's live_playlist_name output has NO configurable window
+        // size (confirmed against the protocol definition — only
+        // segment_duration exists) and was observed keeping just ~5
+        // segments (10s of history at our 2s segment duration). The OLD
+        // target+8/12 formula could ask hls.js to tolerate sitting up to
+        // 12s behind the edge — MORE than the window even holds — so any
+        // ordinary jitter that pushed the player toward that "tolerable"
+        // 12s mark meant the segment it needed to catch up had ALREADY
+        // rolled out of the manifest: a 404 hls.js can't recover from in
+        // place, forcing the exact fatal-error/rebuild cycle this was
+        // supposed to prevent. Sitting close to the edge and resyncing
+        // early is now strictly safer AND lower-latency than before.
+        const target = Math.min(Math.max(targetLatencySeconds, 2), 4);
+        const maxLatency = target + 3;
         hls = new Hls({
           // lowLatencyMode intentionally OFF: Mux isn't serving usable LL-HLS
           // parts here (we measure ~10s), so it bought no latency and only made
@@ -274,7 +313,12 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
           // Only let hls.js re-seek if we fall WELL behind — a generous ceiling so
           // ordinary jitter is absorbed by the 1.1x catch-up, not a jarring seek.
           liveMaxLatencyDuration: maxLatency,
-          maxLiveSyncPlaybackRate: 1.1,
+          // 1.1 -> 1.3 alongside the tighter target/maxLatency above — with a
+          // small, non-configurable server-side window, correcting drift
+          // faster matters more than it did against the old ever-growing
+          // manifest (where falling behind cost nothing but latency, never
+          // a missing segment).
+          maxLiveSyncPlaybackRate: 1.3,
           backBufferLength: 10,
           // While the audience waits for the host to go live, Mux returns 412
           // (stream not active) until RTMP starts. Poll STEADILY (linear, ~1.5s
@@ -389,7 +433,7 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
     // caption/dub-audio sync delay, not just the on-screen debug readout
     // (that UI stays gated behind showDebug below).
     // NOTE: this is EDGE lag only (player → HLS edge). True glass-to-glass adds
-    // the Daily→Mux encode/push pipeline on top, which the client can't see.
+    // the LiveKit Egress encode/write pipeline on top, which the client can't see.
     debugTimer = setInterval(() => {
       let lag: number | null = null;
       const h = hls as any;
@@ -403,6 +447,42 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (lag !== null && isFinite(lag) && lag > 0) onLatencyChangeRef.current?.(lag);
     }, 1000);
 
+    // Stall watchdog (real report, 2026-09-22: audience playback went
+    // completely silent AND frozen — both audio and video stopped, at the
+    // exact same time confirmed independently that (a) the host was still
+    // genuinely live and their own preview was moving normally, and (b) the
+    // HLS manifest itself was still growing normally, one new segment every
+    // 2s, right through the freeze. So hls.js was fetching fine; the
+    // <video> element's playback position simply stopped advancing. The
+    // ERROR handler above only reacts to FATAL hls.js errors — a buffer
+    // stall is normally NON-fatal (hls.js tries to silently self-recover by
+    // nudging the playhead), and when that quietly fails there is no fatal
+    // event, no error, nothing — this component had no way to ever notice.
+    // Polls video.currentTime directly (ground truth, independent of any
+    // hls.js event) and forces a full rebuild if it hasn't moved in ~8s
+    // while we believe playback is healthy and the element isn't
+    // legitimately paused/ended.
+    let lastCurrentTime = -1;
+    let stalledTicks = 0;
+    const stallWatchdog = setInterval(() => {
+      if (cancelled || statusRef.current !== 'playing' || video.paused || video.ended) {
+        lastCurrentTime = -1; stalledTicks = 0; return;
+      }
+      if (video.currentTime === lastCurrentTime) {
+        stalledTicks += 1;
+        if (stalledTicks >= 4) { // ~8s of zero progress at this 2s poll
+          console.warn('[HlsPlayer] playback stalled (currentTime not advancing despite fresh segments) — forcing a full rebuild');
+          stalledTicks = 0;
+          markRecovering();
+          if (hls) { try { hls.destroy(); } catch { /* noop */ } hls = null; }
+          setup();
+        }
+      } else {
+        stalledTicks = 0;
+      }
+      lastCurrentTime = video.currentTime;
+    }, 2000);
+
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
@@ -410,6 +490,7 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
       if (recoverTimer) clearTimeout(recoverTimer);
       if (recoveryEscalateTimer) clearTimeout(recoveryEscalateTimer);
       if (debugTimer) clearInterval(debugTimer);
+      clearInterval(stallWatchdog);
       if (hls) hls.destroy();
     };
   }, [src, showDebug]);
@@ -505,7 +586,14 @@ export const HlsPlayer = forwardRef<HlsPlayerHandle, HlsPlayerProps>(function Hl
           ) : status === 'waiting' ? (
             <>
               <Loader2 className="h-8 w-8 animate-spin mb-2 text-purple-400" />
-              <p className="text-sm">Reconnecting…</p>
+              <p className="text-sm">
+                {waitingElapsedSec < 20 ? 'Reconnecting…' : "Having trouble reaching the host…"}
+              </p>
+              {waitingElapsedSec >= 20 && (
+                <p className="text-xs text-gray-400 mt-1 max-w-[220px]">
+                  This can take a few minutes to resolve if the host lost connection — hang tight, or check back shortly.
+                </p>
+              )}
             </>
           ) : (
             <>

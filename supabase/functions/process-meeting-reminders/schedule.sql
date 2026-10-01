@@ -2,7 +2,14 @@
 -- Run this ONCE in the Supabase SQL editor AFTER the function is deployed.
 --
 -- Requires pg_cron and pg_net (Database → Extensions). Replace <PROJECT_REF> and
--- <SERVICE_ROLE_KEY> with your project's values.
+-- <CRON_SHARED_SECRET> with your project's values.
+--
+-- IMPORTANT: the function checks the `x-cron-secret` header against the
+-- CRON_SHARED_SECRET function secret — NOT an Authorization: Bearer token.
+-- The equivalent doc for process-daily-reminders had this wrong (Bearer
+-- <SERVICE_ROLE_KEY>) and its cron job silently 401'd on every tick for as
+-- long as it was scheduled — fixed here before the same mistake could
+-- happen to this job too.
 
 -- create extension if not exists pg_cron;
 -- create extension if not exists pg_net;
@@ -13,7 +20,10 @@ select cron.schedule(
   $$
   select net.http_post(
     url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/process-meeting-reminders',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}'::jsonb,
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', '<CRON_SHARED_SECRET>'
+    ),
     body    := '{}'::jsonb
   );
   $$

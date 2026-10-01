@@ -9,7 +9,7 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { UserCheck, UserPlus, Users, Loader2 } from 'lucide-react';
 
-export type MeetingKind = 'ministry' | 'channel';
+export type MeetingKind = 'ministry' | 'channel' | 'webinar';
 
 interface Props {
   meetingId: string;

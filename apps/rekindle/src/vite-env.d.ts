@@ -12,6 +12,9 @@ interface ImportMetaEnv {
    *  Individual Partner CTA and legal-page links point back here. Falls back to
    *  https://app.rekindlebc.com if unset. */
   readonly VITE_CONSUMER_APP_URL?: string;
+  /** Sentry DSN for the frontend/React project. Leave unset to disable —
+   *  error reporting no-ops safely without it. */
+  readonly VITE_SENTRY_DSN?: string;
 }
 
 interface ImportMeta {

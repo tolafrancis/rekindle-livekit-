@@ -10,6 +10,22 @@ interface LoginFormProps {
   onSwitchToSignup: () => void;
   onSwitchToReset?: () => void;
   onSuccess: () => void;
+  /** Real bug found live (2026-09-23): this component was built as a full
+   *  standalone PAGE (min-h-screen, a two-panel md:flex-row layout, a
+   *  hero-image side panel) — correct for its 4 real standalone callers
+   *  (AuthScreen.tsx in both apps, Index.tsx). But MinistryJoinLanding.tsx
+   *  and WebinarSpeakerInvitePage.tsx embed it inside their own narrower
+   *  card, and the full-page layout's `md:` breakpoints react to the
+   *  VIEWPORT, not the parent container — on a normal desktop-width
+   *  browser showing a narrow embedded card, the two-panel flex layout and
+   *  hero panel still tried to lay out side-by-side inside that narrow
+   *  space, producing exactly the squeezed/overlapping mess reported live.
+   *  compact:true skips the full-page shell and hero panel entirely and
+   *  renders just the form card — correct at any viewport size since it no
+   *  longer depends on a breakpoint matching its actual (parent-
+   *  controlled) width. Defaults to false so the 4 standalone callers are
+   *  completely unaffected. */
+  compact?: boolean;
 }
 
 // Desktop (Electron) builds hide Google/Facebook sign-in: the web OAuth
@@ -21,7 +37,7 @@ interface LoginFormProps {
 const isElectronApp = (): boolean =>
   typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitchToReset, onSuccess }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitchToReset, onSuccess, compact = false }) => {
   const { signIn, signInWithGoogle, signInWithFacebook } = useAuth();
   const showSocialLogin = !isElectronApp();
   const [email, setEmail] = useState('');
@@ -64,24 +80,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
     }
   };
 
-  return (
-    <div className="min-h-screen w-full flex flex-col md:flex-row bg-gray-50">
-      {/* Mobile / Tablet Header (hidden on desktop) */}
-      <div className="md:hidden bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-6 text-center">
-        <div className="inline-flex items-center gap-2 mb-2">
-          <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-white font-bold text-lg backdrop-blur-sm">
-            R
-          </div>
-          <span className="text-xl font-bold tracking-tight">ReKindle</span>
-        </div>
-        <p className="text-xs text-white/80">Grow in faith, stay connected</p>
-      </div>
-
-      {/* Left Panel: Form Container */}
-      <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-6 sm:p-8 md:p-12 min-h-[calc(100vh-100px)] md:min-h-screen">
-        <div className="w-full max-w-md space-y-6 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-          {/* Logo Header (Desktop only) */}
-          <div className="hidden md:flex items-center gap-2.5 mb-2">
+  const card = (
+        <div className={compact ? 'w-full space-y-6' : 'w-full max-w-md space-y-6 bg-white p-8 rounded-2xl shadow-sm border border-gray-100'}>
+          {/* Logo header — always shown in compact mode (no separate mobile
+              banner substituting for it there, unlike the standalone page
+              below), desktop-only in the standalone page (the mobile
+              banner above already carries the brand at small viewports). */}
+          <div className={compact ? 'flex items-center gap-2.5 mb-2' : 'hidden md:flex items-center gap-2.5 mb-2'}>
             <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md">
               R
             </div>
@@ -207,14 +212,34 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
             </p>
           </form>
         </div>
+  );
+
+  if (compact) return card;
+
+  return (
+    <div className="min-h-screen w-full flex flex-col md:flex-row bg-gray-50">
+      {/* Mobile / Tablet Header (hidden on desktop) */}
+      <div className="md:hidden bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-6 text-center">
+        <div className="inline-flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-white font-bold text-lg backdrop-blur-sm">
+            R
+          </div>
+          <span className="text-xl font-bold tracking-tight">ReKindle</span>
+        </div>
+        <p className="text-xs text-white/80">Grow in faith, stay connected</p>
+      </div>
+
+      {/* Left Panel: Form Container */}
+      <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-6 sm:p-8 md:p-12 min-h-[calc(100vh-100px)] md:min-h-screen">
+        {card}
       </div>
 
       {/* Right Panel: Background Image + Overlay (Desktop only) */}
-      <div 
+      <div
         className="hidden md:flex md:w-1/2 relative bg-cover bg-center flex-col justify-end p-12 text-white overflow-hidden"
         style={{ backgroundImage: "url('/auth-bg.jpg')" }}
       >
-        <div 
+        <div
           className="absolute inset-0"
           style={{ background: 'linear-gradient(to top, rgba(30,15,60,0.92) 0%, rgba(30,15,60,0.55) 60%, rgba(30,15,60,0.15) 100%)' }}
         />

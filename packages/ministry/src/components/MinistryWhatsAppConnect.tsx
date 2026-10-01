@@ -151,6 +151,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     access_token: '',
     phone_number_display: '',
     business_display_name: '',
+    app_secret: '',
   });
 
   // Small Group WhatsApp notifications (0336_small_group_whatsapp_notify.sql)
@@ -956,15 +957,24 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
               { key: 'phone_number_display', label: t('ministryWhatsAppConnect', 'phoneNumberDisplay', 'Phone Number (display)'), placeholder: '+1 555 000 1234' },
               { key: 'business_display_name', label: t('ministryWhatsAppConnect', 'businessDisplayName', 'Business Display Name'), placeholder: 'Grace Community Church' },
               { key: 'access_token', label: t('ministryWhatsAppConnect', 'permanentAccessToken', 'Permanent Access Token'), placeholder: 'EAABxxxxxx...' },
-            ].map(({ key, label, placeholder }) => (
+              { key: 'app_secret', label: t('ministryWhatsAppConnect', 'appSecret', 'App Secret'), placeholder: t('ministryWhatsAppConnect', 'appSecretPlaceholder', 'From your Meta app → Settings → Basic'), optional: true },
+            ].map(({ key, label, placeholder, optional }) => (
               <div key={key} className="space-y-1.5">
-                <Label className="text-sm">{label}</Label>
+                <Label className="text-sm">
+                  {label}
+                  {optional && <span className="text-gray-400 font-normal"> ({t('ministryWhatsAppConnect', 'optional', 'optional')})</span>}
+                </Label>
                 <Input
                   placeholder={placeholder}
-                  type={key === 'access_token' ? 'password' : 'text'}
+                  type={key === 'access_token' || key === 'app_secret' ? 'password' : 'text'}
                   value={(manualForm as any)[key]}
                   onChange={e => setManualForm(prev => ({ ...prev, [key]: e.target.value }))}
                 />
+                {key === 'app_secret' && (
+                  <p className="text-xs text-gray-500">
+                    {t('ministryWhatsAppConnect', 'appSecretHint', 'Lets Rekindle verify that inbound messages really came from your WhatsApp Business Account. Without it, your Evangelism Inbox still works, just unverified.')}
+                  </p>
+                )}
               </div>
             ))}
           </div>

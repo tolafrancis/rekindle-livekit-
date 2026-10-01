@@ -30,10 +30,10 @@ import {
   type GiftAidPublicSettings,
 } from '../giftAid';
 
-// Initialize Stripe with the connected account
-const stripePromise = loadStripe('pk_live_51OJhJBHdGQpsHqInIzu7c6PzGPSH0yImD4xfpofvxvFZs0VFhPRXZCyEgYkkhOtBOXFWvssYASs851mflwQvjnrl00T6DbUwWZ', {
-  stripeAccount: 'acct_1ShQgqHaTSTkefai'
-});
+// Destination charges (see ministry-donation-checkout) route funds to the
+// ministry's own Connect account server-side via transfer_data — no
+// `stripeAccount` option needed here (that's only for direct charges).
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 
 interface StripeDonationFormProps {
   amount: number;
@@ -386,20 +386,37 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-donation', {
-        body: {
-          provider: paymentMethod,
-          amount: finalAmount,
-          currency,
-          email,
-          name: isAnonymous ? 'Anonymous' : name,
-          userId: user?.id,
-          isAnonymous,
-          message,
-          ministryId,
-          callbackUrl: `${window.location.origin}?donation=success`
-        }
-      });
+      // Stripe donations go through ministry-donation-checkout (real Stripe
+      // Connect destination charges) — a separate function from
+      // create-donation, which still handles Paystack here and the
+      // unrelated non-ministry consumer donation flow.
+      const { data, error } = paymentMethod === 'stripe'
+        ? await supabase.functions.invoke('ministry-donation-checkout', {
+            body: {
+              ministryId,
+              amount: finalAmount,
+              currency,
+              email,
+              name: isAnonymous ? 'Anonymous' : name,
+              userId: user?.id,
+              isAnonymous,
+              message,
+            }
+          })
+        : await supabase.functions.invoke('create-donation', {
+            body: {
+              provider: paymentMethod,
+              amount: finalAmount,
+              currency,
+              email,
+              name: isAnonymous ? 'Anonymous' : name,
+              userId: user?.id,
+              isAnonymous,
+              message,
+              ministryId,
+              callbackUrl: `${window.location.origin}?donation=success`
+            }
+          });
 
       if (error) throw error;
 
@@ -411,10 +428,10 @@ export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({
 
       // Check for error in response data
       if (data?.error) {
-        if (paymentMethod === 'stripe' && data.error.includes('temporarily unavailable')) {
+        if (paymentMethod === 'stripe') {
           toast({
             title: t('ministryDonationForm', 'stripeUnavailable', 'Stripe Unavailable'),
-            description: t('ministryDonationForm', 'usePaystack', 'Please use Paystack for payments.'),
+            description: data.error,
             variant: 'destructive'
           });
           setPaymentMethod('paystack');

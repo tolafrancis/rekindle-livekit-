@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
-import { CommunityRevelationsManager } from './CommunityRevelationsManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,35 +14,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 import { ScriptureSelector, ScriptureReference } from './ScriptureSelector';
 import { MusicSelector } from './MusicSelector';
-import { AnalyticsDashboard } from './AnalyticsDashboard';
-import { EmailNotificationManager } from './EmailNotificationManager';
-import { AdminNotificationComposer } from './AdminNotificationComposer';
-import { DonationsManagement } from './DonationsManagement';
-import { AdminDevotionalLibraryManager } from './AdminDevotionalLibraryManager';
-import { AdminDevotionalStreamsManager } from './AdminDevotionalStreamsManager';
-import { MinistryGroupsManager } from './MinistryGroupsManager';
-import { AdminLeaderboard } from './AdminLeaderboard';
-import { AdminPrayerLibrary } from './AdminPrayerLibrary';
-import { BroadcastMessaging } from './BroadcastMessaging';
-import { CommunityPrayerManager } from './CommunityPrayerManager';
-import { PrayerChallengeBackendManager } from './PrayerChallengeBackendManager';
-import { AdminCounsellorManager } from './AdminCounsellorManager';
-import { AdminBookManager } from './AdminBookManager';
-import PlatformAdminDashboard from './platform-admin/PlatformAdminDashboard';
-import { AICompanionAdminSettings } from './AiCompanionAdminSettings';
-import { ReferralAdminManager } from './ReferralAdminManager';
-import { ReadingPlanManager } from './ReadingPlanManager';
-import { AdminLiveChannelManager } from './AdminLiveChannelManager';
-import { AdminSubscriptionManager } from './AdminSubscriptionManager';
-import { AdminTranslationDashboard } from './AdminTranslationDashboard';
-import { LanguageManager } from './platform-admin/LanguageManager';
-import { ContentTranslationManager } from './ContentTranslationManager';
-import { AdminDeclarationManager } from './AdminDeclarationManager';
-import { AdminAffirmationManager } from './AdminAffirmationManager';
 // NEW: Import Bulk TTS Component
-import { AdminBulkTTSPanel } from './AdminBulkTTSPanel';
-import { AdminBroadcastLogViewer } from './AdminBroadcastLogViewer';
-import { AdminWhatsAppManager } from './AdminWhatsAppManager';
 import { UniversalTTSExportButton } from './UniversalTTSExportButton';
 import { 
   Users, Shield, BookOpen, Music, FileText, Trophy,
@@ -51,10 +22,43 @@ import {
   Heart, MessageSquare, Bell, Bookmark, Mic, Video, DollarSign,
   Send, Mail, Phone, Star, Book, UserCheck, Settings, Radio,
   BarChart3, TrendingUp, Crown, Lock, AlertTriangle, Loader2, Church,
-  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers
+  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers, Inbox
 } from 'lucide-react';
 import { fetchScripture, BIBLE_VERSIONS } from '@/lib/bibleApi';
 import { useLanguage } from '@/contexts/LanguageContext';
+
+// Each admin section is its own chunk, fetched when its tab is first opened —
+// the dashboard used to download all ~30 managers (~930 KB) up front.
+const CommunityRevelationsManager = lazy(() => import('./CommunityRevelationsManager').then((m) => ({ default: m.CommunityRevelationsManager })));
+const AnalyticsDashboard = lazy(() => import('./AnalyticsDashboard').then((m) => ({ default: m.AnalyticsDashboard })));
+const EmailNotificationManager = lazy(() => import('./EmailNotificationManager').then((m) => ({ default: m.EmailNotificationManager })));
+const AdminNotificationComposer = lazy(() => import('./AdminNotificationComposer').then((m) => ({ default: m.AdminNotificationComposer })));
+const DonationsManagement = lazy(() => import('./DonationsManagement').then((m) => ({ default: m.DonationsManagement })));
+const AdminDevotionalLibraryManager = lazy(() => import('./AdminDevotionalLibraryManager').then((m) => ({ default: m.AdminDevotionalLibraryManager })));
+const AdminDevotionalStreamsManager = lazy(() => import('./AdminDevotionalStreamsManager').then((m) => ({ default: m.AdminDevotionalStreamsManager })));
+const MinistryGroupsManager = lazy(() => import('./MinistryGroupsManager').then((m) => ({ default: m.MinistryGroupsManager })));
+const AdminLeaderboard = lazy(() => import('./AdminLeaderboard').then((m) => ({ default: m.AdminLeaderboard })));
+const AdminPrayerLibrary = lazy(() => import('./AdminPrayerLibrary').then((m) => ({ default: m.AdminPrayerLibrary })));
+const BroadcastMessaging = lazy(() => import('./BroadcastMessaging').then((m) => ({ default: m.BroadcastMessaging })));
+const CommunityPrayerManager = lazy(() => import('./CommunityPrayerManager').then((m) => ({ default: m.CommunityPrayerManager })));
+const PrayerChallengeBackendManager = lazy(() => import('./PrayerChallengeBackendManager').then((m) => ({ default: m.PrayerChallengeBackendManager })));
+const AdminCounsellorManager = lazy(() => import('./AdminCounsellorManager').then((m) => ({ default: m.AdminCounsellorManager })));
+const AdminBookManager = lazy(() => import('./AdminBookManager').then((m) => ({ default: m.AdminBookManager })));
+const AdminContentSubmissions = lazy(() => import('./AdminContentSubmissions').then((m) => ({ default: m.AdminContentSubmissions })));
+const AICompanionAdminSettings = lazy(() => import('./AiCompanionAdminSettings').then((m) => ({ default: m.AICompanionAdminSettings })));
+const ReferralAdminManager = lazy(() => import('./ReferralAdminManager').then((m) => ({ default: m.ReferralAdminManager })));
+const ReadingPlanManager = lazy(() => import('./ReadingPlanManager').then((m) => ({ default: m.ReadingPlanManager })));
+const AdminLiveChannelManager = lazy(() => import('./AdminLiveChannelManager').then((m) => ({ default: m.AdminLiveChannelManager })));
+const AdminSubscriptionManager = lazy(() => import('./AdminSubscriptionManager').then((m) => ({ default: m.AdminSubscriptionManager })));
+const AdminTranslationDashboard = lazy(() => import('./AdminTranslationDashboard').then((m) => ({ default: m.AdminTranslationDashboard })));
+const LanguageManager = lazy(() => import('./platform-admin/LanguageManager').then((m) => ({ default: m.LanguageManager })));
+const ContentTranslationManager = lazy(() => import('./ContentTranslationManager').then((m) => ({ default: m.ContentTranslationManager })));
+const AdminDeclarationManager = lazy(() => import('./AdminDeclarationManager').then((m) => ({ default: m.AdminDeclarationManager })));
+const AdminAffirmationManager = lazy(() => import('./AdminAffirmationManager').then((m) => ({ default: m.AdminAffirmationManager })));
+const AdminBulkTTSPanel = lazy(() => import('./AdminBulkTTSPanel').then((m) => ({ default: m.AdminBulkTTSPanel })));
+const AdminBroadcastLogViewer = lazy(() => import('./AdminBroadcastLogViewer').then((m) => ({ default: m.AdminBroadcastLogViewer })));
+const AdminWhatsAppManager = lazy(() => import('./AdminWhatsAppManager').then((m) => ({ default: m.AdminWhatsAppManager })));
+const PlatformAdminDashboard = lazy(() => import('./platform-admin/PlatformAdminDashboard'));
 
 
 // Constants
@@ -348,6 +352,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     { value: 'ministry-groups', label: t('adminDashboard', 'tabMinistryGroups', 'Ministry Groups'), icon: Users },
     { value: 'mentors', label: t('adminDashboard', 'tabCounsellors', 'Counsellors'), icon: UserCheck },
     { value: 'books', label: t('adminDashboard', 'tabBooks', 'Books'), icon: Book },
+    { value: 'submissions', label: t('adminDashboard', 'tabSubmissions', 'Submissions'), icon: Inbox },
     { value: 'reading-plans', label: t('adminDashboard', 'tabReadingPlans', 'Reading Plans'), icon: Calendar },
     { value: 'live-channels', label: t('adminDashboard', 'tabLiveChannels', 'Live Channels'), icon: Radio },
     { value: 'analytics', label: t('adminDashboard', 'tabAnalytics', 'Analytics'), icon: TrendingUp },
@@ -1538,6 +1543,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           </div>
 
           {/* Dashboard Overview */}
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+              </div>
+            }
+          >
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
               <Card>
@@ -1769,6 +1781,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
             <AdminBookManager />
           )}
 
+          {activeTab === 'submissions' && (
+            <AdminContentSubmissions />
+          )}
+
           {activeTab === 'affirmations' && (
             <AdminAffirmationManager onUpdate={loadAllData} />
           )}
@@ -1832,6 +1848,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           {isSuperAdmin && activeTab === 'platform-admin' && (
             <PlatformAdminDashboard />
           )}
+          </Suspense>
           
         </Tabs>
 

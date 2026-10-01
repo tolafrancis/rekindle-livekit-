@@ -1,17 +1,26 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
+import { Popover, PopoverTrigger, PopoverContent } from '@rekindle/ui/popover';
 import { useDailyRoom, DailyParticipantInfo } from '../useDailyRoom';
 import { isLiveKitBackend } from '../videoBackend';
+import { trackMeetingParticipant } from '../meetingStreamControl';
 import { HostControlPanel } from './HostControlPanel';
 import { RoomChatSidebar } from './RoomChatSidebar';
 import { ReactionButton } from './MeetingReactions';
+import { ParticipantTileMenu, type LayoutActions } from './MeetingLayoutControls';
+import { MeetingControlsMenu } from './MeetingControlsMenu';
+import { LiveScriptureSidebar } from './LiveScriptureSidebar';
+import { MeetingBackstage, type BackstageReadyState } from './MeetingBackstage';
+import type { ScriptureControlState } from './FloatingTranslationButton';
+import { gridColumns, resolveStage } from '../layout/meetingLayout';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
-  Maximize2, Minimize2, Settings, VolumeX, CheckCircle2,
-  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2
+  Maximize2, Minimize2, Settings, VolumeX, Volume2, CheckCircle2,
+  XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, WifiOff,
+  LogOut, BookOpen,
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -36,10 +45,33 @@ interface DailyVideoCallProps {
   meetingId?: string;
   /** LiveKit role-derivation: which DB table holds this meeting's host_id.
    *  Defaults to 'meeting' (the `meetings` table). */
-  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel';
+  meetingKind?: 'meeting' | 'ministry_meeting' | 'channel_meeting' | 'channel' | 'ministry_webinar';
   showParticipantList?: boolean;
   onAdmitParticipant?: (participantId: string) => void;
   onRemoveParticipant?: (participantId: string) => void;
+  /** Hide the control bar's own built-in Chat button (real bug found live,
+   *  2026-09-22: WebinarStage.tsx has its OWN correctly-wired Chat/Q&A/Polls/
+   *  Speakers "Manage webinar" panel, but this component's generic Chat
+   *  button/RoomChatSidebar renders regardless and is a SEPARATE,
+   *  disconnected conversation — a host could send a message here that the
+   *  webinar's real audience-facing chat never shows at all. Defaults to
+   *  true (shown) so every existing plain-meeting caller is unaffected. */
+  showChatButton?: boolean;
+  /** Same reasoning as showChatButton, for the "Manage"/Host Controls button
+   *  (waiting-room admit/deny — a regular-meeting concept webinars don't
+   *  use; audience never has a waiting room, they're HLS-only viewers).
+   *  Defaults to true. */
+  showHostControlsButton?: boolean;
+  /** Extra buttons rendered inline in the real control bar, styled like the
+   *  built-in ones (same circular button/icon/label shape) — for a caller
+   *  like WebinarStage.tsx that suppresses the generic, disconnected Chat/
+   *  Host Controls buttons above but still needs its OWN correctly-wired
+   *  Chat/Q&A/Polls buttons to live among the actual controls, not buried in
+   *  a separate top-right overlay a host has no reason to open (real report,
+   *  2026-09-22: "you can't know if a message entered until you click
+   *  manage and go to chats"). Rendered after Screen Share, before whichever
+   *  of the built-in Chat/Host Controls/Recording/End buttons are enabled. */
+  extraControlButtons?: React.ReactNode;
   /** Whether the meeting was created with recording enabled (subscription-gated) */
   enableRecording?: boolean;
   /** When set (webinar mode, host only), push an RTMP stream to this URL so attendees can watch via HLS */
@@ -73,7 +105,36 @@ interface DailyVideoCallProps {
     tracks: Array<{ language: string; botIdentity: string }>;
     currentLanguage: string | null;
     setLanguage: (language: string | null, originalSpeakerIdentity?: string) => void;
+    /** Every other real (non-bot, non-local) participant currently in the
+     *  room — for FloatingTranslationButton's host-only "Now captioning"
+     *  picker (2026-09-23, captions pipeline review Phase 3, "Option C":
+     *  live speaker hand-off). Reuses this same lift-state-to-parent
+     *  pattern as tracks/currentLanguage above rather than threading a new
+     *  prop through every caller individually. */
+    participants: Array<{ identity: string; name: string }>;
   }) => void;
+  /** Host/co-host controls lifted to the parent, same pattern as
+   *  onTranslationControlsChange — WebinarStage renders its own people panel
+   *  (mute, spotlight) from this instead of the generic HostControlPanel.
+   *  Only fired while the local user is a moderator; null otherwise. */
+  onModeratorControlsChange?: (controls: ModeratorControls | null) => void;
+  /** Live Scripture's control state, lifted from FloatingTranslationButton.tsx
+   *  (see its ScriptureControlState doc comment) — the toggle button lives
+   *  in the control bar (replacing the old Layout slot) and its panel opens
+   *  as a side panel like Chat/Host Controls, both rendered here so they sit
+   *  among the call's own real controls instead of buried in a popover. */
+  scriptureControl?: ScriptureControlState | null;
+}
+
+export interface ModeratorControls {
+  /** Everyone in the room, local user included. `id` is the LiveKit identity
+   *  (the user id) — the same id the spotlight and moderation calls take. */
+  participants: Array<{ id: string; name: string; isLocal: boolean; hasAudio: boolean; role: string }>;
+  spotlightIds: string[];
+  mute: (id: string) => void;
+  muteAll: () => void;
+  spotlight: (id: string) => void;
+  removeSpotlight: (id: string) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -688,13 +749,15 @@ const ParticipantVideo: React.FC<{
   fill?: boolean;
   /** Hide the name/status overlay (the mini-player draws its own title bar). */
   hideOverlay?: boolean;
-  onParticipantJoin?: (participantId: string, userName: string) => void;
-  onParticipantLeave?: (participantId: string) => void;
-}> = ({ participant, isLarge = false, fill = false, hideOverlay = false, onParticipantJoin, onParticipantLeave }) => {
+}> = ({ participant, isLarge = false, fill = false, hideOverlay = false }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [hasJoined, setHasJoined] = useState(false);
   const [videoAttached, setVideoAttached] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  // A stale/broken uploaded photo shouldn't leave a blank hole forever — fall
+  // back to the initial-letter circle. Reset if the URL itself changes (e.g.
+  // the user re-uploads mid-call), so a fixed one isn't stuck hidden.
+  useEffect(() => { setAvatarError(false); }, [participant.avatarUrl]);
 
   // Attach video track - with retry logic for tracks that aren't immediately ready
   useEffect(() => {
@@ -746,7 +809,15 @@ const ParticipantVideo: React.FC<{
       }
     };
 
-    if (participant.hasVideo || participant.videoTrack) {
+    // Gate on hasVideo alone, not videoTrack — normalize() (LiveKitRoomWrapper.ts)
+    // already folds mute state into hasVideo (`!!videoTrack && !camera?.isMuted`),
+    // but leaves `videoTrack` pointing at the (now-muted) MediaStreamTrack. Toggling
+    // the camera off mutes the publication rather than tearing down the track, so
+    // `videoTrack` stays truthy and `track.readyState` stays 'live' — the old
+    // `hasVideo || videoTrack` check kept attaching that muted track instead of
+    // falling through to the avatar fallback below, so the tile just went black
+    // instead of showing the "camera off" placeholder.
+    if (participant.hasVideo) {
       tryAttach();
     } else {
       // No video - clear the element
@@ -770,19 +841,6 @@ const ParticipantVideo: React.FC<{
   // RemoteAudioLayer so it survives layout changes (screen share / pin / reflow)
   // that unmount these tiles. Playing it here too would double up.
 
-  // Track join/leave
-  useEffect(() => {
-    if (!participant.isLocal && participant.sessionId) {
-      if (participant.isInCall && !hasJoined) {
-        onParticipantJoin?.(participant.sessionId, participant.userName);
-        setHasJoined(true);
-      } else if (!participant.isInCall && hasJoined) {
-        onParticipantLeave?.(participant.sessionId);
-        setHasJoined(false);
-      }
-    }
-  }, [participant.isInCall, participant.sessionId, participant.userName, participant.isLocal, hasJoined, onParticipantJoin, onParticipantLeave]);
-
   // Determine if we should show video
   const showVideo = videoAttached || participant.hasVideo;
 
@@ -802,13 +860,24 @@ const ParticipantVideo: React.FC<{
         className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
       />
       
-      {/* Avatar fallback when no video */}
+      {/* Avatar fallback when no video — a real uploaded photo (participant.avatarUrl,
+          carried in LiveKit metadata since join) takes priority over the initial-letter
+          circle, which stays as the fallback for guests / anyone without a photo. */}
       {!showVideo && (
         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-700">
           <div className="text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-white/20 flex items-center justify-center text-white text-2xl font-bold mb-2">
-              {participant.userName.charAt(0).toUpperCase()}
-            </div>
+            {participant.avatarUrl && !avatarError ? (
+              <img
+                src={participant.avatarUrl}
+                alt=""
+                className="w-16 h-16 mx-auto rounded-full object-cover mb-2 ring-2 ring-white/30"
+                onError={() => setAvatarError(true)}
+              />
+            ) : (
+              <div className="w-16 h-16 mx-auto rounded-full bg-white/20 flex items-center justify-center text-white text-2xl font-bold mb-2">
+                {participant.userName.charAt(0).toUpperCase()}
+              </div>
+            )}
             <p className="text-white text-sm">{participant.userName}</p>
           </div>
         </div>
@@ -934,6 +1003,38 @@ const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ 
   <>{participants.filter((p) => !p.isLocal && p.audioTrack).map((p) => <RemoteAudio key={p.sessionId} participant={p} />)}</>
 );
 
+// One hidden <audio> for a remote participant's shared TAB/SCREEN audio (a
+// second, separate published track from their mic — see LiveKitRoomWrapper's
+// startScreenShare, which now requests `{ audio: true }` so a shared video's
+// sound publishes alongside its picture). Kept as its own persistent element
+// for the same reason as RemoteAudio: ScreenShareView's <video> is muted (so
+// its audio doesn't double up with this element) and can unmount/remount as
+// the layout changes, so the audio can't live inside it.
+const RemoteScreenAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
+  const ref = useRef<HTMLAudioElement>(null);
+  const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
+  useEffect(() => {
+    const track = participant.screenAudioTrack;
+    const el = ref.current;
+    if (!el || !track || track.readyState !== 'live') return;
+    el.srcObject = new MediaStream([track]);
+    registerAudioElement(el);
+    el.play().catch(() => {
+      const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
+      document.addEventListener('click', resume);
+    });
+    return () => {
+      unregisterAudioElement(el);
+      if (el) el.srcObject = null;
+    };
+  }, [participant.screenAudioTrack, registerAudioElement, unregisterAudioElement]);
+  return <audio ref={ref} autoPlay playsInline className="hidden" />;
+};
+
+const RemoteScreenAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ participants }) => (
+  <>{participants.filter((p) => !p.isLocal && p.screenAudioTrack).map((p) => <RemoteScreenAudio key={`screen-${p.sessionId}`} participant={p} />)}</>
+);
+
 
 export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   roomName,
@@ -950,6 +1051,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   showParticipantList = false,
   onAdmitParticipant,
   onRemoveParticipant,
+  showChatButton = true,
+  showHostControlsButton = true,
+  extraControlButtons,
   enableRecording = false,
   liveStreamRtmpUrl,
   onSidePanelToggle,
@@ -957,6 +1061,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onRaiseHandStateChange,
   onBackgroundStateChange,
   onTranslationControlsChange,
+  onModeratorControlsChange,
+  scriptureControl,
 }) => {
   const isNative = Capacitor.isNativePlatform();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -973,21 +1079,52 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const [audioStatus, setAudioStatus] = useState<'detecting' | 'active' | 'blocked' | 'inactive'>('inactive');
   const [hostHasJoined, setHostHasJoined] = useState(isHost);
   const [meetingEnded, setMeetingEnded] = useState(false);
+  // Real bug found live (2026-09-29): clicking "End for All" dropped the
+  // connection (leaveRoom() flips isConnected false) before meetingEnded got
+  // set — handleMeetingEnded (the realtime-broadcast path other participants
+  // take) already set it, but the ACTING host's own direct click never did,
+  // so the generic "You've been disconnected" card flashed instead of
+  // "Meeting Ended" for the one person who just chose to end it. A ref (not
+  // state) is enough: it only needs to be true by the next render, which the
+  // isConnected state flip already triggers.
+  const isExitingRef = useRef(false);
+  // Real bug found live (2026-09-22): a webinar host's LiveKit connection
+  // silently dropped mid-broadcast (RoomEvent.Disconnected -> isConnected
+  // false) with ZERO visible feedback — no banner, no frozen indicator,
+  // nothing. The host's own camera preview kept rendering (it's drawn from
+  // the raw local MediaStream, independent of whether the room connection
+  // is actually alive), so "the host screen looked completely normal the
+  // whole time" while the room had, in fact, gone empty from LiveKit's side
+  // — confirmed via the Egress API reporting "Source closed" on the Room
+  // Composite feed the audience was watching. The auto-join effect below
+  // only ever runs once (mount-only deps), so nothing ever re-attempted the
+  // connection either; only a manual page reload would have recovered it.
+  // Track whether we've EVER connected so a later drop can be told apart
+  // from the normal initial-connect spinner, and surface it explicitly.
+  const [wasEverConnected, setWasEverConnected] = useState(false);
+  // Private backstage (2026-09-29) — a local-only camera/mic/background check
+  // before anyone else in the room can see or hear this person, for every
+  // participant. Auto-join is gated on this being true; see MeetingBackstage.
+  const [backstageComplete, setBackstageComplete] = useState(false);
+  const backstageInitialRef = useRef<BackstageReadyState | null>(null);
   const [waitingParticipants, setWaitingParticipants] = useState<DailyParticipantInfo[]>([]);
   const [recordingStatus, setRecordingStatus] = useState<'idle' | 'starting' | 'recording' | 'stopping' | 'error'>('idle');
-  // True while the host is pushing the call's composite to Mux (which records it).
-  // Replaces Daily cloud recording, which this app no longer uses.
-  const [isMuxRecording, setIsMuxRecording] = useState(false);
+  // True while this meeting is being recorded — on the live LiveKit path (see
+  // isLiveKitBackend() below) this reflects the livekit-egress recording
+  // started via useDailyRoom's startRecording/stopRecording. Replaces Daily
+  // cloud recording, which this app no longer uses.
+  const [isRecordingActive, setIsRecordingActive] = useState(false);
 
   // Enhanced control panels
   const [showHostControls, setShowHostControls] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showScripturePanel, setShowScripturePanel] = useState(false);
 
   // Tell the parent overlay whenever a side panel is open so it can hide its own
   // top-right chrome (Copy Link / End for All), which would otherwise sit under it.
   useEffect(() => {
-    onSidePanelToggle?.(showChat || showHostControls);
-  }, [showChat, showHostControls, onSidePanelToggle]);
+    onSidePanelToggle?.(showChat || showHostControls || showScripturePanel);
+  }, [showChat, showHostControls, showScripturePanel, onSidePanelToggle]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -996,65 +1133,29 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const activeCallCtx = useActiveCallOptional(); // present when hosted by ActiveCallHost
 
 
-  // Track participant join function
-  const trackParticipantJoin = async (participantId: string, participantUserName: string) => {
-    if (!meetingId) return;
-    
-    try {
-      const { data: existing } = await supabase
-        .from('meeting_participants')
-        .select('id')
-        .eq('meeting_id', meetingId)
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .maybeSingle();
+  const isGuestUser = !userId || userId.startsWith('guest-');
 
-      if (existing) {
-        await supabase
-          .from('meeting_participants')
-          .update({
-            is_active: true,
-            left_at: null
-          })
-          .eq('id', existing.id);
-      } else {
-        await supabase
-          .from('meeting_participants')
-          .insert({
-            meeting_id: meetingId,
-            user_id: userId,
-            user_name: participantUserName,
-            is_active: true,
-            joined_at: new Date().toISOString()
-          });
-      }
-      
-      console.log('[DailyVideoCall] Participant joined tracked:', participantId);
-    } catch (error) {
-      console.error('[DailyVideoCall] Error tracking participant join:', error);
-    }
+  // Self-reported attendance tracking for the host's participant analytics
+  // (MeetingParticipantsPanel). Previously this fired per REMOTE tile mount/
+  // unmount and wrote under the LOCAL viewer's own userId — every browser
+  // watching a participant wrote a row keyed by itself, not that participant,
+  // so rows ended up with the wrong name and the local user's own join was
+  // never recorded at all. Self-reporting (this browser reports itself, once,
+  // on connect/disconnect) is the only version where the row's identity is
+  // actually correct.
+  const trackParticipantJoin = async () => {
+    if (!meetingId || meetingKind === 'channel') return;
+    await trackMeetingParticipant(meetingId, userId, userName, isGuestUser, 'join', meetingKind);
   };
 
-  // Track participant leave function
-  const trackParticipantLeave = async (participantId: string) => {
-    if (!meetingId) return;
-    
-    try {
-      await supabase
-        .from('meeting_participants')
-        .update({
-          is_active: false,
-          left_at: new Date().toISOString()
-        })
-        .eq('meeting_id', meetingId)
-        .eq('user_id', userId)
-        .eq('is_active', true);
-      
-      console.log('[DailyVideoCall] Participant leave tracked:', participantId);
-    } catch (error) {
-      console.error('[DailyVideoCall] Error tracking participant leave:', error);
-    }
+  const trackParticipantLeave = async () => {
+    if (!meetingId || meetingKind === 'channel') return;
+    await trackMeetingParticipant(meetingId, userId, userName, isGuestUser, 'leave', meetingKind);
   };
+
+  // Fire join once per connection, leave on disconnect/unmount. isConnected is
+  // destructured from useDailyRoom below, so this effect is defined after that
+  // destructure (see the block starting `const { isConnected, ... } = useDailyRoom`).
 
   // All media control is handled by useDailyRoom - this is the SOLE source of truth
   const {
@@ -1062,6 +1163,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isConnecting,
     isJoining,
     connectionError,
+    isReconnecting,
+    audioPlaybackBlocked,
+    enableAudioPlayback,
+    connectionQuality,
+    setParticipantVideoSubscribed,
     participants,
     participantStates,
     localParticipant,
@@ -1074,6 +1180,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isModerator,
     spotlightedParticipantId,
     pinnedParticipantId,
+    layoutState,
+    layoutLoaded,
+    hasSharedLayout,
     handRaised,
     isMicOn,
     isCameraOn,
@@ -1112,6 +1221,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     pauseRecording,
     resumeRecording,
     spotlightParticipant,
+    addToSpotlight,
+    removeFromSpotlight,
+    clearSpotlights,
+    swapSpeakers,
+    setLayoutMode,
+    setScreenShareMode,
+    setRecordingLayout,
+    setShowThumbnails,
     pinParticipant,
     raiseHand,
     lowerHand,
@@ -1170,6 +1287,66 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   }, [isConnected, toast, t]);
 
+  // Token-expiry warning (2026-09-23, real gap flagged in a pre-test
+  // pipeline review): livekit-token mints every JWT with a hardcoded 2h TTL
+  // and there is no refresh mechanism anywhere in this connection path — a
+  // session running longer than 2h gets everyone silently disconnected the
+  // instant their token expires, with zero warning. A true seamless hot-swap
+  // (reconnect with a fresh token without dropping published tracks) needs
+  // deeper changes to LiveKitRoomWrapper's join path than is safe to make
+  // without a live session to verify against — this closes the worse half
+  // of the gap first: at least warn before it happens, so the drop is
+  // expected instead of a mystery, and the existing "You've been
+  // disconnected — Rejoin" screen (below) is what recovers it. Timer keyed
+  // off the connection actually being established, not mount, so it's
+  // accurate regardless of how long the pre-join screen took.
+  const TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // must match livekit-token/index.ts's `ttl: '2h'`
+  const TOKEN_WARNING_LEAD_MS = 5 * 60 * 1000;
+  const tokenWarningShownRef = useRef(false);
+  useEffect(() => {
+    if (!isConnected) return;
+    tokenWarningShownRef.current = false;
+    const timer = setTimeout(() => {
+      if (tokenWarningShownRef.current) return;
+      tokenWarningShownRef.current = true;
+      toast({
+        title: "Your session will reconnect soon",
+        description: "This call has been running a while and will briefly disconnect in about 5 minutes to refresh — just rejoin if it does.",
+      });
+    }, Math.max(TOKEN_TTL_MS - TOKEN_WARNING_LEAD_MS, 0));
+    return () => clearTimeout(timer);
+  }, [isConnected, toast]);
+
+  // Attendance tracking: report this participant joined once connected, and
+  // report them left on disconnect/unmount (tab-close won't fire the cleanup —
+  // an inherent limit of any client-side "leave" signal, same as presence
+  // elsewhere in this app; acceptable for attendance analytics).
+  useEffect(() => {
+    if (!isConnected) return;
+    trackParticipantJoin();
+    return () => { trackParticipantLeave(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, meetingId]);
+
+  // Notify every non-host participant the moment recording starts (the host gets
+  // their own toast synchronously from useDailyRoom's startRecording). Tracks the
+  // broadcast meetingSettings.recordingStatus rather than the host-local
+  // isRecordingActive/recordingStatus state, which non-hosts never set.
+  const recordingNoticeShownRef = useRef(false);
+  useEffect(() => {
+    if (isHost) return;
+    if (meetingSettings.recordingStatus === 'recording' && !recordingNoticeShownRef.current) {
+      recordingNoticeShownRef.current = true;
+      toast({
+        title: t('dailyVideoCall', 'meetingBeingRecorded', 'This meeting is being recorded'),
+        description: t('dailyVideoCall', 'meetingBeingRecordedDesc', 'The host has started recording this session.'),
+      });
+    } else if (meetingSettings.recordingStatus !== 'recording') {
+      // Reset so a later start (stop, then start again) notifies again.
+      recordingNoticeShownRef.current = false;
+    }
+  }, [isHost, meetingSettings.recordingStatus, toast, t]);
+
   // Raise-hand state/action live in useDailyRoom (internal to this component);
   // surface them to the parent so it can render its own Raise Hand button (e.g.
   // beside its floating ReactionButton) instead of the control bar.
@@ -1193,14 +1370,40 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       tracks: translationTracks,
       currentLanguage: translationLanguage,
       setLanguage: setTranslationLanguage,
+      participants: remoteParticipants
+        .filter((p) => !p.isLocal && p.hasAudio)
+        .map((p) => ({ identity: p.id, name: p.userName })),
     });
-  }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange, remoteParticipants]);
 
-  // The host pushes the call's composite to Mux via one RTMP stream. This serves
-  // two purposes depending on mode: in a webinar it's the feed the HLS audience
-  // watches; in a normal meeting it's how the session gets recorded (Mux records
-  // whatever it ingests). Starts once the host is connected and a stream URL is
-  // available; stops when the call ends.
+  useEffect(() => {
+    if (!onModeratorControlsChange) return;
+    if (!isModerator) { onModeratorControlsChange(null); return; }
+    onModeratorControlsChange({
+      participants: participants
+        .filter((p) => !p.sessionId.startsWith('rlt-bot-') && !p.sessionId.endsWith('-screenshare'))
+        .map((p) => ({
+          id: p.sessionId,
+          name: p.userName,
+          isLocal: p.isLocal,
+          hasAudio: p.hasAudio,
+          role: getParticipantRole(p.sessionId),
+        })),
+      spotlightIds: layoutState.spotlightParticipants,
+      mute: (id) => { muteParticipant(id); },
+      muteAll: () => { muteAll(); },
+      spotlight: (id) => { spotlightParticipant(id); },
+      removeSpotlight: (id) => { removeFromSpotlight(id); },
+    });
+  }, [onModeratorControlsChange, isModerator, participants, layoutState.spotlightParticipants, getParticipantRole,
+    muteParticipant, muteAll, spotlightParticipant, removeFromSpotlight]);
+
+  // Legacy Daily-engine RTMP push path, superseded by the LiveKit migration
+  // (see isLiveKitBackend() below, hardcoded true — that path records/
+  // broadcasts via livekit-egress instead, no RTMP push or callObject
+  // involved). Only fires at all if the liveStreamRtmpUrl/callObject props
+  // are actually populated by the caller; not otherwise verified dead here.
   const liveStreamStartedRef = useRef(false);
   useEffect(() => {
     if (!isHost || !liveStreamRtmpUrl || !callObject || !isConnected) return;
@@ -1209,9 +1412,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     (async () => {
       try {
         await callObject.startLiveStreaming({ rtmpUrl: liveStreamRtmpUrl, width: 1280, height: 720 });
-        setIsMuxRecording(true);
+        setIsRecordingActive(true);
         setRecordingStatus('recording');
-        console.log('[DailyVideoCall] RTMP push to Mux started (broadcast/recording)');
+        console.log('[DailyVideoCall] RTMP push started (broadcast/recording)');
       } catch (e) {
         console.warn('[DailyVideoCall] Failed to start RTMP streaming:', e);
         liveStreamStartedRef.current = false;
@@ -1228,26 +1431,26 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           // The call object may already be destroyed during teardown — ignore.
         }
         liveStreamStartedRef.current = false;
-        setIsMuxRecording(false);
+        setIsRecordingActive(false);
       }
     };
   }, [isHost, liveStreamRtmpUrl, callObject, isConnected]);
 
-  // Toggle recording by starting/stopping the RTMP push to Mux. Mux records the
-  // ingested stream automatically (the live stream is provisioned with recording),
-  // so there's no separate Daily cloud-recording call. Webinars hide this control
-  // and keep the push running as the audience broadcast.
+  // Toggle recording. On the live LiveKit path (below) this starts/stops a
+  // livekit-egress recording. The rest of this function (past the
+  // isLiveKitBackend() return) is the legacy Daily-engine RTMP-push
+  // equivalent — see the comment on the effect above.
   const handleToggleRecording = async () => {
     if (!isHost) return;
 
     // LiveKit: recording is a room-composite Egress (no RTMP push, no call object).
     // The hook's startRecording/stopRecording hit the livekit-egress edge fn.
     if (isLiveKitBackend()) {
-      if (isMuxRecording) {
+      if (isRecordingActive) {
         setRecordingStatus('stopping');
         try {
           await stopRecording();
-          setIsMuxRecording(false);
+          setIsRecordingActive(false);
           setRecordingStatus('idle');
         } catch {
           setRecordingStatus('error');
@@ -1257,7 +1460,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         setRecordingStatus('starting');
         try {
           await startRecording();
-          setIsMuxRecording(true);
+          setIsRecordingActive(true);
           setRecordingStatus('recording');
         } catch {
           setRecordingStatus('error');
@@ -1272,12 +1475,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       return;
     }
 
-    if (isMuxRecording) {
+    if (isRecordingActive) {
       setRecordingStatus('stopping');
       try {
         await callObject.stopLiveStreaming();
         liveStreamStartedRef.current = false;
-        setIsMuxRecording(false);
+        setIsRecordingActive(false);
         setRecordingStatus('idle');
       } catch {
         setRecordingStatus('error');
@@ -1288,7 +1491,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       try {
         await callObject.startLiveStreaming({ rtmpUrl: liveStreamRtmpUrl, width: 1280, height: 720 });
         liveStreamStartedRef.current = true;
-        setIsMuxRecording(true);
+        setIsRecordingActive(true);
         setRecordingStatus('recording');
       } catch {
         setRecordingStatus('error');
@@ -1332,27 +1535,81 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   }, [isConnected, isHost, participants, showParticipantList]);
 
   // The host is featured (spotlighted) by default so every participant lands on
-  // the host's video. Fires once, when the host's own participant first appears;
-  // the host can spotlight someone else or clear it afterward.
+  // the host's video. Only in a fresh room: once the room metadata has been
+  // read, a layout a host or co-host already set (say, before this host
+  // rejoined) is left alone. Late joiners read the spotlight from the room
+  // metadata, so nothing needs re-sending as the roster grows.
   const didInitSpotlightRef = useRef(false);
   useEffect(() => {
-    if (!isHost || didInitSpotlightRef.current) return;
+    if (!isHost || !layoutLoaded || didInitSpotlightRef.current) return;
+    if (hasSharedLayout) { didInitSpotlightRef.current = true; return; }
     const me = participants.find((p: any) => p.isLocal);
     if (me) {
       didInitSpotlightRef.current = true;
       spotlightParticipant(me.sessionId);
     }
-  }, [isHost, participants, spotlightParticipant]);
+  }, [isHost, layoutLoaded, hasSharedLayout, participants, spotlightParticipant]);
 
-  // Spotlight is broadcast once when set; re-send it whenever the roster grows so
-  // late arrivals land on the same featured participant.
-  const prevParticipantCountRef = useRef(0);
+  // Who spoke most recently, newest first — Multi-Speaker with nobody
+  // spotlit shows the top few. Only reorders when someone starts talking.
+  const [recentSpeakers, setRecentSpeakers] = useState<string[]>([]);
   useEffect(() => {
-    if (isHost && spotlightedParticipantId && participants.length > prevParticipantCountRef.current) {
-      spotlightParticipant(spotlightedParticipantId);
+    const speaking = participants.filter((p: any) => p.isSpeaking).map((p: any) => p.sessionId as string);
+    if (speaking.length === 0) return;
+    setRecentSpeakers((prev) => {
+      const nextList = [...speaking, ...prev.filter((id) => !speaking.includes(id))].slice(0, 12);
+      return nextList.length === prev.length && nextList.every((id, i) => id === prev[i]) ? prev : nextList;
+    });
+  }, [participants]);
+
+  // Auto active-speaker layout: when nobody has explicitly pinned or spotlighted
+  // anyone, feature whoever's currently talking instead of always showing the
+  // full grid. This is a real cost lever, not just UX polish — LiveKit bills by
+  // downstream bandwidth, and adaptiveStream (LiveKitRoomWrapper.ts's Room
+  // config) only lowers a tile's resolution once something has actually made
+  // that tile small; a flat, unfeatured grid never gives it the chance to. Two
+  // debounces avoid flicker: a candidate must lead for 1.2s before becoming
+  // featured (skips brief interjections), and once someone's featured they stay
+  // featured for 3s of silence before falling back to the grid (skips gaps
+  // between sentences). Only kicks in once the grid would actually have enough
+  // tiles for it to matter — a 1:1 or 3-person call is already cheap either way.
+  const [autoSpeakerId, setAutoSpeakerId] = useState<string | null>(null);
+  const autoSpeakerCandidateRef = useRef<string | null>(null);
+  const autoSpeakerPromoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSpeakerClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (remoteParticipants.length < 4) {
+      autoSpeakerCandidateRef.current = null;
+      if (autoSpeakerPromoteTimerRef.current) { clearTimeout(autoSpeakerPromoteTimerRef.current); autoSpeakerPromoteTimerRef.current = null; }
+      if (autoSpeakerClearTimerRef.current) { clearTimeout(autoSpeakerClearTimerRef.current); autoSpeakerClearTimerRef.current = null; }
+      setAutoSpeakerId(null);
+      return;
     }
-    prevParticipantCountRef.current = participants.length;
-  }, [participants.length, isHost, spotlightedParticipantId, spotlightParticipant]);
+    const speaking = (remoteParticipants as any[]).find((p) => p.isSpeaking);
+    if (speaking) {
+      if (autoSpeakerClearTimerRef.current) { clearTimeout(autoSpeakerClearTimerRef.current); autoSpeakerClearTimerRef.current = null; }
+      if (autoSpeakerCandidateRef.current !== speaking.sessionId) {
+        autoSpeakerCandidateRef.current = speaking.sessionId;
+        if (autoSpeakerPromoteTimerRef.current) clearTimeout(autoSpeakerPromoteTimerRef.current);
+        autoSpeakerPromoteTimerRef.current = setTimeout(() => {
+          setAutoSpeakerId(speaking.sessionId);
+        }, 1200);
+      }
+    } else {
+      autoSpeakerCandidateRef.current = null;
+      if (autoSpeakerPromoteTimerRef.current) { clearTimeout(autoSpeakerPromoteTimerRef.current); autoSpeakerPromoteTimerRef.current = null; }
+      if (autoSpeakerId && !autoSpeakerClearTimerRef.current) {
+        autoSpeakerClearTimerRef.current = setTimeout(() => {
+          setAutoSpeakerId(null);
+          autoSpeakerClearTimerRef.current = null;
+        }, 3000);
+      }
+    }
+  }, [remoteParticipants, autoSpeakerId]);
+  useEffect(() => () => {
+    if (autoSpeakerPromoteTimerRef.current) clearTimeout(autoSpeakerPromoteTimerRef.current);
+    if (autoSpeakerClearTimerRef.current) clearTimeout(autoSpeakerClearTimerRef.current);
+  }, []);
 
   // Monitor audio track state from Daily SDK
   useEffect(() => {
@@ -1420,7 +1677,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
   const handleMeetingEnded = async () => {
     console.log('[DailyVideoCall] Handling meeting ended');
-    
+    isExitingRef.current = true;
+
     toast({
       title: t('dailyVideoCall', 'meetingEnded', 'Meeting Ended'),
       description: t('dailyVideoCall', 'hostEndedThisMeeting', 'The host has ended this meeting'),
@@ -1438,12 +1696,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }, 500);
   };
 
-  const handleEndCall = async () => {
-    if (isHost && meetingId) {
+  /** endForAll (default true): a host/co-host's own "End meeting for
+   *  everyone" click. Passing false is "Leave meeting" — the host steps out
+   *  and the meeting keeps running for everyone else, same as a non-host's
+   *  single "Leave" click (which always calls this with the default, but
+   *  the isHost guard below already no-ops the DB update for them either
+   *  way). isExitingRef is set synchronously, before leaveRoom() flips
+   *  isConnected, so the generic disconnect card never has a state gap to
+   *  flash through, regardless of which action this is. */
+  const handleEndCall = async (endForAll: boolean = true) => {
+    isExitingRef.current = true;
+    if (isHost && meetingId && endForAll) {
       try {
         await supabase
           .from('meetings')
-          .update({ 
+          .update({
             status: 'ended',
             ended_at: new Date().toISOString()
           })
@@ -1499,14 +1766,143 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   };
 
-  // Auto-join on mount — skip the pre-join screen entirely
+  // Join once backstage is done (or immediately for a caller with no
+  // backstage — see the backstageComplete default/render gate below).
   useEffect(() => {
-    if (!isConnected && !isConnecting && !isJoining) {
+    if (backstageComplete && !isConnected && !isConnecting && !isJoining) {
       handleJoinRoom();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [backstageComplete]);
 
+  useEffect(() => { if (isConnected) setWasEverConnected(true); }, [isConnected]);
+
+  // Apply backstage's chosen initial mic/camera/background state once the
+  // room actually connects — setVideoBackground needs the real LiveKit
+  // wrapper, which useDailyRoom only creates inside joinRoom() itself, so
+  // this can't run any earlier than isConnected (calling it pre-join hits
+  // the wrapper-not-ready branch and surfaces a spurious "Not supported"
+  // toast). toggleMic/toggleCamera default to on, so only flip what the
+  // person actually turned off in the preview.
+  useEffect(() => {
+    if (!isConnected || !backstageInitialRef.current) return;
+    const initial = backstageInitialRef.current;
+    backstageInitialRef.current = null;
+    if (initial.micEnabled !== isMicOn) toggleMic();
+    if (initial.cameraEnabled !== isCameraOn) toggleCamera();
+    if (initial.cameraBackground !== 'none') setVideoBackground(initial.cameraBackground);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
+
+  const handleBackstageReady = (state: BackstageReadyState) => {
+    backstageInitialRef.current = state;
+    setBackstageComplete(true);
+  };
+
+  // Whoever is actively screen-sharing (local or remote) — their screen becomes
+  // the main stage. Require the track to be LIVE: when a share stops, the track
+  // ends (readyState 'ended') but the participant object can linger a beat; without
+  // this check ScreenShareView kept rendering the dead track as a frozen black
+  // stage instead of falling back to the camera grid.
+  const screenSharer = participants.find((p: any) =>
+    p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
+
+  // What's on stage comes from the host's shared layout and spotlight list
+  // (layout/meetingLayout.ts's resolveStage): this viewer's own PIN wins for
+  // this viewer only, then a live screen share in the host's chosen screen
+  // mode, then the spotlight (1 → Speaker, 2 in Dual Speaker → two equal
+  // tiles, more → Multi-Speaker), then the selected layout, which falls back
+  // on the automatic active speaker (autoSpeakerId above). Spotlight order is
+  // fixed by the host; talking never reorders or enlarges anyone.
+  const participantsById = useMemo(
+    () => new Map(participants.map((p: any) => [p.sessionId as string, p])),
+    [participants],
+  );
+  const stage = useMemo(() => resolveStage({
+    state: layoutState,
+    participants: participants.map((p: any) => ({
+      sessionId: p.sessionId,
+      isLocal: p.isLocal,
+      isSpeaking: p.isSpeaking,
+      hasScreenShare: !!screenSharer && p.sessionId === screenSharer.sessionId,
+    })),
+    pinnedId: pinnedParticipantId,
+    activeSpeakerId: autoSpeakerId,
+    recentSpeakers,
+  }), [layoutState, participants, screenSharer, pinnedParticipantId, autoSpeakerId, recentSpeakers]);
+  const mainParticipants = useMemo(
+    () => stage.main.map((id) => participantsById.get(id)).filter(Boolean) as any[],
+    [stage, participantsById],
+  );
+  const thumbnailParticipants = useMemo(
+    () => stage.thumbnails.map((id) => participantsById.get(id)).filter(Boolean) as any[],
+    [stage, participantsById],
+  );
+  const featuredParticipant = mainParticipants[0] ?? null;
+  const featuredIsLocal = mainParticipants.some((p: any) => p.isLocal);
+
+  // On-screen tile capping (2026-09-23, meeting architecture review
+  // follow-up). Active speakers are prioritized so a live conversation can't
+  // get pushed off-screen by the cap; everyone else keeps their existing order
+  // filling the remaining slots. Tiles beyond the cap collapse into a single
+  // "+N more" indicator instead of each getting their own (still-mounted,
+  // still-decoding) element. The big tiles (stage.main) are never capped.
+  const MAX_ONSCREEN_TILES = 12;
+  const lastOnScreenRef = useRef<Set<string>>(new Set());
+  const capTiles = (list: any[]): { visible: any[]; overflowCount: number } => {
+    if (list.length <= MAX_ONSCREEN_TILES) return { visible: list, overflowCount: 0 };
+    const ordered = [...list].sort((a, b) => (b.isSpeaking ? 1 : 0) - (a.isSpeaking ? 1 : 0));
+    return { visible: ordered.slice(0, MAX_ONSCREEN_TILES), overflowCount: ordered.length - MAX_ONSCREEN_TILES };
+  };
+  const cappedThumbnails = useMemo(() => capTiles(thumbnailParticipants), [thumbnailParticipants]);
+
+  // Track-level subscription control, not just visual capping (2026-09-23,
+  // same follow-up) — the room auto-subscribes every remote CAMERA track on
+  // join regardless of what's actually rendered, so capping the grid visually
+  // alone still pulled full video bandwidth for everyone off-screen. Only the
+  // big tiles and the visible thumbnails stay subscribed; adaptiveStream then
+  // sizes each one to its tile, so thumbnails pull a low layer and the
+  // spotlit speakers a high one. Audio is deliberately left untouched —
+  // hearing someone still matters even while their tile is off-screen.
+  //
+  // Real bug found live (2026-09-23): hooks here must run on every render,
+  // before the early returns further down (meetingEnded / waiting-room /
+  // disconnected / connecting), or React crashes with error #300.
+  useEffect(() => {
+    const onScreen = new Set<string>(cappedThumbnails.visible.map((p: any) => p.id));
+    mainParticipants.forEach((p: any) => { if (!p.isLocal) onScreen.add(p.id); });
+
+    // Diff against what was last requested and only call for identities whose
+    // subscribed state actually flipped.
+    const prevOnScreen = lastOnScreenRef.current;
+    remoteParticipants.forEach((p: any) => {
+      const shouldShow = onScreen.has(p.id);
+      if (prevOnScreen.has(p.id) !== shouldShow) {
+        setParticipantVideoSubscribed(p.id, shouldShow);
+      }
+    });
+    lastOnScreenRef.current = onScreen;
+  }, [cappedThumbnails.visible, mainParticipants, remoteParticipants, setParticipantVideoSubscribed]);
+
+  const layoutActions: LayoutActions = useMemo(() => ({
+    spotlightOnly: (id: string) => spotlightParticipant(id),
+    addToSpotlight,
+    removeFromSpotlight,
+    clearSpotlights,
+    swapSpeakers,
+    setLayoutMode,
+    setScreenShareMode,
+    setRecordingLayout,
+    setShowThumbnails,
+  }), [spotlightParticipant, addToSpotlight, removeFromSpotlight, clearSpotlights, swapSpeakers, setLayoutMode, setScreenShareMode, setRecordingLayout, setShowThumbnails]);
+
+  // Private backstage — before anything else, including the connecting
+  // spinner: nobody else in the room sees or hears this person until they
+  // click "Join now" (MeetingBackstage creates its own standalone preview
+  // tracks, entirely separate from the real call).
+  if (!backstageComplete) {
+    return <MeetingBackstage userName={userName} onReady={handleBackstageReady} />;
+  }
 
   // Show meeting ended screen
   if (meetingEnded) {
@@ -1537,6 +1933,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         isHost={isHost}
         hostHasJoined={hostHasJoined}
         onCancel={() => {
+          isExitingRef.current = true;
           leaveRoom();
           onCallEnd?.();
         }}
@@ -1544,7 +1941,34 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     );
   }
 
-
+  // Connection lost mid-call — was connected before, isn't now, and nothing
+  // is actively retrying (the mount-only auto-join effect above never fires
+  // again on its own). Without this branch the component silently fell
+  // through to rendering the last-known, now-stale participant grid — the
+  // local host's own camera tile kept looking perfectly normal (it's the
+  // raw local MediaStream, not dependent on the room connection), so there
+  // was no visible sign anything had gone wrong, while the room had, in
+  // fact, gone empty from LiveKit's side (confirmed live via the Egress API:
+  // the audience's HLS feed ended with "Source closed" — the room was empty
+  // this whole time even though the host's screen looked fine).
+  if (wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded && !isExitingRef.current) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-6">
+            <AlertCircle className="h-10 w-10 text-red-600" />
+          </div>
+          <h3 className="text-xl font-semibold mb-2">You've been disconnected</h3>
+          <p className="text-gray-500 mb-6">
+            Your connection to the call dropped. {isHost ? 'Attendees stop seeing you until you rejoin.' : "Rejoin to get back in."}
+          </p>
+          <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
+            Rejoin
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Connecting screen
   if (isConnecting || isJoining) {
@@ -1563,61 +1987,59 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     );
   }
 
-  // Whoever is actively screen-sharing (local or remote) — their screen becomes
-  // the main stage. Require the track to be LIVE: when a share stops, the track
-  // ends (readyState 'ended') but the participant object can linger a beat; without
-  // this check ScreenShareView kept rendering the dead track as a frozen black
-  // stage instead of falling back to the camera grid.
-  const screenSharer = participants.find((p: any) =>
-    p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
-
-  // The main stage features ONE participant. A personal PIN (local to this viewer)
-  // takes priority over the host's SPOTLIGHT (broadcast to everyone). The featured
-  // participant is found among ALL participants, so it can be the local host (who
-  // is spotlighted by default).
-  const featuredId = pinnedParticipantId || spotlightedParticipantId;
-  const featuredParticipant = featuredId
-    ? participants.find((p: any) => p.sessionId === featuredId)
-    : null;
-  const featuredIsSpotlight = !!featuredParticipant && !pinnedParticipantId;
-  const featuredIsLocal = !!featuredParticipant && featuredParticipant.isLocal;
-  const filmstripParticipants = featuredParticipant
-    ? remoteParticipants.filter((p: any) => p.sessionId !== featuredParticipant.sessionId)
-    : remoteParticipants;
-
-  // Per-tile pin / spotlight / co-host controls, shared by the filmstrip and grid.
+  // Per-tile menu (pin for anyone; spotlight, mute, video, roles and remove for
+  // a host or co-host) and a Spotlight badge, shared by every tile.
   const renderTileControls = (p: any) => {
-    const isPinned = pinnedParticipantId === p.sessionId;
-    const isSpot = spotlightedParticipantId === p.sessionId;
-    const isCoHost = getParticipantRole(p.sessionId) === 'co-host';
-    const base = 'flex items-center justify-center rounded text-white transition-colors px-1.5 py-0.5';
+    const spotIndex = layoutState.spotlightParticipants.indexOf(p.sessionId);
     return (
       <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
-        <button
-          onClick={() => pinParticipant(isPinned ? null : p.sessionId)}
-          title={isPinned ? t('dailyVideoCall', 'unpin', 'Unpin') : t('dailyVideoCall', 'pin', 'Pin')}
-          className={`${base} ${isPinned ? 'bg-purple-600' : 'bg-black/60 hover:bg-purple-600'}`}
-        >
-          <Pin className="h-2.5 w-2.5" />
-        </button>
-        {isModerator && (
-          <button
-            onClick={() => spotlightParticipant(isSpot ? null : p.sessionId)}
-            title={isSpot ? t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight') : t('dailyVideoCall', 'spotlight', 'Spotlight')}
-            className={`${base} ${isSpot ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+        {spotIndex >= 0 && (
+          <span
+            className="flex items-center gap-0.5 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-medium text-white"
+            title={t('dailyVideoCall', 'spotlight', 'Spotlight')}
           >
             <Sparkles className="h-2.5 w-2.5" />
-          </button>
+            <span className="hidden sm:inline">{t('dailyVideoCall', 'spotlight', 'Spotlight')}</span>
+          </span>
         )}
-        {isModerator && !p.isLocal && (
-          <button
-            onClick={() => assignRole(p.sessionId, isCoHost ? 'attendee' : 'co-host')}
-            title={isCoHost ? t('dailyVideoCall', 'removeCoHost', 'Remove co-host') : t('dailyVideoCall', 'makeCoHost', 'Make co-host')}
-            className={`${base} ${isCoHost ? 'bg-blue-600' : 'bg-black/60 hover:bg-blue-600'}`}
-          >
-            <Shield className="h-2.5 w-2.5" />
-          </button>
+        {pinnedParticipantId === p.sessionId && (
+          <span className="flex items-center rounded bg-purple-600 px-1.5 py-0.5 text-white" title={t('dailyVideoCall', 'pinned', 'Pinned')}>
+            <Pin className="h-2.5 w-2.5" />
+          </span>
         )}
+        <ParticipantTileMenu
+          participant={p}
+          layout={layoutState}
+          actions={layoutActions}
+          isModerator={isModerator}
+          canMakeHost={isHost}
+          role={getParticipantRole(p.sessionId)}
+          isPinned={pinnedParticipantId === p.sessionId}
+          onPin={pinParticipant}
+          onMute={(id) => muteParticipant(id)}
+          onDisableVideo={(id) => disableParticipantVideo(id)}
+          onSetRole={(id, role) => assignRole(id, role)}
+          onRemove={(id) => removeParticipant(id)}
+        />
+      </div>
+    );
+  };
+
+  // Connection-quality badge (2026-09-23, meeting architecture review
+  // follow-up) — connectionQuality is keyed by LiveKit identity
+  // (NormalizedParticipant.id), not sessionId. Deliberately silent for
+  // 'excellent'/'good'/'unknown' — same convention most meeting apps use of
+  // only surfacing a warning once quality actually degrades, not a
+  // permanent "you're fine" indicator cluttering every tile.
+  const renderQualityBadge = (p: any) => {
+    const quality = connectionQuality[p.id];
+    if (quality !== 'poor' && quality !== 'lost') return null;
+    return (
+      <div
+        className={`absolute bottom-1 left-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${quality === 'lost' ? 'bg-red-600' : 'bg-amber-500'}`}
+        title={quality === 'lost' ? t('dailyVideoCall', 'connectionLost', 'Connection lost') : t('dailyVideoCall', 'poorConnection', 'Poor connection')}
+      >
+        <WifiOff className="h-2.5 w-2.5" />
       </div>
     );
   };
@@ -1642,6 +2064,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     return (
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
         <RemoteAudioLayer participants={remoteParticipants} />
+        <RemoteScreenAudioLayer participants={remoteParticipants} />
         {miniFeature ? (
           // fill: the mini-player parent already fixes the frame size; without it
           // the aspect-ratio box collapses to zero width and the video goes blank.
@@ -1652,8 +2075,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             participant={miniFeature}
             fill
             hideOverlay
-            onParticipantJoin={trackParticipantJoin}
-            onParticipantLeave={trackParticipantLeave}
           />
         ) : (
           <div className="text-xs text-white/50">{t('dailyVideoCall', 'connecting', 'Connecting…')}</div>
@@ -1693,9 +2114,37 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       ref={containerRef}
       className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-gray-900 sm:flex-row ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
+      {/* Reconnection UX (2026-09-23, meeting architecture review) — before
+          this, a network blip gave zero feedback: tiles just froze with no
+          indication anything was wrong, and a blocked audio autoplay left a
+          joined participant watching video with no sound and no
+          explanation. Both render as a non-blocking banner on top of the
+          normal in-call UI (not a full-screen takeover like the hard-
+          disconnect screen above) since the call itself is still usable
+          while either is showing. */}
+      {isReconnecting && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-amber-500 text-white px-3 py-1.5 text-xs sm:text-sm shadow-lg">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('dailyVideoCall', 'reconnecting', 'Reconnecting…')}
+        </div>
+      )}
+      {audioPlaybackBlocked && (
+        <button
+          type="button"
+          onClick={enableAudioPlayback}
+          className={`absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 text-xs sm:text-sm shadow-lg ${isReconnecting ? 'top-11' : 'top-2'}`}
+        >
+          <Volume2 className="h-3.5 w-3.5" />
+          {t('dailyVideoCall', 'tapToEnableSound', 'Tap to enable sound')}
+        </button>
+      )}
+
       {/* Persistent remote audio — mounted once, independent of the video layout
           below, so audio never cuts when a screen share takes the stage etc. */}
       <RemoteAudioLayer participants={remoteParticipants} />
+      {/* Shared tab/screen audio (e.g. a video the presenter is playing) — a
+          second track per participant, kept just as persistent as their mic. */}
+      <RemoteScreenAudioLayer participants={remoteParticipants} />
 
       {/* Main video area */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -1705,126 +2154,210 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         <div className="relative w-full flex-1 min-h-0 overflow-hidden bg-gray-800">
         {/* A live screen share takes over the main stage (local or remote), with a
             camera filmstrip beside it so viewers still see the presenter. */}
-        {screenSharer ? (
-          <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
-            <div className="flex-1 min-h-0">
-              <ScreenShareView participant={screenSharer} />
+        {(() => {
+          // A small audience tile (filmstrip / screen-share gallery).
+          const thumb = (p: any, className: string) => (
+            <div key={p.sessionId} className={`relative shrink-0 ${className}`}>
+              <ParticipantVideo participant={p} isLarge />
+              {renderTileControls(p)}
+              {renderQualityBadge(p)}
             </div>
-            {remoteParticipants.length > 0 && (
-              <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0 overflow-x-auto lg:overflow-y-auto overflow-y-hidden lg:overflow-x-hidden">
-                {remoteParticipants.map((p: any) => (
-                  <div key={p.sessionId} className="w-28 lg:w-full shrink-0">
-                    <ParticipantVideo
-                      participant={p}
-                      onParticipantJoin={trackParticipantJoin}
-                      onParticipantLeave={trackParticipantLeave}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : remoteParticipants.length === 0 ? (
-          <div className="flex items-center justify-center h-full p-2 sm:p-4">
-            <div className="relative w-full max-w-3xl">
-              {localParticipant ? (
-                <ParticipantVideo
-                  participant={localParticipant}
-                  isLarge
-                  onParticipantJoin={trackParticipantJoin}
-                  onParticipantLeave={trackParticipantLeave}
-                />
-              ) : (
-                <div className="aspect-video bg-gray-800 rounded-xl flex items-center justify-center">
-                  <Users className="h-12 w-12 text-white/40" />
-                </div>
-              )}
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/80 text-xs bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full">
-                <Users className="h-3.5 w-3.5 opacity-70" />
-                {t('dailyVideoCall', 'waitingForOthers', 'Waiting for others to join…')}
+          );
+          const overflowTile = (count: number, className: string) => count > 0 && (
+            <div className={`relative flex shrink-0 aspect-video items-center justify-center rounded-lg bg-gray-800 text-white ${className}`}>
+              <div className="text-center">
+                <Users className="h-4 w-4 mx-auto mb-0.5 opacity-70" />
+                <p className="text-[11px] font-medium">+{count}</p>
               </div>
             </div>
-          </div>
-        ) : featuredParticipant ? (
-          <div className="flex flex-col h-full gap-2 p-1 sm:p-2">
-            <div className="relative flex-1 min-h-0 flex items-center justify-center">
-              <div className="relative w-full max-w-4xl">
-                <ParticipantVideo
-                  key={featuredParticipant.sessionId}
-                  participant={featuredParticipant}
-                  isLarge
-                  onParticipantJoin={trackParticipantJoin}
-                  onParticipantLeave={trackParticipantLeave}
-                />
-                {/* Feature badge — spotlight (host, global) vs pin (this viewer).
-                    Sits below the top status bar so it doesn't overlap it on entry. */}
-                <div className="absolute top-12 sm:top-14 left-2 z-10">
-                  {featuredIsSpotlight ? (
-                    <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
-                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-xs font-medium bg-purple-600 text-white px-2 py-1 rounded-md shadow">
-                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'pinned', 'Pinned')}
-                    </span>
+          );
+          // The row of audience thumbnails under the main tiles.
+          const filmstrip = () => cappedThumbnails.visible.length > 0 && (
+            <div className="flex gap-2 h-20 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+              {cappedThumbnails.visible.map((p: any) => thumb(p, 'h-full aspect-video'))}
+              {overflowTile(cappedThumbnails.overflowCount, 'h-full')}
+            </div>
+          );
+          // One of the equal big tiles (Dual / Multi / Screen + Dual). The
+          // video fills a 16:9 box, so both Dual Speaker tiles are always the
+          // same size no matter who is talking.
+          const bigTile = (p: any) => (
+            <div key={p.sessionId} className="relative w-full max-h-full aspect-video min-h-0 overflow-hidden rounded-lg">
+              <ParticipantVideo participant={p} fill />
+              {renderTileControls(p)}
+              {renderQualityBadge(p)}
+            </div>
+          );
+
+          // A live screen share takes the stage, laid out the way the host chose.
+          if (stage.kind === 'screen' && screenSharer) {
+            const mode = stage.screenMode;
+            if (mode === 'screen-dual') {
+              return (
+                <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
+                  <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
+                  {mainParticipants.length > 0 && (
+                    <div className={`grid shrink-0 gap-2 w-full max-w-2xl mx-auto ${mainParticipants.length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-xs'}`}>
+                      {mainParticipants.map(bigTile)}
+                    </div>
                   )}
                 </div>
-                {/* Remove control: anyone can unpin their own pin; only a moderator
-                    (host or co-host) can clear a spotlight. Below the top bar. */}
-                <div className="absolute top-12 sm:top-14 right-2 z-10">
-                  {!featuredIsSpotlight ? (
-                    <button
-                      onClick={() => pinParticipant(null)}
-                      className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
-                    >
-                      <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
-                    </button>
-                  ) : isModerator ? (
-                    <button
-                      onClick={() => spotlightParticipant(null)}
-                      className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
-                    >
-                      <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight')}
-                    </button>
-                  ) : null}
+              );
+            }
+            if (mode === 'screen-speaker' && mainParticipants.length > 0) {
+              return (
+                <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
+                  <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
+                  <div className="shrink-0 w-40 self-end lg:self-center lg:w-72">{bigTile(mainParticipants[0])}</div>
+                </div>
+              );
+            }
+            if (mode === 'screen-gallery' && cappedThumbnails.visible.length > 0) {
+              return (
+                <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
+                  <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
+                  <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0 overflow-x-auto lg:overflow-y-auto overflow-y-hidden lg:overflow-x-hidden">
+                    {cappedThumbnails.visible.map((p: any) => thumb(p, 'w-28 lg:w-full'))}
+                    {overflowTile(cappedThumbnails.overflowCount, 'w-28 lg:w-full')}
+                  </div>
+                </div>
+              );
+            }
+            return <div className="h-full overflow-hidden p-2"><ScreenShareView participant={screenSharer} /></div>;
+          }
+
+          if (remoteParticipants.length === 0) {
+            return (
+              <div className="flex items-center justify-center h-full p-2 sm:p-4">
+                <div className="relative w-full max-w-3xl">
+                  {localParticipant ? (
+                    <ParticipantVideo participant={localParticipant} isLarge />
+                  ) : (
+                    <div className="aspect-video bg-gray-800 rounded-xl flex items-center justify-center">
+                      <Users className="h-12 w-12 text-white/40" />
+                    </div>
+                  )}
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/80 text-xs bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full">
+                    <Users className="h-3.5 w-3.5 opacity-70" />
+                    {t('dailyVideoCall', 'waitingForOthers', 'Waiting for others to join…')}
+                  </div>
                 </div>
               </div>
-            </div>
-            {filmstripParticipants.length > 0 && (
-              <div className="flex gap-2 h-24 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                {filmstripParticipants.map((participant: any) => (
-                  <div key={participant.sessionId} className="relative h-full aspect-video shrink-0">
-                    <ParticipantVideo
-                      participant={participant}
-                      isLarge
-                      onParticipantJoin={trackParticipantJoin}
-                      onParticipantLeave={trackParticipantLeave}
-                    />
-                    {renderTileControls(participant)}
+            );
+          }
+
+          // Dual Speaker: two equal tiles, side by side from tablet width up,
+          // stacked on a phone held upright. Order is the host's, left to right.
+          if (stage.kind === 'dual') {
+            return (
+              <div className="flex flex-col h-full gap-2 p-1 sm:p-2 pt-12 sm:pt-16">
+                <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1 gap-2 place-items-center">
+                  {mainParticipants.map(bigTile)}
+                </div>
+                {filmstrip()}
+              </div>
+            );
+          }
+
+          // Multi-Speaker: every spotlit person (or the latest speakers) at equal size.
+          if (stage.kind === 'multi') {
+            const cols = gridColumns(mainParticipants.length);
+            return (
+              <div className="flex flex-col h-full gap-2 p-1 sm:p-2 pt-12 sm:pt-16">
+                <div className={`flex-1 min-h-0 overflow-y-auto grid gap-2 place-items-center content-center ${
+                  cols === 1 ? 'grid-cols-1' : cols === 2 ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'
+                }`}>
+                  {mainParticipants.map(bigTile)}
+                </div>
+                {filmstrip()}
+              </div>
+            );
+          }
+
+          // Speaker: one featured tile, the rest in a filmstrip.
+          if (stage.kind === 'speaker' && featuredParticipant) {
+            return (
+              <div className="flex flex-col h-full gap-2 p-1 sm:p-2">
+                <div className="relative flex-1 min-h-0 flex items-center justify-center">
+                  {/* max-w-3xl (2026-09-22): a smaller featured frame lets
+                      adaptiveStream request a resolution that matches what's
+                      rendered instead of stretching a still-ramping bitrate. */}
+                  <div className="relative w-full max-w-3xl">
+                    <ParticipantVideo key={featuredParticipant.sessionId} participant={featuredParticipant} isLarge />
+                    {/* Spotlight (host, global) vs pin (this viewer). Nothing for
+                        an automatic active speaker. Below the top status bar. */}
+                    {stage.reason !== 'active' && stage.reason !== 'none' && (
+                      <div className="absolute top-12 sm:top-14 left-2 z-10">
+                        {stage.reason === 'spotlight' ? (
+                          <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
+                            <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-xs font-medium bg-purple-600 text-white px-2 py-1 rounded-md shadow">
+                            <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'pinned', 'Pinned')}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* Anyone can unpin their own pin; only a host or co-host
+                        can remove a spotlight. */}
+                    {stage.reason === 'pin' ? (
+                      <div className="absolute top-12 sm:top-14 right-2 z-10">
+                        <button
+                          onClick={() => pinParticipant(null)}
+                          className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
+                        >
+                          <Pin className="h-3 w-3" /> {t('dailyVideoCall', 'unpin', 'Unpin')}
+                        </button>
+                      </div>
+                    ) : stage.reason === 'spotlight' && isModerator ? (
+                      <div className="absolute top-12 sm:top-14 right-2 z-10">
+                        <button
+                          onClick={() => removeFromSpotlight(featuredParticipant.sessionId)}
+                          className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
+                        >
+                          <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'removeSpotlight', 'Remove spotlight')}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="absolute top-12 sm:top-14 right-2 z-10">{renderTileControls(featuredParticipant)}</div>
+                    )}
                   </div>
-                ))}
+                </div>
+                {filmstrip()}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
-            remoteParticipants.length === 1 ? 'grid-cols-1' :
-            remoteParticipants.length <= 4 ? 'grid-cols-2' :
-            'grid-cols-3'
-          }`}>
-            {remoteParticipants.map(participant => (
-              <div key={participant.sessionId} className="relative">
-                <ParticipantVideo
-                  participant={participant}
-                  isLarge={remoteParticipants.length === 1}
-                  onParticipantJoin={trackParticipantJoin}
-                  onParticipantLeave={trackParticipantLeave}
-                />
-                {renderTileControls(participant)}
-              </div>
-            ))}
-          </div>
-        )}
+            );
+          }
+
+          // Gallery. Real gap found live (2026-09-23): every remote participant
+          // used to get a live <video> with no cap at all; this uses the same
+          // capped list the subscription effect above keeps subscribed.
+          const { visible, overflowCount } = cappedThumbnails;
+          const tileCount = visible.length + (overflowCount > 0 ? 1 : 0);
+          return (
+            <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
+              tileCount === 1 ? 'grid-cols-1' :
+              tileCount <= 4 ? 'grid-cols-2' :
+              'grid-cols-3'
+            }`}>
+              {visible.map((participant: any) => (
+                <div key={participant.sessionId} className="relative">
+                  <ParticipantVideo participant={participant} isLarge={tileCount === 1} />
+                  {renderTileControls(participant)}
+                  {renderQualityBadge(participant)}
+                </div>
+              ))}
+              {overflowCount > 0 && (
+                <div className="relative flex aspect-video w-full items-center justify-center rounded-lg bg-gray-800 text-white">
+                  <div className="text-center">
+                    <Users className="h-6 w-6 mx-auto mb-1 opacity-70" />
+                    <p className="text-sm font-medium">+{overflowCount} {t('dailyVideoCall', 'moreParticipants', 'more')}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Local video (picture-in-picture). The <video> stays MOUNTED even while
             the local user is the featured (spotlit) tile — we just hide the PiP —
@@ -1842,22 +2375,34 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               style={{ transform: 'scaleX(-1)' }} // Mirror the local video
             />
             {/* Spotlight yourself / see that you're spotlighted (moderators). */}
-            {isModerator && (
-              <button
-                onClick={() => spotlightParticipant(spotlightedParticipantId === localParticipant.sessionId ? null : localParticipant.sessionId)}
-                title={spotlightedParticipantId === localParticipant.sessionId ? t('dailyVideoCall', 'youAreSpotlighted', "You're spotlighted — tap to remove") : t('dailyVideoCall', 'spotlightYourself', 'Spotlight yourself')}
-                className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${spotlightedParticipantId === localParticipant.sessionId ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
-              >
-                <Sparkles className="h-2.5 w-2.5" />
-                {spotlightedParticipantId === localParticipant.sessionId && <span className="hidden sm:inline">{t('dailyVideoCall', 'spotlightedShort', 'Spotlight')}</span>}
-              </button>
-            )}
+            {isModerator && (() => {
+              const selfSpotlit = layoutState.spotlightParticipants.includes(localParticipant.sessionId);
+              return (
+                <button
+                  onClick={() => selfSpotlit ? removeFromSpotlight(localParticipant.sessionId) : spotlightParticipant(localParticipant.sessionId)}
+                  title={selfSpotlit ? t('dailyVideoCall', 'youAreSpotlighted', "You're spotlighted — tap to remove") : t('dailyVideoCall', 'spotlightYourself', 'Spotlight yourself')}
+                  className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${selfSpotlit ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+                >
+                  <Sparkles className="h-2.5 w-2.5" />
+                  {selfSpotlit && <span className="hidden sm:inline">{t('dailyVideoCall', 'spotlightedShort', 'Spotlight')}</span>}
+                </button>
+              );
+            })()}
             {/* Avatar fallback when camera is off */}
             {!isCameraOn && (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-600 to-indigo-700">
-                <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-sm sm:text-xl font-bold">
-                  {userName.charAt(0).toUpperCase()}
-                </div>
+                {localParticipant?.avatarUrl ? (
+                  <img
+                    src={localParticipant.avatarUrl}
+                    alt=""
+                    className="w-8 h-8 sm:w-12 sm:h-12 rounded-full object-cover ring-2 ring-white/30"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-sm sm:text-xl font-bold">
+                    {userName.charAt(0).toUpperCase()}
+                  </div>
+                )}
               </div>
             )}
             <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between">
@@ -1886,7 +2431,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         {/* Top bar. Extra right padding reserves room for the wrapper's top-right
             Copy Link / End for All buttons so the meeting's own right controls
             (participant count · mini-player · fullscreen) don't sit under them. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-28 sm:px-4 sm:py-4 sm:pr-72">
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-36 sm:px-4 sm:py-4 sm:pr-96">
           <div className="pointer-events-auto flex items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
@@ -1913,8 +2458,13 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <span className="font-mono">{formatDuration(sessionDuration)}</span>
               </div>
 
-              {/* Recording status badge */}
-              {isHost && enableRecording && (isMuxRecording || recordingStatus === 'starting') && (
+              {/* Recording status badge — visible to every participant, not just the
+                  host, since meetingSettings.recordingStatus is now broadcast (see
+                  useDailyRoom's startRecording/stopRecording). isRecordingActive /
+                  recordingStatus === 'starting' are the host's own optimistic local
+                  state (flips before the broadcast round-trips); everyone else relies
+                  on the shared meetingSettings value. */}
+              {enableRecording && (isRecordingActive || recordingStatus === 'starting' || meetingSettings.recordingStatus === 'recording') && (
                 <Badge className={`flex items-center gap-1 text-white text-xs border-0 ${
                   recordingStatus === 'starting' ? 'bg-orange-500' : 'bg-red-600'
                 }`}>
@@ -1958,6 +2508,23 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <Users className="h-4 w-4" />
                 <span>{participantCount}</span>
               </div>
+              {/* Meeting Controls (2026-09-29) — Layout, Spotlight, Background and
+                  Host Controls consolidated into one flyout instead of crowding the
+                  bottom control bar; sits beside the parent page's own Copy Link /
+                  Stream Config buttons (reserved padding to the right, see the pr-36
+                  sm:pr-96 comment above). */}
+              <MeetingControlsMenu
+                isModerator={isModerator}
+                showHostControlsButton={showHostControlsButton}
+                layoutState={layoutState}
+                layoutActions={layoutActions}
+                participants={participants.map((p: any) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
+                isNative={isNative}
+                videoBackground={videoBackground}
+                onBackgroundChange={setVideoBackground}
+                waitingRoomCount={waitingRoomParticipants.length}
+                onOpenHostControls={() => { setShowHostControls(true); setShowChat(false); setShowScripturePanel(false); }}
+              />
               {/* Shrink into a floating mini-player so the user can browse other tabs
                   while the call keeps running (only when hosted by ActiveCallHost). */}
               {activeCallCtx && !activeCallCtx.minimized && (
@@ -2072,6 +2639,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
             <button
               onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+              title={isScreenSharing ? undefined : t('dailyVideoCall', 'shareScreenAudioHint', 'Tick "Share tab audio" / "Share system audio" in the picker to include sound')}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
@@ -2092,17 +2660,20 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </span>
             </button>
 
+            {extraControlButtons}
+
             {/* Chat button — opening chat closes Host Controls so only one side
                 panel shows at a time (they otherwise overlap on the right edge). */}
+            {showChatButton && (
             <button
-              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); }}
+              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); setShowScripturePanel(false); }}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
                 w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                 transition-all duration-200 transform group-hover:scale-105
-                ${showChat 
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                ${showChat
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
                 <MessageSquare className="h-5 w-5 sm:h-7 sm:w-7" />
@@ -2116,29 +2687,38 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 {t('dailyVideoCall', 'chat', 'Chat')}
               </span>
             </button>
+            )}
 
-            {/* Host Controls button (host or co-host) */}
-            {isModerator && (
+            {/* Live Scripture — moved here from a buried Live Translation
+                popover section (2026-09-29), replacing Layout/Spotlight's
+                old slot (those moved into the top-right Meeting Controls
+                menu, see MeetingControlsMenu). Opens a side panel like Chat,
+                not a popover, so the operator can keep an eye on it while
+                the call runs. */}
+            {scriptureControl && (
               <button
-                onClick={() => { setShowHostControls((v) => !v); setShowChat(false); }}
+                onClick={() => {
+                  setShowScripturePanel((v) => {
+                    const next = !v;
+                    if (next && !scriptureControl.on) scriptureControl.toggle();
+                    return next;
+                  });
+                  setShowChat(false);
+                  setShowHostControls(false);
+                }}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
                 <div className={`
                   w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
                   transition-all duration-200 transform group-hover:scale-105
-                  ${showHostControls 
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
+                  ${showScripturePanel || scriptureControl.on
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
                     : 'bg-gray-700 hover:bg-gray-600 text-white'}
                 `}>
-                  <Users className="h-5 w-5 sm:h-7 sm:w-7" />
-                  {waitingRoomParticipants.length > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                      {waitingRoomParticipants.length}
-                    </span>
-                  )}
+                  {scriptureControl.starting ? <Loader2 className="h-5 w-5 sm:h-7 sm:w-7 animate-spin" /> : <BookOpen className="h-5 w-5 sm:h-7 sm:w-7" />}
                 </div>
                 <span className="hidden sm:block text-xs font-medium text-gray-300">
-                  {t('dailyVideoCall', 'manage', 'Manage')}
+                  {t('dailyVideoCall', 'scripture', 'Scripture')}
                 </span>
               </button>
             )}
@@ -2153,7 +2733,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <div className={`
                   w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
                   transition-all duration-200 transform group-hover:scale-105
-                  ${isMuxRecording
+                  ${isRecordingActive
                     ? 'bg-red-600 hover:bg-red-700 text-white'
                     : recordingStatus === 'starting' || recordingStatus === 'stopping'
                     ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
@@ -2163,7 +2743,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 `}>
                   {recordingStatus === 'starting' || recordingStatus === 'stopping' ? (
                     <Loader2 className="h-4 w-4 sm:h-7 sm:w-7 animate-spin" />
-                  ) : isMuxRecording ? (
+                  ) : isRecordingActive ? (
                     <Square className="h-5 w-5 sm:h-7 sm:w-7" />
                   ) : (
                     <Circle className="h-5 w-5 sm:h-7 sm:w-7" />
@@ -2173,28 +2753,68 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   {recordingStatus === 'starting' ? t('dailyVideoCall', 'startingEllipsis', 'Starting…')
                     : recordingStatus === 'stopping' ? t('dailyVideoCall', 'stoppingEllipsis', 'Stopping…')
                     : recordingStatus === 'error' ? t('dailyVideoCall', 'recError', 'Rec Error')
-                    : isMuxRecording ? t('dailyVideoCall', 'stopRec', 'Stop Rec')
+                    : isRecordingActive ? t('dailyVideoCall', 'stopRec', 'Stop Rec')
                     : t('dailyVideoCall', 'record', 'Record')}
                 </span>
               </button>
             )}
 
-            {/* End call button */}
-            <button
-              onClick={handleEndCall}
-              className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
-            >
-              <div className="
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                bg-red-600 hover:bg-red-700 text-white
-                transition-all duration-200 transform group-hover:scale-105
-              ">
-                <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
-              </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
-                {isHost ? t('dailyVideoCall', 'endForAll', 'End for All') : t('dailyVideoCall', 'leave', 'Leave')}
-              </span>
-            </button>
+            {/* End call button — host/co-host gets a choice (Leave vs End for
+                Everyone, real gap: a host stepping out had no way to leave
+                without ending it for everyone else); everyone else just
+                leaves, same as before. */}
+            {isHost ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
+                    <div className="
+                      w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                      bg-red-600 hover:bg-red-700 text-white
+                      transition-all duration-200 transform group-hover:scale-105
+                    ">
+                      <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                    </div>
+                    <span className="hidden sm:block text-xs font-medium text-gray-300">
+                      {t('dailyVideoCall', 'endForAll', 'End for All')}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="center" className="w-56 p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleEndCall(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    {t('dailyVideoCall', 'leaveMeeting', 'Leave meeting')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEndCall(true)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <PhoneOff className="h-4 w-4" />
+                    {t('dailyVideoCall', 'endForEveryone', 'End meeting for everyone')}
+                  </button>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <button
+                onClick={() => handleEndCall()}
+                className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+              >
+                <div className="
+                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
+                  bg-red-600 hover:bg-red-700 text-white
+                  transition-all duration-200 transform group-hover:scale-105
+                ">
+                  <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                </div>
+                <span className="hidden sm:block text-xs font-medium text-gray-300">
+                  {t('dailyVideoCall', 'leave', 'Leave')}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2206,8 +2826,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           participants={participantStates}
           waitingRoomParticipants={waitingRoomParticipants}
           meetingSettings={meetingSettings}
-          isRecording={isMuxRecording}
+          isRecording={isRecordingActive}
           spotlightedParticipantId={spotlightedParticipantId}
+          spotlightParticipants={layoutState.spotlightParticipants}
           isHost={isModerator}
           canRecord={isHost}
           onMuteAll={() => muteAll()}
@@ -2230,6 +2851,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           enableRecording={enableRecording}
           recordingStatus={recordingStatus}
           onSpotlightParticipant={(id) => spotlightParticipant(id)}
+          onAddSpotlight={addToSpotlight}
+          onRemoveSpotlight={removeFromSpotlight}
           onLowerHand={(id) => lowerHand(id)}
           onClose={() => setShowHostControls(false)}
         />
@@ -2246,6 +2869,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           canAttach={!!authUser}
           meetingId={meetingId}
           participants={participants.map((p) => ({ sessionId: p.sessionId, userName: p.userName, isLocal: p.isLocal }))}
+        />
+      )}
+
+      {/* Live Scripture Sidebar */}
+      {showScripturePanel && scriptureControl && (
+        <LiveScriptureSidebar
+          {...scriptureControl}
+          onClose={() => setShowScripturePanel(false)}
         />
       )}
     </div>

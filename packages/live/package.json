@@ -8,9 +8,11 @@
     "./ActiveCallContext": "./src/ActiveCallContext.tsx",
     "./AudioOutputContext": "./src/AudioOutputContext.tsx",
     "./components/*": "./src/components/*.tsx",
+    "./webinar/*": ["./src/webinar/*.tsx", "./src/webinar/*.ts"],
     "./*": "./src/*.ts"
   },
   "dependencies": {
+    "@capacitor/core": "^8.4.2",
     "@livekit/track-processors": "^0.7.2",
     "@rekindle/auth": "*",
     "@rekindle/features": "*",

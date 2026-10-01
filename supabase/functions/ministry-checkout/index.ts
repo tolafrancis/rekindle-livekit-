@@ -25,6 +25,10 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as Sentry from 'npm:@sentry/deno@^10';
+
+Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
+Sentry.setTag('function', 'ministry-checkout');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -307,6 +311,8 @@ serve(async (req) => {
     return json({ error: `Unknown provider: ${provider}` }, 400);
   } catch (error) {
     console.error('ministry-checkout error:', error);
+    Sentry.captureException(error);
+    await Sentry.flush(2000);
     return json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
   }
 });

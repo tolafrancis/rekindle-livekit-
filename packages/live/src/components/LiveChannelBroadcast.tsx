@@ -4,7 +4,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { supabase } from '@rekindle/supabase';
 import { useDailyRoom } from '../useDailyRoom';
-import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, reprovisionChannelStream, startChannelBroadcast, stopChannelBroadcast } from '../muxStream';
+import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, reprovisionChannelStream, startChannelBroadcast, stopChannelBroadcast } from '../channelStreamControl';
 import { isLiveKitBackend } from '../videoBackend';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
@@ -22,7 +22,6 @@ import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@rekindle/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@rekindle/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { LiveChannelChat } from './LiveChannelChat';
 import { FloatingTranslationButton } from './FloatingTranslationButton';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
@@ -142,27 +141,8 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
   const entitlements = useUserEntitlements();
   
   const [isVideoMode, setIsVideoMode] = useState(channel.is_video_enabled);
-  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-
-  useEffect(() => {
-    const getCameras = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cameras = devices.filter((d) => d.kind === 'videoinput');
-        setAvailableCameras(cameras);
-        if (cameras.length > 0 && !selectedCameraId) {
-          setSelectedCameraId(cameras[0].deviceId);
-        }
-      } catch (err) {
-        console.error('Failed to enumerate camera devices:', err);
-      }
-    };
-    getCameras();
-  }, []);
-
-  // Recording is governed by the channel's setting and performed by Mux (it
-  // auto-records the ingested RTMP). Seeded from the channel; synced below.
+  // Recording is governed by the channel's enable_recording setting, read by
+  // the HLS Egress at go-live. Seeded from the channel; synced below.
   const [isRecording, setIsRecording] = useState(channel.enable_recording !== false);
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -286,9 +266,8 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     }
   });
 
-  // Recording is handled by Mux, not Daily: the channel's Mux live stream is
-  // provisioned with/without recording and Mux auto-records the whole session.
-  // So just mirror the channel's setting; there is no Daily recording to sync.
+  // Recording is just the enable_recording flag the HLS Egress reads at
+  // go-live — mirror the channel's setting, nothing else to sync.
   useEffect(() => {
     setIsRecording(channel.enable_recording !== false);
   }, [channel.enable_recording]);
@@ -324,12 +303,12 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showViewers]);
 
-  // Bridge the host's Daily room to Mux once the call object is actually ready.
-  // The hook exposes callObject from a ref, so it's null right after joinRoom —
-  // this effect fires when it becomes available (after connect), provisions the
-  // channel's Mux stream, starts the RTMP push, and flags HLS live so viewers
-  // watch the Mux stream instead of joining Daily as participants.
-  const muxBridgeStartedRef = useRef(false);
+  // Start the channel's HLS Egress once the host is actually ready to go
+  // live (see the isLiveKitBackend() branch just below) — flags HLS live so
+  // viewers watch the Egress-composited stream instead of joining the room
+  // as real participants. broadcastStartedRef guards against double-starting
+  // from a re-firing effect.
+  const broadcastStartedRef = useRef(false);
   // Kept current across renders so the async block below (which starts once,
   // from a single effect firing) can poll the LATEST camera state rather than
   // whatever it was at the instant the effect happened to fire — see the
@@ -344,8 +323,14 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     // to HLS. No Mux provision, no callObject.startLiveStreaming — just start the
     // HLS Egress (which also sets hls_playback_url + is_hls_live server-side).
     if (isLiveKitBackend()) {
-      if (muxBridgeStartedRef.current) return;
-      muxBridgeStartedRef.current = true;
+      // Cold-start fix (2026-08-19): the host joins MUTED — mic/camera start
+      // OFF, and they have to tap to enable them (see the "You're live —
+      // you're muted" toast below). Only mic is required to trigger this at
+      // all now — see below for why camera used to gate it too and why that
+      // was wrong.
+      if (!dailyRoom.isMicOn) return;
+      if (broadcastStartedRef.current) return;
+      broadcastStartedRef.current = true;
       (async () => {
         // Small grace window — NOT the same 1500ms this used to be. Media now
         // only ever turns on via startBroadcastingMedia() → enableSpeakerMedia(),
@@ -401,24 +386,28 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         if (res) console.log('[Broadcast] LiveKit HLS Egress live:', res.playbackUrl);
         else {
           console.warn('[Broadcast] HLS Egress did not start — viewers will join the room directly');
-          muxBridgeStartedRef.current = false;
+          broadcastStartedRef.current = false;
           await supabase.from('live_channels').update({ is_hls_live: false }).eq('id', channel.id);
         }
       })();
       return;
     }
 
+    // ── Legacy Daily-engine path (unreachable — isLiveKitBackend() above
+    // always returns true, so this function already returned at line 393).
+    // Kept for reference; the Mux/Daily terminology below accurately
+    // describes what this dead branch would do if it ever ran. ──
     const callObject = dailyRoom.callObject;
     if (!callObject) return;
-    if (muxBridgeStartedRef.current) return;
-    muxBridgeStartedRef.current = true;
+    if (broadcastStartedRef.current) return;
+    broadcastStartedRef.current = true;
     (async () => {
       try {
         let mux = await getChannelStreamCreds(channel.id);
         if (!mux?.rtmpUrl) mux = await provisionChannelStream(channel.id, isRecording);
         if (!mux?.rtmpUrl) {
           console.warn('[Broadcast] No Mux stream available — viewers fall back to Daily.');
-          muxBridgeStartedRef.current = false;
+          broadcastStartedRef.current = false;
           return;
         }
         await supabase
@@ -456,7 +445,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
         console.log('[Broadcast] is_hls_live set true — viewers will watch the Mux HLS stream');
       } catch (streamErr) {
         console.warn('[Broadcast] Daily→Mux bridge failed; viewers fall back to Daily:', streamErr);
-        muxBridgeStartedRef.current = false;
+        broadcastStartedRef.current = false;
       }
     })();
   }, [hasStarted, dailyRoom.callObject, dailyRoom.isMicOn, dailyRoom.isCameraOn, channel.id, isRecording, isVideoMode]);
@@ -843,15 +832,21 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       console.log('[Broadcast] Waiting for room to be fully ready...');
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Auto-enable media immediately after join so Go Live is a single step
-      console.log('[Broadcast] Enabling speaker media automatically...');
-      await dailyRoom.enableSpeakerMedia(isVideoMode, selectedCameraId);
-
+      // The room now joins MUTED — mic + camera start OFF (no auto-publish race),
+      // by deliberate design (nothing auto-publishes without an explicit tap — same
+      // "join muted, prompt" rule meetings follow). Point the host at the single
+      // "Start Broadcasting" button (rendered over the video area below) rather
+      // than the two separate mic/camera buttons: those still exist for muting
+      // mid-broadcast, but for the INITIAL start they used to require two taps —
+      // and channel broadcasts wait for BOTH tracks to exist before starting HLS
+      // Egress (Track Composite locks onto whatever's there and can't add a track
+      // later), so a pause between those two taps directly became a pause the
+      // whole audience sat through. One combined action removes that gap.
       toast({
-        title: t('liveChannelBroadcast', 'youreLive', "You're live"),
+        title: t('liveChannelBroadcast', 'youreLiveMuted', "You're live — you're muted"),
         description: isVideoMode
-          ? t('liveChannelBroadcast', 'broadcastingVideoAudio', 'Broadcasting video and audio to viewers.')
-          : t('liveChannelBroadcast', 'broadcastingAudio', 'Broadcasting audio to viewers.'),
+          ? t('liveChannelBroadcast', 'tapStartBroadcastingToStart', 'Tap "Start Broadcasting" over your video to start your audio and video.')
+          : t('liveChannelBroadcast', 'tapMicToStart', 'Tap the microphone button below to start speaking.'),
       });
 
       await supabase
@@ -868,11 +863,12 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       setBroadcastStartTime(Date.now());
       console.log('[Broadcast] ✓✓✓ Broadcast started successfully ✓✓✓');
 
-      // The Daily→Mux bridge runs from an effect (see bridgeToMux) once the Daily
-      // call object is actually available — it's null immediately after joinRoom.
+      // The HLS Egress start runs from the effect above (hasStarted-gated) —
+      // on LiveKit it fires once dailyRoom.isMicOn flips true; the legacy
+      // Daily path waits for callObject to become available instead.
 
-      // Recording needs no action here: Mux auto-records the ingested RTMP when
-      // the channel's stream was provisioned with recording on (Broadcast setup).
+      // Recording needs no action here: enable_recording (set in Broadcast
+      // setup) is read by the Egress at go-live — see toggleRecording above.
 
       toast({
         title: t('liveChannelBroadcast', 'youAreLive', 'You are LIVE!'),
@@ -921,7 +917,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       } catch (streamErr) {
         console.warn('[Broadcast] stop broadcast failed (non-fatal):', streamErr);
       }
-      muxBridgeStartedRef.current = false;
+      broadcastStartedRef.current = false;
 
       await dailyRoom.leaveRoom();
       console.log('[Broadcast] Left Daily room');
@@ -1044,10 +1040,10 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
     }
   };
 
-  // Toggle recording. Recording is performed by Mux: the channel's Mux live
-  // stream is provisioned with (or without) recording, so the setting can only
-  // change BEFORE going live. Mux then auto-records the whole broadcast — there
-  // is no mid-session start/stop to proxy.
+  // Toggle recording. On LiveKit this is just the enable_recording flag,
+  // read by the HLS Egress at go-live (see the isLiveKitBackend() branch
+  // below) — so the setting can only change BEFORE going live, there's no
+  // mid-session start/stop to proxy.
   const toggleRecording = async () => {
     const canRecord = entitlements.canRecordMeetings;
 
@@ -1075,9 +1071,10 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
       // LiveKit: recording is just this flag — the broadcast's HLS Egress reads it at
       // go-live and records to VOD. No stream to re-provision (Ingress ≠ recording).
       if (isLiveKitBackend()) return;
-      // Mux: recording can't be toggled on an existing stream — re-provision it so
-      // the live stream is (re)created with recording on/off. Re-provisioning mints
-      // a new stream key + playback URL, so refresh the channel's stored config.
+      // Legacy Daily-engine path (unreachable — isLiveKitBackend() always
+      // returns true above): re-provision the stream so it's recreated with
+      // recording on/off. Re-provisioning mints a new stream key + playback
+      // URL, so refresh the channel's stored config.
       const p = await reprovisionChannelStream(channel.id, next);
       if (p) {
         await supabase.from('live_channel_broadcast_config').upsert({
@@ -1304,27 +1301,6 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                   />
                 </div>
 
-                {isVideoMode && availableCameras.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-gray-700">
-                    <Label className="text-white text-xs flex items-center gap-2">
-                      <Video className="h-3.5 w-3.5 text-purple-400" />
-                      {t('liveChannelBroadcast', 'selectCamera', 'Camera Device')}
-                    </Label>
-                    <Select value={selectedCameraId} onValueChange={setSelectedCameraId}>
-                      <SelectTrigger className="w-full bg-gray-900 border-gray-700 text-white text-xs h-9">
-                        <SelectValue placeholder="Select a camera" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                        {availableCameras.map((camera) => (
-                          <SelectItem key={camera.deviceId} value={camera.deviceId} className="text-xs focus:bg-gray-700">
-                            {camera.label || `Camera (${camera.deviceId.slice(0, 8)})`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Circle className="h-5 w-5 text-red-400" />
@@ -1515,7 +1491,27 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               <MeetingNotesBanner active={notesActive} />
             </div>
 
-
+            {/* Single-tap start — see startBroadcastingMedia above for why this
+                exists instead of leaving the host to find the mic + camera
+                buttons separately. Disappears once either is on; the control
+                bar's individual buttons keep working normally after that. */}
+            {!dailyRoom.isMicOn && !dailyRoom.isCameraOn && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60">
+                <Button
+                  size="lg"
+                  onClick={startBroadcastingMedia}
+                  disabled={startingMedia}
+                  className="rounded-full px-6 sm:px-8 h-12 sm:h-14 text-base sm:text-lg bg-red-500 hover:bg-red-600 text-white flex items-center gap-2 shadow-xl"
+                >
+                  {startingMedia ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Radio className="h-5 w-5" />
+                  )}
+                  {t('liveChannelBroadcast', 'startBroadcasting', 'Start Broadcasting')}
+                </Button>
+              </div>
+            )}
 
             {(() => {
               const remoteSpeakers = dailyRoom.remoteParticipants.filter(

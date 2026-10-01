@@ -15,8 +15,21 @@ export interface MeetingChatMessage {
  * Meeting-level chat that works for everyone in a webinar — including HLS
  * attendees who are not in the Daily room. Backed by the meeting_chat table
  * with Supabase realtime. Degrades quietly if the table/realtime is missing.
+ *
+ * `meetingTable` (2026-09-22): meeting_chat.meeting_id has no single-table FK
+ * any more — it was ministry_video_meetings-only, which meant every insert
+ * for the standalone Webinar feature (ministry_webinars.id) hit a foreign-key
+ * violation. Same meeting_table discriminator pattern already used by
+ * meeting_attendance/livekit_recordings for the same reason (one column can't
+ * FK two tables). Defaults to the original table so every existing caller
+ * (Interactive Meetings, channels) needs no changes.
  */
-export function useMeetingChat(meetingId: string, userId: string, userName: string) {
+export function useMeetingChat(
+  meetingId: string,
+  userId: string,
+  userName: string,
+  meetingTable: string = 'ministry_video_meetings',
+) {
   const [messages, setMessages] = useState<MeetingChatMessage[]>([]);
 
   const load = useCallback(async () => {
@@ -66,10 +79,10 @@ export function useMeetingChat(meetingId: string, userId: string, userName: stri
     if (!text && !attachment) return;
     const { error } = await supabase
       .from('meeting_chat')
-      .insert({ meeting_id: meetingId, user_id: userId, user_name: userName, content: text, attachment: attachment || null });
+      .insert({ meeting_id: meetingId, meeting_table: meetingTable, user_id: userId, user_name: userName, content: text, attachment: attachment || null });
     if (error) console.error('[useMeetingChat] send failed:', error.message, error);
     else load();
-  }, [meetingId, userId, userName, load]);
+  }, [meetingId, userId, userName, meetingTable, load]);
 
   return { messages, sendMessage };
 }

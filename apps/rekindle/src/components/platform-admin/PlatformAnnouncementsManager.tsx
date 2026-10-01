@@ -119,15 +119,43 @@ export const PlatformAnnouncementsManager: React.FC = () => {
       };
 
       if (editingAnnouncement) {
-        await supabase
+        const { data, error } = await supabase
           .from('platform_announcements')
           .update(dataToSave)
-          .eq('id', editingAnnouncement.id);
+          .eq('id', editingAnnouncement.id)
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error(t('platformAnnouncementsManager', 'updateBlocked', 'Save was blocked (no permission) — nothing was changed.'));
+
+        await supabase.from('ministry_audit_logs').insert({
+          ministry_id: null,
+          actor_id: user?.id,
+          actor_type: 'platform_admin',
+          action: 'announcement_updated',
+          resource_type: 'platform_announcement',
+          resource_id: editingAnnouncement.id,
+          new_values: dataToSave,
+        });
         toast({ title: t('platformAnnouncementsManager', 'success', 'Success'), description: t('platformAnnouncementsManager', 'announcementUpdated', 'Announcement updated') });
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('platform_announcements')
-          .insert({ ...dataToSave, created_by: user?.id });
+          .insert({ ...dataToSave, created_by: user?.id })
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error(t('platformAnnouncementsManager', 'updateBlocked', 'Save was blocked (no permission) — nothing was changed.'));
+
+        await supabase.from('ministry_audit_logs').insert({
+          ministry_id: null,
+          actor_id: user?.id,
+          actor_type: 'platform_admin',
+          action: 'announcement_created',
+          resource_type: 'platform_announcement',
+          resource_id: data.id,
+          new_values: dataToSave,
+        });
         toast({ title: t('platformAnnouncementsManager', 'success', 'Success'), description: t('platformAnnouncementsManager', 'announcementCreated', 'Announcement created') });
       }
 
@@ -144,7 +172,18 @@ export const PlatformAnnouncementsManager: React.FC = () => {
     if (!confirm(t('platformAnnouncementsManager', 'confirmDelete', 'Are you sure you want to delete this announcement?'))) return;
 
     try {
-      await supabase.from('platform_announcements').delete().eq('id', id);
+      const { data, error } = await supabase.from('platform_announcements').delete().eq('id', id).select().maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error(t('platformAnnouncementsManager', 'updateBlocked', 'Delete was blocked (no permission) — nothing was changed.'));
+
+      await supabase.from('ministry_audit_logs').insert({
+        ministry_id: null,
+        actor_id: user?.id,
+        actor_type: 'platform_admin',
+        action: 'announcement_deleted',
+        resource_type: 'platform_announcement',
+        resource_id: id,
+      });
       toast({ title: t('platformAnnouncementsManager', 'success', 'Success'), description: t('platformAnnouncementsManager', 'announcementDeleted', 'Announcement deleted') });
       loadData();
     } catch (err: any) {
@@ -154,14 +193,28 @@ export const PlatformAnnouncementsManager: React.FC = () => {
 
   const handleToggleActive = async (announcement: Announcement) => {
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('platform_announcements')
         .update({ is_active: !announcement.is_active })
-        .eq('id', announcement.id);
+        .eq('id', announcement.id)
+        .select()
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error(t('platformAnnouncementsManager', 'updateBlocked', 'Update was blocked (no permission) — nothing was changed.'));
+
+      await supabase.from('ministry_audit_logs').insert({
+        ministry_id: null,
+        actor_id: user?.id,
+        actor_type: 'platform_admin',
+        action: announcement.is_active ? 'announcement_deactivated' : 'announcement_activated',
+        resource_type: 'platform_announcement',
+        resource_id: announcement.id,
+      });
       toast({ title: t('platformAnnouncementsManager', 'success', 'Success'), description: announcement.is_active ? t('platformAnnouncementsManager', 'announcementDeactivated', 'Announcement deactivated') : t('platformAnnouncementsManager', 'announcementActivated', 'Announcement activated') });
       loadData();
     } catch (err: any) {
       toast({ title: t('platformAnnouncementsManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+      loadData(); // revert the Switch back to the real (unchanged) DB value
     }
   };
 

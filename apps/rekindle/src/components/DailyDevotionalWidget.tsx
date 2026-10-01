@@ -320,7 +320,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
             .eq('devotional_id', data[0].id)
             .maybeSingle();
           if (progressData) {
-            setProgress({ completed: progressData.completed ? 1 : 0, total: 1 });
+            setProgress({ completed: progressData.completed_at ? 1 : 0, total: 1 });
           }
         }
       }
@@ -377,7 +377,6 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
       await supabase.from('devotional_progress').upsert({
         user_id:       user.id,
         devotional_id: todayDevotional.id,
-        completed:     true,
         completed_at:  new Date().toISOString(),
         updated_at:    new Date().toISOString(),
       }, { onConflict: 'user_id,devotional_id' });

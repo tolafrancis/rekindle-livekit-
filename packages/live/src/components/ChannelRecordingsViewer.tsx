@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Video, Download, Clock } from 'lucide-react';
-import { getChannelRecordings, muxDownloadUrl, type MuxRecording } from '../muxStream';
-import { MuxVodPlayer } from './MuxVodPlayer';
+import { getChannelRecordings, muxDownloadUrl, type ChannelRecording } from '../channelStreamControl';
+import { VodPlayer } from './VodPlayer';
 import { RecordingRetentionBadge } from './RecordingRetentionBadge';
 import { RECORDING_RETENTION_DAYS } from '../recordingRetention';
 
@@ -22,14 +22,14 @@ function formatDuration(s?: number): string {
 
 /**
  * Lists a channel's recorded broadcasts and plays them inline. Recordings are
- * Mux VOD assets — Mux auto-captures them from the live broadcast's RTMP feed
- * (Daily handles the live stream; Mux handles the recording) and serves them as
- * HLS, so they play in-app with no download step or S3 setup.
+ * LiveKit Egress outputs — the same Track Composite Egress that composites
+ * the live broadcast also writes the recording, as HLS segments to
+ * S3-compatible storage — so they play in-app with no download step.
  */
 export const ChannelRecordingsViewer: React.FC<ChannelRecordingsViewerProps> = ({ channelId, retentionDaysOverride }) => {
   const [loading, setLoading] = useState(true);
-  const [recordings, setRecordings] = useState<MuxRecording[]>([]);
-  const [active, setActive] = useState<MuxRecording | null>(null);
+  const [recordings, setRecordings] = useState<ChannelRecording[]>([]);
+  const [active, setActive] = useState<ChannelRecording | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +74,7 @@ export const ChannelRecordingsViewer: React.FC<ChannelRecordingsViewerProps> = (
 
       {active && (
         <div className="aspect-video w-full bg-black rounded-lg overflow-hidden">
-          <MuxVodPlayer
+          <VodPlayer
             key={active.uid}
             src={active.hls || ''}
             poster={active.thumbnail}

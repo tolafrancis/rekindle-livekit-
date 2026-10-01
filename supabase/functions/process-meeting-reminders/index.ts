@@ -1,9 +1,12 @@
 // Supabase Edge Function: process-meeting-reminders
 // ---------------------------------------------------------------------------
 // Delivers the per-meeting reminders a host configured on a SCHEDULED meeting
-// (reminder_offsets = minutes-before-start), for BOTH meeting kinds:
+// (reminder_offsets = minutes-before-start), for THREE meeting kinds:
 //   • ministry meetings  (public.ministry_video_meetings)
 //   • live-channel meetings (public.live_channel_video_meetings)
+//   • webinars (public.ministry_webinars) — a separate block below the two-
+//     kind loop, since webinars have no meeting_type/is_active/ended_at
+//     columns to filter "still upcoming" on (uses status='scheduled' instead).
 //
 // Each recipient gets an IN-APP notification (row in public.notifications, read
 // live by the bell) and an EMAIL (via Resend).
@@ -32,7 +35,7 @@ const corsHeaders = {
 
 const GRACE_MINUTES = 10; // 2× the 5-min cadence, so one missed tick still delivers.
 
-type Kind = "ministry" | "channel";
+type Kind = "ministry" | "channel" | "webinar";
 
 interface Recipient {
   key: string;            // ledger dedupe key: user uuid, or 'guest:'+email
@@ -41,6 +44,9 @@ interface Recipient {
   name: string | null;
   optedOut?: boolean;     // profile consent_reminders === false → skip email
 }
+
+type SupabaseClientLike = ReturnType<typeof createClient>;
+type AddUser = (uid: string) => void;
 
 function fmtWhen(iso: string, tz: string | null): string {
   try {
@@ -56,6 +62,157 @@ function offsetLabel(min: number): string {
   if (min % 1440 === 0) return `${min / 1440} day${min === 1440 ? "" : "s"}`;
   if (min % 60 === 0) return `${min / 60} hour${min === 60 ? "" : "s"}`;
   return `${min} minutes`;
+}
+
+async function resolveMinistryRecipients(supabase: SupabaseClientLike, meeting: any, addUser: AddUser) {
+  const leadersOnly = meeting.access_level === "leaders";
+  const { data: members } = await supabase
+    .from("ministry_members").select("user_id, role")
+    .eq("ministry_id", meeting.ministry_id).eq("status", "active");
+  for (const m of members ?? []) {
+    if (leadersOnly && !["admin", "leader"].includes((m as any).role)) continue;
+    if ((m as any).user_id) addUser((m as any).user_id);
+  }
+}
+
+async function resolveChannelRecipients(supabase: SupabaseClientLike, meeting: any, addUser: AddUser) {
+  if (meeting.access_level === "cohosts") {
+    const { data: cohosts } = await supabase
+      .from("channel_co_hosts").select("user_id").eq("channel_id", meeting.channel_id);
+    for (const c of cohosts ?? []) if ((c as any).user_id) addUser((c as any).user_id);
+  } else {
+    const { data: followers } = await supabase
+      .from("channel_followers").select("user_id, notifications_enabled").eq("channel_id", meeting.channel_id);
+    for (const f of followers ?? []) {
+      if ((f as any).notifications_enabled === false) continue;
+      if ((f as any).user_id) addUser((f as any).user_id);
+    }
+  }
+}
+
+// Webinars have no "members" broadcast like ministry meetings — just the
+// pre-assigned, confirmed panel (registrants are picked up generically below,
+// same as every other kind).
+async function resolveWebinarRecipients(supabase: SupabaseClientLike, meeting: any, addUser: AddUser) {
+  const { data: cohosts } = await supabase
+    .from("webinar_speakers").select("user_id")
+    .eq("webinar_id", meeting.id).eq("status", "confirmed").not("user_id", "is", null);
+  for (const c of cohosts ?? []) if ((c as any).user_id) addUser((c as any).user_id);
+}
+
+// Shared per-meeting body: resolve recipients (host + kind-specific +
+// registrants), hydrate emails/names, then deliver every due offset's
+// notification + email. Factored out so the webinar block below can reuse it
+// without duplicating ~100 lines of delivery logic.
+async function sendRemindersForMeeting(
+  supabase: SupabaseClientLike,
+  resendKey: string | undefined,
+  fromEmail: string,
+  kind: Kind,
+  meeting: any,
+  path: string,
+  origin: string,
+  addKindRecipients: (meeting: any, addUser: AddUser) => Promise<void>,
+  nowMs: number,
+): Promise<{ delivered: number; skipped: number }> {
+  let delivered = 0;
+  let skipped = 0;
+
+  const offsets: number[] = Array.isArray(meeting.reminder_offsets) ? meeting.reminder_offsets : [];
+  if (offsets.length === 0) return { delivered, skipped };
+  const startMs = new Date(meeting.scheduled_time).getTime();
+  const dueOffsets = offsets.filter((off) => {
+    const delta = nowMs - (startMs - off * 60_000);
+    return delta >= 0 && delta <= GRACE_MINUTES * 60_000;
+  });
+  if (dueOffsets.length === 0) return { delivered, skipped };
+
+  // ── Resolve recipients ────────────────────────────────────────────────
+  const byKey = new Map<string, Recipient>();
+  const addUser: AddUser = (uid) => { if (uid && !byKey.has(uid)) byKey.set(uid, { key: uid, userId: uid, email: null, name: null }); };
+
+  addUser(meeting.host_id);
+  await addKindRecipients(meeting, addUser);
+
+  // Registrants (every kind). Users merge by uid; guests keyed by email.
+  const { data: regs } = await supabase
+    .from("meeting_registrations")
+    .select("user_id, guest_name, guest_email")
+    .eq("meeting_id", meeting.id).eq("status", "registered");
+  for (const r of regs ?? []) {
+    const uid = (r as any).user_id as string | null;
+    if (uid) { addUser(uid); continue; }
+    const email = ((r as any).guest_email as string | null)?.toLowerCase();
+    if (!email) continue;
+    const gkey = `guest:${email}`;
+    if (!byKey.has(gkey)) byKey.set(gkey, { key: gkey, userId: null, email, name: (r as any).guest_name ?? null });
+  }
+
+  // Hydrate member/host emails, names and email opt-out from profiles.
+  const userIds = [...byKey.values()].filter((r) => r.userId).map((r) => r.userId!) as string[];
+  if (userIds.length) {
+    const { data: profiles } = await supabase
+      .from("user_profiles").select("user_id, full_name, email, consent_reminders").in("user_id", userIds);
+    for (const p of profiles ?? []) {
+      const rec = byKey.get((p as any).user_id);
+      if (rec) { rec.email = (p as any).email ?? null; rec.name = (p as any).full_name ?? null; rec.optedOut = (p as any).consent_reminders === false; }
+    }
+  }
+
+  const when = fmtWhen(meeting.scheduled_time, meeting.timezone);
+  const emailUrl = `${origin}${path}`;
+
+  for (const off of dueOffsets) {
+    const lead = offsetLabel(off);
+    const title = `⏰ Reminder: ${meeting.title}`;
+    const message = `Starts in ${lead} — ${when}.`;
+
+    for (const rec of byKey.values()) {
+      // Claim (meeting, recipient, offset). No row back → already sent.
+      const { data: claim, error: claimErr } = await supabase
+        .from("meeting_reminder_sends")
+        .upsert(
+          { meeting_id: meeting.id, meeting_kind: kind, recipient_key: rec.key, offset_minutes: off },
+          { onConflict: "meeting_id,recipient_key,offset_minutes", ignoreDuplicates: true },
+        ).select();
+      if (claimErr) { console.error(`[meeting-reminders] claim ${meeting.id}/${rec.key}/${off}:`, claimErr.message); continue; }
+      if (!claim || claim.length === 0) { skipped++; continue; }
+
+      // In-app (only for real users).
+      if (rec.userId) {
+        const { error: nErr } = await supabase.from("notifications").insert({
+          user_id: rec.userId, type: "meeting_reminder", title, message, link: path, is_read: false,
+        });
+        if (nErr) console.error(`[meeting-reminders] notify ${meeting.id}/${rec.userId}:`, nErr.message);
+        else delivered++;
+      }
+
+      // Email (best-effort; needs key + address + not opted out).
+      if (resendKey && rec.email && !rec.optedOut) {
+        const html = `
+          <div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto">
+            <h2 style="color:#6d28d9;margin:0 0 8px">${meeting.title}</h2>
+            <p style="font-size:15px;color:#111">Hi ${rec.name || "there"}, this is a reminder that your meeting starts in <b>${lead}</b>.</p>
+            <p style="font-size:15px;color:#111;margin:4px 0"><b>When:</b> ${when}</p>
+            ${meeting.description ? `<p style="font-size:14px;color:#444">${meeting.description}</p>` : ""}
+            <p style="margin:20px 0"><a href="${emailUrl}" style="background:#6d28d9;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600">Join the meeting</a></p>
+            <p style="font-size:12px;color:#888">If the button doesn't work, paste this link into your browser:<br>${emailUrl}</p>
+          </div>`;
+        try {
+          const resp = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ from: fromEmail, to: [rec.email], subject: title, html }),
+          });
+          if (!resp.ok) console.error(`[meeting-reminders] email ${rec.email}:`, await resp.text());
+        } catch (e) {
+          console.error(`[meeting-reminders] email err ${rec.email}:`, (e as Error).message);
+        }
+      }
+    }
+  }
+
+  return { delivered, skipped };
 }
 
 serve(async (req) => {
@@ -94,11 +251,14 @@ serve(async (req) => {
       ownerCol: "ministry_id" | "channel_id";
       path: (m: any) => string;
       origin: string;
+      addRecipients: (meeting: any, addUser: AddUser) => Promise<void>;
     }[] = [
       { kind: "ministry", table: "ministry_video_meetings", ownerCol: "ministry_id",
-        path: (m) => `/ministry/${m.ministry_id}/meeting/${m.id}`, origin: ministryOrigin },
+        path: (m) => `/ministry/${m.ministry_id}/meeting/${m.id}`, origin: ministryOrigin,
+        addRecipients: resolveMinistryRecipients },
       { kind: "channel", table: "live_channel_video_meetings", ownerCol: "channel_id",
-        path: (m) => `/channel/${m.channel_id}/meeting/${m.id}`, origin: channelOrigin },
+        path: (m) => `/channel/${m.channel_id}/meeting/${m.id}`, origin: channelOrigin,
+        addRecipients: resolveChannelRecipients },
     ];
 
     for (const K of KINDS) {
@@ -115,122 +275,39 @@ serve(async (req) => {
       if (error) { console.error(`[meeting-reminders] ${K.kind} query:`, error.message); continue; }
 
       for (const meeting of meetings ?? []) {
-        const offsets: number[] = Array.isArray(meeting.reminder_offsets) ? meeting.reminder_offsets : [];
-        if (offsets.length === 0) continue;
-        const startMs = new Date(meeting.scheduled_time).getTime();
-        const dueOffsets = offsets.filter((off) => {
-          const delta = now - (startMs - off * 60_000);
-          return delta >= 0 && delta <= GRACE_MINUTES * 60_000;
-        });
-        if (dueOffsets.length === 0) continue;
+        const r = await sendRemindersForMeeting(
+          supabase, resendKey, fromEmail, K.kind, meeting, K.path(meeting), K.origin, K.addRecipients, now,
+        );
+        delivered += r.delivered;
+        skipped += r.skipped;
+      }
+    }
 
-        // ── Resolve recipients ────────────────────────────────────────────────
-        const byKey = new Map<string, Recipient>();
-        const addUser = (uid: string) => { if (uid && !byKey.has(uid)) byKey.set(uid, { key: uid, userId: uid, email: null, name: null }); };
-
-        addUser(meeting.host_id);
-
-        if (K.kind === "ministry") {
-          const leadersOnly = meeting.access_level === "leaders";
-          const { data: members } = await supabase
-            .from("ministry_members").select("user_id, role")
-            .eq("ministry_id", meeting.ministry_id).eq("status", "active");
-          for (const m of members ?? []) {
-            if (leadersOnly && !["admin", "leader"].includes((m as any).role)) continue;
-            if ((m as any).user_id) addUser((m as any).user_id);
-          }
-        } else {
-          if (meeting.access_level === "cohosts") {
-            const { data: cohosts } = await supabase
-              .from("channel_co_hosts").select("user_id").eq("channel_id", meeting.channel_id);
-            for (const c of cohosts ?? []) if ((c as any).user_id) addUser((c as any).user_id);
-          } else {
-            const { data: followers } = await supabase
-              .from("channel_followers").select("user_id, notifications_enabled").eq("channel_id", meeting.channel_id);
-            for (const f of followers ?? []) {
-              if ((f as any).notifications_enabled === false) continue;
-              if ((f as any).user_id) addUser((f as any).user_id);
-            }
-          }
-        }
-
-        // Registrants (both kinds). Users merge by uid; guests keyed by email.
-        const { data: regs } = await supabase
-          .from("meeting_registrations")
-          .select("user_id, guest_name, guest_email")
-          .eq("meeting_id", meeting.id).eq("status", "registered");
-        for (const r of regs ?? []) {
-          const uid = (r as any).user_id as string | null;
-          if (uid) { addUser(uid); continue; }
-          const email = ((r as any).guest_email as string | null)?.toLowerCase();
-          if (!email) continue;
-          const gkey = `guest:${email}`;
-          if (!byKey.has(gkey)) byKey.set(gkey, { key: gkey, userId: null, email, name: (r as any).guest_name ?? null });
-        }
-
-        // Hydrate member/host emails, names and email opt-out from profiles.
-        const userIds = [...byKey.values()].filter((r) => r.userId).map((r) => r.userId!) as string[];
-        if (userIds.length) {
-          const { data: profiles } = await supabase
-            .from("user_profiles").select("user_id, full_name, email, consent_reminders").in("user_id", userIds);
-          for (const p of profiles ?? []) {
-            const rec = byKey.get((p as any).user_id);
-            if (rec) { rec.email = (p as any).email ?? null; rec.name = (p as any).full_name ?? null; rec.optedOut = (p as any).consent_reminders === false; }
-          }
-        }
-
-        const when = fmtWhen(meeting.scheduled_time, meeting.timezone);
-        const path = K.path(meeting);
-        const emailUrl = `${K.origin}${path}`;
-
-        for (const off of dueOffsets) {
-          const lead = offsetLabel(off);
-          const title = `⏰ Reminder: ${meeting.title}`;
-          const message = `Starts in ${lead} — ${when}.`;
-
-          for (const rec of byKey.values()) {
-            // Claim (meeting, recipient, offset). No row back → already sent.
-            const { data: claim, error: claimErr } = await supabase
-              .from("meeting_reminder_sends")
-              .upsert(
-                { meeting_id: meeting.id, meeting_kind: K.kind, recipient_key: rec.key, offset_minutes: off },
-                { onConflict: "meeting_id,recipient_key,offset_minutes", ignoreDuplicates: true },
-              ).select();
-            if (claimErr) { console.error(`[meeting-reminders] claim ${meeting.id}/${rec.key}/${off}:`, claimErr.message); continue; }
-            if (!claim || claim.length === 0) { skipped++; continue; }
-
-            // In-app (only for real users).
-            if (rec.userId) {
-              const { error: nErr } = await supabase.from("notifications").insert({
-                user_id: rec.userId, type: "meeting_reminder", title, message, link: path, is_read: false,
-              });
-              if (nErr) console.error(`[meeting-reminders] notify ${meeting.id}/${rec.userId}:`, nErr.message);
-              else delivered++;
-            }
-
-            // Email (best-effort; needs key + address + not opted out).
-            if (resendKey && rec.email && !rec.optedOut) {
-              const html = `
-                <div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto">
-                  <h2 style="color:#6d28d9;margin:0 0 8px">${meeting.title}</h2>
-                  <p style="font-size:15px;color:#111">Hi ${rec.name || "there"}, this is a reminder that your meeting starts in <b>${lead}</b>.</p>
-                  <p style="font-size:15px;color:#111;margin:4px 0"><b>When:</b> ${when}</p>
-                  ${meeting.description ? `<p style="font-size:14px;color:#444">${meeting.description}</p>` : ""}
-                  <p style="margin:20px 0"><a href="${emailUrl}" style="background:#6d28d9;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600">Join the meeting</a></p>
-                  <p style="font-size:12px;color:#888">If the button doesn't work, paste this link into your browser:<br>${emailUrl}</p>
-                </div>`;
-              try {
-                const resp = await fetch("https://api.resend.com/emails", {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({ from: fromEmail, to: [rec.email], subject: title, html }),
-                });
-                if (!resp.ok) console.error(`[meeting-reminders] email ${rec.email}:`, await resp.text());
-              } catch (e) {
-                console.error(`[meeting-reminders] email err ${rec.email}:`, (e as Error).message);
-              }
-            }
-          }
+    // Webinars: separate block (not a KINDS entry) since the "still upcoming"
+    // filter is shaped differently — ministry_webinars has status, not
+    // meeting_type/is_active/ended_at like the other two tables.
+    {
+      const { data: webinars, error } = await supabase
+        .from("ministry_webinars")
+        .select("id, ministry_id, host_id, title, description, scheduled_start_at, timezone, reminder_offsets")
+        .eq("status", "scheduled")
+        .not("reminder_offsets", "is", null)
+        .not("scheduled_start_at", "is", null)
+        .gt("scheduled_start_at", nowISO)
+        .lt("scheduled_start_at", horizonISO);
+      if (error) {
+        console.error("[meeting-reminders] webinar query:", error.message);
+      } else {
+        for (const w of webinars ?? []) {
+          // Normalize the field name so sendRemindersForMeeting's shared body
+          // (written against scheduled_time) needs no webinar-specific branch.
+          const meeting = { ...w, scheduled_time: (w as any).scheduled_start_at };
+          const path = `/ministry/${(w as any).ministry_id}/webinar/${(w as any).id}`;
+          const r = await sendRemindersForMeeting(
+            supabase, resendKey, fromEmail, "webinar", meeting, path, ministryOrigin, resolveWebinarRecipients, now,
+          );
+          delivered += r.delivered;
+          skipped += r.skipped;
         }
       }
     }

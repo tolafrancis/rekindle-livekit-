@@ -112,6 +112,12 @@ import {
   Sparkles
 } from 'lucide-react';
 
+// Same env vars LandingPage.tsx's homepage download buttons read — each
+// app's own .env supplies its own release URL at build time, so this
+// resolves correctly whether the page was bundled into rekindle or ministry.
+const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL || '';
+const WINDOWS_INSTALLER_URL = import.meta.env.VITE_WINDOWS_INSTALLER_URL || '';
+
 interface MeetingData {
   id: string;
   title: string;
@@ -526,7 +532,8 @@ const MeetingJoinPage: React.FC = () => {
   const appHandoffBanner = showAppHandoffBanner && (
     <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3 space-y-2">
       <p className="text-xs text-muted-foreground text-center">
-        {t('skeleton', 'haveTheAppInstalled', 'Have the ReKindle app installed?')}
+        {t('skeleton', 'noAppInstalledPrefix', "If you don't have the ReKindle app installed, please click")}{' '}
+        <span className="font-bold text-foreground">{t('skeleton', 'continueInBrowser', 'Continue in Browser')}</span>
       </p>
       <div className="flex gap-2">
         {/* A real <a href> with a genuine click, not a scripted
@@ -540,7 +547,7 @@ const MeetingJoinPage: React.FC = () => {
         >
           {t('skeleton', 'openInApp', 'Open in App')}
         </a>
-        <Button type="button" variant="ghost" size="sm" className="flex-1" onClick={() => setHandoffDismissed(true)}>
+        <Button type="button" variant="ghost" size="sm" className="flex-1 font-bold" onClick={() => setHandoffDismissed(true)}>
           {t('skeleton', 'continueInBrowser', 'Continue in Browser')}
         </Button>
       </div>
@@ -554,6 +561,27 @@ const MeetingJoinPage: React.FC = () => {
           <button type="button" onClick={() => setHandoffDismissed(true)} className="underline">
             {t('skeleton', 'continueInBrowserLower', 'continue in browser')}
           </button>
+          {/* "Didn't open?" most often means the app isn't installed at all,
+              not that the handoff glitched — offer the actual install, same
+              URLs as the homepage's download buttons, hidden independently
+              until each is configured. */}
+          {(ANDROID_APK_URL || WINDOWS_INSTALLER_URL) && (
+            <>
+              {' · '}
+              {t('skeleton', 'dontHaveApp', "don't have the app?")}{' '}
+              {ANDROID_APK_URL && (
+                <a href={ANDROID_APK_URL} download className="underline">
+                  {t('skeleton', 'downloadAndroid', 'download Android')}
+                </a>
+              )}
+              {ANDROID_APK_URL && WINDOWS_INSTALLER_URL && ' / '}
+              {WINDOWS_INSTALLER_URL && (
+                <a href={WINDOWS_INSTALLER_URL} download className="underline">
+                  {t('skeleton', 'downloadWindows', 'download Windows')}
+                </a>
+              )}
+            </>
+          )}
         </p>
       )}
     </div>
@@ -615,6 +643,7 @@ const MeetingJoinPage: React.FC = () => {
                     onChange={(e) => setGuestName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleJoinMeeting(); }}
                     autoFocus
+                    className="border-2 border-purple-300 focus-visible:border-purple-500 dark:border-purple-700"
                   />
                   <Button
                     onClick={() => handleJoinMeeting()}

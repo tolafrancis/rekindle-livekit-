@@ -30,6 +30,11 @@ enabled = true
 # Admin/super_admin only, same pattern as generate-devotional-series.
 verify_jwt = true
 
+[functions.generate-prayer-series]
+enabled = true
+# Admin/super_admin only, same pattern as generate-devotional-series.
+verify_jwt = true
+
 [functions.detect-transcript-corrections]
 enabled = true
 # Ministry admin only (is_group_admin, checked inside the function) —
@@ -83,6 +88,13 @@ enabled = true
 # fine (it's a validly-signed project JWT, just role:anon), while the
 # function's own anon-scoped Postgres lookup is the real access-control gate
 # (see the file's header comment — same RLS the page's own row fetch uses).
+verify_jwt = true
+
+[functions.scripture-passage]
+enabled = true
+# Live Scripture: proxies licensed Bible text from API.Bible so its key
+# never reaches the browser. Checks for a real signed-in ministry member
+# itself, since every call counts against the platform's API.Bible quota.
 verify_jwt = true
 
 [functions.translation-list-voices]
@@ -141,12 +153,12 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 # WhatsApp Business connection (MinistryWhatsAppConnect.tsx). Split out of a
 # combined router file that was only ever partially deployed — see each
-# function's own header comment. All four require a real signed-in ministry
+# function's own header comment. All five require a real signed-in ministry
 # admin (checked via is_group_admin inside the function, same pattern as
-# ministry-checkout), so gateway JWT verification stays on, unlike the older
-# sibling whatsapp-save-credentials (deployed outside this config, found with
-# verify_jwt off and no in-function authorization check at all — a known gap,
-# not fixed here since it's out of scope for this deploy).
+# ministry-checkout), so gateway JWT verification stays on. whatsapp-save-
+# credentials was the last holdout of this group still deployed outside this
+# config with verify_jwt off and no in-function authorization check at all —
+# now mirrored here with the same admin check as its siblings.
 # ---------------------------------------------------------------------------
 [functions.create-whatsapp-subscription]
 enabled = true
@@ -157,6 +169,10 @@ enabled = true
 verify_jwt = true
 
 [functions.whatsapp-verify-connection]
+enabled = true
+verify_jwt = true
+
+[functions.whatsapp-save-credentials]
 enabled = true
 verify_jwt = true
 
@@ -181,6 +197,32 @@ enabled = true
 # small-group leader can only target their own group.
 verify_jwt = true
 
+[functions.whatsapp-webhook]
+enabled = true
+# Meta's Cloud API webhook for a ministry's connected WhatsApp Business
+# Account (inbound messages -> Evangelism Inbox). Like livekit-webhook, Meta
+# signs these requests itself (X-Hub-Signature-256), not with a Supabase
+# JWT, so gateway JWT verification must be off. Was previously deployed
+# outside this repo's tracked layout with a POST handler that logged the
+# body and did nothing else — every real inbound message was silently
+# discarded. Mirrored here with an actual fix; see the function's own
+# header comment for the ministry-resolution and signature-verification
+# details, including the known gap for ministries on their own separate
+# Meta app (manual "Enter Credentials Manually" path) rather than
+# Embedded Signup.
+verify_jwt = false
+
+[functions.evangelism-inbox-webhook]
+enabled = true
+# Inbound messages for the other three Evangelism Inbox channels
+# (Messenger, Instagram, Twilio-relayed WhatsApp) — same situation as
+# whatsapp-webhook above: complete, working logic that lived outside
+# supabase/functions/ and so was never actually deployed. Meta/Twilio sign
+# these requests themselves, not with a Supabase JWT, so gateway JWT
+# verification is off, same reasoning as whatsapp-webhook and
+# livekit-webhook.
+verify_jwt = false
+
 [functions.developer-api-keys]
 enabled = true
 # In-app management (create/list/revoke) of Interactive Meetings API keys.
@@ -196,3 +238,137 @@ enabled = true
 # so gateway JWT verification MUST be off, matching livekit-webhook's own
 # non-Supabase-JWT auth model.
 verify_jwt = false
+
+[functions.ministry-checkout]
+enabled = true
+# Called by a signed-in ministry leader/admin/owner (checked inside the
+# function). Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.ministry-billing-webhook]
+enabled = true
+# Stripe and Paystack sign these requests themselves, not with a Supabase
+# JWT — same reasoning as livekit-webhook/whatsapp-webhook. Gateway JWT
+# verification must be off or Stripe's webhook calls get rejected with 401
+# before the function's own signature check ever runs.
+verify_jwt = false
+
+[functions.stripe-subscription]
+enabled = true
+# Individual "Premium"/"Premium Plus" consumer checkout, called by the
+# signed-in user's own browser session (supabase.functions.invoke attaches
+# their Bearer token automatically). Gateway JWT verification stays on —
+# the function itself trusts the userId in the request body rather than
+# re-deriving it, so this is the actual auth boundary.
+verify_jwt = true
+
+[functions.stripe-webhook]
+enabled = true
+# Individual consumer subscription webhook — Stripe signs these requests
+# itself, not with a Supabase JWT. Gateway JWT verification must be off or
+# Stripe's webhook calls get rejected with 401 before the function's own
+# signature check ever runs. Uses its OWN STRIPE_WEBHOOK_SECRET_CONSUMER
+# secret, distinct from ministry-billing-webhook's STRIPE_WEBHOOK_SECRET —
+# each Stripe webhook endpoint has its own signing secret.
+verify_jwt = false
+
+[functions.create-billing-portal]
+enabled = true
+# Called by the signed-in user's own browser session; the function also
+# verifies the Bearer token itself via auth.getUser(). Gateway JWT
+# verification stays on.
+verify_jwt = true
+
+[functions.cancel-subscription]
+enabled = true
+# Called by the signed-in user's own browser session; the function also
+# verifies the Bearer token itself via auth.getUser(). Gateway JWT
+# verification stays on.
+verify_jwt = true
+
+[functions.paystack-initialize]
+enabled = true
+# Individual consumer checkout via Paystack, called by the signed-in user's
+# own browser session. Gateway JWT verification stays on, same reasoning as
+# stripe-subscription.
+verify_jwt = true
+
+[functions.paystack-verify]
+enabled = true
+# Called right after the browser redirects back from Paystack checkout, by
+# the signed-in user's own browser session. Gateway JWT verification stays
+# on.
+verify_jwt = true
+
+[functions.paystack-webhook]
+enabled = true
+# Paystack signs these requests itself, not with a Supabase JWT — same
+# reasoning as stripe-webhook. Gateway JWT verification must be off.
+verify_jwt = false
+
+[functions.ministry-connect-onboarding]
+enabled = true
+# Called by a signed-in ministry leader/admin/owner (checked inside the
+# function via is_group_admin, same pattern as ministry-checkout). Gateway
+# JWT verification stays on.
+verify_jwt = true
+
+[functions.ministry-donation-checkout]
+enabled = true
+# Called by the donor's own browser session — anonymous donors carry
+# Supabase's anon-key JWT, which satisfies gateway verification without
+# requiring a signed-in user; the function itself trusts the email/name in
+# the request body, same trust model as the legacy create-donation function
+# it replaces for the ministry+Stripe case. Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.ministry-donation-webhook]
+enabled = true
+# Stripe signs these requests itself (both payment_intent events and Connect
+# account.updated events), not with a Supabase JWT — same reasoning as
+# ministry-billing-webhook/stripe-webhook. Gateway JWT verification must be
+# off or Stripe's calls get rejected with 401 before the function's own
+# signature check runs. Uses its own STRIPE_WEBHOOK_SECRET_DONATIONS secret,
+# distinct from ministry-billing-webhook's STRIPE_WEBHOOK_SECRET and
+# stripe-webhook's STRIPE_WEBHOOK_SECRET_CONSUMER.
+verify_jwt = false
+
+[functions.create-donation]
+enabled = true
+# Called by a donor's own browser session — anonymous donors carry
+# Supabase's anon-key JWT, which satisfies gateway verification without
+# requiring a signed-in user; the function itself trusts the email/name in
+# the request body, same trust model as ministry-donation-checkout. Gateway
+# JWT verification stays on.
+verify_jwt = true
+
+[functions.send-whatsapp]
+enabled = true
+# Called from a signed-in admin's browser session (MinistryGroupsManager.tsx).
+# The function itself does NOT verify the caller administers any ministry
+# (known gap, flagged in its own header comment) — gateway JWT verification
+# is the only real check today.
+verify_jwt = true
+
+[functions.broadcast-whatsapp]
+enabled = true
+# Called from a signed-in admin's browser session (BroadcastMessaging.tsx).
+# Same known gap as send-whatsapp — no ministry-scoped authorization inside
+# the function itself.
+verify_jwt = true
+
+[functions.evangelism-send-message]
+enabled = true
+# Called from a signed-in ministry admin's browser session
+# (EvangelismInbox.tsx). The function verifies the caller via
+# auth.getUser() AND is_group_admin(ministryId) internally, so this needs a
+# real user JWT, not just the anon key. Gateway JWT verification stays on.
+verify_jwt = true
+
+[functions.webinar-auto-end]
+enabled = true
+# Called every 5 minutes by pg_cron (cron-setup-webinar-auto-end.sql) with the
+# anon key. It only ends webinars whose host has been gone past the grace
+# period (or that ran far past their booked time), so any valid JWT may call
+# it; gateway verification still keeps unsigned callers out.
+verify_jwt = true

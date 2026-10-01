@@ -94,6 +94,10 @@ public class MainActivity extends BridgeActivity {
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
+    // Local custom plugin (not an npm package, so Capacitor's auto-discovery
+    // never finds it) — must be registered before super.onCreate(), which is
+    // where the bridge reads this list.
+    registerPlugin(NativeScreenSharePlugin.class);
     super.onCreate(savedInstanceState);
 
     getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);

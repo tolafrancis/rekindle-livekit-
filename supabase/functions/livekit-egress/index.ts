@@ -17,9 +17,18 @@
 //   4. Run migration 0146_livekit_recordings.sql.
 //
 // ── Actions (POST JSON body) ─────────────────────────────────────────────────
-//   { action:'start-recording', roomName, meetingId?, context? }   → { egressId, recordingId, playbackUrl }
+//   { action:'start-recording', roomName, meetingId?, context?, recordingLayout? }   → { egressId, recordingId, playbackUrl }
+//       recordingLayout: 'gallery' (default, LiveKit's built-in grid) | 'speaker' | 'dual' |
+//       'screen-speaker' | 'screen-dual' — the last four render the app's recording
+//       template (RECORDING_TEMPLATE_URL, default https://app.rekindlebc.com/recording-template),
+//       which follows the host's spotlight order from the room metadata.
 //   { action:'stop-recording',  roomName, egressId?, context? }
 //   { action:'list-recordings', channelId? , meetingId?, roomName? } → { recordings: [...] }
+//   { action:'delete-webinar', webinarId } → { success: true }  (webinar manager/ministry admin only —
+//                                              deletes S3 recording files + every dependent row)
+//   { action:'track-participant', event:'join'|'leave', meetingId, participantId,
+//     participantName?, isGuest?, context? } → { success: true }
+//   { action:'list-participants', meetingId, context } → { participants: [...], totalCount }  (host only)
 //   6A broadcast: { action:'start-hls', roomName, channelId, context } → { egressId, playbackUrl }
 //                 { action:'stop-hls',  channelId, context }
 //   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, rtmpUrl, context }
@@ -29,7 +38,56 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { EgressClient, RoomServiceClient, SegmentedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { AwsClient } from 'https://esm.sh/aws4fetch@1';
+
+// The host's recording layout choices (packages/live/src/layout/meetingLayout.ts).
+// Every one but 'gallery' renders packages/live/src/components/RecordingTemplatePage.tsx.
+const RECORDING_LAYOUTS = ['gallery', 'speaker', 'dual', 'screen-speaker', 'screen-dual'];
+
+// Plain S3 REST delete helpers (2026-09-23, delete-webinar action) — S3Upload
+// above is livekit-server-sdk's egress-output config, not a general client;
+// deleting arbitrary keys needs real REST calls. Mirrored from
+// ministry-retention-sweep/index.ts rather than imported — each edge
+// function here is deployed independently, no shared module between them in
+// this repo (see that function's own resolveMinistryId comment for the same
+// convention).
+interface S3DeleteConfig {
+  accessKey: string;
+  secret: string;
+  bucket: string;
+  region: string;
+  endpoint: string;
+}
+function bucketRootUrl(cfg: S3DeleteConfig): string {
+  const trimmed = cfg.endpoint.replace(/\/+$/, '');
+  return trimmed.endsWith(`/${cfg.bucket}`) ? trimmed : `${trimmed}/${cfg.bucket}`;
+}
+async function listKeys(client: AwsClient, cfg: S3DeleteConfig, prefix: string): Promise<string[]> {
+  const url = `${bucketRootUrl(cfg)}?list-type=2&prefix=${encodeURIComponent(prefix)}`;
+  const res = await client.fetch(url);
+  if (!res.ok) {
+    console.error('[livekit-egress] delete-webinar: S3 list failed:', res.status, await res.text());
+    return [];
+  }
+  const xml = await res.text();
+  return [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]);
+}
+async function deleteKey(client: AwsClient, cfg: S3DeleteConfig, key: string): Promise<void> {
+  const res = await client.fetch(`${bucketRootUrl(cfg)}/${key}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) console.error(`[livekit-egress] delete-webinar: S3 delete failed for ${key}:`, res.status);
+}
+async function deletePrefix(client: AwsClient, cfg: S3DeleteConfig, prefix: string): Promise<void> {
+  const keys = await listKeys(client, cfg, prefix);
+  // Real bug found live (2026-09-23): a segmented HLS recording can easily
+  // have dozens of small files (one every 4s — see start-recording's
+  // SegmentedFileOutput), and this used to delete them one at a time,
+  // sequentially awaiting each round-trip — bulk-deleting several webinars
+  // at once (each with its own recording(s)) took long enough with zero
+  // progress feedback that it looked hung, even though it was actually
+  // working. Each key delete is independent, safe to run concurrently.
+  await Promise.all(keys.map((key) => deleteKey(client, cfg, key)));
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,6 +98,7 @@ const HOST_TABLE: Record<string, string> = {
   meeting: 'meetings',
   ministry_meeting: 'ministry_video_meetings',
   channel_meeting: 'live_channel_video_meetings',
+  ministry_webinar: 'ministry_webinars',
 };
 
 const json = (body: unknown, status = 200) =>
@@ -71,6 +130,10 @@ async function resolveMinistryIdFromContext(
     if (!cId) return null;
     const { data: c } = await admin.from('live_channels').select('ministry_id').eq('id', cId).maybeSingle();
     return (c as { ministry_id?: string } | null)?.ministry_id ?? null;
+  }
+  if (ctxKind === 'ministry_webinar' && meetingId) {
+    const { data } = await admin.from('ministry_webinars').select('ministry_id').eq('id', meetingId).maybeSingle();
+    return (data as { ministry_id?: string } | null)?.ministry_id ?? null;
   }
   return null;
 }
@@ -147,6 +210,28 @@ async function isDbHost(admin: ReturnType<typeof createClient>, userId: string, 
   const c = ctx ?? {};
   const table = HOST_TABLE[c.kind ?? 'meeting'];
   if (c.meetingId && table) {
+    // Webinars need the broader "who can manage this webinar" definition,
+    // not just an exact host_id match (2026-09-23, added alongside webinar
+    // participant lists) — a ministry commonly has several leaders/co-hosts
+    // who aren't literally the one row's host_id, same is_webinar_manager/
+    // is_group_admin dual check already used for the private-recording gate
+    // and delete-webinar above. A strict host_id-only check here would 403
+    // for every other leader, which — same failure mode just fixed for
+    // meeting attendance — silently looks like "no data" client-side rather
+    // than an authorization error.
+    if (c.kind === 'ministry_webinar') {
+      const { data } = await admin.from(table).select('host_id, ministry_id').eq('id', c.meetingId).maybeSingle();
+      const row = data as { host_id?: string; ministry_id?: string } | null;
+      if (row?.host_id === userId) return true;
+      if (row?.ministry_id) {
+        const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+          admin.rpc('is_webinar_manager', { p_webinar_id: c.meetingId, p_user_id: userId }),
+          admin.rpc('is_group_admin', { p_ministry_id: row.ministry_id, p_user_id: userId }),
+        ]);
+        if (isManager || isAdmin) return true;
+      }
+      return false;
+    }
     const { data } = await admin.from(table).select('host_id').eq('id', c.meetingId).maybeSingle();
     if (data && (data as { host_id?: string }).host_id === userId) return true;
   }
@@ -184,7 +269,12 @@ serve(async (req) => {
 
     const admin = createClient(SB_URL!, SB_SERVICE!);
 
-    // list-recordings is a read — no host check (VOD list). Returns MuxRecording shape.
+    // list-recordings is a read — no host check for meetings/channels (VOD
+    // list, unchanged, see the config.toml note this was intentional there).
+    // Webinar rows get real enforcement below (2026-09-22) — a webinar's
+    // recording can be marked private, and the URL itself must not be handed
+    // back to anyone who merely knows the webinar's id. Returns the shared
+    // ChannelRecording/MeetingRecording shape.
     if (action === 'list-recordings') {
       let q = admin.from('livekit_recordings').select('*').order('started_at', { ascending: false });
       // meetingId is the stable identifier callers actually have (a meeting's DB
@@ -195,17 +285,127 @@ serve(async (req) => {
       else if (body.meetingId) q = q.eq('meeting_id', body.meetingId);
       else if (body.roomName) q = q.eq('room_name', body.roomName);
       const { data } = await q;
-      const recordings = (data ?? [])
-        .filter((r: any) => r.status !== 'failed')
-        .map((r: any) => ({
-          uid: r.id,
-          created: r.started_at,
-          duration: r.duration_seconds ?? 0,
-          hls: r.playback_url,
-          thumbnail: '',
-          download: r.playback_url,
-        }));
+      let rows = (data ?? []).filter((r: any) => r.status !== 'failed');
+
+      const webinarRows = rows.filter((r: any) => r.kind === 'webinar' && r.meeting_id);
+      if (webinarRows.length > 0) {
+        const webinarIds = [...new Set(webinarRows.map((r: any) => r.meeting_id))];
+        const { data: webinars } = await admin
+          .from('ministry_webinars')
+          .select('id, ministry_id, recording_visibility')
+          .in('id', webinarIds);
+        const byId = new Map((webinars ?? []).map((w: any) => [w.id, w]));
+        const privateIds = webinarIds.filter((id) => byId.get(id)?.recording_visibility === 'private');
+
+        if (privateIds.length > 0) {
+          const userClient = createClient(SB_URL!, SB_ANON!, {
+            global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+          });
+          const { data: { user: caller } } = await userClient.auth.getUser();
+          const authorized = new Set<string>();
+          if (caller) {
+            for (const webinarId of privateIds) {
+              const w = byId.get(webinarId);
+              if (!w) continue;
+              const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+                admin.rpc('is_webinar_manager', { p_webinar_id: webinarId, p_user_id: caller.id }),
+                admin.rpc('is_group_admin', { p_ministry_id: w.ministry_id, p_user_id: caller.id }),
+              ]);
+              if (isManager || isAdmin) authorized.add(webinarId);
+            }
+          }
+          rows = rows.filter((r: any) => r.kind !== 'webinar' || !privateIds.includes(r.meeting_id) || authorized.has(r.meeting_id));
+        }
+      }
+
+      const recordings = rows.map((r: any) => ({
+        uid: r.id,
+        created: r.started_at,
+        duration: r.duration_seconds ?? 0,
+        hls: r.playback_url,
+        thumbnail: '',
+        // Real MP4 file, when this recording was made with the file output
+        // (see start-recording). Older rows have no download_url — omit the
+        // button rather than hand back the .m3u8 playlist, which isn't a
+        // downloadable file and just opens the browser's raw HLS handling.
+        download: r.download_url ?? null,
+      }));
       return json({ recordings });
+    }
+
+    // Host/admin self-service webinar deletion (2026-09-23, real request —
+    // webinar rows had no delete path at all, and their recordings were
+    // separately found to never be covered by ministry-retention-sweep's
+    // auto-cleanup, so junk/test webinars just accumulated with no way to
+    // clear them short of a manual DB operation). Same webinar-manager-or-
+    // group-admin check as the private-recording gate above. Deletes the S3
+    // recording files FIRST, then every row that references this webinar —
+    // most of that is by a meeting_id/meeting_table (or meeting_kind, or
+    // room_name) discriminator rather than a real foreign key, since one
+    // column can't FK several tables, so it has to be done explicitly here.
+    // webinar_speaker_requests/webinar_speakers/webinar_questions/webinar_polls
+    // all cascade-delete via a real FK — no explicit cleanup needed for those.
+    if (action === 'delete-webinar') {
+      const webinarId = body.webinarId as string | undefined;
+      if (!webinarId) return json({ error: 'webinarId is required' }, 400);
+
+      const { data: webinar } = await admin
+        .from('ministry_webinars')
+        .select('id, ministry_id, room_name')
+        .eq('id', webinarId)
+        .maybeSingle();
+      if (!webinar) return json({ error: 'not_found' }, 404);
+
+      const userClient = createClient(SB_URL!, SB_ANON!, {
+        global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+      });
+      const { data: { user: caller } } = await userClient.auth.getUser();
+      if (!caller) return json({ error: 'Not authenticated' }, 401);
+      const [{ data: isManager }, { data: isAdmin }] = await Promise.all([
+        admin.rpc('is_webinar_manager', { p_webinar_id: webinarId, p_user_id: caller.id }),
+        admin.rpc('is_group_admin', { p_ministry_id: (webinar as any).ministry_id, p_user_id: caller.id }),
+      ]);
+      if (!isManager && !isAdmin) return json({ error: 'Not authorized to delete this webinar' }, 403);
+
+      const { data: recordings } = await admin
+        .from('livekit_recordings')
+        .select('id, filepath')
+        .eq('meeting_table', 'ministry_webinars')
+        .eq('meeting_id', webinarId)
+        .not('filepath', 'is', null);
+
+      if (recordings && recordings.length > 0) {
+        const s3 = new AwsClient({ accessKeyId: s3cfg.accessKey, secretAccessKey: s3cfg.secret, region: s3cfg.region, service: 's3' });
+        // Also across a webinar's own multiple recordings, not just within
+        // one — same reasoning as deletePrefix's own comment.
+        await Promise.all((recordings as { id: string; filepath: string }[]).map((rec) =>
+          deletePrefix(s3, s3cfg, rec.filepath).catch((err) =>
+            console.error(`[livekit-egress] delete-webinar: S3 cleanup failed for recording ${rec.id}:`, err))));
+      }
+
+      await admin.from('livekit_recordings').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);
+      await admin.from('meeting_attendance').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);
+      await admin.from('meeting_chat').delete().eq('meeting_table', 'ministry_webinars').eq('meeting_id', webinarId);
+      await admin.from('meeting_registrations').delete().eq('meeting_kind', 'webinar').eq('meeting_id', webinarId);
+
+      const roomName = (webinar as any).room_name as string | null;
+      if (roomName) {
+        const { data: sessions } = await admin
+          .from('translation_sessions')
+          .select('id')
+          .eq('livekit_room_name', roomName);
+        const sessionIds = ((sessions ?? []) as { id: string }[]).map((s) => s.id);
+        if (sessionIds.length > 0) {
+          await admin.from('translation_logs').delete().in('session_id', sessionIds);
+          await admin.from('translation_bot_instances').delete().in('session_id', sessionIds);
+          await admin.from('translation_sessions').delete().in('id', sessionIds);
+        }
+      }
+
+      const { error: delErr } = await admin.from('ministry_webinars').delete().eq('id', webinarId);
+      if (delErr) return json({ error: delErr.message }, 500);
+
+      return json({ success: true });
     }
 
     if (action === 'list-simulcast') {
@@ -224,6 +424,46 @@ serve(async (req) => {
       });
     }
 
+    // track-participant is a self-report (any current participant, including
+    // guests with no Supabase auth session — see meeting_attendance's header
+    // comment) — no host check, and no egress/roomService needed.
+    if (action === 'track-participant') {
+      const { meetingId, participantId, participantName, isGuest, event } = body;
+      if (!meetingId || !participantId || !event) return json({ error: 'meetingId, participantId and event required' }, 400);
+      const meetingTable = HOST_TABLE[body.context?.kind ?? 'ministry_meeting'] ?? 'ministry_video_meetings';
+
+      if (event === 'join') {
+        const { data: existing } = await admin
+          .from('meeting_attendance')
+          .select('id')
+          .eq('meeting_id', meetingId)
+          .eq('user_id', participantId)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (existing) {
+          await admin.from('meeting_attendance').update({ is_active: true, left_at: null }).eq('id', existing.id);
+        } else {
+          await admin.from('meeting_attendance').insert({
+            meeting_id: meetingId,
+            meeting_table: meetingTable,
+            user_id: participantId,
+            user_name: participantName || 'Guest',
+            is_guest: !!isGuest,
+            joined_at: new Date().toISOString(),
+            is_active: true,
+          });
+        }
+      } else {
+        await admin
+          .from('meeting_attendance')
+          .update({ is_active: false, left_at: new Date().toISOString() })
+          .eq('meeting_id', meetingId)
+          .eq('user_id', participantId)
+          .eq('is_active', true);
+      }
+      return json({ success: true });
+    }
+
     // start/stop require an authenticated host.
     const userClient = createClient(SB_URL!, SB_ANON!, {
       global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
@@ -235,6 +475,35 @@ serve(async (req) => {
     const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
     const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
 
+    // list-participants — per-meeting attendance analytics. Host-only (auth
+    // already checked above): names + join times are participant PII.
+    if (action === 'list-participants') {
+      const { data } = await admin
+        .from('meeting_attendance')
+        .select('user_id, user_name, is_guest, joined_at, left_at, is_active')
+        .eq('meeting_id', body.meetingId)
+        .order('joined_at', { ascending: true });
+      const rows = data ?? [];
+      // A guest who reconnects gets a second row (their id is per-tab, not a
+      // stable identity) — a signed-in member's id is stable, so collapse
+      // theirs to first-joined/last-left for an accurate head count.
+      const byUser = new Map<string, { userId: string; userName: string; isGuest: boolean; joinedAt: string; leftAt: string | null; isActive: boolean }>();
+      for (const r of rows as any[]) {
+        const key = r.is_guest ? `${r.user_id}:${r.joined_at}` : r.user_id;
+        const cur = byUser.get(key);
+        if (!cur || new Date(r.joined_at) < new Date(cur.joinedAt)) {
+          byUser.set(key, {
+            userId: r.user_id, userName: r.user_name, isGuest: r.is_guest,
+            joinedAt: r.joined_at, leftAt: r.left_at, isActive: r.is_active,
+          });
+        }
+      }
+      const participants = Array.from(byUser.values()).sort(
+        (a, b) => new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime(),
+      );
+      return json({ participants, totalCount: participants.length });
+    }
+
     if (action === 'start-recording') {
       if (!body.roomName) return json({ error: 'roomName required' }, 400);
 
@@ -245,12 +514,17 @@ serve(async (req) => {
       const ctxKind = body.context?.kind ?? 'meeting';
       const meetingTable = HOST_TABLE[ctxKind]; // undefined for 'channel'
       const isChannelBroadcast = ctxKind === 'channel';
+      const isWebinar = ctxKind === 'ministry_webinar';
+      // A webinar is one-to-many like a channel broadcast, not a two-way
+      // meeting — meters against broadcast hours, same as a channel.
+      const recordingKind: 'meeting' | 'channel' | 'webinar' =
+        isChannelBroadcast ? 'channel' : isWebinar ? 'webinar' : 'meeting';
 
       const startMeetingId = body.context?.meetingId ?? body.meetingId ?? body.roomName;
       const startChannelId = isChannelBroadcast ? (body.context?.channelId ?? body.channelId ?? null) : null;
       const startMinistryId = await resolveMinistryIdFromContext(admin, ctxKind, startMeetingId, startChannelId);
       if (startMinistryId) {
-        const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast ? 'broadcast' : 'meeting');
+        const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast || isWebinar ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
       }
 
@@ -263,19 +537,38 @@ serve(async (req) => {
         segmentDuration: 4,
         output: { case: 's3', value: s3 },
       });
-      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
+      // A single MP4 alongside the HLS segments, purely so "Download" has a real
+      // file to hand the browser — the .m3u8 playlist alone can't be downloaded
+      // (it's a manifest pointing at dozens of .ts segments, not one file).
+      // Same encode, no extra render pass — Egress just multiplexes both outputs.
+      const fileOutput = new EncodedFileOutput({
+        filepath: `${prefix}/recording.mp4`,
+        output: { case: 's3', value: s3 },
+      });
+      // The recording's own layout, set by the host (Layout → Recording layout).
+      // Gallery keeps LiveKit's built-in grid; the rest use our template page.
+      const recordingLayout = RECORDING_LAYOUTS.includes(body.recordingLayout) ? body.recordingLayout as string : 'gallery';
+      const compositeOpts = recordingLayout === 'gallery'
+        ? { layout: 'grid' }
+        : {
+            layout: recordingLayout,
+            customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
+          };
+      const info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output, file: fileOutput }, compositeOpts);
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+      const downloadUrl = `${publicBase}/${prefix}/recording.mp4`;
 
       const { data: row, error: insertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
         room_name: body.roomName,
-        kind: isChannelBroadcast ? 'channel' : 'meeting',
+        kind: recordingKind,
         channel_id: isChannelBroadcast ? (body.context?.channelId ?? body.channelId ?? null) : null,
         meeting_id: body.context?.meetingId ?? body.meetingId ?? body.roomName,
         meeting_table: meetingTable ?? null,
         status: 'recording',
         filepath: prefix,
         playback_url: playbackUrl,
+        download_url: downloadUrl,
       }).select('id').maybeSingle();
       // The Egress has already started billing on LiveKit's side even if this insert
       // fails — surface it loudly rather than silently losing the tracking row (as
@@ -302,6 +595,7 @@ serve(async (req) => {
       if (!body.roomName) return json({ error: 'roomName required' }, 400);
       const ctxKind = body.context?.kind;
       const isChannel = ctxKind === 'channel';
+      const isWebinarHls = ctxKind === 'ministry_webinar';
       const meetingTable = HOST_TABLE[ctxKind ?? ''];
       const meetingId = body.context?.meetingId;
       const channelId = body.channelId ?? body.context?.channelId;
@@ -310,46 +604,103 @@ serve(async (req) => {
 
       const hlsMinistryId = await resolveMinistryIdFromContext(admin, ctxKind ?? '', meetingId, channelId);
       if (hlsMinistryId) {
-        const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel ? 'broadcast' : 'meeting');
+        const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel || isWebinarHls ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
       }
 
       const ts = Date.now();
       const prefix = `broadcasts/${isChannel ? channelId : meetingId}/${ts}`;
       const s3 = new S3Upload({ ...s3cfg, forcePathStyle: true });
+      // segmentDuration reverted 2s -> 4s (2026-09-22, same day as the 2s
+      // change, live-watched path only). The 2s experiment (for lower
+      // latency) turned out to directly cause a WORSE bug once combined with
+      // livePlaylistName below: LiveKit's live playlist keeps a FIXED
+      // SEGMENT COUNT, not a fixed time window (confirmed: "generate a
+      // playlist containing only the last few segments" — LiveKit's own
+      // egress output docs; observed directly as exactly 5 segments in
+      // production) — so shorter segments meant a much SMALLER total time
+      // window (5 x 2s = 10s), leaving barely any margin before hls.js's
+      // live-sync logic asked for a segment that had already rolled out of
+      // the playlist. Real report: a broadcast that ran cleanly for a few
+      // minutes then started breaking "at interval" — periodic, not random,
+      // consistent with routinely bumping against that tight 10s ceiling
+      // rather than occasional network jitter. 4s segments double the
+      // window to ~20s (same segment count), which is what channel OBS
+      // broadcasts (livekit-webhook's autoStartHlsBroadcast) already use
+      // without this complaint. Reliability over shaving a couple more
+      // seconds of latency.
+      // livePlaylistName added (2026-09-22, real bug: audience reported
+      // repeated "disconnecting and reconnecting" — ?hlsdebug=1 showed
+      // status genuinely cycling playing -> recovering -> playing several
+      // times over a session, while the underlying recording (checked
+      // directly via HEAD requests across the whole file) was perfectly
+      // healthy throughout, and CORS checked out too). Root cause: without
+      // this field, LiveKit's SegmentedFileOutput only produces `playlistName`
+      // — an EVENT-type manifest that NEVER trims old segments, growing
+      // unboundedly for the entire life of the broadcast. hls.js still
+      // treats it as "live" (no ENDLIST) and correctly targets the live
+      // edge, but every periodic playlist refresh re-downloads and re-parses
+      // the ENTIRE ever-growing file — for a long-running session this
+      // eventually made refreshes slow/heavy enough to intermittently blow
+      // past hls.js's own load-time budgets, escalating into fatal errors
+      // and full rebuilds (exactly what showed up as "disconnecting and
+      // reconnecting"). `livePlaylistName` is LiveKit's own purpose-built
+      // second output for this: a proper bounded sliding-window manifest
+      // that only lists recent segments, the same shape as any normal live
+      // HLS stream. `playlistName` (the full, ever-growing EVENT manifest)
+      // is kept unchanged — it's what eventually becomes the VOD/recording
+      // once the broadcast ends, which legitimately needs every segment.
       const output = new SegmentedFileOutput({
         filenamePrefix: `${prefix}/seg`,
         playlistName: `${prefix}/index.m3u8`,
+        livePlaylistName: `${prefix}/live.m3u8`,
         segmentDuration: 4,
         output: { case: 's3', value: s3 },
       });
 
-      // Cold-start fix (2026-08-19), channel broadcasts only: Room Composite
-      // Egress spins up a full compositor (a headless browser rendering a
-      // grid layout) — real, measured cost on top of an already-slow first
-      // segment. A channel broadcast is realistically one active speaker
-      // (the host) at a time, so Track Composite Egress — encoding their
-      // raw published tracks directly, no layout render step — should
-      // cold-start faster. `user.id` IS the host here (isDbHost already
-      // confirmed it for this exact request), so their track SIDs are
-      // resolved directly rather than trusting any client-supplied ID.
-      // Meeting webinars keep Room Composite (unchanged below) — multiple
-      // simultaneous speakers are a more central case there, and Track
+      // Cold-start fix (2026-08-19, channel broadcasts; extended 2026-09-21 to
+      // webinars): Room Composite Egress spins up a full compositor (a
+      // headless browser rendering a grid layout) — real, measured cost on
+      // top of an already-slow first segment, and the direct cause of a
+      // production 404 an attendee hit joining a webinar right as it went
+      // live (the .m3u8 didn't exist yet). A channel broadcast or webinar is
+      // realistically one active speaker (the host) at a time, so Track
+      // Composite Egress — encoding their raw published tracks directly, no
+      // layout render step — cold-starts faster. `user.id` IS the host here
+      // (isDbHost already confirmed it for this exact request), so their
+      // track SIDs are resolved directly rather than trusting any
+      // client-supplied ID. Interactive Meetings' own webinar mode
+      // (ctxKind='ministry_meeting') keeps Room Composite (unchanged below) —
+      // co-hosted/multi-speaker is a more central case there, and Track
       // Composite can't automatically pick up whoever's on screen the way
-      // Room Composite does.
+      // Room Composite does; a webinar with real co-hosts still gets the
+      // Room Composite fallback below whenever a video track isn't resolved.
       //
-      // Regression fix (2026-08-19, same day): a channel broadcast's `expectVideo`
-      // flag (set by the client from its own video-mode toggle) says whether a
-      // video track is actually expected. If it is, and resolveHostTracks never
-      // finds one (host tapped camera late, or its publish hadn't round-tripped
-      // yet), Track Composite would otherwise lock onto audio-only forever —
-      // Track Composite never picks up a track published after it starts, unlike
-      // Room Composite. That was the "participant can no longer see host video"
-      // bug: audio played, video never appeared. Fall back to Room Composite in
-      // that case so video isn't silently lost.
+      // Regression fix (2026-08-19, same day): the caller's `expectVideo` flag
+      // (client's own video-mode toggle) says whether a video track is
+      // actually expected. If it is, and resolveHostTracks never finds one
+      // (host tapped camera late, or its publish hadn't round-tripped yet),
+      // Track Composite would otherwise lock onto audio-only forever — Track
+      // Composite never picks up a track published after it starts, unlike
+      // Room Composite. That was the "participant can no longer see host
+      // video" bug: audio played, video never appeared. Fall back to Room
+      // Composite in that case so video isn't silently lost.
       const expectVideo = !!body.expectVideo;
       let info: Awaited<ReturnType<typeof egressClient.startRoomCompositeEgress>>;
-      if (isChannel) {
+      if (isWebinarHls) {
+        // Webinars render through the recording template in Speaker layout
+        // (2026-09-28). Track Composite locked the audience stream onto the
+        // host's own tracks, so a speaker the host brought up, or anyone they
+        // spotlighted, never reached the audience. The template follows the
+        // spotlight and layout the host sets in the room (room metadata).
+        // Its slower cold start now lands at Go live, after the host has
+        // already checked everything backstage, and the attendee view shows
+        // "Stream is starting…" until the first segment exists.
+        info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, {
+          layout: 'speaker',
+          customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
+        });
+      } else if (isChannel) {
         const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
         const canUseTrackComposite = (audioTrackId || videoTrackId) && (!expectVideo || videoTrackId);
 
@@ -372,13 +723,20 @@ serve(async (req) => {
       } else {
         info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, { layout: 'grid' });
       }
+      // `playbackUrl` is the full, ever-growing EVENT manifest — kept as the
+      // livekit_recordings tracking row's URL since that's what becomes the
+      // VOD/recording link once the broadcast ends (needs every segment).
+      // `livePlaybackUrl` is the new bounded sliding-window manifest — this
+      // is what actually gets handed to the audience while the stream is
+      // ongoing (see the SegmentedFileOutput comment above for why).
       const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
+      const livePlaybackUrl = `${publicBase}/${prefix}/live.m3u8`;
 
       // The live HLS doubles as the VOD (§12) — track it as a recording too.
       const { error: hlsInsertError } = await admin.from('livekit_recordings').insert({
         egress_id: info.egressId,
         room_name: body.roomName,
-        kind: isChannel ? 'channel' : 'meeting',
+        kind: isChannel ? 'channel' : isWebinarHls ? 'webinar' : 'meeting',
         channel_id: isChannel ? channelId : null,
         meeting_id: meetingId ?? body.roomName,
         meeting_table: isChannel ? null : meetingTable,
@@ -393,11 +751,11 @@ serve(async (req) => {
           { channel_id: channelId, hls_egress_id: info.egressId, updated_at: new Date().toISOString() },
           { onConflict: 'channel_id' },
         );
-        await admin.from('live_channels').update({ hls_playback_url: playbackUrl, is_hls_live: true }).eq('id', channelId);
+        await admin.from('live_channels').update({ hls_playback_url: livePlaybackUrl, is_hls_live: true }).eq('id', channelId);
       } else {
-        await admin.from(meetingTable).update({ hls_playback_url: playbackUrl }).eq('id', meetingId);
+        await admin.from(meetingTable).update({ hls_playback_url: livePlaybackUrl }).eq('id', meetingId);
       }
-      return json({ egressId: info.egressId, playbackUrl });
+      return json({ egressId: info.egressId, playbackUrl: livePlaybackUrl });
     }
 
     if (action === 'stop-hls') {

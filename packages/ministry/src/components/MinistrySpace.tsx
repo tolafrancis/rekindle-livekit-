@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -19,7 +19,6 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { getMinistryEntitlements, FREE_ENTITLEMENTS } from '@rekindle/auth/ministryEntitlements';
-import { VideoMessagePlayer } from '@rekindle/live/components/VideoMessagePlayer';
 import {
   ArrowLeft, Home, BookOpen, Heart, Calendar, MessageSquare,
   Megaphone, Gift, Video, Users, Settings, Crown, Shield,
@@ -28,6 +27,45 @@ import {
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
   User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard,
 } from 'lucide-react';
+
+// Every workspace tab (live, meetings, webinars, recordings, settings, the
+// shared Word/Prayer/Community screens …) is its own chunk, loaded when the tab
+// is opened, instead of all of them downloading on entering a ministry.
+const MinistrySettingsHub = lazy(() => import('./MinistrySettingsHub').then((m) => ({ default: m.MinistrySettingsHub })));
+const MinistryLiveTechSettings = lazy(() => import('./MinistryLiveTechSettings').then((m) => ({ default: m.MinistryLiveTechSettings })));
+const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
+const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
+const DevotionalModule = lazy(() => import('@rekindle/features/components/DevotionalModule').then((m) => ({ default: m.DevotionalModule })));
+const MinistryInteractiveMeetings = lazy(() => import('./MinistryInteractiveMeetings').then((m) => ({ default: m.MinistryInteractiveMeetings })));
+const WebinarDashboard = lazy(() => import('@rekindle/live/webinar/WebinarDashboard').then((m) => ({ default: m.WebinarDashboard })));
+const MinistryRecordingsTab = lazy(() => import('./MinistryRecordingsTab').then((m) => ({ default: m.MinistryRecordingsTab })));
+const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default: m.MLiveChannel })));
+const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
+const DiscoverSmallGroups = lazy(() => import('./DiscoverSmallGroups').then((m) => ({ default: m.DiscoverSmallGroups })));
+const MySmallGroups = lazy(() => import('./MySmallGroups').then((m) => ({ default: m.MySmallGroups })));
+const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
+const BibleReadingPlan = lazy(() => import('@rekindle/features/components/BibleReadingPlan').then((m) => ({ default: m.BibleReadingPlan })));
+const ScriptureMemory = lazy(() => import('@rekindle/features/components/ScriptureMemory').then((m) => ({ default: m.ScriptureMemory })));
+const BookSummaries = lazy(() => import('@rekindle/features/components/BookSummaries').then((m) => ({ default: m.BookSummaries })));
+const DevotionalLibrary = lazy(() => import('@rekindle/features/components/DevotionalLibrary').then((m) => ({ default: m.DevotionalLibrary })));
+const PrayerLibrary = lazy(() => import('@rekindle/features/components/PrayerLibrary').then((m) => ({ default: m.PrayerLibrary })));
+const PrayerJournal = lazy(() => import('@rekindle/features/components/PrayerJournal').then((m) => ({ default: m.PrayerJournal })));
+const CommunityPrayerWall = lazy(() => import('@rekindle/features/components/CommunityPrayerWall').then((m) => ({ default: m.CommunityPrayerWall })));
+const CommunityActivityFeed = lazy(() => import('@rekindle/features/components/CommunityActivityFeed').then((m) => ({ default: m.CommunityActivityFeed })));
+const EnhancedPrayerChallenges = lazy(() => import('@rekindle/features/components/EnhancedPrayerChallenges').then((m) => ({ default: m.EnhancedPrayerChallenges })));
+const MinistryBroadcast = lazy(() => import('./MinistryBroadcast'));
+// Pastor's video-message player pulls in hls.js (~500 KB); only load it when a
+// video is actually played.
+const VideoMessagePlayer = lazy(() => import('@rekindle/live/components/VideoMessagePlayer').then((m) => ({ default: m.VideoMessagePlayer })));
+
+const MINISTRY_FEED_PAGE = 20;
+type FeedKind = 'prayers' | 'testimonies' | 'revelations';
+
+const TabFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+  </div>
+);
 
 // Member-facing ministry navigation. Shared by the icon tab row and the
 // mobile hamburger menu so both stay in sync.
@@ -42,22 +80,13 @@ const MINISTRY_NAV = [
   { id: 'announcements', label: 'Announcements', icon: Megaphone },
   { id: 'donations', label: 'Donations', icon: Gift },
   { id: 'meetings', label: 'Interactive Meetings', icon: Video },
+  { id: 'webinars', label: 'Webinars', icon: Radio },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
-import { MinistrySettingsHub, SettingsSectionId } from './MinistrySettingsHub';
-import { MinistryLiveTechSettings } from './MinistryLiveTechSettings';
-import { MinistryAnnouncementsManager } from './MinistryAnnouncementsManager';
-import { MinistryRulesManager } from './MinistryRulesManager';
+import type { SettingsSectionId } from './MinistrySettingsHub';
 import { AcceptRulesModal } from './AcceptRulesModal';
-import MinistryBroadcast from './MinistryBroadcast';
-import { DevotionalModule } from '@rekindle/features/components/DevotionalModule';
-import { MinistryInteractiveMeetings } from './MinistryInteractiveMeetings';
-import { MLiveChannel } from './MLiveChannel';
-import { MinistryDonationForm } from './MinistryDonationForm';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
-import { DiscoverSmallGroups } from './DiscoverSmallGroups';
-import { MySmallGroups } from './MySmallGroups';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
@@ -67,15 +96,6 @@ import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
 import { recordDailyActivity } from '@rekindle/features/streak';
 import { InstrumentalPlayer } from '@rekindle/features/components/InstrumentalPlayer';
-import { BibleReadingPlan } from '@rekindle/features/components/BibleReadingPlan';
-import { ScriptureMemory } from '@rekindle/features/components/ScriptureMemory';
-import { BookSummaries } from '@rekindle/features/components/BookSummaries';
-import { DevotionalLibrary } from '@rekindle/features/components/DevotionalLibrary';
-import { PrayerLibrary } from '@rekindle/features/components/PrayerLibrary';
-import { PrayerJournal } from '@rekindle/features/components/PrayerJournal';
-import { CommunityPrayerWall } from '@rekindle/features/components/CommunityPrayerWall';
-import { CommunityActivityFeed } from '@rekindle/features/components/CommunityActivityFeed';
-import { EnhancedPrayerChallenges } from '@rekindle/features/components/EnhancedPrayerChallenges';
 import { DeclarationCard } from '@rekindle/features/components/DeclarationCard';
 import { AffirmationCard } from '@rekindle/features/components/AffirmationCard';
 import { useUserAnalytics } from '@rekindle/features/useUserAnalytics';
@@ -218,9 +238,19 @@ interface MinistrySpaceProps {
   ministry: Ministry;
   membership?: MembershipInfo;
   onExit: () => void;
+  /** `ministry` is a snapshot handed down by the parent (MinistriesHub) — this
+   *  component has no way to update it itself. Settings saves (slug, name,
+   *  branding, …) write straight to ministry_groups and then call
+   *  loadMinistryData as their "refresh", but that only reloads THIS
+   *  component's own sub-collections (announcements, events, …), never the
+   *  ministry row itself — so a saved change silently never appeared on
+   *  screen until the ministry was re-entered. loadMinistryData now also
+   *  re-fetches the ministry row and, when this is provided, hands it back
+   *  up so the parent can refresh its snapshot. */
+  onMinistryUpdate?: (updated: Record<string, unknown>) => void;
 }
 
-const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onExit }) => {
+const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onExit, onMinistryUpdate }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
@@ -240,6 +270,48 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     'overview'
   );
   const navigate = useNavigate();
+
+  // Restore Settings > Finance & Billing after a full external redirect
+  // round-trip (Stripe Connect onboarding) — activeTab/settingsSection live
+  // only in browser history.state via useViewHistory, which a real
+  // navigation away and back (not an in-app view change) does not preserve,
+  // so without this the app reopens at its default view instead of where
+  // the admin actually was.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connect') === 'return' || params.get('connect') === 'refresh') {
+      setActiveTab('settings', { replace: true });
+      setSettingsSection('finance-billing', { replace: true });
+      params.delete('connect');
+      const query = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Land on a specific tab after a real navigation round-trip (e.g.
+  // WebinarJoinPage's "Back home" after a webinar ends, which seeds
+  // ?tab=webinars) — same reasoning as the ?connect=return effect above,
+  // kept separate since it's a different, more general concern (any tab id,
+  // not just Settings > Finance & Billing).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab) {
+      setActiveTab(tab, { replace: true });
+      params.delete('tab');
+      const query = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Home stat capsules: per-user completions (shared analytics) + ministry kiosk entries.
   const { analytics } = useUserAnalytics();
   const [kioskThisMonth, setKioskThisMonth] = useState<number>(0);
@@ -268,6 +340,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [events, setEvents] = useState<MinistryEvent[]>([]);
   const [prayerRequests, setPrayerRequests] = useState<PrayerRequest[]>([]);
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
+  // Member-generated feeds (prayer requests, testimonies, revelations) are
+  // fetched MINISTRY_FEED_PAGE rows at a time. Refreshes re-fetch however many
+  // are already on screen, so "Load more" survives the frequent reloads.
+  const [feedHasMore, setFeedHasMore] = useState<Record<FeedKind, boolean>>({ prayers: false, testimonies: false, revelations: false });
+  const [feedLoadingMore, setFeedLoadingMore] = useState<FeedKind | null>(null);
+  const feedCountRef = useRef<Record<FeedKind, number>>({ prayers: 0, testimonies: 0, revelations: 0 });
   const [devotionals, setDevotionals] = useState<MinistryDevotional[]>([]);
   const [videoMessages, setVideoMessages] = useState<MinistryVideoMessage[]>([]);
   // Ministry Rules & Guidelines — rulesItems is the currently-published
@@ -347,6 +425,51 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Hidden in native builds: no purchase/upgrade surfaces there (Phase 0 — Apple 3.1.1).
   const showMinistryFeatureUpgradePrompt = isLeader && !hasMinistryAccess && canShowPurchaseUI();
 
+  feedCountRef.current = {
+    prayers: prayerRequests.length,
+    testimonies: testimonies.length,
+    revelations: mRevelations.length,
+  };
+
+  const loadMoreFeed = async (kind: FeedKind) => {
+    const from = feedCountRef.current[kind];
+    const to = from + MINISTRY_FEED_PAGE - 1;
+    setFeedLoadingMore(kind);
+    try {
+      const query =
+        kind === 'prayers'
+          ? supabase.from('ministry_prayer_requests').select('*').eq('ministry_id', ministry.id).eq('status', 'active')
+          : kind === 'testimonies'
+            ? supabase.from('ministry_testimonies').select('*').eq('ministry_id', ministry.id).eq('is_approved', true)
+            : supabase.from('community_revelations').select('*').eq('ministry_id', ministry.id).eq('is_published', true).eq('is_hidden', false);
+      const { data, error } = await query.order('created_at', { ascending: false }).range(from, to);
+      if (error) throw error;
+      const rows: any[] = data || [];
+      const appendNew = <T extends { id: string }>(prev: T[], next: T[]) => {
+        const seen = new Set(prev.map(r => r.id));
+        return [...prev, ...next.filter(r => !seen.has(r.id))];
+      };
+      if (kind === 'prayers') setPrayerRequests(prev => appendNew(prev, rows));
+      else if (kind === 'testimonies') setTestimonies(prev => appendNew(prev, rows));
+      else setMRevelations(prev => appendNew(prev, rows.map(r => ({ ...r, liked: false }))));
+      setFeedHasMore(prev => ({ ...prev, [kind]: rows.length === MINISTRY_FEED_PAGE }));
+    } catch (err) {
+      console.error(`Error loading more ${kind}:`, err);
+    } finally {
+      setFeedLoadingMore(null);
+    }
+  };
+
+  const renderLoadMore = (kind: FeedKind) =>
+    feedHasMore[kind] ? (
+      <div className="flex justify-center pt-3">
+        <Button variant="outline" onClick={() => loadMoreFeed(kind)} disabled={feedLoadingMore === kind}>
+          {feedLoadingMore === kind && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          {t('common', 'loadMore', 'Load more')}
+        </Button>
+      </div>
+    ) : null;
+
   const loadMinistryData = useCallback(async () => {
     setLoading(true);
     try {
@@ -357,13 +480,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       expiryFloor.setHours(0, 0, 0, 0);
       expiryFloor.setDate(expiryFloor.getDate() - 5);
       const expiryFloorISO = expiryFloor.toISOString();
+      const prayersLimit = Math.max(MINISTRY_FEED_PAGE, feedCountRef.current.prayers);
+      const testimoniesLimit = Math.max(MINISTRY_FEED_PAGE, feedCountRef.current.testimonies);
       const [announcementsRes, eventsRes, prayersRes, testimoniesRes, devotionalsRes, prayerLibraryRes, campaignsRes, videoMessagesRes] = await Promise.all([
         supabase.from('ministry_announcements').select('*').eq('ministry_id', ministry.id)
           .not('status', 'in', '("draft","scheduled","expired")')
           .order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
         supabase.from('ministry_events').select('*').eq('ministry_id', ministry.id).order('start_time', { ascending: true }),
-        supabase.from('ministry_prayer_requests').select('*').eq('ministry_id', ministry.id).eq('status', 'active').order('created_at', { ascending: false }),
-        supabase.from('ministry_testimonies').select('*').eq('ministry_id', ministry.id).eq('is_approved', true).order('created_at', { ascending: false }),
+        supabase.from('ministry_prayer_requests').select('*').eq('ministry_id', ministry.id).eq('status', 'active').order('created_at', { ascending: false })
+          .limit(prayersLimit),
+        supabase.from('ministry_testimonies').select('*').eq('ministry_id', ministry.id).eq('is_approved', true).order('created_at', { ascending: false })
+          .limit(testimoniesLimit),
         supabase.from('ministry_devotionals')
           .select('*')
           .eq('ministry_id', ministry.id)
@@ -384,10 +511,23 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           .order('published_at', { ascending: false })
       ]);
 
+      // Best-effort, independent of the Promise.all above so a failure here never
+      // blocks the sub-collection loads that actually drive most of this page.
+      // See MinistrySpaceProps.onMinistryUpdate for why this exists.
+      if (onMinistryUpdate) {
+        supabase.from('ministry_groups').select('*').eq('id', ministry.id).maybeSingle()
+          .then(({ data }) => { if (data) onMinistryUpdate(data); }, () => {});
+      }
+
       setAnnouncements(announcementsRes.data || []);
       setEvents(eventsRes.data || []);
       setPrayerRequests(prayersRes.data || []);
       setTestimonies(testimoniesRes.data || []);
+      setFeedHasMore(prev => ({
+        ...prev,
+        prayers: (prayersRes.data?.length ?? 0) === prayersLimit,
+        testimonies: (testimoniesRes.data?.length ?? 0) === testimoniesLimit,
+      }));
       setVideoMessages(videoMessagesRes.data || []);
 
       // Daily-devotional source (0149): if this ministry pointed its homepage at an
@@ -468,7 +608,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     } finally {
       setLoading(false);
     }
-  }, [ministry.id]);
+  }, [ministry.id, onMinistryUpdate]);
 
   useEffect(() => {
     loadMinistryData();
@@ -830,6 +970,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     ...(moduleOn('smallGroups') ? [{ id: 'groups', label: 'Small Groups', icon: Users, gradient: 'from-cyan-500 to-blue-600', children: [
       { id: 'discover-groups', label: 'Discover', icon: Search },
       { id: 'my-groups', label: 'My Groups', icon: Users },
+      // Create/edit/delete groups and assign leaders. It only lived in
+      // MinistryManagement, which nothing renders any more, so leaders had
+      // no way to reach it.
+      ...(canManageMinistry ? [{ id: 'manage-groups', label: 'Manage Groups', icon: Settings }] : []),
     ] }] : []),
     // Gated by the ministry's plan (ministryEntitlements.caps, fix 2) — not
     // just role, unlike most of the 'admin' group's children below. Hidden
@@ -845,12 +989,22 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     // the group's own id ('live') so goToGroup's default-to-first-child
     // behavior lands on the live channel, unchanged from before this had
     // children at all.
-    ...(ministryEntitlements.caps.liveChannels
-      ? [{ id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600', children: [
-          { id: 'live', label: 'Live Channel', icon: Radio },
-          ...(canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
-        ] }]
-      : []),
+    // 'webinars' moved here from the 'admin' group (2026-09-21, per the user's
+    // request) — it's a live/broadcast feature, not ministry-admin housekeeping,
+    // and belongs beside Live Channel/Live Translation. Kept unconditional (not
+    // gated behind caps.liveChannels, unlike 'live'/'live-tech' below) — webinar
+    // access is gated separately/deeper (CreateWebinarWizard's own entitlement
+    // check), and it was ungated at this nav level before the move too, so
+    // gating it on liveChannels here would newly hide it for ministries that
+    // have webinars but not live channels.
+    {
+      id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600',
+      children: [
+        ...(ministryEntitlements.caps.liveChannels ? [{ id: 'live', label: 'Live Channel', icon: Radio }] : []),
+        { id: 'webinars', label: 'Webinars', icon: Radio },
+        ...(ministryEntitlements.caps.liveChannels && canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
+      ],
+    },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
       ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
@@ -898,6 +1052,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     ownsSubtab(g.id) ? activeTab === g.id && SUBTAB[g.id].value === childId : activeTab === childId;
   const isGroupActive = (g: NavGroup) => activeGroup.id === g.id;
 
+  // The app-wide "Find a feature" search (apps/rekindle FeatureFinder) asks
+  // for a screen in here by group + child id. Only screens this user can
+  // actually see (role, plan and modules already applied to GROUPS) are
+  // opened; setting `handled` tells the finder not to fall back.
+  const groupsRef = useRef(GROUPS);
+  groupsRef.current = GROUPS;
+  const goToChildRef = useRef(goToChild);
+  goToChildRef.current = goToChild;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ group: string; child: string; handled: boolean }>).detail;
+      if (!detail) return;
+      const g = groupsRef.current.find((x) => x.id === detail.group);
+      if (!g?.children?.some((c) => c.id === detail.child)) return;
+      goToChildRef.current(g, detail.child);
+      detail.handled = true;
+    };
+    window.addEventListener('rk:ministry-go', handler);
+    return () => window.removeEventListener('rk:ministry-go', handler);
+  }, []);
+
   // Deterministic daily pick: prefer is_daily rows, rotate by day so it varies.
   const pickDaily = (list: any[]): any | null => {
     if (!list.length) return null;
@@ -907,43 +1082,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     return pool[dayIndex % pool.length];
   };
 
-  // ========== CONDITIONAL RETURNS (AFTER ALL HOOKS TO COMPLY WITH RULES OF HOOKS) ==========
-  
-  // Show loading state while checking entitlements (moved here to prevent hook order violations)
-  if (entitlements.isLoading) {
-    return (
-      <div className="min-h-screen p-6 space-y-6">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-12 w-12 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="h-3 w-24" />
-          </div>
-        </div>
-        <Skeleton className="h-10 w-full rounded-xl" />
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-        </div>
-        <Skeleton className="h-48 rounded-xl" />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="space-y-4 py-6 px-4">
-        <Skeleton className="h-8 w-48" />
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   // ── Load community data when tab becomes active ──
   const loadMinistryCommunity = async () => {
     if (!ministry?.id) return;
@@ -952,14 +1090,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     setMQaLoading(true);
 
     // Load ministry-scoped revelations
+    const revLimit = Math.max(MINISTRY_FEED_PAGE, feedCountRef.current.revelations);
     const { data: revData } = await supabase
       .from('community_revelations')
       .select('*')
       .eq('ministry_id', ministry.id)
       .eq('is_published', true)
       .eq('is_hidden', false)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(revLimit);
     setMRevelations((revData || []).map(r => ({ ...r, liked: false })));
+    setFeedHasMore(prev => ({ ...prev, revelations: (revData?.length ?? 0) === revLimit }));
     setMRevLoading(false);
 
     // Load ministry-scoped questions
@@ -1114,21 +1255,64 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     }, 350);
   };
 
+  // ========== CONDITIONAL RETURNS (AFTER ALL HOOKS AND HANDLERS) ==========
+  // Effects above call handlers declared further down (loadMinistryCommunity,
+  // etc.). Returning before those `const`s run leaves them uninitialized, and
+  // an effect firing while loading throws "Cannot access … before initialization".
+  
+  // Show loading state while checking entitlements (moved here to prevent hook order violations)
+  if (entitlements.isLoading) {
+    return (
+      <div className="min-h-screen p-6 space-y-6">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+        </div>
+        <Skeleton className="h-48 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4 py-6 px-4">
+        <Skeleton className="h-8 w-48" />
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
+    <Suspense fallback={<TabFallback />}>
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Pastor's Video Message player overlay */}
       {showVideoPlayer && activeVideoMessage && (
-        <VideoMessagePlayer
-          videoId={activeVideoMessage.id}
-          ministryId={ministry.id}
-          title={activeVideoMessage.title}
-          speakerName={activeVideoMessage.speaker_name}
-          playbackUrl={activeVideoMessage.playback_url!}
-          captionsUrl={activeVideoMessage.captions_url}
-          shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
-          onClose={() => setShowVideoPlayer(false)}
-        />
+        <Suspense fallback={null}>
+          <VideoMessagePlayer
+            videoId={activeVideoMessage.id}
+            ministryId={ministry.id}
+            title={activeVideoMessage.title}
+            speakerName={activeVideoMessage.speaker_name}
+            playbackUrl={activeVideoMessage.playback_url!}
+            captionsUrl={activeVideoMessage.captions_url}
+            shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
+            onClose={() => setShowVideoPlayer(false)}
+          />
+        </Suspense>
       )}
 
       {/* Blocking Rules & Guidelines gate — see the rules-loading effect
@@ -1404,6 +1588,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* Main content */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <Suspense fallback={<TabFallback />}>
         {/* Live Tab - MLiveChannel */}
         {activeTab === 'live' && (
           <MLiveChannel
@@ -1489,7 +1674,20 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               );
             })()}
 
-            <FreeMeetingsPromoCard onStartMeeting={() => setActiveTab('meetings')} />
+            {/* Rekindle Guide — the step-by-step tutorial for members and leaders */}
+            <button
+              onClick={() => navigate('/guide')}
+              className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+                <ScrollText className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-900">{t('ministrySpace', 'guideTitle', 'The Rekindle Guide')}</span>
+                <span className="block text-xs text-gray-500 truncate">{t('ministrySpace', 'guideDesc', 'Step by step: exactly where to tap for everything members and leaders do most')}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+            </button>
 
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
             <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
@@ -1508,20 +1706,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               })}
             </div>
 
-            {/* Rekindle Guide — full walkthrough of every feature, incl. Small Groups */}
-            <button
-              onClick={() => navigate('/guide')}
-              className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 text-white">
-                <ScrollText className="h-5 w-5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-gray-900">{t('ministrySpace', 'guideTitle', 'The Rekindle Guide')}</span>
-                <span className="block text-xs text-gray-500 truncate">{t('ministrySpace', 'guideDesc', 'A full walkthrough of everything Rekindle can do for your ministry')}</span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
-            </button>
+            <FreeMeetingsPromoCard
+              onStartMeeting={() => setActiveTab('meetings')}
+              onSeePlans={() => navigate('/settings/billing')}
+            />
 
             {/* ReKindle Tip — nudge to set up daily reminders (self-hides once set) */}
             <ReminderSetupTip onSetup={() => navigate('/settings/account')} />
@@ -2122,6 +2310,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </Button>
             </div>
             {prayerRequests.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {prayerRequests.map(prayer => (
                   <Card key={prayer.id}>
@@ -2148,6 +2337,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   </Card>
                 ))}
               </div>
+              {renderLoadMore('prayers')}
+              </>
             ) : (
               <Card className="p-12 text-center">
                 <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
@@ -2173,6 +2364,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </Button>
             </div>
             {testimonies.length > 0 ? (
+              <>
               <div className="space-y-4">
                 {testimonies.map(testimony => (
                   <Card key={testimony.id}>
@@ -2186,6 +2378,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   </Card>
                 ))}
               </div>
+              {renderLoadMore('testimonies')}
+              </>
             ) : (
               <Card className="p-12 text-center">
                 <Star className="h-12 w-12 mx-auto text-gray-400 mb-4" />
@@ -2336,7 +2530,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
 
             {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
-            {communitySubTab === 'feed' && <CommunityActivityFeed />}
+            {communitySubTab === 'feed' && <CommunityActivityFeed ministryId={ministry.id} />}
             {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
 
             {/* ── REVELATIONS sub-tab ── */}
@@ -2421,6 +2615,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         </CardContent>
                       </Card>
                     ))}
+                    {renderLoadMore('revelations')}
                   </div>
                 )}
               </div>
@@ -2617,6 +2812,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           />
         )}
 
+        {/* Webinars Tab — a wholly separate meeting type from Interactive
+            Meetings, see packages/live/src/webinar */}
+        {activeTab === 'webinars' && (
+          <WebinarDashboard
+            ministryId={ministry.id}
+            isLeader={membership?.is_leader || false}
+            renderRecordingsTab={(webinars) => <MinistryRecordingsTab meetings={webinars} />}
+          />
+        )}
+
         {/* Small Groups — Discover Tab */}
         {activeTab === 'discover-groups' && (
           <DiscoverSmallGroups ministryId={ministry.id} autoOpenGroupId={deepLinkGroupId} />
@@ -2625,6 +2830,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         {/* Small Groups — My Groups Tab */}
         {activeTab === 'my-groups' && (
           <MySmallGroups ministryId={ministry.id} />
+        )}
+
+        {/* Small Groups — Manage Tab (leaders/admins) */}
+        {activeTab === 'manage-groups' && canManageMinistry && (
+          <MinistrySmallGroupsManager ministryId={ministry.id} />
         )}
 
         {/* Prayer Library Tab */}
@@ -2813,6 +3023,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {prayerSubTab === 'wall' && <CommunityPrayerWall />}
           </div>
         )}
+        </Suspense>
           </div>
         </div>
       </div>
@@ -3050,6 +3261,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         />
       )}
     </div>
+    </Suspense>
     </TakeDeclarationContext.Provider>
   );
 };

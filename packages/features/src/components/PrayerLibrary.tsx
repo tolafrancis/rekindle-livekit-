@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { supabase } from '@rekindle/supabase';
-import { cachedRead } from '../offlineContentCache';
+import { cachedRead, readCache } from '../offlineContentCache';
+import { localizedSelect, withCurrentTranslation } from '../localizedSelect';
 import { consumeDeepLink } from '../deepLink';
 import { useAuth } from '../AuthContext';
 import { useViewHistory } from '../hooks/useViewHistory';
@@ -353,9 +354,30 @@ const PrayerScriptures: React.FC<{
   );
 };
 
+// Columns each list actually uses — everything except the all-languages
+// `translations` blob (see localizedSelect). prayer_topics alone was ~20 MB
+// per open with select('*').
+const TOPIC_COLUMNS = ['id', 'title', 'description', 'created_at', 'is_published', 'is_featured', 'prayer_points', 'cover_image_url', 'scripture_reference', 'scripture_text', 'updated_at', 'category_id', 'language', 'scriptures', 'author', 'author_social_url'] as const;
+const SERIES_COLUMNS = ['id', 'category_id', 'title', 'subtitle', 'description', 'cover_image_url', 'total_days', 'difficulty_level', 'tags', 'is_featured', 'is_published', 'created_by', 'created_at', 'updated_at', 'start_behavior', 'fixed_start_date', 'ministry_id', 'author', 'author_social_url'] as const;
+const WATCH_COLUMNS = ['id', 'series_id', 'category_id', 'day_number', 'title', 'content', 'scripture_reference', 'scripture_text', 'reflection', 'prayer_points', 'audio_url', 'duration_minutes', 'intensity', 'is_prayer_watch', 'prayer_watch_time', 'is_active', 'created_by', 'created_at', 'updated_at', 'is_featured', 'view_count', 'prayer_count', 'is_seasonal', 'season', 'tags', 'cover_image_url', 'prayer_watch_topic', 'scriptures', 'author', 'author_social_url'] as const;
+
+const parseJsonFields = (rows: any[] | null | undefined) =>
+  (rows || []).map(r => ({
+    ...r,
+    prayer_points: typeof r.prayer_points === 'string' ? JSON.parse(r.prayer_points) : r.prayer_points || [],
+    scriptures: typeof r.scriptures === 'string' ? JSON.parse(r.scriptures) : r.scriptures || [],
+  }));
+
+// The old cache entries held every language (~20 MB) — far past localStorage's
+// quota, so writing them failed after an expensive stringify on every visit.
+// Cache keys are per-language now; drop the old ones once.
+try {
+  ['prayer_topics', 'prayer_series', 'prayer_watch'].forEach(k => localStorage.removeItem(`rk_offline_cache_${k}`));
+} catch { /* storage unavailable — nothing to clean */ }
+
 export function PrayerLibrary() {
   const { user, profile } = useAuth();
-  const { t, getLocalizedContent } = useLanguage();
+  const { t, language, getLocalizedContent } = useLanguage();
   const entitlements = useUserEntitlements();
   const isMounted = useRef(true);
   const loadingRef = useRef(false);
@@ -411,7 +433,10 @@ export function PrayerLibrary() {
     return () => {
       isMounted.current = false;
     };
-  }, [user]);
+    // Keyed on the id (a token refresh shouldn't refetch) and the language
+    // (each language fetches only its own translations).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, language]);
 
   // Open a prayer series arriving from a shared link (/prayer-series/:id).
   useEffect(() => {
@@ -429,11 +454,30 @@ export function PrayerLibrary() {
     window.dispatchEvent(new CustomEvent('viewer:active', { detail: false }));
   }, []);
 
+  // Show the last-loaded lists straight away (stale-while-revalidate) so a
+  // repeat visit to the Prayer tab is instant; the network loads below then
+  // replace them with fresh data.
+  const hydrateFromCache = (): boolean => {
+    const topics = readCache<any[]>(`prayer_topics:${language}`);
+    if (!topics) return false;
+    setPrayerTopics(parseJsonFields(topics));
+    const cats = readCache<any[]>('prayer_categories');
+    if (cats) setCategories(cats);
+    const seriesRows = readCache<any[]>(`prayer_series:${language}`);
+    if (seriesRows) setSeries(seriesRows);
+    const watch = readCache<any[]>(`prayer_watch:${language}`);
+    if (watch) setPrayerWatchEntries(parseJsonFields(watch));
+    return true;
+  };
+
+  const reloadQueuedRef = useRef(false);
   const loadData = async () => {
-    if (loadingRef.current) return;
+    // A load already running (e.g. the language was switched mid-load) —
+    // run once more when it finishes so the new language's data isn't skipped.
+    if (loadingRef.current) { reloadQueuedRef.current = true; return; }
     loadingRef.current = true;
 
-    setLoading(true);
+    setLoading(!hydrateFromCache());
     try {
       // Load each data source independently to prevent one failure from blocking others
       await Promise.allSettled([
@@ -451,9 +495,15 @@ export function PrayerLibrary() {
     } finally {
       if (isMounted.current) setLoading(false);
       loadingRef.current = false;
+      if (reloadQueuedRef.current && isMounted.current) {
+        reloadQueuedRef.current = false;
+        loadDataRef.current(); // latest render's loader (current language)
+      }
     }
   };
 
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
 
   const loadCategories = async () => {
     const { data } = await cachedRead<any[]>('prayer_categories', async () => {
@@ -471,28 +521,18 @@ export function PrayerLibrary() {
 
   const loadPrayerTopics = async () => {
     try {
-      const { data } = await cachedRead<any[]>('prayer_topics', async () => {
+      const { data } = await cachedRead<any[]>(`prayer_topics:${language}`, async () => {
         const { data, error } = await supabase
           .from('prayer_topics')
-          .select('*')
+          .select(localizedSelect(TOPIC_COLUMNS, language))
           .eq('is_published', true)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        return data || [];
+        return withCurrentTranslation(data as any[], language);
       });
 
-      const parsed = (data || []).map(t => ({
-        ...t,
-        prayer_points: typeof t.prayer_points === 'string' 
-          ? JSON.parse(t.prayer_points) 
-          : t.prayer_points || [],
-        scriptures: typeof t.scriptures === 'string'
-          ? JSON.parse(t.scriptures)
-          : t.scriptures || []
-      }));
-
-      if (isMounted.current) setPrayerTopics(parsed);
+      if (isMounted.current) setPrayerTopics(parseJsonFields(data));
     } catch (err) {
       console.error('Error loading prayer topics:', err);
     }
@@ -500,15 +540,15 @@ export function PrayerLibrary() {
 
   const loadSeries = async () => {
     try {
-      const { data } = await cachedRead<any[]>('prayer_series', async () => {
+      const { data } = await cachedRead<any[]>(`prayer_series:${language}`, async () => {
         const { data, error } = await supabase
           .from('prayer_series')
-          .select('*')
+          .select(localizedSelect(SERIES_COLUMNS, language))
           .eq('is_published', true)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        return data || [];
+        return withCurrentTranslation(data as any[], language);
       });
 
       if (user && data) {
@@ -544,29 +584,19 @@ export function PrayerLibrary() {
 
   const loadPrayerWatch = async () => {
     try {
-      const { data } = await cachedRead<any[]>('prayer_watch', async () => {
+      const { data } = await cachedRead<any[]>(`prayer_watch:${language}`, async () => {
         const { data, error } = await supabase
           .from('prayer_library')
-          .select('*')
+          .select(localizedSelect(WATCH_COLUMNS, language))
           .eq('is_prayer_watch', true)
           .eq('is_active', true)
           .order('prayer_watch_time');
 
         if (error) throw error;
-        return data || [];
+        return withCurrentTranslation(data as any[], language);
       });
 
-      const parsed = (data || []).map(p => ({
-        ...p,
-        prayer_points: typeof p.prayer_points === 'string' 
-          ? JSON.parse(p.prayer_points) 
-          : p.prayer_points || [],
-        scriptures: typeof p.scriptures === 'string'
-          ? JSON.parse(p.scriptures)
-          : p.scriptures || []
-      }));
-      
-      if (isMounted.current) setPrayerWatchEntries(parsed);
+      if (isMounted.current) setPrayerWatchEntries(parseJsonFields(data));
     } catch (err) {
       console.error('Error loading prayer watch:', err);
     }

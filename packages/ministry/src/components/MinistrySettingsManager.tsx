@@ -17,6 +17,7 @@ import BillingSettings from './BillingSettings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { buildJoinUrl } from '@rekindle/features/qrCode';
 import {
   Settings, Palette, Globe, Bell, Shield, Loader2, Save, Link, Image, Upload, Radio, CreditCard, Receipt
 } from 'lucide-react';
@@ -24,6 +25,9 @@ import {
 interface Ministry {
   id: string;
   name: string;
+  slug?: string;
+  invite_code?: string;
+  qr_code_version?: number;
   description: string;
   category: string;
   location: string;
@@ -78,7 +82,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
       secondary: '#4f46e5',
       accent: '#f59e0b'
     },
-    white_label_domain: ministry.white_label_domain || '',
     settings: ministry.settings || {
       allow_broadcasts: true,
       public_join: true,
@@ -168,6 +171,9 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
     }
   };
 
+  // Same collision-avoidance as MinistryRegistrationSettings' own slug editor
+  // (append -2, -3, … on collision) — kept here too since the slug is now
+  // editable from both places and must never produce a duplicate.
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -185,7 +191,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
           is_public: formData.is_public,
           social_links: formData.social_links,
           brand_colors: formData.brand_colors,
-          white_label_domain: formData.white_label_domain,
           settings: formData.settings,
           updated_at: new Date().toISOString()
         })
@@ -251,6 +256,33 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
                   placeholder={t('ministrySettingsManager', 'cityCountryPlaceholder', 'City, Country')}
                 />
               </div>
+            </div>
+
+            <div>
+              <Label>{t('ministrySettingsManager', 'ministrySlug', 'Ministry Slug')}</Label>
+              {/* Read-only here on purpose — see MinistrySettingsHub's identical field
+                  for why (two independent editable copies let an edit made here get
+                  silently discarded by the OTHER section's Save button). */}
+              <div className="flex items-center gap-2">
+                <Input value={ministry.slug || ''} readOnly disabled className="bg-gray-50" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => document.getElementById('registration-join-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                >
+                  {t('ministrySettingsManager', 'changeSlug', 'Change')}
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {t('ministrySettingsManager', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Registration & Join Link below — changing it updates the join link everywhere; old links using the previous address will stop working.')}
+              </p>
+              {ministry.slug && (
+                <p className="text-xs text-gray-400 mt-1 break-all">
+                  {buildJoinUrl(ministry.slug, ministry.invite_code || '', ministry.qr_code_version || 1)}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -459,12 +491,17 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
 
             <div>
               <Label>{t('ministrySettingsManager', 'customDomain', 'Custom Domain (White Label)')}</Label>
-              <Input
-                value={formData.white_label_domain}
-                onChange={(e) => setFormData({ ...formData, white_label_domain: e.target.value })}
-                placeholder="ministry.yourdomain.com"
-              />
-              <p className="text-xs text-gray-500 mt-1">{t('ministrySettingsManager', 'customDomainHint', 'Contact support to configure custom domains')}</p>
+              {/* Read-only pointer — see MinistrySettingsHub's identical field for why
+                  (two editors on one column produced a live ministry with
+                  white_label_domain silently set to its own rekindlebc.com subdomain). */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById('custom-domain-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              >
+                {t('ministrySettingsManager', 'manageCustomDomain', 'Manage custom domain below')}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -625,10 +662,14 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
         </div>
 
         {/* Member Registration (QR / kiosk / approval) */}
-        <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+        <div id="registration-join-link">
+          <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+        </div>
 
         {/* Custom Domain Settings */}
-        <CustomDomainSettings ministryId={ministry.id} />
+        <div id="custom-domain-settings">
+          <CustomDomainSettings ministryId={ministry.id} />
+        </div>
       </TabsContent>
 
       {/* Tab 2 — Live & Translation */}

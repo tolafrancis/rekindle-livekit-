@@ -20,6 +20,7 @@ import { DailyReminders } from '@/components/DailyReminders';
 import { PartnerDonationPage } from '@/components/PartnerDonationPage';
 import { PushNotificationSettings } from '@/components/PushNotificationSettings';
 import { DeveloperApiKeysPanel } from '@/components/DeveloperApiKeysPanel';
+import { ImageUpload } from '@rekindle/ministry/components/ImageUpload';
 import {
   User, Mail, Globe, BookOpen, Bell, MessageSquare,
   Save, Loader2, Lock, AlertTriangle, CheckCircle,
@@ -206,6 +207,7 @@ export const ProfileSettings: React.FC = () => {
 
   const [formData, setFormData] = useState({
     full_name: profile?.full_name || '',
+    avatar_url: profile?.avatar_url || '',
     spiritual_level: profile?.spiritual_level || 'seeker',
     consent_devotionals: profile?.consent_devotionals ?? true,
     consent_affirmations: profile?.consent_affirmations ?? true,
@@ -296,6 +298,26 @@ export const ProfileSettings: React.FC = () => {
           <CardDescription>{t('profileSettings', 'profileInfoDesc', 'Update your personal details and preferences')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-muted flex items-center justify-center">
+              {formData.avatar_url ? (
+                <img src={formData.avatar_url} alt="" className="h-14 w-14 object-cover" />
+              ) : (
+                <User className="h-6 w-6 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="avatar">{t('profileSettings', 'photoLabel', 'Photo')}</Label>
+              <ImageUpload
+                value={formData.avatar_url}
+                onChange={(url) => setFormData({ ...formData, avatar_url: url })}
+                folder="avatars"
+                placeholder={t('profileSettings', 'uploadPhoto', 'Upload photo')}
+              />
+              <p className="text-xs text-gray-500">{t('profileSettings', 'photoHint', 'Shown to others in Interactive Meetings when your camera is off')}</p>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="fullName">{t('profileSettings', 'fullNameLabel', 'Full Name')}</Label>
             <Input
