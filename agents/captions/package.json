@@ -1,0 +1,26 @@
+{
+  "name": "rekindle-caption-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "On-demand source-language caption agent for Rekindle LiveKit rooms",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.13.0",
+    "@livekit/rtc-node": "^1.1.0",
+    "livekit-server-sdk": "^2.19.1",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "^5.5.3"
+  }
+}

@@ -13,6 +13,11 @@ import { Badge } from '@rekindle/ui/badge';
 import { LiveChannelChat } from './LiveChannelChat';
 import { HlsPlayer, type HlsPlayerHandle } from './HlsPlayer';
 import { BroadcastTranslationButton } from './BroadcastTranslationButton';
+import { CaptionOverlay } from './CaptionOverlay';
+import { CaptionsButton } from './CaptionsButton';
+import { useLiveCaptions } from '../useLiveCaptions';
+import { useHlsCaptions } from '../useHlsCaptions';
+import { isLiveKitBackend } from '../videoBackend';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
@@ -355,6 +360,27 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
   // speakers always, general viewers only if HLS mode's own bounded
   // timeout expired with no fresh src to show yet.
   const joinWebRtc = !watchViaHls || (hlsFallbackDue && !hlsSrc);
+
+  // On-demand captions (agents/captions) — every channel on the LiveKit
+  // backend; usage is logged per org, or per owner for personal channels
+  // (migrations 0374/0375). Two paths,
+  // one shared CC preference (captionPrefs):
+  //   - watching over HLS: captions arrive over Supabase Realtime and are
+  //     held back until playback reaches them (useHlsCaptions)
+  //   - in the room (speakers, or the WebRTC fallback): LiveKit transcription
+  //     events in real time (useLiveCaptions)
+  const captionsAvailable = isLiveKitBackend();
+  const liveCaptions = useLiveCaptions(
+    captionsAvailable && isLive && joinWebRtc && dailyRoom.isConnected ? dailyRoom.captionsBridge : null,
+    { roomName: liveKitRoomName, kind: 'channel' },
+  );
+  const hlsCaptions = useHlsCaptions({
+    scope: { kind: 'channel', channelId: channel.id },
+    roomName: `channel-${channel.id}`,
+    active: captionsAvailable && isLive && !joinWebRtc,
+    getPlaybackDate: () => hlsPlayerRef.current?.getPlaybackDate() ?? null,
+  });
+  const captions = joinWebRtc ? liveCaptions : hlsCaptions;
 
   // Join the channel's live presence so the host can see/count this viewer — even
   // when watching via HLS (no Daily room). Mirrors the meetings presence layer.
@@ -1144,8 +1170,21 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 unused — see translationMuteOverride above, which stays
                 false unless a viewer actually picks a language inside this
                 button's own popover. */}
+            {isLive && captions.enabled && (
+              <CaptionOverlay
+                lines={captions.lines}
+                size={captions.size}
+                bottomOffsetClassName="bottom-16"
+                placeholder={
+                  captions.status === 'starting' || captions.status === 'waiting'
+                    ? t('liveChannelViewer', 'captionsWaiting', 'Captions are on — they’ll appear when someone speaks.')
+                    : null
+                }
+              />
+            )}
+
             {isLive && (
-              <div className="absolute bottom-4 left-4 z-50">
+              <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2">
                 {/* delaySeconds only applies on the HLS path — that's the
                     only path where the VIDEO itself is running several
                     seconds behind real time, so translated audio has to be
@@ -1159,7 +1198,17 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                   roomName={liveKitRoomName}
                   delaySeconds={!joinWebRtc ? translationSyncDelaySeconds : 0}
                   onActiveChange={setTranslationActive}
+                  showCaptionsOption={!captionsAvailable}
                 />
+                {captionsAvailable && (
+                  <CaptionsButton
+                    enabled={captions.enabled}
+                    status={captions.status}
+                    size={captions.size}
+                    onToggle={captions.toggle}
+                    onSizeChange={captions.setSize}
+                  />
+                )}
               </div>
             )}
 

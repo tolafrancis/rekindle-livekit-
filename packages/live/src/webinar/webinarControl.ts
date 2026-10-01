@@ -42,6 +42,8 @@ export interface MinistryWebinar {
   enable_captions: boolean;
   enable_translation: boolean;
   default_language: string;
+  /** Caption (speech-to-text) language for on-demand captions — migration 0372. */
+  source_language?: string;
   status: WebinarStatus;
   hls_playback_url: string | null;
   recording_status: string | null;
