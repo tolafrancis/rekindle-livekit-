@@ -22,8 +22,9 @@ import {
   Heart, MessageSquare, Bell, Bookmark, Mic, Video, DollarSign,
   Send, Mail, Phone, Star, Book, UserCheck, Settings, Radio,
   BarChart3, TrendingUp, Crown, Lock, AlertTriangle, Loader2, Church,
-  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers, Inbox
+  Menu, X, ChevronDown, Building2, Download, Languages, Globe, Layers, Inbox, Flag
 } from 'lucide-react';
+import { ModerationReportsPanel } from '@rekindle/features/components/ModerationReportsPanel';
 import { fetchScripture, BIBLE_VERSIONS } from '@/lib/bibleApi';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -348,6 +349,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     { value: 'music', label: t('adminDashboard', 'tabMusic', 'Music'), icon: Music },
     { value: 'affirmations', label: t('adminDashboard', 'affirmations', 'Affirmations'), icon: Star },
     { value: 'declarations', label: t('adminDashboard', 'tabDeclarations', 'Declarations'), icon: Mic },
+    { value: 'reports', label: t('adminDashboard', 'tabReports', 'Reports'), icon: Flag },
     { value: 'community-revelations', label: t('adminDashboard', 'tabCommunityRevelations', 'Community Revelations'), icon: Church },
     { value: 'ministry-groups', label: t('adminDashboard', 'tabMinistryGroups', 'Ministry Groups'), icon: Users },
     { value: 'mentors', label: t('adminDashboard', 'tabCounsellors', 'Counsellors'), icon: UserCheck },
@@ -374,7 +376,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
   const categories = React.useMemo(() => [
     { id: 'content', label: 'Content', icon: BookOpen, tabValues: ['devotionals', 'devotional-library', 'devotional-streams', 'prayer-library', 'prayer-wall', 'prayer-challenges', 'affirmations', 'declarations', 'books', 'reading-plans', 'music'] },
     { id: 'users', label: 'Users', icon: Users, tabValues: ['users', 'subscriptions', 'mentors', 'referrals'] },
-    { id: 'community', label: 'Community', icon: Church, tabValues: ['community-revelations', 'leaderboard', 'ministry-groups'] },
+    { id: 'community', label: 'Community', icon: Church, tabValues: ['reports', 'community-revelations', 'leaderboard', 'ministry-groups'] },
     { id: 'live', label: 'Live', icon: Radio, tabValues: ['live-channels', 'translations', 'content-translation', 'bulk-tts'] },
     { id: 'finance', label: 'Finance', icon: DollarSign, tabValues: ['donations-manage', 'whatsapp-admin'] },
     { id: 'system', label: 'System', icon: Settings, tabValues: ['analytics', 'notifications', 'broadcast', 'broadcast-history', 'languages', 'ai-companion', 'platform-admin'] },
@@ -1667,6 +1669,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           {activeTab === 'live-channels' && (
             <AdminLiveChannelManager />
           )}
+
+          {activeTab === 'reports' && <ModerationReportsPanel />}
 
           {activeTab === 'community-revelations' && (
             <CommunityRevelationsManager 

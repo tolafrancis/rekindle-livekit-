@@ -92,8 +92,14 @@ const TermsOfServicePage: React.FC = () => {
             <li>Circumvent subscription feature gates through technical means</li>
           </ul>
 
-          <h2>6. Community and Content Standards</h2>
-          <p>Content shared on the platform should reflect genuine faith expression, respect for others, and the diversity of the Christian tradition. We reserve the right to remove content that violates these standards without prior notice.</p>
+          <h2 id="community-guidelines">6. Community Guidelines and Content Standards</h2>
+          <p>Content shared on the platform should reflect genuine faith expression, respect for others, and the diversity of the Christian tradition.</p>
+          <p><strong>We have zero tolerance for objectionable content or abusive users.</strong> Objectionable content includes anything listed in section 5, including harassment, bullying, hate speech, sexual content and violence.</p>
+          <ul>
+            <li><strong>Report:</strong> any post, comment, message or user can be reported from its ⋯ menu. Our team reviews every report within 24 hours.</li>
+            <li><strong>Block:</strong> you can block any user from the same menu. Blocked users can't message you, and you won't see their posts. You can unblock people in Settings → Privacy.</li>
+            <li><strong>Enforcement:</strong> we remove content that breaks these guidelines, and we suspend or permanently ban the accounts that post it, without prior notice.</li>
+          </ul>
 
           <h2>7. Ministry Leaders</h2>
           <p>If you operate a ministry space on {COMPANY}, you additionally agree to:</p>

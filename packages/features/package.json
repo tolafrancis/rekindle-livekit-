@@ -9,6 +9,7 @@
     "./LanguageContext": "./src/LanguageContext.tsx",
     "./CurrentMinistryContext": "./src/CurrentMinistryContext.tsx",
     "./GlobalAudioContext": "./src/GlobalAudioContext.tsx",
+    "./ModerationContext": "./src/ModerationContext.tsx",
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./data/*": "./src/data/*.ts",

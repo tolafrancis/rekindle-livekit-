@@ -22,6 +22,8 @@ import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { UpgradePromptModal } from './UpgradePromptModal';
 import { toast } from './ui/use-toast';
 import { Badge } from './ui/badge';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 
 // ─────────────────────────────────────────────
 // Types
@@ -119,6 +121,7 @@ const LoadMoreButton: React.FC<{ loading: boolean; onClick: () => void; label: s
 
 export const CommunityRevelations: React.FC = () => {
   const { profile, user } = useAuth();
+  const { filterBlocked, isBlocked } = useModeration();
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
 
@@ -460,8 +463,8 @@ export const CommunityRevelations: React.FC = () => {
   // Derived
   // ─────────────────────────────────────────────
 
-  const filteredRevelations = revFilter === 'bookmarked' ? revelations.filter(r => r.bookmarked) : revelations;
-  const filteredTestimonies = testFilter === 'bookmarked' ? testimonies.filter(t => t.bookmarked) : testimonies;
+  const filteredRevelations = filterBlocked(revFilter === 'bookmarked' ? revelations.filter(r => r.bookmarked) : revelations, (r) => r.user_id);
+  const filteredTestimonies = filterBlocked(testFilter === 'bookmarked' ? testimonies.filter(t => t.bookmarked) : testimonies, (t) => t.user_id);
 
   const getShareUrl = (id: string) => `${window.location.origin}/revelations/${id}`;
   const getTestShareUrl = (id: string) => `${window.location.origin}/testimonies/${id}`;
@@ -826,9 +829,12 @@ export const CommunityRevelations: React.FC = () => {
                             <h3 className="font-semibold">{rev.author}</h3>
                             <span className="text-sm text-gray-500">{new Date(rev.created_at).toLocaleDateString()}</span>
                           </div>
+                          <div className="flex items-center gap-1">
                           <button onClick={() => handleRevBookmark(rev.id)} className={`${rev.bookmarked ? 'text-purple-600' : 'text-gray-400 hover:text-purple-600'}`}>
                             {rev.bookmarked ? <BookmarkCheck className="h-5 w-5" /> : <Bookmark className="h-5 w-5" />}
                           </button>
+                          <ContentSafetyMenu contentType="community_revelations" contentId={rev.id} authorId={rev.user_id} authorName={rev.author} />
+                          </div>
                         </div>
                         <h4 className="text-lg font-medium text-purple-700 mb-2">{rev.title}</h4>
                         <p className="text-gray-700 mb-3">{rev.content}</p>
@@ -976,9 +982,12 @@ export const CommunityRevelations: React.FC = () => {
                             <span className="text-sm text-gray-500">{new Date(test.created_at).toLocaleDateString()}</span>
                             <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${categoryColor(test.category)}`}>{test.category}</span>
                           </div>
+                          <div className="flex items-center gap-1">
                           <button onClick={() => handleTestBookmark(test.id)} className={`${test.bookmarked ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'}`}>
                             {test.bookmarked ? <BookmarkCheck className="h-5 w-5" /> : <Bookmark className="h-5 w-5" />}
                           </button>
+                          <ContentSafetyMenu contentType="app_testimonies" contentId={test.id} authorId={test.user_id} authorName={test.author} />
+                          </div>
                         </div>
                         <h4 className="text-lg font-medium text-amber-700 mb-2 flex items-center gap-1">
                           <Star className="h-4 w-4 text-amber-500 fill-amber-400" />
@@ -1092,6 +1101,7 @@ export const CommunityRevelations: React.FC = () => {
           ) : (
             <div className="space-y-4">
               {questions
+                .filter(q => !isBlocked(q.user_id))
                 .filter(q => qaFilter === 'all' ? true : qaFilter === 'open' ? !q.is_resolved : q.is_resolved)
                 .map(q => (
                   <Card key={q.id} className={`border ${q.is_resolved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}>
@@ -1110,6 +1120,7 @@ export const CommunityRevelations: React.FC = () => {
                           <p className="text-sm text-gray-600 mt-1 break-words">{q.content}</p>
                           {q.scripture_context && <p className="text-xs text-blue-600 mt-1 italic">\U0001f4d6 {q.scripture_context}</p>}
                         </div>
+                        <ContentSafetyMenu contentType="community_questions" contentId={q.id} authorId={q.user_id} authorName={q.author} />
                       </div>
                       <div className="flex items-center gap-3 text-sm">
                         <button onClick={() => handleUpvoteQuestion(q.id)}
@@ -1127,7 +1138,7 @@ export const CommunityRevelations: React.FC = () => {
                       {expandedQuestion === q.id && (
                         <div className="space-y-3 pt-2 border-t border-gray-100">
                           {q.answers.length === 0 && <p className="text-sm text-gray-400 italic text-center py-2">{t('communityRevelations', 'noAnswersYet', 'No answers yet \u2014 be the first to share insight.')}</p>}
-                          {q.answers
+                          {filterBlocked(q.answers, (a) => a.user_id)
                             .slice()
                             .sort((a, b) => (b.is_accepted ? 1 : 0) - (a.is_accepted ? 1 : 0) || b.upvotes - a.upvotes)
                             .map(ans => (
@@ -1145,6 +1156,13 @@ export const CommunityRevelations: React.FC = () => {
                                     <ThumbsUp className={`h-3 w-3 ${ans.upvoted ? 'fill-current' : ''}`} />
                                     {t('communityRevelations', 'helpfulCount', '{count} helpful').replace('{count}', String(ans.upvotes))}
                                   </button>
+                                  <ContentSafetyMenu
+                                    contentType="community_answers"
+                                    contentId={ans.id}
+                                    authorId={ans.user_id}
+                                    authorName={ans.author}
+                                    className="ml-auto"
+                                  />
                                   {user && q.user_id === user.id && !ans.is_accepted && (
                                     <button onClick={() => handleAcceptAnswer(q.id, ans.id)}
                                       className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 transition-colors">

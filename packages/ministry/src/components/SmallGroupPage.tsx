@@ -8,6 +8,8 @@ import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { buildJoinUrl } from '@rekindle/features/qrCode';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 import {
   ArrowLeft, Users, MapPin, Clock, Video, Loader2, Pin, Crown, Shield, Send, Share2,
 } from 'lucide-react';
@@ -21,6 +23,7 @@ const POSTS_PAGE = 20;
 
 export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack }) => {
   const { user } = useAuth();
+  const { filterBlocked } = useModeration();
   const { t } = useLanguage();
 
   const [group, setGroup] = useState<any>(null);
@@ -332,12 +335,19 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
               <p className="text-sm text-muted-foreground">{t('smallGroupsMember', 'noPostsYet', 'Nothing shared yet.')}</p>
             ) : (
               <div className="space-y-2">
-                {posts.map((p) => (
+                {filterBlocked(posts, (p) => p.author_id).map((p) => (
                   <Card key={p.id}><CardContent className="pt-4">
                     <div className="flex items-center gap-2 mb-1">
                       {p.is_pinned && <Pin className="h-3 w-3 text-amber-500" />}
                       <Badge variant="outline">{p.post_type.replace('_', ' ')}</Badge>
                       {p.title && <span className="font-medium">{p.title}</span>}
+                      <ContentSafetyMenu
+                        contentType="small_group_posts"
+                        contentId={p.id}
+                        authorId={p.author_id}
+                        ministryId={p.ministry_id}
+                        className="ml-auto"
+                      />
                     </div>
                     {p.content && <p className="text-sm text-muted-foreground">{p.content}</p>}
                     {p.resource_url && <a href={p.resource_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline">{p.resource_url}</a>}

@@ -92,6 +92,8 @@ import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip';
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
 import { recordDailyActivity } from '@rekindle/features/streak';
@@ -169,6 +171,7 @@ interface Testimony {
   is_approved: boolean;
   created_at: string;
   user_id: string;
+  user_name?: string | null;
 }
 
 interface MinistryDevotional {
@@ -252,6 +255,7 @@ interface MinistrySpaceProps {
 
 const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onExit, onMinistryUpdate }) => {
   const { user, profile } = useAuth();
+  const { filterBlocked, isBlocked } = useModeration();
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
   
@@ -2312,10 +2316,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {prayerRequests.length > 0 ? (
               <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {prayerRequests.map(prayer => (
+                {filterBlocked(prayerRequests, (p) => p.user_id).map(prayer => (
                   <Card key={prayer.id}>
                     <CardContent className="p-4">
-                      <h3 className="font-semibold">{prayer.title}</h3>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-semibold">{prayer.title}</h3>
+                        <ContentSafetyMenu
+                          contentType="ministry_prayer_requests"
+                          contentId={prayer.id}
+                          authorId={prayer.user_id}
+                          anonymous={prayer.is_anonymous}
+                          ministryId={ministry?.id}
+                        />
+                      </div>
                       {prayer.content && (
                         <p className="text-gray-600 mt-2 text-sm">{prayer.content}</p>
                       )}
@@ -2366,10 +2379,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {testimonies.length > 0 ? (
               <>
               <div className="space-y-4">
-                {testimonies.map(testimony => (
+                {filterBlocked(testimonies, (t) => t.user_id).map(testimony => (
                   <Card key={testimony.id}>
                     <CardContent className="p-6">
-                      <h3 className="font-bold text-lg">{testimony.title}</h3>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-bold text-lg">{testimony.title}</h3>
+                        <ContentSafetyMenu
+                          contentType="ministry_testimonies"
+                          contentId={testimony.id}
+                          authorId={testimony.user_id}
+                          authorName={testimony.user_name}
+                          ministryId={ministry?.id}
+                        />
+                      </div>
                       <p className="text-gray-600 mt-3">{testimony.content}</p>
                       <p className="text-xs text-gray-400 mt-4">
                         {new Date(testimony.created_at).toLocaleDateString()}
@@ -2593,7 +2615,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {mRevelations.map(rev => (
+                    {filterBlocked(mRevelations, (r) => r.user_id).map(rev => (
                       <Card key={rev.id} className="border border-gray-200">
                         <CardContent className="p-4 space-y-2">
                           <div className="flex items-start justify-between gap-3">
@@ -2601,6 +2623,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               <h4 className="font-semibold text-gray-900 break-words">{rev.title}</h4>
                               <p className="text-xs text-gray-400 mt-0.5">{rev.author} · {new Date(rev.created_at).toLocaleDateString()}</p>
                             </div>
+                            <ContentSafetyMenu
+                              contentType="community_revelations"
+                              contentId={rev.id}
+                              authorId={rev.user_id}
+                              authorName={rev.author}
+                              ministryId={ministry?.id}
+                            />
                           </div>
                           <p className="text-sm text-gray-700 break-words whitespace-pre-wrap">{rev.content}</p>
                           {rev.scriptures?.length > 0 && (
@@ -2679,6 +2708,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 ) : (
                   <div className="space-y-4">
                     {mQuestions
+                      .filter(q => !isBlocked(q.user_id))
                       .filter(q => mQaFilter === 'all' ? true : mQaFilter === 'open' ? !q.is_resolved : q.is_resolved)
                       .map(q => (
                         <Card key={q.id} className={`border ${q.is_resolved ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}>
@@ -2700,6 +2730,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                   <p className="text-xs text-blue-600 mt-1 italic">📖 {q.scripture_context}</p>
                                 )}
                               </div>
+                              <ContentSafetyMenu
+                                contentType="community_questions"
+                                contentId={q.id}
+                                authorId={q.user_id}
+                                authorName={q.author}
+                                ministryId={ministry?.id}
+                              />
                             </div>
 
                             {/* Actions */}
@@ -2727,7 +2764,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                 {q.answers.length === 0 && (
                                   <p className="text-sm text-gray-400 italic text-center py-2">{t('ministrySpace', 'noAnswersYet', 'No answers yet — be the first to share insight.')}</p>
                                 )}
-                                {q.answers
+                                {filterBlocked(q.answers as any[], (a: any) => a.user_id)
                                   .slice()
                                   .sort((a: any, b: any) => (b.is_accepted ? 1 : 0) - (a.is_accepted ? 1 : 0) || b.upvotes - a.upvotes)
                                   .map((ans: any) => (
@@ -2748,6 +2785,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                           <ThumbsUp className={`h-3 w-3 ${ans.upvoted ? 'fill-current' : ''}`} />
                                           {ans.upvotes} {t('ministrySpace', 'helpful', 'helpful')}
                                         </button>
+                                        <ContentSafetyMenu
+                                          contentType="community_answers"
+                                          contentId={ans.id}
+                                          authorId={ans.user_id}
+                                          authorName={ans.author}
+                                          ministryId={ministry?.id}
+                                          className="ml-auto"
+                                        />
                                         {user && q.user_id === user.id && !ans.is_accepted && (
                                           <button
                                             onClick={() => handleMAcceptAnswer(q.id, ans.id)}

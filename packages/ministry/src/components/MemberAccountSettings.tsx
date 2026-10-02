@@ -10,8 +10,9 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { usePushNotifications } from '@rekindle/features/usePushNotifications';
 import { DailyReminders } from '@rekindle/features/components/DailyReminders';
+import { BlockedUsersList } from '@rekindle/features/components/BlockedUsersList';
 import {
-  User as UserIcon, Bell, Globe, ShieldCheck, LogOut, Loader2, Save, Languages,
+  User as UserIcon, Bell, Globe, ShieldCheck, LogOut, Loader2, Save, Languages, UserX,
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
 
@@ -166,6 +167,19 @@ export default function MemberAccountSettings() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Privacy */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><UserX className="h-5 w-5" /> Privacy · Blocked users</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-2">
+            Blocked people can't message you, and you won't see their posts or messages.
+          </p>
+          <BlockedUsersList />
         </CardContent>
       </Card>
 

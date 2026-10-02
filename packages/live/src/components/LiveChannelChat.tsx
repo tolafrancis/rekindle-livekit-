@@ -8,6 +8,8 @@ import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Send, Pin, Smile, MessageCircle } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { ChannelChatMessage } from '@rekindle/types/liveChannelTypes';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 
 interface LiveChannelChatProps {
   channelId: string;
@@ -28,6 +30,7 @@ export const LiveChannelChat: React.FC<LiveChannelChatProps> = ({
 }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
+  const { filterBlocked } = useModeration();
   const [messages, setMessages] = useState<ChannelChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -376,7 +379,7 @@ export const LiveChannelChat: React.FC<LiveChannelChatProps> = ({
               <p className="text-xs">{t('liveChannelChat', 'beFirstToSay', 'Be the first to say something!')}</p>
             </div>
           ) : (
-            messages.map((msg) => (
+            filterBlocked(messages, (m) => m.user_id).map((msg) => (
               <div
                 key={msg.id}
                 className={`group flex items-start gap-2 ${
@@ -417,6 +420,15 @@ export const LiveChannelChat: React.FC<LiveChannelChatProps> = ({
                   >
                     <Pin className="h-3 w-3" />
                   </Button>
+                )}
+                {msg.message_type !== 'system' && msg.user_id !== user?.id && (
+                  <ContentSafetyMenu
+                    contentType="channel_chat_messages"
+                    contentId={msg.id}
+                    authorId={msg.user_id}
+                    authorName={msg.user_name}
+                    className="h-6 w-6 text-gray-500 hover:bg-gray-700 hover:text-white"
+                  />
                 )}
               </div>
             ))

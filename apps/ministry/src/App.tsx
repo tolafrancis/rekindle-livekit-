@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from '@rekindle/ui/use-toast';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
+import { ModerationProvider } from '@rekindle/features/ModerationContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
@@ -350,6 +351,7 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <AuthProvider>
+        <ModerationProvider>
           <LanguageProvider>
             <GlobalAudioProvider>
               <ActiveCallProvider>
@@ -369,6 +371,7 @@ export default function App() {
               </ActiveCallProvider>
             </GlobalAudioProvider>
           </LanguageProvider>
+        </ModerationProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

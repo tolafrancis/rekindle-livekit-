@@ -6,6 +6,8 @@ import { supabase } from '@rekindle/supabase';
 import { Send, MessageCircle, X, Paperclip, Download, FileText, Loader2 } from 'lucide-react';
 import { useMeetingChat } from '../useMeetingChat';
 import type { ChatAttachment } from '@rekindle/types/liveChannelTypes';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 
 interface MeetingChatPanelProps {
   meetingId: string;
@@ -39,6 +41,7 @@ export const MeetingChatPanel: React.FC<MeetingChatPanelProps> = ({
   meetingTable,
 }) => {
   const { messages, sendMessage } = useMeetingChat(meetingId, userId, userName, meetingTable);
+  const { filterBlocked } = useModeration();
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -155,13 +158,22 @@ export const MeetingChatPanel: React.FC<MeetingChatPanelProps> = ({
         {messages.length === 0 ? (
           <p className="text-xs text-gray-500">No messages yet. Say hello!</p>
         ) : (
-          messages.map(m => (
-            <div key={m.id} className="text-sm leading-snug">
+          filterBlocked(messages, (m) => m.user_id).map(m => (
+            <div key={m.id} className="group relative text-sm leading-snug pr-6">
               <span className={`font-medium ${m.user_id === userId ? 'text-purple-300' : 'text-gray-300'}`}>
                 {(m.user_name && m.user_name.trim()) ? m.user_name : 'Guest'}:{' '}
               </span>
               {m.content && <span className="text-gray-100 break-words">{m.content}</span>}
               {renderAttachment(m.attachment)}
+              {!isGuest && m.user_id !== userId && (
+                <ContentSafetyMenu
+                  contentType="meeting_chat"
+                  contentId={m.id}
+                  authorId={m.user_id}
+                  authorName={m.user_name}
+                  className="absolute right-0 top-0 h-5 w-5 text-gray-500 hover:bg-gray-700 hover:text-white"
+                />
+              )}
             </div>
           ))
         )}

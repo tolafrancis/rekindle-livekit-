@@ -23,6 +23,8 @@ import {
   Users,
 } from 'lucide-react';
 import { ChatMessageType, ChatAttachment } from '@rekindle/types/liveChannelTypes';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 
 interface ChatParticipant { sessionId: string; userName: string; isLocal?: boolean }
 
@@ -87,6 +89,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [recipientId, setRecipientId] = useState<string | null>(null); // null = Everyone
+  const { filterBlocked } = useModeration();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -300,7 +303,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
               No messages yet. Start the conversation!
             </div>
           ) : (
-            messages.map((message) => {
+            filterBlocked(messages, (m) => m.sender_id).map((message) => {
               const isOwnMessage = message.sender_id === currentUserId;
               const isSystemMessage = message.messageType === 'system';
               const isHostAnnouncement = message.messageType === 'host-announcement';
@@ -349,6 +352,15 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
                         >
                           {message.sender_role}
                         </Badge>
+                      )}
+                      {!isOwnMessage && (
+                        <ContentSafetyMenu
+                          contentType="chat_messages"
+                          contentId={message.id}
+                          authorId={message.sender_id}
+                          authorName={message.sender_name}
+                          className="ml-auto h-5 w-5 text-gray-400 hover:bg-gray-700 hover:text-white"
+                        />
                       )}
                     </div>
                     {message.content && (

@@ -10,6 +10,8 @@ import { useLanguage } from '../LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { Heart, MessageCircle, Plus, CheckCircle, User, AlertCircle, Lock, Crown, Loader2 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
+import { useModeration } from '../ModerationContext';
+import { ContentSafetyMenu } from './ContentSafetyMenu';
 
 interface PrayerPost {
   id: string;
@@ -41,6 +43,7 @@ export function CommunityPrayerWall() {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [filter, setFilter] = useState('all');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const { filterBlocked } = useModeration();
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -343,7 +346,7 @@ export function CommunityPrayerWall() {
   };
 
   const categories = ['all', 'healing', 'family', 'guidance', 'gratitude', 'general'];
-  const filtered = posts; // category is applied in the query
+  const filtered = filterBlocked(posts, (p) => p.user_id); // category is applied in the query
 
   const categoryColors: Record<string, string> = {
     healing: 'bg-green-100 text-green-700',
@@ -479,6 +482,7 @@ export function CommunityPrayerWall() {
                     <p className="text-xs text-gray-500">{new Date(post.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
+                <div className="flex items-center gap-1">
                 <span className={`text-xs px-2 py-1 rounded ${categoryColors[post.category]}`}>
                   {post.category === 'healing' ? t('communityPrayerWall', 'catHealing', 'Healing')
                     : post.category === 'family' ? t('communityPrayerWall', 'catFamily', 'Family')
@@ -487,6 +491,14 @@ export function CommunityPrayerWall() {
                     : post.category === 'general' ? t('communityPrayerWall', 'catGeneral', 'General')
                     : post.category}
                 </span>
+                <ContentSafetyMenu
+                  contentType="prayer_wall_posts"
+                  contentId={post.id}
+                  authorId={post.user_id}
+                  authorName={post.is_anonymous ? null : post.user_name}
+                  anonymous={post.is_anonymous}
+                />
+                </div>
               </div>
               <h3 className="font-bold mb-1">{post.title}</h3>
               <p className="text-sm text-gray-600 mb-3">{post.content}</p>

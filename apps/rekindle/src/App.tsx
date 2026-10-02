@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ModerationProvider } from "@rekindle/features/ModerationContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ActiveCallProvider } from "@rekindle/live/ActiveCallContext";
 import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
@@ -105,6 +106,7 @@ const App = () => {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>
+          <ModerationProvider>
             <LanguageProvider>
               <GlobalAudioProvider>
                 <ActiveCallProvider>
@@ -203,6 +205,7 @@ const App = () => {
               </ActiveCallProvider>
               </GlobalAudioProvider>
             </LanguageProvider>
+          </ModerationProvider>
           </AuthProvider>
         </TooltipProvider>
       </QueryClientProvider>

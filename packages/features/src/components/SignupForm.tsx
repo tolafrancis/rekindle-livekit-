@@ -4,6 +4,7 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Separator } from '@rekindle/ui/separator';
+import { Checkbox } from '@rekindle/ui/checkbox';
 import { Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 interface SignupFormProps {
@@ -32,9 +33,19 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
   const [error, setError] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  // Google Play UGC policy: every sign-up path must accept the Terms and
+  // Community Guidelines (zero tolerance for objectionable content/abuse).
+  const requireTerms = (): boolean => {
+    if (acceptedTerms) return true;
+    setError('Please accept the Terms of Service and Community Guidelines to continue.');
+    return false;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requireTerms()) return;
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -55,6 +66,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   };
 
   const handleGoogleSignIn = async () => {
+    if (!requireTerms()) return;
     setSocialLoading('google');
     setError('');
     const result = await signInWithGoogle();
@@ -65,6 +77,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   };
 
   const handleFacebookSignIn = async () => {
+    if (!requireTerms()) return;
     setSocialLoading('facebook');
     setError('');
     const result = await signInWithFacebook();
@@ -91,6 +104,26 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Create your account</h1>
             <p className="text-sm text-gray-500 mt-1">Join your faith community</p>
           </div>
+
+          <label htmlFor="acceptTerms" className="flex items-start gap-2.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-600 cursor-pointer">
+            <Checkbox
+              id="acceptTerms"
+              checked={acceptedTerms}
+              onCheckedChange={(v) => {
+                setAcceptedTerms(v === true);
+                if (v === true) setError('');
+              }}
+              className="mt-0.5"
+            />
+            <span>
+              I agree to the{' '}
+              <a href="/terms" target="_blank" rel="noreferrer" className="font-medium text-purple-600 hover:underline">Terms of Service</a>
+              {' '}and{' '}
+              <a href="/terms#community-guidelines" target="_blank" rel="noreferrer" className="font-medium text-purple-600 hover:underline">Community Guidelines</a>.
+              {' '}There is zero tolerance for objectionable content or abusive users.
+            </span>
+          </label>
+          {error && !acceptedTerms && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
 
           {showSocialLogin && (
             <>
@@ -144,7 +177,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
           )}
 
           <form onSubmit={handleSubmit} className="space-y-3.5">
-            {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
+            {error && acceptedTerms && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
             <div className="space-y-1">
               <Label htmlFor="fullName">Full Name</Label>
               <div className="relative">

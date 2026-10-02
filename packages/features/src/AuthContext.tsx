@@ -6,6 +6,7 @@ import { supabase, verifySession, verifyAdminAccess, clearSupabaseAuth } from '@
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { App as CapacitorApp } from '@capacitor/app';
+import { toast } from '@rekindle/ui/use-toast';
 
 function getAuthRedirectScheme(): string {
   const appType = import.meta.env.VITE_APP_TYPE;
@@ -863,6 +864,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       clearAuthStorage();
     }
   }, []);
+
+  // Banned accounts (Admin → Reports → Ban user) are signed out as soon as
+  // the app sees the flag: on profile load, and re-checked on the session
+  // refresh cadence so an open app doesn't keep a banned user around.
+  // moderation_ban_user also revokes their sessions server-side, and the
+  // database rejects their posts regardless (migration 0388).
+  useEffect(() => {
+    if (!profile?.is_banned) return;
+    console.warn('[AUTH] Account is banned — signing out');
+    toast({
+      title: 'Account suspended',
+      description: 'Your account has been suspended for violating our Community Guidelines.',
+      variant: 'destructive',
+    });
+    void signOut();
+  }, [profile?.is_banned, signOut]);
+
+  useEffect(() => {
+    const userId: string | undefined = user?.id;
+    if (!userId || isRecoveryMode) return;
+    const timer = setInterval(async () => {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('is_banned')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (data?.is_banned && mountedRef.current) {
+        setProfile((prev) => (prev ? { ...prev, is_banned: true } : prev));
+      }
+    }, SESSION_REFRESH_INTERVAL);
+    return () => clearInterval(timer);
+  }, [user?.id, isRecoveryMode]);
 
   const resetPassword = async (email: string) => {
     try {

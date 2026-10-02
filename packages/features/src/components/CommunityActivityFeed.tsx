@@ -7,6 +7,8 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
+import { useModeration } from '../ModerationContext';
+import { ContentSafetyMenu } from './ContentSafetyMenu';
 import { 
   Heart, TrendingUp, Award, BookOpen, Flame, 
   Users, Filter, RefreshCw, Loader2, MessageCircle,
@@ -52,6 +54,7 @@ const ACTIVITY_LIMIT = 50;
 
 export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ ministryId }) => {
   const { user, profile } = useAuth();
+  const { filterBlocked } = useModeration();
   const { t } = useLanguage();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -408,7 +411,7 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
             </Card>
           ) : (
             <div className="space-y-4">
-              {activities.map(activity => (
+              {filterBlocked(activities, (a) => a.user_id).map(activity => (
                 <Card 
                   key={activity.id} 
                   className={`border-l-4 ${getActivityColor(activity.activity_type)} ${getActivityCardTone(activity.activity_type)} hover:shadow-md transition-shadow`}
@@ -442,6 +445,12 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
                           {getRelativeTime(activity.created_at)}
                         </div>
                       </div>
+                      <ContentSafetyMenu
+                        contentType="community_activities"
+                        contentId={activity.id}
+                        authorId={activity.user_id}
+                        authorName={activity.user_name}
+                      />
                     </div>
 
                     {/* Content */}

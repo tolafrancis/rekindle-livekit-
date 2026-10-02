@@ -24,8 +24,9 @@ import { ImageUpload } from '@rekindle/ministry/components/ImageUpload';
 import {
   User, Mail, Globe, BookOpen, Bell, MessageSquare,
   Save, Loader2, Lock, AlertTriangle, CheckCircle,
-  RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles, Code2
+  RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles, Code2, UserX
 } from 'lucide-react';
+import { BlockedUsersList } from '@rekindle/features/components/BlockedUsersList';
 
 const spiritualLevels = [
   { id: 'seeker', name: 'Seeker' },
@@ -86,6 +87,7 @@ const SETTINGS_GROUPS: { group: string; items: { key: string; label: string; ico
     items: [
       { key: 'profile',  label: 'Profile',     icon: User },
       { key: 'security', label: 'Security',    icon: Shield },
+      { key: 'privacy',  label: 'Privacy',     icon: UserX },
       { key: 'data',     label: 'Data Export', icon: Download },
     ],
   },
@@ -450,6 +452,23 @@ export const ProfileSettings: React.FC = () => {
         </CardContent>
       </Card>
 
+                </>)}
+
+          {section === 'privacy' && (<>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserX className="h-5 w-5" />
+            {t('profileSettings', 'blockedUsersTitle', 'Blocked users')}
+          </CardTitle>
+          <CardDescription>
+            {t('profileSettings', 'blockedUsersDesc', "Blocked people can't message you, and you won't see their posts or messages.")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BlockedUsersList />
+        </CardContent>
+      </Card>
                 </>)}
 
           {section === 'data' && (<>

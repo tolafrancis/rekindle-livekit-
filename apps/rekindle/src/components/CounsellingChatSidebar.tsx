@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { useModeration } from '@rekindle/features/ModerationContext';
 
 interface ChatMessage {
   id: string;
@@ -36,6 +38,7 @@ export const CounsellingChatSidebar: React.FC<CounsellingChatSidebarProps> = ({
   onClose
 }) => {
   const { t } = useLanguage();
+  const { filterBlocked } = useModeration();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -126,7 +129,9 @@ export const CounsellingChatSidebar: React.FC<CounsellingChatSidebarProps> = ({
       console.error('Failed to send message:', error);
       toast({
         title: t('counsellingChatSidebar', 'error', 'Error'),
-        description: t('counsellingChatSidebar', 'failedSendMessage', 'Failed to send message'),
+        description: (error as { code?: string; message?: string })?.code === '42501'
+          ? (error as { message: string }).message
+          : t('counsellingChatSidebar', 'failedSendMessage', 'Failed to send message'),
         variant: 'destructive'
       });
     } finally {
@@ -166,7 +171,7 @@ export const CounsellingChatSidebar: React.FC<CounsellingChatSidebarProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {messages.map((message) => {
+              {filterBlocked(messages, (m) => m.user_id).map((message) => {
                 const isOwn = message.user_id === userId;
                 const time = formatDistanceToNow(new Date(message.created_at), { addSuffix: true });
 
@@ -184,6 +189,15 @@ export const CounsellingChatSidebar: React.FC<CounsellingChatSidebarProps> = ({
                           </Badge>
                         )}
                       </span>
+                      {!isOwn && (
+                        <ContentSafetyMenu
+                          contentType="counselling_session_messages"
+                          contentId={message.id}
+                          authorId={message.user_id}
+                          authorName={message.user_name}
+                          className="h-5 w-5 text-gray-400 hover:bg-gray-700 hover:text-white"
+                        />
+                      )}
                     </div>
                     <div
                       className={`max-w-[80%] rounded-lg px-4 py-2 ${
