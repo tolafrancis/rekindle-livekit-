@@ -1281,7 +1281,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         title: t('dailyVideoCall', 'joinedMuted', "You've joined muted"),
         description: t('dailyVideoCall', 'tapMicCamToStart', 'Tap the microphone and camera buttons below to turn on your audio and video.'),
       });
+    }
+  }, [isConnected, toast, t]);
 
+  // Hooks must stay at the top level: these were nested inside the effect
+  // above (07c9c21), which threw React error #321 the moment a meeting joined.
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   // Apply selected camera device upon joining/connecting to the room
@@ -1291,8 +1295,6 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       switchActiveDevice('videoinput', selectedCameraId);
     }
   }, [isConnected, selectedCameraId, switchActiveDevice]);
-    }
-  }, [isConnected, toast, t]);
 
   // Token-expiry warning (2026-09-23, real gap flagged in a pre-test
   // pipeline review): livekit-token mints every JWT with a hardcoded 2h TTL
