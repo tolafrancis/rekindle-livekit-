@@ -5,7 +5,7 @@ import { Switch } from '@rekindle/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { toast } from '@rekindle/ui/use-toast';
 import {
-  AlertCircle, Check, Copy, Languages, Link2, Loader2, LogOut, Mic, MicOff, RefreshCw, Send, Share2, Volume2, Wifi, WifiOff,
+  AlertCircle, Check, Lightbulb, X, Copy, Languages, Link2, Loader2, LogOut, Mic, MicOff, RefreshCw, Send, Share2, Volume2, Wifi, WifiOff,
 } from 'lucide-react';
 import {
   buildInviteLink,
@@ -54,6 +54,10 @@ const CONNECTION_COPY: Record<ConnectionStatus, { label: string; className: stri
   reconnecting: { label: 'Reconnecting…', className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
   offline: { label: 'Offline', className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
 };
+
+const SAME_ROOM_TIP = "If you're both in the same room, each phone's mic can pick up the other person, so mute while they talk.";
+const SAME_ROOM_TIP_KEY = 'rk-conversation-same-room-tip';
+const SAME_ROOM_TIP_SEEN_KEY = 'rk-conversation-same-room-tip-seen';
 
 const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -107,12 +111,31 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
   // Ending a conversation turns the mic off on both sides.
   useEffect(() => { if (ended) setMicOn(false); }, [ended]);
 
+  // Same-room tip: two phones in one room each hear both people, so each
+  // side's mic transcribes the other person too (in the wrong language).
+  // Shown as a toast the first time this device turns its mic on, and as
+  // a dismissible banner whenever both mics are on at once.
+  const [sameRoomTipDismissed, setSameRoomTipDismissed] = useState(() => {
+    try { return localStorage.getItem(SAME_ROOM_TIP_KEY) === 'dismissed'; } catch { return false; }
+  });
+  const dismissSameRoomTip = () => {
+    setSameRoomTipDismissed(true);
+    try { localStorage.setItem(SAME_ROOM_TIP_KEY, 'dismissed'); } catch { /* non-fatal */ }
+  };
+  const bothMicsOn = micOn && !!peers[otherRole]?.micOn;
+
   const toggleMic = async () => {
     if (micOn) { setMicOn(false); return; }
     setMicError(null);
     const permission = await ensureMicrophonePermission();
     if (permission) { setMicError(permission); return; }
     setMicOn(true);
+    try {
+      if (!localStorage.getItem(SAME_ROOM_TIP_SEEN_KEY)) {
+        localStorage.setItem(SAME_ROOM_TIP_SEEN_KEY, '1');
+        toast({ title: 'Tip: in the same room?', description: SAME_ROOM_TIP });
+      }
+    } catch { /* non-fatal */ }
   };
 
   // Read the other person's translated turns aloud (optional).
@@ -343,6 +366,17 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
           </div>
         )}
       </div>
+
+      {/* Same-room tip */}
+      {bothMicsOn && !sameRoomTipDismissed && !ended && (
+        <div className="flex items-start gap-2 border-t bg-sky-500/10 px-3 py-2 text-xs text-sky-800 dark:text-sky-300 sm:px-4" role="note">
+          <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="flex-1">{SAME_ROOM_TIP}</span>
+          <button type="button" onClick={dismissSameRoomTip} className="shrink-0 rounded p-0.5 hover:bg-sky-500/20" aria-label="Dismiss tip">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Errors */}
       {micError && (
