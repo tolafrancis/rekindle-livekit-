@@ -31,6 +31,14 @@
                 <data android:scheme="rekindleministry" />
             </intent-filter>
 
+            <!-- HTTPS App Links: verified deep-linking for app.rekindlebc.com -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="app.rekindlebc.com" />
+            </intent-filter>
+
         </activity>
 
         <receiver
