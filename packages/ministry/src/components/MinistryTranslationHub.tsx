@@ -1,9 +1,15 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Radio, HardDrive, Settings as SettingsIcon } from 'lucide-react';
+import { Radio, HardDrive, Settings as SettingsIcon, Languages, Loader2 } from 'lucide-react';
 import { MinistryTranslationServiceManager } from './MinistryTranslationServiceManager';
 import { MinistryTranslationDeviceList } from './MinistryTranslationDeviceList';
 import { MinistryTranslationSettings } from './MinistryTranslationSettings';
+
+// Bilingual two-person conversation: its own session and invite links. Lives
+// here beside the translation Settings (2026-10-02, per Tola), not in the
+// Live module's sub-tabs.
+const BilingualConversationHub = lazy(() =>
+  import('@rekindle/live/components/BilingualConversationHub').then((m) => ({ default: m.BilingualConversationHub })));
 
 interface MinistryTranslationHubProps {
   ministryId: string;
@@ -41,6 +47,10 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
             <SettingsIcon className="h-4 w-4" />
             Settings
           </TabsTrigger>
+          <TabsTrigger value="conversation" className="gap-2">
+            <Languages className="h-4 w-4" />
+            Conversation
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="service" className="mt-5">
@@ -51,6 +61,11 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
         </TabsContent>
         <TabsContent value="settings" className="mt-5">
           <MinistryTranslationSettings ministryId={ministryId} />
+        </TabsContent>
+        <TabsContent value="conversation" className="mt-5">
+          <Suspense fallback={<div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}>
+            <BilingualConversationHub ministryId={ministryId} />
+          </Suspense>
         </TabsContent>
       </Tabs>
     </div>

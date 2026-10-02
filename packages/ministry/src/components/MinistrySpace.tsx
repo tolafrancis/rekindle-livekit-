@@ -26,7 +26,6 @@ import {
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
   User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard,
-  Languages,
 } from 'lucide-react';
 
 // Every workspace tab (live, meetings, webinars, recordings, settings, the
@@ -34,7 +33,6 @@ import {
 // is opened, instead of all of them downloading on entering a ministry.
 const MinistrySettingsHub = lazy(() => import('./MinistrySettingsHub').then((m) => ({ default: m.MinistrySettingsHub })));
 const MinistryLiveTechSettings = lazy(() => import('./MinistryLiveTechSettings').then((m) => ({ default: m.MinistryLiveTechSettings })));
-const BilingualConversationHub = lazy(() => import('@rekindle/live/components/BilingualConversationHub').then((m) => ({ default: m.BilingualConversationHub })));
 const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
 const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
 const DevotionalModule = lazy(() => import('@rekindle/features/components/DevotionalModule').then((m) => ({ default: m.DevotionalModule })));
@@ -1004,10 +1002,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       children: [
         ...(ministryEntitlements.caps.liveChannels ? [{ id: 'live', label: 'Live Channel', icon: Radio }] : []),
         { id: 'webinars', label: 'Webinars', icon: Radio },
-        // Bilingual two-person conversation (2026-10-02) — its own session
-        // and invite link, independent of meetings and of Live Translation's
-        // audience questions.
-        { id: 'conversation', label: 'Conversation', icon: Languages },
         ...(ministryEntitlements.caps.liveChannels && canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
       ],
     },
@@ -1603,10 +1597,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             isLeader={isLeader}
             themeColor={themeColor}
           />
-        )}
-
-        {activeTab === 'conversation' && (
-          <BilingualConversationHub ministryId={ministry.id} />
         )}
 
         {/* Live Translation — translation + restream config, moved here from

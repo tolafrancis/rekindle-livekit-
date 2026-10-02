@@ -147,7 +147,7 @@ const App = () => {
                       Renders LiveChannelViewer directly — guests can watch without signing in. */}
                   <Route path="/channels/:id" element={<ChannelWatchPage />} />
 
-                  {/* Live → Conversation invite links. Public — the guest needs no account. */}
+                  {/* Live Translation → Conversation invite links. Public — the guest needs no account. */}
                   <Route path="/conversation/:conversationId" element={<BilingualConversationJoinPage />} />
 
                   {/* Transparent live-caption overlay for an OBS Browser Source
