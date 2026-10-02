@@ -1806,11 +1806,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     if (initial.micEnabled !== isMicOn) toggleMic();
     if (initial.cameraEnabled !== isCameraOn) toggleCamera();
     if (initial.cameraBackground !== 'none') setVideoBackground(initial.cameraBackground);
+    // The mic picked in backstage (the camera goes through selectedCameraId,
+    // applied by its own effect above).
+    if (initial.micDeviceId && switchActiveDevice) {
+      void switchActiveDevice('audioinput', initial.micDeviceId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected]);
 
   const handleBackstageReady = (state: BackstageReadyState) => {
     backstageInitialRef.current = state;
+    // The camera picked in backstage — previously dropped, so the call always
+    // opened on the default camera (e.g. never a DroidCam/virtual camera).
+    if (state.cameraDeviceId) setSelectedCameraId(state.cameraDeviceId);
     setBackstageComplete(true);
   };
 
