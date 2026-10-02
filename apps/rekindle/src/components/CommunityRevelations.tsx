@@ -241,6 +241,7 @@ export const CommunityRevelations: React.FC = () => {
     if (!profile || !user) { toast({ title: t('communityRevelations', 'error', 'Error'), description: t('communityRevelations', 'mustBeLoggedInComment', 'You must be logged in to comment'), variant: 'destructive' }); return; }
     const newComment: Comment = {
       id: Date.now().toString(),
+      user_id: user.id,
       author: profile.full_name || 'Anonymous',
       avatar: (profile.full_name || 'A').split(' ').map(n => n[0]).join('').slice(0, 2),
       content: commentContent,
@@ -403,6 +404,7 @@ export const CommunityRevelations: React.FC = () => {
     if (!profile || !user) { toast({ title: t('communityRevelations', 'error', 'Error'), description: t('communityRevelations', 'mustBeLoggedInComment', 'You must be logged in to comment'), variant: 'destructive' }); return; }
     const newComment: Comment = {
       id: Date.now().toString(),
+      user_id: user.id,
       author: profile.full_name || 'Anonymous',
       avatar: (profile.full_name || 'A').split(' ').map(n => n[0]).join('').slice(0, 2),
       content: commentContent,
@@ -863,7 +865,7 @@ export const CommunityRevelations: React.FC = () => {
                           </button>
                         </div>
                         {expandedRevComments === rev.id && (
-                          <CommentSection comments={rev.comments} onAddComment={c => handleRevAddComment(rev.id, c)} onDeleteComment={cId => handleRevDeleteComment(rev.id, cId)} />
+                          <CommentSection parentType="community_revelations" parentId={rev.id} comments={rev.comments} onAddComment={c => handleRevAddComment(rev.id, c)} onDeleteComment={cId => handleRevDeleteComment(rev.id, cId)} />
                         )}
                       </div>
                     </div>
@@ -1006,7 +1008,7 @@ export const CommunityRevelations: React.FC = () => {
                           </button>
                         </div>
                         {expandedTestComments === test.id && (
-                          <CommentSection comments={test.comments} onAddComment={c => handleTestAddComment(test.id, c)} onDeleteComment={cId => handleTestDeleteComment(test.id, cId)} />
+                          <CommentSection parentType="app_testimonies" parentId={test.id} comments={test.comments} onAddComment={c => handleTestAddComment(test.id, c)} onDeleteComment={cId => handleTestDeleteComment(test.id, cId)} />
                         )}
                       </div>
                     </div>

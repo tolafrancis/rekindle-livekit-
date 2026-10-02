@@ -29,6 +29,9 @@ export type ReportableContentType =
   | 'app_testimonies'
   | 'ministry_prayer_requests'
   | 'counselling_session_messages'
+  /** Comments live in a jsonb array on the post; contentId is "<postId>:<commentId>". */
+  | 'community_revelation_comments'
+  | 'app_testimony_comments'
   | 'user';
 
 export type ReportReason = 'spam' | 'harassment' | 'hate_speech' | 'sexual_content' | 'violence' | 'other';
@@ -223,6 +226,8 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   app_testimonies: 'Testimony',
   ministry_prayer_requests: 'Prayer request',
   counselling_session_messages: 'Counselling chat message',
+  community_revelation_comments: 'Comment on a revelation',
+  app_testimony_comments: 'Comment on a testimony',
   user: 'User profile',
 };
 
