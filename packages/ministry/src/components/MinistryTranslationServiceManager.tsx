@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -14,6 +14,7 @@ import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrC
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2, Captions, MessageCircle, Pin, User } from 'lucide-react';
 import { ObsCaptionSetupDialog } from '@rekindle/live/components/ObsCaptionSetupDialog';
+import { playQuestionChime } from '@rekindle/live/questionAlert';
 import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
 import { LiveScriptureOperatorCard, type ScriptureSessionOption } from './LiveScriptureOperatorCard';
@@ -150,6 +151,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // above does — unlike SpeakerPage.tsx, which has no Supabase auth session
   // at all and has to poll a security-definer RPC instead.
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
+  const alertedQuestionIdsRef = useRef<Set<string>>(new Set());
   const [pinningId, setPinningId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
 
@@ -223,6 +225,14 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'translation_questions', filter: `ministry_id=eq.${ministryId}` },
         (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as QuestionRow;
+            if (row.status === 'pending' && !alertedQuestionIdsRef.current.has(row.id)) {
+              alertedQuestionIdsRef.current.add(row.id);
+              playQuestionChime();
+              toast({ title: 'New question', description: `${row.asker_name || 'Anonymous'}: ${row.speaker_text || row.original_text}` });
+            }
+          }
           setQuestions(prev => {
             if (payload.eventType === 'DELETE') {
               return prev.filter(q => q.id !== (payload.old as { id: string }).id);

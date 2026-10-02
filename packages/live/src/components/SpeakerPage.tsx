@@ -4,11 +4,12 @@ import { Room, RoomEvent, createAudioAnalyser } from 'livekit-client';
 import type { LocalAudioTrack } from 'livekit-client';
 import { supabase } from '@rekindle/supabase';
 import { useSpeakerScripture } from './useSpeakerScripture';
+import { playQuestionChime, setTitleBadge } from '../questionAlert';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
-import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User } from 'lucide-react';
+import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
 
@@ -24,6 +25,7 @@ interface PinnedQuestion {
   id: string;
   asker_name: string | null;
   pinned_translations: Record<string, string>;
+  answer_text: string | null;
 }
 
 /** translation-speaker-token's 200 response. */
@@ -91,16 +93,26 @@ export const SpeakerPage: React.FC = () => {
   // "Conversation" (live Q&A, 2026-09-28) — listeners on /display can ask a
   // question; it's translated into this speaker's language and shown here
   // to pin (surfaces it, translated, on every listener's /display) or
-  // dismiss. No realtime subscription here (unlike captions above) — the
-  // anon RLS policy on translation_questions only allows reading PINNED
-  // rows directly; the pending queue is only reachable via
+  // dismiss. The anon RLS policy on translation_questions only allows
+  // reading PINNED rows directly; the pending queue is only reachable via
   // get_speaker_pending_questions, a security-definer RPC keyed on this
-  // page's speaker_token, so it's polled instead, same fallback cadence
-  // TranslationDisplayPage.tsx already uses for its own realtime backstop.
+  // page's speaker_token. So instead of postgres_changes, this page
+  // listens for translation-submit-question's content-free broadcast ping
+  // and re-fetches on each one, with a 5s poll as the backstop.
+  //
+  // Real bug fixed 2026-10-02 (migration 0385): that RPC raised on every
+  // call (pgcrypto's digest() unreachable from its search_path) and this
+  // page ignored the error, so questions never showed up here at all.
   const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
   const [pinnedQuestion, setPinnedQuestion] = useState<PinnedQuestion | null>(null);
   const [pinningId, setPinningId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [questionsError, setQuestionsError] = useState(false);
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  // Every question id this page has already alerted for — a re-fetch (poll
+  // or ping) returning the same pending rows never chimes twice.
+  const seenQuestionIdsRef = useRef<Set<string> | null>(null);
   const serviceIdRef = useRef<string | null>(null);
 
   const roomRef = useRef<Room | null>(null);
@@ -162,39 +174,101 @@ export const SpeakerPage: React.FC = () => {
     }
   }, [sessionId, speakerToken]);
 
-  // Conversation polling — see pendingQuestions' doc comment above for why
-  // this is polled rather than realtime.
+  // Conversation — see pendingQuestions' doc comment above.
   useEffect(() => {
     if (phase !== 'live' || !sessionId || !speakerToken) return;
     let cancelled = false;
+    let inFlight = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    const poll = async () => {
-      const [{ data: pending }, pinnedRes] = await Promise.all([
-        supabase.rpc('get_speaker_pending_questions', { p_session_id: sessionId, p_speaker_token: speakerToken }),
-        serviceIdRef.current
-          ? supabase.from('translation_questions').select('id, asker_name, pinned_translations')
-              .eq('service_id', serviceIdRef.current).eq('status', 'pinned').maybeSingle()
-          : Promise.resolve({ data: null }),
-      ]);
-      if (cancelled) return;
-      setPendingQuestions((pending as PendingQuestion[]) || []);
-      setPinnedQuestion((pinnedRes as { data: PinnedQuestion | null }).data);
+    const fetchQuestions = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const [pendingRes, pinnedRes] = await Promise.all([
+          supabase.rpc('get_speaker_pending_questions', { p_session_id: sessionId, p_speaker_token: speakerToken }),
+          serviceIdRef.current
+            ? supabase.from('translation_questions').select('id, asker_name, pinned_translations, answer_text')
+                .eq('service_id', serviceIdRef.current).eq('status', 'pinned').maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+        if (cancelled) return;
+        if (pendingRes.error) {
+          console.error('[SpeakerPage] get_speaker_pending_questions failed:', pendingRes.error);
+          setQuestionsError(true);
+          return;
+        }
+        setQuestionsError(false);
+        const pending = (pendingRes.data as PendingQuestion[]) || [];
+        setPendingQuestions(pending);
+        setPinnedQuestion((pinnedRes as { data: PinnedQuestion | null }).data);
+
+        const seen = seenQuestionIdsRef.current;
+        const fresh = seen ? pending.filter((q) => !seen.has(q.id)) : pending;
+        seenQuestionIdsRef.current = new Set([...(seen || []), ...pending.map((q) => q.id)]);
+        if (fresh.length > 0) {
+          playQuestionChime();
+          toast({
+            title: fresh.length === 1 ? 'New question' : `${fresh.length} new questions`,
+            description: fresh.length === 1
+              ? `${fresh[0].asker_name || 'Anonymous'}: ${fresh[0].speaker_text || fresh[0].original_text}`
+              : 'Scroll down to Conversation to see them.',
+          });
+        }
+      } finally {
+        inFlight = false;
+      }
     };
 
-    poll();
-    const interval = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(interval); };
+    (async () => {
+      if (!serviceIdRef.current) {
+        const { data } = await supabase.from('translation_sessions').select('service_id').eq('id', sessionId).maybeSingle();
+        serviceIdRef.current = data?.service_id ?? null;
+      }
+      if (cancelled) return;
+      fetchQuestions();
+      if (serviceIdRef.current) {
+        channel = supabase
+          .channel(`translation-questions-speaker-${serviceIdRef.current}`)
+          .on('broadcast', { event: 'new_question' }, () => fetchQuestions())
+          // Back from a dropped connection — catch up on anything missed.
+          .subscribe((status) => { if (status === 'SUBSCRIBED') fetchQuestions(); });
+      }
+    })();
+
+    const interval = setInterval(fetchQuestions, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [phase, sessionId, speakerToken]);
 
-  const pinQuestion = async (questionId: string) => {
+  useEffect(() => {
+    setTitleBadge(pendingQuestions.length);
+  }, [pendingQuestions.length]);
+  useEffect(() => () => setTitleBadge(0), []);
+
+  const pinQuestion = async (questionId: string, answerText?: string) => {
     if (!speakerToken) return;
     setPinningId(questionId);
     try {
       const { data, error } = await supabase.functions.invoke('translation-pin-question', {
-        body: { questionId, speakerToken },
+        body: { questionId, speakerToken, answerText: answerText?.trim() || undefined },
       });
       if (error || (data as { error?: string })?.error) throw new Error((data as { error?: string })?.error || error?.message);
+      const question = pendingQuestions.find((q) => q.id === questionId);
       setPendingQuestions((prev) => prev.filter((q) => q.id !== questionId));
+      if (question && languages) {
+        setPinnedQuestion({
+          id: questionId,
+          asker_name: question.asker_name,
+          pinned_translations: { [languages.source]: question.speaker_text || question.original_text },
+          answer_text: answerText?.trim() || null,
+        });
+      }
+      if (replyingId === questionId) { setReplyingId(null); setReplyText(''); }
+      toast({ title: answerText?.trim() ? 'Answer pinned for everyone' : 'Pinned for everyone' });
     } catch (err: any) {
       toast({ title: "Couldn't pin that question", description: err.message, variant: 'destructive' });
     } finally {
@@ -273,8 +347,6 @@ export const SpeakerPage: React.FC = () => {
       if (micPub?.track) startLevelMeter(micPub.track as LocalAudioTrack);
       setPhase('live');
       startCaptions(sessionId);
-      supabase.from('translation_sessions').select('service_id').eq('id', sessionId).maybeSingle()
-        .then(({ data }) => { serviceIdRef.current = data?.service_id ?? null; });
       console.log('[SpeakerPage] publishing as', identity);
     } catch (err) {
       console.error('[SpeakerPage] connect/publish failed:', err);
@@ -501,36 +573,69 @@ export const SpeakerPage: React.FC = () => {
                 </p>
               </div>
 
-              {(pendingQuestions.length > 0 || pinnedQuestion) && (
-                <div className="space-y-2 border-t border-white/10 pt-4">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
-                    <MessageCircle className="h-3.5 w-3.5" /> Conversation
-                  </p>
-                  {pinnedQuestion && (
-                    <div className="rounded-lg border border-indigo-400/40 bg-indigo-500/10 px-3 py-2">
-                      <p className="flex items-center gap-1.5 text-[11px] text-indigo-300 mb-1">
-                        <Pin className="h-3 w-3" /> Pinned for everyone
-                      </p>
-                      <p className="text-sm text-white">{pinnedQuestion.asker_name || 'Anonymous'}: {Object.values(pinnedQuestion.pinned_translations)[0]}</p>
-                    </div>
+              <div className="space-y-2 border-t border-white/10 pt-4" aria-live="polite">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-white/50">
+                  <MessageCircle className="h-3.5 w-3.5" /> Conversation
+                  {pendingQuestions.length > 0 && (
+                    <span className="ml-1 rounded-full bg-indigo-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {pendingQuestions.length} new
+                    </span>
                   )}
-                  {pendingQuestions.map((q) => (
-                    <div key={q.id} className="flex items-start gap-2 rounded-lg bg-black/30 px-3 py-2">
+                </p>
+                {questionsError && (
+                  <p className="flex items-center gap-1.5 text-xs text-amber-400">
+                    <AlertCircle className="h-3.5 w-3.5" /> Couldn't load audience questions — retrying…
+                  </p>
+                )}
+                {pinnedQuestion && (
+                  <div className="rounded-lg border border-indigo-400/40 bg-indigo-500/10 px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-[11px] text-indigo-300 mb-1">
+                      <Pin className="h-3 w-3" /> Pinned for everyone
+                    </p>
+                    <p className="text-sm text-white">
+                      {pinnedQuestion.asker_name || 'Anonymous'}:{' '}
+                      {(languages && pinnedQuestion.pinned_translations[languages.source]) || Object.values(pinnedQuestion.pinned_translations)[0]}
+                    </p>
+                    {pinnedQuestion.answer_text && (
+                      <p className="mt-1 text-sm text-indigo-200">Your answer: {pinnedQuestion.answer_text}</p>
+                    )}
+                  </div>
+                )}
+                {pendingQuestions.length === 0 && !pinnedQuestion && !questionsError && (
+                  <p className="text-xs text-white/40">
+                    No questions yet. When a listener asks one, it appears here with a sound and a notification.
+                  </p>
+                )}
+                {pendingQuestions.map((q) => (
+                  <div key={q.id} className="rounded-lg bg-black/30 px-3 py-2 space-y-2">
+                    <div className="flex items-start gap-2">
                       <User className="h-4 w-4 text-white/40 shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white/40">{q.asker_name || 'Anonymous'}</p>
-                        <p className="text-sm text-white break-words">{q.speaker_text || q.original_text}</p>
+                        <p className="text-xs text-white/40">
+                          {q.asker_name || 'Anonymous'} · {new Date(q.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <p className="text-sm sm:text-base text-white break-words">{q.speaker_text || q.original_text}</p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <Button
                           size="sm"
                           variant="outline"
                           className="h-7 w-7 p-0 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
+                          onClick={() => { setReplyingId(replyingId === q.id ? null : q.id); setReplyText(''); }}
+                          disabled={pinningId === q.id || dismissingId === q.id}
+                          title="Write an answer"
+                        >
+                          <Reply className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
                           onClick={() => pinQuestion(q.id)}
                           disabled={pinningId === q.id || dismissingId === q.id}
-                          title="Pin for everyone"
+                          title="Pin for everyone (answer it out loud)"
                         >
-                          {pinningId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pin className="h-3.5 w-3.5" />}
+                          {pinningId === q.id && replyingId !== q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pin className="h-3.5 w-3.5" />}
                         </Button>
                         <Button
                           size="sm"
@@ -544,9 +649,30 @@ export const SpeakerPage: React.FC = () => {
                         </Button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {replyingId === q.id && (
+                      <div className="flex items-center gap-2 pl-6">
+                        <Input
+                          autoFocus
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && replyText.trim() && pinningId !== q.id) pinQuestion(q.id, replyText); }}
+                          placeholder="Type a short answer — it's translated for every listener"
+                          maxLength={1000}
+                          className="h-8 flex-1 border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8 shrink-0"
+                          onClick={() => pinQuestion(q.id, replyText)}
+                          disabled={pinningId === q.id || !replyText.trim()}
+                        >
+                          {pinningId === q.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Pin answer'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
 
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white" onClick={toggleMute}>

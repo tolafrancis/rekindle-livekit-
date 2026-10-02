@@ -17,8 +17,10 @@
 //   SUPABASE_ANON_KEY, OPENAI_API_KEY (all already set).
 //
 // ── Request ───────────────────────────────────────────────────────────
-//   POST { questionId, speakerToken? }  (Authorization header instead of
-//                                         speakerToken for the admin path)
+//   POST { questionId, speakerToken?, answerText? }
+//        (Authorization header instead of speakerToken for the admin path;
+//         answerText is an optional written reply, typed in the SPEAKER's
+//         language and translated for every listener alongside the question)
 //     → 200 { ok: true }
 //     → 400 { error: 'questionId is required' }
 //     → 401 { error: 'invalid_speaker_token' } | { error: 'unauthorized' }
@@ -57,8 +59,9 @@ serve(async (req) => {
     }
     if (!OPENAI_API_KEY) return json({ error: 'OPENAI_API_KEY is not set in Supabase secrets.' }, 500);
 
-    const body = (await req.json().catch(() => ({}))) as { questionId?: string; speakerToken?: string };
+    const body = (await req.json().catch(() => ({}))) as { questionId?: string; speakerToken?: string; answerText?: string };
     if (!body.questionId) return json({ error: 'questionId is required' }, 400);
+    const answerText = (body.answerText || '').trim().slice(0, 1000);
 
     const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -132,12 +135,37 @@ serve(async (req) => {
     );
     results.forEach(({ lang, text }) => { translations[lang] = text; });
 
+    // Written answer, if the speaker typed one — in the speaker's language,
+    // fanned out to the same set of languages as the question.
+    const answerTranslations: Record<string, string> = {};
+    if (answerText) {
+      const answerSource = speakerLanguage || question.original_language;
+      const answerLanguages = new Set<string>([...languagesNeeded, question.original_language]);
+      const answers = await Promise.all(
+        Array.from(answerLanguages).map((lang) =>
+          translateText(answerText, answerSource, lang, OPENAI_API_KEY, 'answer')
+            .then((text) => ({ lang, text: text || answerText }))
+            .catch((err) => {
+              console.error(`[translation-pin-question] answer translate to ${lang} failed:`, err);
+              return { lang, text: answerText };
+            }),
+        ),
+      );
+      answers.forEach(({ lang, text }) => { answerTranslations[lang] = text; });
+    }
+
     // Unpin whatever was pinned before, then pin this one — only one
     // pinned question per service at a time (see header comment).
     await service.from('translation_questions').update({ status: 'dismissed' }).eq('service_id', question.service_id).eq('status', 'pinned');
     const { error: pinError } = await service
       .from('translation_questions')
-      .update({ status: 'pinned', pinned_at: new Date().toISOString(), pinned_translations: translations })
+      .update({
+        status: 'pinned',
+        pinned_at: new Date().toISOString(),
+        pinned_translations: translations,
+        answer_text: answerText || null,
+        pinned_answer_translations: answerTranslations,
+      })
       .eq('id', question.id);
     if (pinError) throw pinError;
 

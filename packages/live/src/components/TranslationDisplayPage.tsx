@@ -6,7 +6,7 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
-import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, MessageCircle, Mic, Pin, Send, User } from 'lucide-react';
+import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
 import { ScripturePanel } from './ScripturePanel';
 
 interface SessionInfo {
@@ -29,6 +29,15 @@ interface PinnedQuestion {
   id: string;
   asker_name: string | null;
   pinned_translations: Record<string, string>;
+  pinned_answer_translations: Record<string, string> | null;
+}
+
+/** A question this browser sent this visit — local only, so the asker can
+ *  see it was delivered (the pending queue itself is speaker-only). */
+interface SentQuestion {
+  id: string;
+  text: string;
+  sentAt: number;
 }
 
 /** translation-listener-token's 200 response. */
@@ -155,6 +164,10 @@ export const TranslationDisplayPage: React.FC = () => {
   const [askerName, setAskerName] = useState('');
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
+  const [sentQuestions, setSentQuestions] = useState<SentQuestion[]>([]);
+  // Synchronous guard against a double Enter/tap sending the same question
+  // twice before `asking` re-renders the button disabled.
+  const askingRef = useRef(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownNow, setCooldownNow] = useState(Date.now());
   const [listeningForSpeech, setListeningForSpeech] = useState(false);
@@ -318,7 +331,7 @@ export const TranslationDisplayPage: React.FC = () => {
     const loadPinned = async () => {
       const { data } = await supabase
         .from('translation_questions')
-        .select('id, asker_name, pinned_translations')
+        .select('id, asker_name, pinned_translations, pinned_answer_translations')
         .eq('service_id', serviceId)
         .eq('status', 'pinned')
         .maybeSingle();
@@ -326,13 +339,17 @@ export const TranslationDisplayPage: React.FC = () => {
     };
     loadPinned();
 
+    // Realtime needs translation_questions in the supabase_realtime
+    // publication (migration 0385 — it was missing, so this never fired).
+    // The 15s poll is the backstop for a dropped connection.
     const channel = supabase
       .channel(`translation-questions-${serviceId}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'translation_questions', filter: `service_id=eq.${serviceId}` },
         () => loadPinned())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status) => { if (status === 'SUBSCRIBED') loadPinned(); });
+    const interval = setInterval(loadPinned, 15000);
+    return () => { clearInterval(interval); supabase.removeChannel(channel); };
   }, [session?.service_id]);
 
   // Cooldown countdown — re-renders once a second while a rate-limit
@@ -346,29 +363,48 @@ export const TranslationDisplayPage: React.FC = () => {
   const cooldownRemainingMs = cooldownUntil ? Math.max(0, cooldownUntil - cooldownNow) : 0;
 
   const submitQuestion = async () => {
-    if (!sessionId || !askText.trim() || cooldownRemainingMs > 0) return;
+    const text = askText.trim();
+    if (!sessionId || !text || cooldownRemainingMs > 0 || askingRef.current) return;
+    askingRef.current = true;
     setAsking(true);
     setAskError(null);
     try {
       const { data, error } = await supabase.functions.invoke('translation-submit-question', {
-        body: { sessionId, text: askText.trim(), askerName: askerName.trim() || undefined, fingerprint: fingerprintRef.current },
+        body: { sessionId, text, askerName: askerName.trim() || undefined, fingerprint: fingerprintRef.current },
       });
-      const errBody = (data as { error?: string; retryAfterMs?: number })?.error;
-      if (error || errBody) {
-        if (errBody === 'rate_limited') {
-          const retryAfterMs = (data as { retryAfterMs?: number })?.retryAfterMs || 20000;
-          setCooldownUntil(Date.now() + retryAfterMs);
+      const body = data as { id?: string; error?: string; retryAfterMs?: number } | null;
+      // supabase-js puts a non-2xx response's body on error.context rather
+      // than data — read the error code from there too.
+      let errCode = body?.error;
+      let retryAfterMs = body?.retryAfterMs;
+      if (error && !errCode) {
+        try {
+          const ctx = await (error as { context?: Response }).context?.json();
+          errCode = ctx?.error;
+          retryAfterMs = ctx?.retryAfterMs;
+        } catch { /* not a JSON error body — treat as a network failure */ }
+      }
+      if (error || errCode || !body?.id) {
+        if (errCode === 'rate_limited') {
+          setCooldownUntil(Date.now() + (retryAfterMs || 20000));
           setAskError("You're asking too quickly — please wait a moment.");
+        } else if (errCode === 'questions_disabled') {
+          setAskError('Questions are turned off for this service.');
+        } else if (errCode === 'session_not_found') {
+          setAskError('This session has ended, so questions can no longer be sent.');
         } else {
-          setAskError('Could not send your question. Please try again.');
+          setAskError('Your question was not sent — check your connection and tap Send to try again.');
         }
         return;
       }
+      const sentId = body.id;
+      setSentQuestions((prev) => (prev.some((q) => q.id === sentId) ? prev : [...prev, { id: sentId, text, sentAt: Date.now() }]));
       setAskText('');
       setCooldownUntil(Date.now() + 20000); // matches the server's own 20s window
     } catch {
-      setAskError('Could not send your question. Please try again.');
+      setAskError('Your question was not sent — check your connection and tap Send to try again.');
     } finally {
+      askingRef.current = false;
       setAsking(false);
     }
   };
@@ -839,6 +875,26 @@ export const TranslationDisplayPage: React.FC = () => {
               <p className="text-lg text-white font-medium">
                 {session && pinnedQuestion.pinned_translations[session.target_language]}
               </p>
+              {session && pinnedQuestion.pinned_answer_translations?.[session.target_language] && (
+                <div className="mt-2 border-t border-indigo-400/20 pt-2">
+                  <p className="text-xs text-indigo-300 mb-0.5">Speaker's answer</p>
+                  <p className="text-base text-white">{pinnedQuestion.pinned_answer_translations[session.target_language]}</p>
+                </div>
+              )}
+            </div>
+          )}
+          {sentQuestions.length > 0 && (
+            <div className="space-y-1.5" aria-live="polite">
+              <p className="text-xs text-white/40">Your questions</p>
+              {sentQuestions.map((q) => (
+                <div key={q.id} className="rounded-lg bg-white/5 px-3 py-2">
+                  <p className="text-sm text-white/80 break-words">{q.text}</p>
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-400">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {pinnedQuestion?.id === q.id ? 'Pinned by the speaker' : 'Delivered to the speaker'}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 py-6">
@@ -894,10 +950,15 @@ export const TranslationDisplayPage: React.FC = () => {
               className="h-8 flex-1 border-white/10 bg-transparent text-xs text-white placeholder:text-white/30"
             />
           </div>
+          {asking && <p className="text-xs text-white/50">Sending your question…</p>}
           {cooldownRemainingMs > 0 && (
             <p className="text-xs text-amber-400">Ask again in {Math.ceil(cooldownRemainingMs / 1000)}s</p>
           )}
-          {askError && <p className="text-xs text-red-400">{askError}</p>}
+          {askError && (
+            <p className="flex items-center gap-1 text-xs text-red-400" role="alert">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {askError}
+            </p>
+          )}
         </div>
       )}
 
