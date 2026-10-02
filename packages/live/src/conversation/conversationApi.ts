@@ -1,7 +1,7 @@
 import { supabase } from '@rekindle/supabase';
 
 /**
- * Live → Conversation (bilingual, two-person) — client side of the
+ * Live Translation → Conversation (bilingual, two-person) — client side of the
  * bilingual-conversation edge function. See migration
  * 0386_bilingual_conversations.sql for the access model.
  */

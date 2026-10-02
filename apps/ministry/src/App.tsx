@@ -257,7 +257,7 @@ function AppRoutes() {
           is the real credential, not this route. */}
       <Route path="/speak/:sessionId" element={<SpeakerPage />} />
 
-      {/* Live → Conversation invite links (bilingual two-person
+      {/* Live Translation → Conversation invite links (bilingual two-person
           conversation). Public: the guest needs no account — the one-time
           invite in the URL fragment is the credential. */}
       <Route path="/conversation/:conversationId" element={<BilingualConversationJoinPage />} />
