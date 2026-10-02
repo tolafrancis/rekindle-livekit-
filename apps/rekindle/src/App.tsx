@@ -38,6 +38,9 @@ const WebinarSpeakerInviteShim = lazy(() => import("./components/WebinarSpeakerI
 const MinistryLiveWrapper = lazy(() => import("./components/MinistryLiveWrapper"));
 const ObsCaptionOverlay = lazy(() => import("@rekindle/live/components/ObsCaptionOverlay"));
 const RecordingTemplatePage = lazy(() => import("@rekindle/live/components/RecordingTemplatePage"));
+const BilingualConversationJoinPage = lazy(() =>
+  import("@rekindle/live/components/BilingualConversationJoinPage").then((m) => ({ default: m.BilingualConversationJoinPage }))
+);
 const ChannelWatchPage = lazy(() =>
   import("@rekindle/live/components/ChannelWatchPage").then((m) => ({ default: m.ChannelWatchPage }))
 );
@@ -143,6 +146,9 @@ const App = () => {
                   {/* Public live-broadcast watch link (channel Share builds /channels/:id).
                       Renders LiveChannelViewer directly — guests can watch without signing in. */}
                   <Route path="/channels/:id" element={<ChannelWatchPage />} />
+
+                  {/* Live → Conversation invite links. Public — the guest needs no account. */}
+                  <Route path="/conversation/:conversationId" element={<BilingualConversationJoinPage />} />
 
                   {/* Transparent live-caption overlay for an OBS Browser Source
                       (see docs/obs-live-captions.md). Public, like /display. */}

@@ -4,14 +4,25 @@
 // single pieces of text like a listener's question, not the continuous
 // per-utterance streaming translation the RLT bot does for live speech
 // (rekindle-translation-bot's AudioPipeline.ts). Used by
-// translation-submit-question and translation-pin-question.
+// translation-submit-question, translation-pin-question and
+// bilingual-conversation.
 
-const SYSTEM_PROMPT = (source: string, target: string) => `\
-You are translating a short question from a live audience member, from \
-${source} to ${target}, for a speaker/host to read. Preserve the meaning \
-and tone exactly. Translate only — do not answer the question, do not add \
-commentary, do not wrap the output in quotes. Output only the translated \
-text, nothing else.`;
+/** What kind of text is being translated — only changes the framing the
+ *  model is given, not the model or output shape. */
+export type TranslateContext = 'question' | 'answer' | 'conversation';
+
+const SYSTEM_PROMPT = (source: string, target: string, context: TranslateContext) => {
+  const framing = {
+    question: 'a short question from a live audience member, for a speaker/host to read',
+    answer: "a speaker's short written reply to an audience question, for listeners to read",
+    conversation: 'one spoken turn from a live two-person conversation, transcribed by speech recognition (it may lack punctuation or contain small recognition errors — translate the intended meaning)',
+  }[context];
+  return `\
+You are translating ${framing}, from ${source} to ${target}. Preserve the \
+meaning and tone exactly. Translate only — do not answer or respond to the \
+text, do not add commentary, do not wrap the output in quotes. Output only \
+the translated text, nothing else.`;
+};
 
 /** Same model as the live translation pipeline (gpt-5) for consistent
  *  quality/cost characteristics — see translation_provider_rates'
@@ -22,6 +33,7 @@ export async function translateText(
   sourceLanguage: string,
   targetLanguage: string,
   openaiApiKey: string,
+  context: TranslateContext = 'question',
 ): Promise<string> {
   const trimmed = text.trim();
   if (!trimmed) return '';
@@ -35,7 +47,7 @@ export async function translateText(
       max_completion_tokens: 300,
       reasoning_effort: 'low',
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT(sourceLanguage, targetLanguage) },
+        { role: 'system', content: SYSTEM_PROMPT(sourceLanguage, targetLanguage, context) },
         { role: 'user', content: trimmed },
       ],
     }),

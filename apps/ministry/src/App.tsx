@@ -36,6 +36,7 @@ import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDis
 import { ObsCaptionOverlay } from '@rekindle/live/components/ObsCaptionOverlay';
 import { TranslationDisplayLanding } from '@rekindle/live/components/TranslationDisplayLanding';
 import { SpeakerPage } from '@rekindle/live/components/SpeakerPage';
+import { BilingualConversationJoinPage } from '@rekindle/live/components/BilingualConversationJoinPage';
 import { ActiveCallProvider } from '@rekindle/live/ActiveCallContext';
 import { GlobalAudioProvider } from '@rekindle/features/GlobalAudioContext';
 import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
@@ -255,6 +256,11 @@ function AppRoutes() {
           Public/unauthenticated same as /display; the ?t= token in the URL
           is the real credential, not this route. */}
       <Route path="/speak/:sessionId" element={<SpeakerPage />} />
+
+      {/* Live → Conversation invite links (bilingual two-person
+          conversation). Public: the guest needs no account — the one-time
+          invite in the URL fragment is the credential. */}
+      <Route path="/conversation/:conversationId" element={<BilingualConversationJoinPage />} />
 
       {/* Authed area (current-ministry context). */}
       <Route element={<AuthedArea />}>

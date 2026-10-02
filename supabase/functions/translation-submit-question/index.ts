@@ -19,7 +19,10 @@
 //
 // ── Request ───────────────────────────────────────────────────────────
 //   POST { sessionId, text, askerName?, fingerprint }
-//     → 200 { id, speakerText }
+//     → 200 { id, speakerText, duplicate? }
+//       (duplicate: true when this browser already sent the same text to
+//        this session in the last 10 minutes — a retry after a dropped
+//        response returns the original question instead of a second copy)
 //     → 400 { error: 'sessionId, text, and fingerprint are required' }
 //     → 404 { error: 'session_not_found' }
 //     → 403 { error: 'questions_disabled' }
@@ -29,6 +32,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { translateText } from '../_shared/translateText.ts';
+import { broadcastPing } from '../_shared/realtimeBroadcast.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,6 +44,7 @@ const json = (body: unknown, status = 200) =>
 
 const RATE_LIMIT_MS = 20_000;
 const MAX_QUESTION_CHARS = 500;
+const DUPLICATE_WINDOW_MS = 10 * 60_000;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -87,6 +92,24 @@ serve(async (req) => {
       return json({ error: 'questions_disabled' }, 403);
     }
 
+    // Duplicate guard — checked before the rate limit, so a client retrying
+    // after its first request actually landed (response lost to a network
+    // blip) gets the original back as a success rather than a confusing
+    // "asking too quickly", and the speaker never sees the same question twice.
+    const { data: existing } = await service
+      .from('translation_questions')
+      .select('id, speaker_text')
+      .eq('session_id', session.id)
+      .eq('fingerprint', fingerprint)
+      .eq('original_text', text)
+      .gte('created_at', new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return json({ id: existing.id, speakerText: existing.speaker_text || text, duplicate: true });
+    }
+
     // Rate limit — most recent question from this fingerprint, anywhere
     // (not just this session), so someone can't dodge it by switching tabs.
     const { data: lastQuestion } = await service
@@ -123,6 +146,14 @@ serve(async (req) => {
       .select('id')
       .single();
     if (insertError) throw insertError;
+
+    // Real-time delivery to /speak — it has no auth session, so it can't
+    // receive postgres_changes for pending rows through RLS. It listens on
+    // this channel instead and re-fetches its queue (by speaker_token) on
+    // each ping. The ping carries only the id, never the question text.
+    if (session.service_id) {
+      await broadcastPing(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, `translation-questions-speaker-${session.service_id}`, 'new_question', { id: inserted.id });
+    }
 
     return json({ id: inserted.id, speakerText: speakerText || text });
   } catch (error) {
