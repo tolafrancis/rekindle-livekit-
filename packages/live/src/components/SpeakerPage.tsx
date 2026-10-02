@@ -43,6 +43,8 @@ const ERROR_COPY: Record<string, string> = {
   invalid_speaker_token: "This speaker link isn't valid — it may have been replaced by a newer one.",
   session_not_found: 'This speaker session no longer exists.',
   session_ended: 'This speaker session has already ended.',
+  session_stopped: "Translation for this session was stopped, so listeners can't hear you any more. Ask the person who sent this link for a new one.",
+  session_failed: 'Translation for this session stopped because of a problem on our side. Ask the person who sent this link for a new one.',
   mic_denied: 'Microphone access was denied — check your browser/site permissions and reload.',
   connection_failed: 'Could not connect. Check your internet connection and try again.',
 };
@@ -173,6 +175,51 @@ export const SpeakerPage: React.FC = () => {
       setPhase('error');
     }
   }, [sessionId, speakerToken]);
+
+  // Real bug fixed 2026-10-02: the session could end (bot stopped, admin
+  // pressed Stop, a new link was issued) while this page kept showing the
+  // speaker as live, because nothing here watched the session row; the
+  // speaker only found out after a refresh. Watch it now, through realtime
+  // where the row is readable and a token-checked poll everywhere.
+  useEffect(() => {
+    if (phase !== 'live' || !sessionId || !speakerToken) return;
+    let cancelled = false;
+
+    const endLocally = (code: string) => {
+      if (cancelled) return;
+      cancelled = true;
+      teardownLevelMeter();
+      teardownCaptions();
+      roomRef.current?.disconnect().catch(() => {});
+      roomRef.current = null;
+      setErrorCode(code);
+      setPhase('error');
+    };
+    const applyStatus = (status: string | null | undefined) => {
+      if (status === 'ended') endLocally('session_stopped');
+      else if (status === 'error') endLocally('session_failed');
+      else if (status === 'invalid_token') endLocally('invalid_speaker_token');
+      else if (status === 'not_found') endLocally('session_not_found');
+    };
+    const check = async () => {
+      const { data, error } = await supabase.rpc('get_speaker_session_status', { p_session_id: sessionId, p_speaker_token: speakerToken });
+      if (!error) applyStatus(data as string);
+    };
+
+    const channel = supabase
+      .channel(`speaker-session-${sessionId}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
+        (payload) => applyStatus((payload.new as { status?: string }).status))
+      .subscribe((status) => { if (status === 'SUBSCRIBED') check(); });
+    const interval = setInterval(check, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, sessionId, speakerToken]);
 
   // Conversation — see pendingQuestions' doc comment above.
   useEffect(() => {
@@ -335,7 +382,7 @@ export const SpeakerPage: React.FC = () => {
     room.on(RoomEvent.Disconnected, () => {
       teardownLevelMeter();
       teardownCaptions();
-      setPhase((prev) => (prev === 'ended' ? prev : 'ended'));
+      setPhase((prev) => (prev === 'error' ? prev : 'ended')); // keep a stopped-session message if that's why we disconnected
     });
 
     try {
@@ -709,7 +756,7 @@ export const SpeakerPage: React.FC = () => {
             <div className="flex flex-col items-center gap-3 py-2 text-center">
               <AlertCircle className="h-7 w-7 text-red-400" />
               <p className="text-sm text-red-400">{ERROR_COPY[errorCode ?? ''] ?? 'Something went wrong.'}</p>
-              {errorCode !== 'missing_link' && errorCode !== 'session_ended' && errorCode !== 'invalid_speaker_token' && (
+              {!['missing_link', 'session_ended', 'invalid_speaker_token', 'session_stopped', 'session_failed', 'session_not_found'].includes(errorCode ?? '') && (
                 <Button variant="outline" className="text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white" onClick={startSpeaking}>
                   Try again
                 </Button>
