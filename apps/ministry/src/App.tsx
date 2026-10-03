@@ -25,7 +25,7 @@ import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
 import { setDeepLink, DEEP_LINK_TAB } from '@rekindle/features/deepLink';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
-import { User, CreditCard, Globe, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
+import { User, CreditCard, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
@@ -126,11 +126,8 @@ function BrandedHeader() {
             <CreditCard className="h-4 w-4" />
           </Link>
         )}
-        {canManage && (
-          <Link to="/settings/domain" aria-label="Domain" title="Domain" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
-            <Globe className="h-4 w-4" />
-          </Link>
-        )}
+        {/* No Custom domain shortcut: custom domains are set up through support,
+            not self-serve. /settings/domain stays routed for support-led setups. */}
         <button onClick={() => void signOut()} aria-label="Sign out" title="Sign out" className={`${iconBtn} bg-gradient-to-br from-rose-500 to-red-600`}>
           <LogOut className="h-4 w-4" />
         </button>
