@@ -5,7 +5,7 @@
 --   Starter          0–50   (was uncapped, gated only by feature set)
 --   Growth Partner   1–100  (was 1–50)
 --   Ministry Partner 51–300 (was 51–200)
---   Ministry Plus   201–600 (was 201–500; +$20/mo per additional 500 unchanged)
+--   Ministry Plus   301–600 (was 201–500; +$20/mo per additional 500 unchanged)
 --
 -- max_members is what ministry-checkout / ministry-billing-webhook copy into
 -- ministry_subscriptions.member_limit at subscribe time, so existing active
@@ -37,7 +37,7 @@ update public.ministry_partner_plans set
 where slug = 'ministry_partner';
 
 update public.ministry_partner_plans set
-  min_members = 201, max_members = 600,
+  min_members = 301, max_members = 600,
   features = (
     select jsonb_agg(case when f like 'Up to 500 members%' then to_jsonb('Up to 600 members (+$20 per additional 500)'::text) else to_jsonb(f) end order by ord)
     from jsonb_array_elements_text(features) with ordinality as t(f, ord)
