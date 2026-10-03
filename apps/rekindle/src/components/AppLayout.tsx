@@ -24,7 +24,7 @@ import { DeclarationCard } from './DeclarationCard';
 import { InstrumentalPlayer } from './InstrumentalPlayer';
 import { NotificationFeed } from './NotificationFeed';
 import { useNotifications } from '@/hooks/useNotifications';
-import { getPlatformSetting } from '@rekindle/features/platformSettings';
+import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { AppFooter } from './AppFooter';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { registerPush } from '@rekindle/features/usePushNotifications';
@@ -452,13 +452,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const [showNotifications, setShowNotifications] = useState(false);
   const notif = useNotifications();
   const [searchOpen, setSearchOpen] = useState(false);
-  // Platform-admin kill switch for the Ministries tab (platform_settings,
-  // migration 0266) — defaults to shown while the setting loads, so this
+  // Platform-admin feature switches by nav group (platform_settings, migrations
+  // 0266/0394). Everything reads as shown while the switches load, so this
   // never causes a flash-of-missing-tab for the common case.
-  const [ministriesTabEnabled, setMinistriesTabEnabled] = useState(true);
-  useEffect(() => {
-    getPlatformSetting('consumer_ministries_tab_enabled', true).then(setMinistriesTabEnabled);
-  }, []);
+  const { isNavGroupOn: isFeatureNavGroupOn, loaded: featureTogglesLoaded } = useFeatureToggles();
 
   useEffect(() => {
     setSearchOpen(false);
@@ -583,6 +580,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   // The sidebar group that owns the current tab (for highlight + secondary tab row).
   const activeGroup = parentForTab(activeTab);
+
+  // A group switched off by a platform admin also closes its screens, so a
+  // bookmark, deep link or "Find a feature" result can't open it. The
+  // Ministries tab is the exception: its switch has always hidden only the
+  // nav entry, and existing members keep reaching it through direct links.
+  const activeGroupId = activeGroup?.id;
+  useEffect(() => {
+    if (!featureTogglesLoaded || !activeGroupId || activeGroupId === 'ministries') return;
+    if (isFeatureNavGroupOn('consumer', activeGroupId)) return;
+    setActiveTab('home');
+    navigate('/home', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featureTogglesLoaded, activeGroupId, isFeatureNavGroupOn]);
   const secondaryItems = activeGroup ? SECONDARY_NAV[activeGroup.id] ?? [] : [];
   const [ministryView, setMinistryView] = useState<MinistryHubView>('my-ministries');
   const [liveChannelsTab, setLiveChannelsTab] = useState<LiveChannelsTab>('discover');
@@ -983,7 +993,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   const renderPrimaryNavigation = (className: string) => (
     <nav className={className} aria-label="Primary navigation">
-      {NAV_GROUPS.filter((group) => group.id !== 'ministries' || ministriesTabEnabled).map((group) => {
+      {NAV_GROUPS.filter((group) => isFeatureNavGroupOn('consumer', group.id)).map((group) => {
         const Icon = group.icon ?? List;
         const active = activeGroup?.id === group.id;
         return (
