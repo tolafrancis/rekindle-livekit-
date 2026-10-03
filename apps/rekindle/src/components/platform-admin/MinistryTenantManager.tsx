@@ -9,6 +9,7 @@ import { Switch } from '../ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { MinistryFeatureToggles } from './FeatureTogglesPanel';
 import { supabase } from '@/lib/supabase';
 import { toast } from '../ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -675,9 +676,10 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
           </DialogHeader>
           {selectedMinistry && (
             <Tabs defaultValue="info">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="info">{t('ministryTenantManager', 'info', 'Info')}</TabsTrigger>
                 <TabsTrigger value="subscription">{t('ministryTenantManager', 'subscription', 'Subscription')}</TabsTrigger>
+                <TabsTrigger value="features">{t('ministryTenantManager', 'features', 'Features')}</TabsTrigger>
                 <TabsTrigger value="admins">{t('ministryTenantManager', 'admins', 'Admins')}</TabsTrigger>
                 <TabsTrigger value="notes">{t('ministryTenantManager', 'notes', 'Notes')}</TabsTrigger>
               </TabsList>
@@ -847,6 +849,10 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                     <p className="text-sm text-gray-400 mt-2">{t('ministryTenantManager', 'noAdminsFound', 'No admins or leaders found for this ministry')}</p>
                   </div>
                 )}
+              </TabsContent>
+
+              <TabsContent value="features" className="space-y-4 mt-4">
+                <MinistryFeatureToggles ministryId={selectedMinistry.id} />
               </TabsContent>
 
               <TabsContent value="notes" className="space-y-4 mt-4">
