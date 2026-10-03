@@ -234,12 +234,11 @@ export async function getMinistryMemberUsage(
 ): Promise<MinistryMemberUsage | null> {
   if (!ministryId) return null;
   const entitlements = await getMinistryEntitlements(ministryId);
-  const { count, error } = await supabase
-    .from('ministry_group_members')
-    .select('*', { count: 'exact', head: true })
-    .eq('ministry_id', ministryId);
-  if (error) return null;
+  // RPC rather than a count(*) on ministry_group_members: that table's RLS only
+  // shows a user their own row. Returns null for non-admins.
+  const { data, error } = await supabase.rpc('get_ministry_member_count', { p_ministry_id: ministryId });
+  if (error || data === null || data === undefined) return null;
   const limit = entitlements.limits.members;
-  const n = count ?? 0;
+  const n = Number(data) || 0;
   return { count: n, limit, ratio: limit > 0 ? n / limit : 0 };
 }

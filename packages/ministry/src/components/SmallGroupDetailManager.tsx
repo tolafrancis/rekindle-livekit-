@@ -30,6 +30,15 @@ interface SmallGroupDetailManagerProps {
   onBack: () => void;
 }
 
+interface RosterEntry {
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  avatar_url: string | null;
+  group_status: string | null;
+  group_role: string | null;
+}
+
 const ATTENDANCE_STATUSES = ['present', 'absent', 'excused', 'first_time_guest'] as const;
 
 export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = ({
@@ -71,6 +80,15 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [roleModalMember, setRoleModalMember] = useState<any | null>(null);
+
+  // Ministry roster (names + whether each person is already in this group),
+  // via small_group_ministry_roster (0392) — leaders can't read the ministry's
+  // member list directly under RLS.
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [showAddMembers, setShowAddMembers] = useState(false);
+  const [addSearch, setAddSearch] = useState('');
+  const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
+  const [addingMembers, setAddingMembers] = useState(false);
   const [roleModalValue, setRoleModalValue] = useState<'leader' | 'assistant_leader' | 'member'>('member');
 
   useEffect(() => {
@@ -122,6 +140,61 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
     memberStatus: myMemberRow?.status,
   });
   const canManageMembers = smallGroupRoleCan(myRole, 'manage_members');
+
+  const loadRoster = async () => {
+    const { data, error } = await supabase.rpc('small_group_ministry_roster', { p_group_id: groupId });
+    if (!error) setRoster((data as RosterEntry[]) || []);
+  };
+  useEffect(() => {
+    if (canManageMembers) loadRoster();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, canManageMembers]);
+
+  const rosterById = useMemo(() => new Map(roster.map((r) => [r.user_id, r])), [roster]);
+  const nameFor = (userId: string) => rosterById.get(userId)?.full_name || userId;
+
+  const addCandidates = useMemo(() => {
+    const q = addSearch.trim().toLowerCase();
+    return roster
+      .filter((r) => r.group_status !== 'active')
+      .filter((r) => !q || r.full_name.toLowerCase().includes(q) || (r.email || '').toLowerCase().includes(q))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  }, [roster, addSearch]);
+
+  const toggleAddSelected = (userId: string) => {
+    setAddSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  };
+
+  const openAddMembers = () => {
+    setAddSearch('');
+    setAddSelected(new Set());
+    setShowAddMembers(true);
+    loadRoster();
+  };
+
+  const submitAddMembers = async () => {
+    if (addSelected.size === 0) return;
+    setAddingMembers(true);
+    try {
+      const { data, error } = await supabase.rpc('add_small_group_members', {
+        p_group_id: groupId,
+        p_user_ids: Array.from(addSelected),
+      });
+      if (error) throw error;
+      const n = Number(data) || 0;
+      toast({ title: t('smallGroupDetailManager', 'membersAdded', '{n} member(s) added').replace('{n}', String(n)) });
+      setShowAddMembers(false);
+      await Promise.all([loadAll(), loadRoster()]);
+    } catch (e: any) {
+      toast({ title: t('smallGroupDetailManager', 'error', 'Error'), description: e.message, variant: 'destructive' });
+    } finally {
+      setAddingMembers(false);
+    }
+  };
   const canManageMeetings = smallGroupRoleCan(myRole, 'manage_meetings');
   const canRecordAttendance = smallGroupRoleCan(myRole, 'record_attendance');
   const canPostAnnouncement = smallGroupRoleCan(myRole, 'post_announcement_resource');
@@ -423,7 +496,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
               <CardContent className="space-y-2">
                 {pendingMembers.map((m) => (
                   <div key={m.id} className="flex items-center justify-between border rounded-md px-3 py-2">
-                    <span className="text-sm">{m.user_id}</span>
+                    <span className="text-sm">{nameFor(m.user_id)}</span>
                     <div className="flex gap-1">
                       <Button size="sm" onClick={() => approveMember(m)}><Check className="h-4 w-4" /></Button>
                       <Button size="sm" variant="outline" onClick={() => declineMember(m)}><X className="h-4 w-4" /></Button>
@@ -434,7 +507,14 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
             </Card>
           )}
           <Card>
-            <CardHeader><CardTitle className="text-base">{t('smallGroupDetailManager', 'allMembers', 'All Members')} ({activeMembers.length})</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">{t('smallGroupDetailManager', 'allMembers', 'All Members')} ({activeMembers.length})</CardTitle>
+              {canManageMembers && (
+                <Button size="sm" onClick={openAddMembers}>
+                  <UserPlus2 className="h-4 w-4 mr-1" />{t('smallGroupDetailManager', 'addMembers', 'Add members')}
+                </Button>
+              )}
+            </CardHeader>
             <CardContent className="space-y-2">
               {activeMembers.length === 0 && <p className="text-sm text-muted-foreground">{t('smallGroupDetailManager', 'noMembersYet', 'No members yet.')}</p>}
               {activeMembers.map((m) => (
@@ -442,7 +522,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                   <span className="flex items-center gap-2 text-sm">
                     {m.role === 'leader' && <Crown className="h-4 w-4 text-amber-500" />}
                     {m.role === 'assistant_leader' && <Shield className="h-4 w-4 text-blue-500" />}
-                    {m.user_id}
+                    {nameFor(m.user_id)}
                     <Badge variant="outline">{SMALL_GROUP_ROLE_LABELS[m.role as 'leader' | 'assistant_leader' | 'member']}</Badge>
                   </span>
                   {canManageMembers && m.user_id !== user?.id && (
@@ -570,6 +650,41 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
       </Tabs>
 
       {/* ── New meeting modal ── */}
+      <Dialog open={showAddMembers} onOpenChange={setShowAddMembers}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{t('smallGroupDetailManager', 'addMembersTitle', 'Add members to this group')}</DialogTitle></DialogHeader>
+          <Input
+            placeholder={t('smallGroupDetailManager', 'searchMembers', 'Search ministry members by name or email')}
+            value={addSearch}
+            onChange={(e) => setAddSearch(e.target.value)}
+          />
+          <div className="max-h-80 overflow-y-auto space-y-1">
+            {addCandidates.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                {t('smallGroupDetailManager', 'noMembersToAdd', 'No ministry members to add.')}
+              </p>
+            )}
+            {addCandidates.map((r) => (
+              <label key={r.user_id} className="flex items-center gap-3 rounded-md border px-3 py-2 cursor-pointer hover:bg-muted/50">
+                <Checkbox checked={addSelected.has(r.user_id)} onCheckedChange={() => toggleAddSelected(r.user_id)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium truncate">{r.full_name}</span>
+                  {r.email && <span className="block text-xs text-muted-foreground truncate">{r.email}</span>}
+                </span>
+                {r.group_status === 'pending' && <Badge variant="outline">{t('smallGroupDetailManager', 'requested', 'Requested')}</Badge>}
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddMembers(false)}>{t('common', 'cancel', 'Cancel')}</Button>
+            <Button onClick={submitAddMembers} disabled={addSelected.size === 0 || addingMembers}>
+              {addingMembers && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {t('smallGroupDetailManager', 'addSelected', 'Add {n}').replace('{n}', String(addSelected.size))}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showMeetingModal} onOpenChange={setShowMeetingModal}>
         <DialogContent>
           <DialogHeader><DialogTitle>{t('smallGroupDetailManager', 'newMeeting', 'New Meeting')}</DialogTitle></DialogHeader>
@@ -617,7 +732,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
           <div className="space-y-2">
             {activeMembers.map((m) => (
               <div key={m.id} className="flex items-center justify-between gap-2">
-                <span className="text-sm truncate flex-1">{m.user_id}</span>
+                <span className="text-sm truncate flex-1">{nameFor(m.user_id)}</span>
                 <Select value={attendanceRows[m.user_id] || ''} onValueChange={(v) => setAttendanceRows({ ...attendanceRows, [m.user_id]: v })}>
                   <SelectTrigger className="w-44"><SelectValue placeholder={t('smallGroupDetailManager', 'selectStatus', 'Select status')} /></SelectTrigger>
                   <SelectContent>

@@ -69,3 +69,23 @@ create trigger trg_notify_ministry_member_limit
   after insert on public.ministry_group_members
   for each row
   execute function public.notify_ministry_member_limit();
+
+-- ── Member count for the billing meter / dashboard banner ──────────────
+-- ministry_group_members RLS only shows a user their own row (plus platform
+-- admins everything), so a client-side count(*) would read 1 for a ministry
+-- admin. This returns the real count to the ministry's own admins.
+create or replace function public.get_ministry_member_count(p_ministry_id uuid)
+returns integer
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+begin
+  if not public.is_group_admin(p_ministry_id, auth.uid()) then
+    return null;
+  end if;
+  return (select count(*)::integer from public.ministry_group_members where ministry_id = p_ministry_id);
+end;
+$$;
+grant execute on function public.get_ministry_member_count(uuid) to authenticated;
