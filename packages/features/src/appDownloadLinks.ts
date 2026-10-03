@@ -24,6 +24,12 @@ export interface AppDownloadLinks {
   ministryWindows: string;
   /** ReKindle Translator desktop app for Windows (apps/desktop). */
   translatorWindows: string;
+  /** ReKindle BC desktop app for Mac. */
+  consumerMac: string;
+  /** ReKindle BC Ministry desktop app for Mac. */
+  ministryMac: string;
+  /** ReKindle Translator desktop app for Mac. */
+  translatorMac: string;
   /** Direct Android APK download. */
   androidApk: string;
 }
@@ -38,6 +44,9 @@ export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
   consumerWindows: import.meta.env.VITE_APP_TYPE === 'ministry' ? '' : (import.meta.env.VITE_WINDOWS_INSTALLER_URL || ''),
   ministryWindows: import.meta.env.VITE_APP_TYPE === 'ministry' ? (import.meta.env.VITE_WINDOWS_INSTALLER_URL || '') : '',
   translatorWindows: '',
+  consumerMac: '',
+  ministryMac: '',
+  translatorMac: '',
   androidApk: import.meta.env.VITE_ANDROID_APK_URL || '',
 };
 
@@ -49,6 +58,9 @@ export const APP_DOWNLOAD_LINK_FIELDS: Array<{ key: keyof AppDownloadLinks; labe
   { key: 'consumerWindows', label: 'ReKindle BC for Windows (desktop)', placeholder: 'https://…/ReKindle-Setup.exe' },
   { key: 'ministryWindows', label: 'ReKindle BC Ministry for Windows (desktop)', placeholder: 'https://…/Rekindle-Ministry-Setup.exe' },
   { key: 'translatorWindows', label: 'ReKindle Translator for Windows (desktop)', placeholder: 'https://…/ReKindle-Translator-Setup.exe' },
+  { key: 'consumerMac', label: 'ReKindle BC for Mac (desktop)', placeholder: 'https://…/ReKindle.dmg or Mac App Store link' },
+  { key: 'ministryMac', label: 'ReKindle BC Ministry for Mac (desktop)', placeholder: 'https://…/Rekindle-Ministry.dmg or Mac App Store link' },
+  { key: 'translatorMac', label: 'ReKindle Translator for Mac (desktop)', placeholder: 'https://…/ReKindle-Translator.dmg' },
   { key: 'androidApk', label: 'Android APK (direct download)', placeholder: 'https://…/rekindle.apk' },
 ];
 

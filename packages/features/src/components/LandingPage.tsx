@@ -98,10 +98,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   const playCaption = t('landing', 'playGetItOn', "GET IT ON GOOGLE PLAY");
   const appleCaption = t('landing', 'appleDownloadOn', "DOWNLOAD ON THE APP STORE");
   const appCards = [
-    { name: t('landing', 'playAppName', "ReKindle BC"), desc: t('landing', 'appsConsumerDesc', "For every believer. Daily devotionals, prayer, Scripture memory, GraceCounsel AI, live worship and Live Translation."), play: links.consumerPlayStore, apple: links.consumerAppStore, windows: links.consumerWindows },
-    { name: t('landing', 'playMinistryName', "ReKindle BC Ministry"), desc: t('landing', 'appsMinistryDesc', "For ministry leaders and members. Go live, run meetings, manage members and small groups, and care for your congregation."), play: links.ministryPlayStore, apple: links.ministryAppStore, windows: links.ministryWindows },
-    { name: t('landing', 'translatorAppName', "ReKindle Translator"), desc: t('landing', 'appsTranslatorDesc', "Desktop app for Windows that live-translates your services and meetings for every listener."), play: '', apple: '', windows: links.translatorWindows },
-  ].filter(a => a.play || a.apple || a.windows);
+    { name: t('landing', 'playAppName', "ReKindle BC"), desc: t('landing', 'appsConsumerDesc', "For every believer. Daily devotionals, prayer, Scripture memory, GraceCounsel AI, live worship and Live Translation."), play: links.consumerPlayStore, apple: links.consumerAppStore, windows: links.consumerWindows, mac: links.consumerMac },
+    { name: t('landing', 'playMinistryName', "ReKindle BC Ministry"), desc: t('landing', 'appsMinistryDesc', "For ministry leaders and members. Go live, run meetings, manage members and small groups, and care for your congregation."), play: links.ministryPlayStore, apple: links.ministryAppStore, windows: links.ministryWindows, mac: links.ministryMac },
+    { name: t('landing', 'translatorAppName', "ReKindle Translator"), desc: t('landing', 'appsTranslatorDesc', "Desktop app that live-translates your services and meetings for every listener."), play: '', apple: '', windows: links.translatorWindows, mac: links.translatorMac },
+  ].filter(a => a.play || a.apple || a.windows || a.mac);
   const hasStoreLinks = showStores && appCards.length > 0;
   const hasMobileStoreLinks = showStores && appCards.some(a => a.play || a.apple);
   const ANDROID_APK_URL = links.androidApk;
@@ -554,7 +554,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
               <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#fff' }}>{t('landing', 'appsTitle', "Take ReKindle BC with you")}</h2>
               <p className="rk-reveal" style={{ color: 'rgba(255,255,255,.55)', fontSize: '1.05rem', maxWidth: 560, margin: '14px auto 0' }}>{t('landing', 'appsSubtitleGeneric', "Two apps, one account. Download the one that fits how you serve.")}</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 20, marginTop: 48, textAlign: 'left' }}>
-                {appCards.map(({ name, desc, play, apple, windows }, i) => (
+                {appCards.map(({ name, desc, play, apple, windows, mac }, i) => (
                   <div key={name} className="rk-reveal" style={{
                     background: 'rgba(255,255,255,.04)', border: '1px solid rgba(167,139,250,.18)',
                     borderRadius: 16, padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 14,
@@ -566,6 +566,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                       {play && <StoreBadge href={play} caption={playCaption} label={t('landing', 'playStoreName', "Google Play")} />}
                       {apple && <StoreBadge href={apple} caption={appleCaption} label={t('landing', 'appStoreName', "App Store")} store="apple" />}
                       {windows && <StoreBadge href={windows} caption={windowsCaption} label={t('landing', 'windowsName', "Windows")} store="windows" />}
+                      {mac && <StoreBadge href={mac} caption={windowsCaption} label={t('landing', 'macName', "Mac")} store="apple" />}
                     </div>
                   </div>
                 ))}
@@ -595,7 +596,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
               </div>
               {[
                 { heading: t('landing', 'footPlatform', "Platform"), links: [[t('landing', 'navFeatures', "Features"),'#features'],[t('landing', 'navPartner', "Partner"),'#pricing'],[t('landing', 'navFaq', "FAQ"),'#faq']] },
-                ...(hasStoreLinks ? [{ heading: t('landing', 'footApps', "Get the apps"), links: appCards.map(a => [a.name, a.play || a.apple || a.windows]) }] : []),
+                ...(hasStoreLinks ? [{ heading: t('landing', 'footApps', "Get the apps"), links: appCards.map(a => [a.name, a.play || a.apple || a.windows || a.mac]) }] : []),
                 { heading: t('landing', 'footLegal', "Legal"),    links: [[t('landing', 'footTerms', "Terms of Service"),`${legalBaseUrl}/terms`],[t('landing', 'footPrivacy', "Privacy Policy"),`${legalBaseUrl}/privacy`],[t('landing', 'footRefund', "Refund Policy"),'mailto:legal@rekindlebc.com?subject=Refund Request']] },
                 { heading: t('landing', 'footContact', "Contact"),  links: [['hello@rekindlebc.com','mailto:hello@rekindlebc.com'],['support@rekindlebc.com','mailto:support@rekindlebc.com']] },
               ].map(({ heading, links }) => (
