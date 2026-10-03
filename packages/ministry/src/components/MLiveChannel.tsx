@@ -3,7 +3,7 @@ import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
-import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
+import { getLiveChannelQuota, isAtChannelLimit, type LiveChannelQuota } from '@rekindle/auth/useUserEntitlements';
 import { supabase } from '@rekindle/supabase';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -82,13 +82,15 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
 }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
-  const entitlements = useUserEntitlements();
   const location = useLocation();
   
   // State - mirrors LiveChannels
   const [channels, setChannels] = useState<LiveChannel[]>([]);
   const [followedChannels, setFollowedChannels] = useState<LiveChannel[]>([]);
   const [myChannels, setMyChannels] = useState<LiveChannel[]>([]);
+  // Channels belong to the ministry: 1 per ministry, 4 on Ministry Plus (0395).
+  const [quota, setQuota] = useState<LiveChannelQuota | null>(null);
+  const atChannelLimit = isAtChannelLimit(quota);
   const [events, setEvents] = useState<ChannelEvent[]>([]);
   const [liveEvents, setLiveEvents] = useState<ChannelEvent[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<ChannelEvent[]>([]);
@@ -285,6 +287,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
           .order('created_at', { ascending: false });
 
         setMyChannels(owned || []);
+        getLiveChannelQuota(ministryId).then(setQuota);
       }
     } catch (err) {
       console.error('[MLiveChannel] Failed to load:', err);
@@ -361,21 +364,13 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
       return;
     }
 
-    // Check if user can create channels
-    if (!entitlements.canCreateLiveChannel) {
-      toast({
-        title: t('mLiveChannel', 'upgradeRequiredTitle', 'Upgrade Required'),
-        description: t('mLiveChannel', 'upgradeToCreateDesc', 'You need to upgrade your subscription to create live channels'),
-        variant: 'destructive'
-      });
-      return;
-    }
+    // Channel limit is per ministry (any leader may create the ministry's
+    // channel); re-check fresh in case another leader just made one.
+    const freshQuota = await getLiveChannelQuota(ministryId);
+    if (freshQuota) setQuota(freshQuota);
+    const maxChannels = freshQuota?.max ?? null;
 
-    // Check channel limit
-    const maxChannels = entitlements.maxLiveChannels;
-    const currentCount = myChannels.length;
-
-    if (maxChannels !== null && currentCount >= maxChannels) {
+    if (isAtChannelLimit(freshQuota)) {
       toast({
         title: t('mLiveChannel', 'channelLimitReachedTitle', 'Channel Limit Reached'),
         description: t('mLiveChannel', 'channelLimitFullDesc', 'You have reached your limit of {max} live channels. Please upgrade your subscription to create more.').replace('{max}', String(maxChannels)),
@@ -613,28 +608,20 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
           {isLeader && (
             <Button 
               onClick={() => {
-                if (!entitlements.canCreateLiveChannel) {
-                  toast({
-                    title: t('mLiveChannel', 'upgradeRequiredTitle', 'Upgrade Required'),
-                    description: t('mLiveChannel', 'upgradeToCreateShortDesc', 'You need to upgrade to create live channels'),
-                    variant: 'destructive'
-                  });
-                  return;
-                }
-                if (entitlements.maxLiveChannels !== null && myChannels.length >= entitlements.maxLiveChannels) {
+                if (atChannelLimit) {
                   toast({
                     title: t('mLiveChannel', 'channelLimitReachedTitle', 'Channel Limit Reached'),
-                    description: t('mLiveChannel', 'channelLimitShortDesc', 'You have reached your limit of {max} channels').replace('{max}', String(entitlements.maxLiveChannels)),
+                    description: t('mLiveChannel', 'channelLimitShortDesc', 'You have reached your limit of {max} channels').replace('{max}', String(quota?.max)),
                     variant: 'destructive'
                   });
                   return;
                 }
                 setShowCreateModal(true);
               }}
-              disabled={!entitlements.canCreateLiveChannel || (entitlements.maxLiveChannels !== null && myChannels.length >= entitlements.maxLiveChannels)}
+              disabled={atChannelLimit}
               className="bg-white text-slate-950 hover:bg-white/90"
             >
-              {(!entitlements.canCreateLiveChannel || (entitlements.maxLiveChannels !== null && myChannels.length >= entitlements.maxLiveChannels)) && (
+              {atChannelLimit && (
                 <Lock className="h-4 w-4 mr-2" />
               )}
               <Plus className="h-4 w-4 mr-2" />
