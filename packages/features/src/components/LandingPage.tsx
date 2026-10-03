@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FaqList } from './FaqList';
 import { Menu, X } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 
@@ -494,6 +495,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
           </div>
         </section>
 
+        {/* FAQ — admin-managed (faq_items); FaqList renders nothing if empty. */}
+        <section id="faq" style={{ background: '#fff', padding: '100px 0' }}>
+          <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 24px' }}>
+            <p className="rk-reveal" style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: 12 }}>{t('landing', 'faqEyebrow', "Questions")}</p>
+            <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#0f0a1e', marginBottom: 32 }}>{t('landing', 'faqTitle', "Frequently asked questions")}</h2>
+            <FaqList />
+          </div>
+        </section>
+
         {/* FOOTER */}
         <footer style={{ background: '#070413', padding: '56px 0 32px', borderTop: '1px solid rgba(167,139,250,.08)' }}>
           <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 24px' }}>
@@ -505,7 +515,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                 <p style={{ fontSize: '.88rem', color: 'rgba(255,255,255,.35)', lineHeight: 1.7, maxWidth: 240 }}>{t('landing', 'footerTagline', "A faith-tech platform for believers, ministries, and counsellors. Deepen your walk. Reach your congregation.")}</p>
               </div>
               {[
-                { heading: t('landing', 'footPlatform', "Platform"), links: [[t('landing', 'navFeatures', "Features"),'#features'],[t('landing', 'navPartner', "Partner"),'#pricing']] },
+                { heading: t('landing', 'footPlatform', "Platform"), links: [[t('landing', 'navFeatures', "Features"),'#features'],[t('landing', 'navPartner', "Partner"),'#pricing'],[t('landing', 'navFaq', "FAQ"),'#faq']] },
                 { heading: t('landing', 'footLegal', "Legal"),    links: [[t('landing', 'footTerms', "Terms of Service"),`${legalBaseUrl}/terms`],[t('landing', 'footPrivacy', "Privacy Policy"),`${legalBaseUrl}/privacy`],[t('landing', 'footRefund', "Refund Policy"),'mailto:legal@rekindlebc.com?subject=Refund Request']] },
                 { heading: t('landing', 'footContact', "Contact"),  links: [['hello@rekindlebc.com','mailto:hello@rekindlebc.com'],['support@rekindlebc.com','mailto:support@rekindlebc.com']] },
               ].map(({ heading, links }) => (

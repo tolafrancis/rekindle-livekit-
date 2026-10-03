@@ -19,6 +19,7 @@ import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSett
 import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import RekindleTutorialPage from '@rekindle/features/components/RekindleTutorialPage';
+import FaqPage from '@rekindle/features/components/FaqPage';
 import PrivacyPolicyPage from '@rekindle/features/components/PrivacyPolicyPage';
 import TermsOfServicePage from '@rekindle/features/components/TermsOfServicePage';
 import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
@@ -276,6 +277,7 @@ function AppRoutes() {
         <Route path="/small-group/:id" element={<MinistriesHub />} />
         <Route path="/books/:id" element={<MinistriesHub />} />
         <Route path="/guide" element={<RekindleTutorialPage />} />
+        <Route path="/faq" element={<FaqPage />} />
         <Route path="/tutorial" element={<RekindleTutorialPage />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
         {/* Billing is web-only: native builds ship without purchase surfaces

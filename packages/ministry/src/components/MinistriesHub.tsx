@@ -19,7 +19,7 @@ import {
   Plus, Users, Crown, Shield,
   Loader2, ChevronRight, Building2,
   Heart, Upload, Image as ImageIcon,
-  Sparkles, ScrollText
+  Sparkles, ScrollText, HelpCircle
 } from 'lucide-react';
 // The ministry workspace (meetings, live, recordings, management …) is only
 // needed once a ministry is entered, so it's its own chunk rather than being
@@ -569,6 +569,14 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             >
               <ScrollText className="h-4 w-4 mr-2" />
               {t('ministriesHub', 'rekindleGuide', 'The Rekindle Guide')}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              onClick={() => navigate('/faq')}
+            >
+              <HelpCircle className="h-4 w-4 mr-2" />
+              {t('ministriesHub', 'faq', 'FAQ')}
             </Button>
           </div>
 
