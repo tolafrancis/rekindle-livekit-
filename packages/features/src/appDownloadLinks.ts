@@ -18,10 +18,14 @@ export interface AppDownloadLinks {
   consumerAppStore: string;
   /** ReKindle BC Ministry on the Apple App Store. */
   ministryAppStore: string;
+  /** ReKindle BC desktop app for Windows (installer). */
+  consumerWindows: string;
+  /** ReKindle BC Ministry desktop app for Windows (installer). */
+  ministryWindows: string;
+  /** ReKindle Translator desktop app for Windows (apps/desktop). */
+  translatorWindows: string;
   /** Direct Android APK download. */
   androidApk: string;
-  /** Windows installer. */
-  windowsInstaller: string;
 }
 
 export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
@@ -29,8 +33,12 @@ export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
   ministryPlayStore: import.meta.env.VITE_PLAY_STORE_MINISTRY_URL || 'https://play.google.com/store/apps/details?id=com.rekindlebc.ministry',
   consumerAppStore: '',
   ministryAppStore: '',
+  // Each app's build used to set its own VITE_WINDOWS_INSTALLER_URL; keep
+  // honouring it for whichever app this bundle is until an admin saves links.
+  consumerWindows: import.meta.env.VITE_APP_TYPE === 'ministry' ? '' : (import.meta.env.VITE_WINDOWS_INSTALLER_URL || ''),
+  ministryWindows: import.meta.env.VITE_APP_TYPE === 'ministry' ? (import.meta.env.VITE_WINDOWS_INSTALLER_URL || '') : '',
+  translatorWindows: '',
   androidApk: import.meta.env.VITE_ANDROID_APK_URL || '',
-  windowsInstaller: import.meta.env.VITE_WINDOWS_INSTALLER_URL || '',
 };
 
 export const APP_DOWNLOAD_LINK_FIELDS: Array<{ key: keyof AppDownloadLinks; label: string; placeholder: string }> = [
@@ -38,8 +46,10 @@ export const APP_DOWNLOAD_LINK_FIELDS: Array<{ key: keyof AppDownloadLinks; labe
   { key: 'ministryPlayStore', label: 'ReKindle BC Ministry on Google Play', placeholder: 'https://play.google.com/store/apps/details?id=…' },
   { key: 'consumerAppStore', label: 'ReKindle BC on the App Store', placeholder: 'https://apps.apple.com/app/…' },
   { key: 'ministryAppStore', label: 'ReKindle BC Ministry on the App Store', placeholder: 'https://apps.apple.com/app/…' },
+  { key: 'consumerWindows', label: 'ReKindle BC for Windows (desktop)', placeholder: 'https://…/ReKindle-Setup.exe' },
+  { key: 'ministryWindows', label: 'ReKindle BC Ministry for Windows (desktop)', placeholder: 'https://…/Rekindle-Ministry-Setup.exe' },
+  { key: 'translatorWindows', label: 'ReKindle Translator for Windows (desktop)', placeholder: 'https://…/ReKindle-Translator-Setup.exe' },
   { key: 'androidApk', label: 'Android APK (direct download)', placeholder: 'https://…/rekindle.apk' },
-  { key: 'windowsInstaller', label: 'Windows installer', placeholder: 'https://…/ReKindle-Setup.exe' },
 ];
 
 export async function loadAppDownloadLinks(): Promise<AppDownloadLinks> {
