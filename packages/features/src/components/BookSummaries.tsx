@@ -54,6 +54,7 @@ import {
   searchFilterInputClass,
   searchFilterSelectTriggerClass
 } from './SearchFilterPanel';
+import { publicWebOrigin } from '../platform';
 
 interface BookSummary {
   id: string;
@@ -100,8 +101,8 @@ const ShareBookButton: React.FC<ShareBookButtonProps> = ({ book, referralCode, o
   const [copied, setCopied] = useState(false);
 
   const shareUrl = referralCode
-    ? `${window.location.origin}/books/${book.id}?ref=${referralCode}`
-    : `${window.location.origin}/books/${book.id}`;
+    ? `${publicWebOrigin()}/books/${book.id}?ref=${referralCode}`
+    : `${publicWebOrigin()}/books/${book.id}`;
 
   const shareLinks = {
     whatsapp: `https://wa.me/?text=${encodeURIComponent(`📚 Check out "${book.title}" by ${book.author}\n\n${shareUrl}`)}`,

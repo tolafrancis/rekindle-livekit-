@@ -45,3 +45,40 @@ export function nativePlatform(): string {
 export function canShowPurchaseUI(): boolean {
   return nativePlatform() !== 'ios';
 }
+
+// ── Public web origin for links other people open ───────────────────────────
+//
+// Inside the native shells `window.location.origin` is the WebView's private
+// origin (https://localhost on Android, capacitor://localhost on iOS,
+// http://127.0.0.1:<port> in the Electron build), so any share/invite link built
+// from it is dead on every other device. Each app registers its real public
+// origin at startup (see apps/*/src/main.tsx); publicWebOrigin() swaps it in only
+// when the page is running from one of those private origins. A normal web visit
+// (including white-label subdomains and custom domains) keeps its own origin, and
+// the Vite dev server keeps localhost so dev links stay local.
+let registeredPublicOrigin = '';
+
+/** Called once at app startup with this app's public web origin. */
+export function setPublicWebOrigin(origin: string): void {
+  registeredPublicOrigin = (origin || '').trim().replace(/\/+$/, '');
+}
+
+function isPrivateShellOrigin(origin: string): boolean {
+  if (!origin || origin === 'null') return true;
+  try {
+    const u = new URL(origin);
+    if (u.protocol === 'capacitor:' || u.protocol === 'file:') return true;
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]';
+  } catch {
+    return true;
+  }
+}
+
+/** Origin to put in links meant to be opened by someone else (share, invite, QR). */
+export function publicWebOrigin(): string {
+  const own = typeof window !== 'undefined' ? window.location.origin : '';
+  if (!registeredPublicOrigin) return own;
+  const isDevServer = !!(import.meta as any)?.env?.DEV && !isNativeApp();
+  if (isDevServer || !isPrivateShellOrigin(own)) return own;
+  return registeredPublicOrigin;
+}

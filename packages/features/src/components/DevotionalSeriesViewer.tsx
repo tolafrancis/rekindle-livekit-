@@ -46,6 +46,7 @@ import {
   Pause, Mic, MicOff, FastForward, Timer, Flame,
   Sparkles, Link, Copy, Check, Send, Headphones
 } from 'lucide-react';
+import { publicWebOrigin } from '../platform';
 
 // Day-list scripture citation: localizes just the reference name (e.g.
 // "Thi-thiên 130:6") to the reader's language when a published version exists.
@@ -1938,7 +1939,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         {showSlideShareModal && currentDay && selectedSeries && (() => {
           const localizedDay = getLocalizedDay(currentDay);
           const localizedSeries = getLocalizedSeries(selectedSeries);
-          const seriesUrl = `${window.location.origin}/devotional-series/${selectedSeries.id}`;
+          const seriesUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
           const isDevo = currentSlideData.type === 'devotional';
           const isPrayer = currentSlideData.type === 'prayer';
 
@@ -2099,7 +2100,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 </Button>
                 <ShareButton
                   title={localizedSeries.title}
-                  url={`${window.location.origin}/devotional-series/${selectedSeries.id}`}
+                  url={`${publicWebOrigin()}/devotional-series/${selectedSeries.id}`}
                   variant="icon"
                 />
               </div>
@@ -2321,7 +2322,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                       </div>
                       <ShareButton
                         title={localized.title}
-                        url={`${window.location.origin}/devotional-series/${series.id}`}
+                        url={`${publicWebOrigin()}/devotional-series/${series.id}`}
                       />
                     </div>
                   </CardContent>
@@ -2375,7 +2376,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     </div>
                     <ShareButton
                       title={localized.title}
-                      url={`${window.location.origin}/devotional-series/${series.id}`}
+                      url={`${publicWebOrigin()}/devotional-series/${series.id}`}
                     />
                   </div>
                 </CardContent>
@@ -2409,7 +2410,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         const scripture = rawScripture
           ? (getCachedLocalizedScripture(rawScripture, language)?.reference || rawScripture)
           : rawScripture;
-        const shareUrl = `${window.location.origin}/devotional-series/${selectedSeries.id}`;
+        const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
         // Compose a rich share message: title + scripture ref + series context + link
         const shareMessage = scripture
           ? `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(currentDay.day_number))}: "${localizedDay.title || ''}" — ${scripture}\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`
@@ -2506,7 +2507,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             {/* Share series completion */}
             {selectedSeries && (() => {
               const localizedSeries = getLocalizedSeries(selectedSeries);
-              const shareUrl = `${window.location.origin}/devotional-series/${selectedSeries.id}`;
+              const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
               const completionMsg = `🎉 ${t('devotionalSeriesViewer', 'iJustCompletedSeriesX', 'I just completed the "{title}" devotional series on ReKindle BC!').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
               const encodedMsg = encodeURIComponent(completionMsg);
               const encodedUrl = encodeURIComponent(shareUrl);

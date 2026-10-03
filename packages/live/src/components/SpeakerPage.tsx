@@ -10,6 +10,7 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
 import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
 
@@ -493,7 +494,7 @@ export const SpeakerPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const listenerLink = sessionId ? `${window.location.origin}/display/${sessionId}` : '';
+  const listenerLink = sessionId ? `${publicWebOrigin()}/display/${sessionId}` : '';
   const copyListenerLink = () => {
     navigator.clipboard.writeText(listenerLink).then(() => {
       setCopyLabel('Copied!');

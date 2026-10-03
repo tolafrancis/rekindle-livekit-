@@ -23,6 +23,7 @@ import {
 
 /* ✅ NEW — REQUIRED IMPORT */
 import { CommunityLeaderboard } from './CommunityLeaderboard';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface UserActivityData {
   prayerGroupsJoined: number;
@@ -336,7 +337,7 @@ export const UserActivityDashboard: React.FC = () => {
   };
 
   const shareReferralLink = (book: TopSharedBook) => {
-    const url = `${window.location.origin}/books/${book.book_id}?ref=${referralCode}`;
+    const url = `${publicWebOrigin()}/books/${book.book_id}?ref=${referralCode}`;
     navigator.clipboard.writeText(url);
     toast({
       title: t('userActivityDashboard', 'linkCopied', 'Link Copied!'),

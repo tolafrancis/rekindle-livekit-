@@ -1,6 +1,7 @@
 // QR code + slug + invite-code helpers for the ministry registration system.
 // Uses the `qrcode` npm package (client-side, zero external API).
 import QRCode from 'qrcode';
+import { publicWebOrigin } from './platform';
 
 /** URL-friendly slug from a ministry name. Caller is responsible for uniqueness. */
 export const slugify = (name: string): string => {
@@ -33,7 +34,7 @@ export const buildJoinUrl = (
   origin?: string,
   extraParams?: Record<string, string>,
 ): string => {
-  const base = origin || (typeof window !== 'undefined' ? window.location.origin : '');
+  const base = origin || publicWebOrigin();
   const params = new URLSearchParams();
   if (code) params.set('code', code);
   if (version) params.set('v', String(version));

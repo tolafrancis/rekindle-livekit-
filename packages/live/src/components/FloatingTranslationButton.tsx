@@ -12,6 +12,7 @@ import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './Scri
 import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
 import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
 import type { LiveCaptionsBridge } from '../useLiveCaptions';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 // Human-readable name for a language code (e.g. "de" → "German (de)"),
 // falling back to the bare code where the browser has no name for it.
@@ -709,7 +710,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   };
 
   const copyDisplayLink = (botIdentity: string) => {
-    const url = `${window.location.origin}/display/${sessionIdFromBotIdentity(botIdentity)}`;
+    const url = `${publicWebOrigin()}/display/${sessionIdFromBotIdentity(botIdentity)}`;
     navigator.clipboard.writeText(url).then(
       () => toast({ title: 'Display link copied' }),
       () => toast({ title: 'Could not copy link', description: url, variant: 'destructive' }),

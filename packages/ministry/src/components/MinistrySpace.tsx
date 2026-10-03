@@ -88,7 +88,7 @@ import { AcceptRulesModal } from './AcceptRulesModal';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
-import { canShowPurchaseUI } from '@rekindle/features/platform';
+import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
@@ -851,7 +851,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Handle starting a devotional
   // Share a ministry prayer via its public free-taste preview link.
   const shareMinistryPrayer = async (prayer: MinistryPrayer) => {
-    const url = `${window.location.origin}/ministry-prayer/${prayer.id}`;
+    const url = `${publicWebOrigin()}/ministry-prayer/${prayer.id}`;
     const title = prayer.title || t('ministrySpace', 'prayer', 'Prayer');
     const text = `🙏 ${title} — ${t('ministrySpace', 'prayAlongOnRekindle', 'pray along on Rekindle')}`;
     if (typeof navigator !== 'undefined' && (navigator as any).share) {
@@ -1313,7 +1313,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             speakerName={activeVideoMessage.speaker_name}
             playbackUrl={activeVideoMessage.playback_url!}
             captionsUrl={activeVideoMessage.captions_url}
-            shareUrl={`${window.location.origin}/ministry-videos/${activeVideoMessage.id}`}
+            shareUrl={`${publicWebOrigin()}/ministry-videos/${activeVideoMessage.id}`}
             onClose={() => setShowVideoPlayer(false)}
           />
         </Suspense>
@@ -3212,7 +3212,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             is_bookmarked: false
           }}
           seriesTitle={ministry.name}
-          shareUrl={`${window.location.origin}/ministry-prayer/${selectedPrayer.id}`}
+          shareUrl={`${publicWebOrigin()}/ministry-prayer/${selectedPrayer.id}`}
           onComplete={async () => {
             // Increment prayer count
             try {
@@ -3271,7 +3271,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           }}
           seriesTitle={ministry.name}
           totalDays={1}
-          shareUrl={`${window.location.origin}/ministry-devotional/${selectedDevotional.id}`}
+          shareUrl={`${publicWebOrigin()}/ministry-devotional/${selectedDevotional.id}`}
           onComplete={async () => {
             // Mark devotional as completed
             try {

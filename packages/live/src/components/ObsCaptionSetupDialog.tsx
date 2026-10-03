@@ -7,6 +7,7 @@ import { Switch } from '@rekindle/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { toast } from '@rekindle/ui/use-toast';
 import { Copy, ExternalLink } from 'lucide-react';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface Props {
   sessionId: string;
@@ -35,7 +36,7 @@ export const ObsCaptionSetupDialog: React.FC<Props> = ({ sessionId, open, onOpen
       if (obsPort && obsPort !== '4455') q.set('obsport', obsPort);
     }
     const hash = cc && obsPassword ? `#${new URLSearchParams({ obsws: obsPassword })}` : '';
-    return `${window.location.origin}/obs-captions/${sessionId}?${q}${hash}`;
+    return `${publicWebOrigin()}/obs-captions/${sessionId}?${q}${hash}`;
   }, [sessionId, show, pos, size, style, cc, obsPort, obsPassword]);
 
   const copy = () => {

@@ -19,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { BroadcastWallet, WalletBalanceChip, WHATSAPP_COST_PER_MESSAGE } from './BroadcastWallet';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface WhatsAppChannel {
   id: string;
@@ -218,7 +219,7 @@ export const BroadcastMessaging: React.FC<BroadcastMessagingProps> = ({ onSend }
       .replace(/\{\{senderName\}\}/g, formData.senderName || t('broadcastMessaging', 'previewYourMinistry', 'Your Ministry'))
       .replace(/\{\{userName\}\}/g,   t('broadcastMessaging', 'previewValuedMember', 'Valued Member'))
       .replace(/\{\{date\}\}/g,       today)
-      .replace(/\{\{siteUrl\}\}/g,    window.location.origin);
+      .replace(/\{\{siteUrl\}\}/g,    publicWebOrigin());
   };
 
   const handleChannelToggle = (channel: string) => {

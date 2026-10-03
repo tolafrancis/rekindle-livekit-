@@ -6,6 +6,7 @@
 // on mobile and a clipboard fallback on desktop (see canNativeShare).
 
 import { canNativeShare } from './webShare';
+import { publicWebOrigin } from './platform';
 
 export interface ShareResult {
   method: 'native' | 'clipboard' | 'none';
@@ -24,7 +25,7 @@ export interface ShareResult {
 export function publicAppOrigin(): string {
   const u = (import.meta as any)?.env?.VITE_PUBLIC_APP_URL;
   if (typeof u === 'string' && u.trim()) return u.trim().replace(/\/+$/, '');
-  return typeof window !== 'undefined' ? window.location.origin : '';
+  return publicWebOrigin();
 }
 
 /** Format an ISO timestamp for share text, e.g. "Sat, 5 Jul, 6:00 PM". */

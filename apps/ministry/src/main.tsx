@@ -1,3 +1,4 @@
+import './publicOrigin';
 import { createRoot } from 'react-dom/client';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';

@@ -12,6 +12,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { buildChannelShareText } from '@rekindle/features/liveShare';
 import { LiveChannel } from '@rekindle/types/liveChannelTypes';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface ShareChannelButtonProps {
   channel: LiveChannel;
@@ -38,7 +39,7 @@ export const ShareChannelButton: React.FC<ShareChannelButtonProps> = ({
   const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = `${window.location.origin}/channels/${channel.id}`;
+  const shareUrl = `${publicWebOrigin()}/channels/${channel.id}`;
   const isLive = (channel as any).is_live;
   const shareInput = {
     channelName: channel.name,

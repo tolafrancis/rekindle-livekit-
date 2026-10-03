@@ -1,4 +1,5 @@
 import { supabase } from '@rekindle/supabase';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 /**
  * Live Translation → Conversation (bilingual, two-person) — client side of the
@@ -151,7 +152,7 @@ export function clearSeatToken(conversationId: string) {
 /** The invite token rides in the URL fragment, which browsers never send
  *  to a server, so it stays out of access logs and referrers. */
 export const buildInviteLink = (conversationId: string, inviteToken: string) =>
-  `${window.location.origin}/conversation/${conversationId}#invite=${inviteToken}`;
+  `${publicWebOrigin()}/conversation/${conversationId}#invite=${inviteToken}`;
 
 export const newUtteranceId = () => {
   try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }

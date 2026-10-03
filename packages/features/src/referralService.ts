@@ -2,6 +2,7 @@
 // Comprehensive referral system service with database integration
 
 import { supabase, safeMutation } from '@rekindle/supabase';
+import { publicWebOrigin } from './platform';
 
 // ============================================
 // TYPES AND INTERFACES
@@ -543,7 +544,7 @@ export const getReferralAnalytics = async (
  * Generate shareable referral link
  */
 export const generateReferralLink = (code: string): string => {
-  const baseUrl = window.location.origin;
+  const baseUrl = publicWebOrigin();
   return `${baseUrl}/signup?ref=${code}`;
 };
 
