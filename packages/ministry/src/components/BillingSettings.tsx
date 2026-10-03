@@ -23,6 +23,7 @@ import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
+import { MemberLimitMeter } from './MemberLimitMeter';
 import { toast } from '@rekindle/ui/use-toast';
 
 // Ministry Partner subscription flow. Region-routed: Nigeria pays via Paystack
@@ -276,6 +277,8 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
           </Button>
         )}
       </div>
+
+      <MemberLimitMeter ministryId={currentMinistryId} variant="card" />
 
       <div className="flex items-center gap-2 text-sm">
         <span className="text-muted-foreground">Billing</span>

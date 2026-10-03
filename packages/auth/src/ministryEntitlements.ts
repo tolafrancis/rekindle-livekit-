@@ -217,3 +217,29 @@ export async function checkMinistryMeetingQuota(
 
   return { allowed: true, used, limit: limitMinutes };
 }
+
+/** Members vs the plan's member cap. limit -1 = unlimited. */
+export interface MinistryMemberUsage {
+  count: number;
+  limit: number;
+  /** count / limit (0 when unlimited). */
+  ratio: number;
+}
+
+/** Share of the member cap at which admins start being warned. */
+export const MEMBER_LIMIT_WARN_RATIO = 0.8;
+
+export async function getMinistryMemberUsage(
+  ministryId: string | null | undefined,
+): Promise<MinistryMemberUsage | null> {
+  if (!ministryId) return null;
+  const entitlements = await getMinistryEntitlements(ministryId);
+  const { count, error } = await supabase
+    .from('ministry_group_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('ministry_id', ministryId);
+  if (error) return null;
+  const limit = entitlements.limits.members;
+  const n = count ?? 0;
+  return { count: n, limit, ratio: limit > 0 ? n / limit : 0 };
+}
