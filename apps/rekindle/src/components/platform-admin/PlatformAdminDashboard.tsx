@@ -27,6 +27,7 @@ import { AuditLogsViewer } from './AuditLogsViewer';
 import { FlaggedContentManager } from './FlaggedContentManager';
 import { PlatformAnnouncementsManager } from './PlatformAnnouncementsManager';
 import { FaqManager } from './FaqManager';
+import { AppDownloadLinksManager } from './AppDownloadLinksManager';
 // LanguageManager moved to the main Admin dashboard (AdminDashboard "Languages" tab).
 
 interface PlatformStats {
@@ -509,6 +510,7 @@ const PlatformAdminDashboard: React.FC = () => {
         {/* Settings Tab — platform-wide feature toggles */}
         <TabsContent value="settings" className="mt-6">
           <GlobalFeatureToggles />
+          <AppDownloadLinksManager />
         </TabsContent>
 
       </Tabs>
