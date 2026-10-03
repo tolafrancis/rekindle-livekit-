@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useUserEntitlements } from '@/hooks/useUserEntitlements';
+import { useUserEntitlements, getLiveChannelQuota, isAtChannelLimit, type LiveChannelQuota } from '@/hooks/useUserEntitlements';
 import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { UpgradePromptModal } from './UpgradePromptModal';
 import { supabase } from '@/lib/supabase';
@@ -100,6 +100,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   const [channels, setChannels] = useState<LiveChannel[]>([]);
   const [followedChannels, setFollowedChannels] = useState<LiveChannel[]>([]);
   const [myChannels, setMyChannels] = useState<LiveChannel[]>([]);
+  // Personal channel quota (ministry channels are counted per ministry instead).
+  const [quota, setQuota] = useState<LiveChannelQuota | null>(null);
+  const atChannelLimit = isAtChannelLimit(quota);
   const [events, setEvents] = useState<ChannelEvent[]>([]);
   const [liveEvents, setLiveEvents] = useState<ChannelEvent[]>([]);
   const [showEventScheduler, setShowEventScheduler] = useState(false);
@@ -172,23 +175,6 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Full-view switch (list ↔ broadcast/watch/recordings). Back returns to the list
   // instead of exiting the channels tab. selectedChannel stays plain companion state.
   const [viewMode, setViewMode] = useViewHistory<'list' | 'broadcast' | 'watch' | 'recordings'>('live-channels-view', 'list');
-
-  // Safe helper function to get live channel count
-  const getLiveChannelCount = async (): Promise<number> => {
-    if (!user?.id) return 0;
-    
-    const { count, error } = await supabase
-      .from('live_channels')
-      .select('id', { count: 'exact' })
-      .eq('owner_id', user.id);
-
-    if (error) {
-      console.error('[LiveChannels] Error counting channels', error);
-      return 0;
-    }
-
-    return Number(count ?? 0);
-  };
 
   // Upload image to Supabase Storage
   const uploadImage = async (file: File, bucket: 'channel-logos' | 'channel-featured') => {
@@ -358,6 +344,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
         setFollowedChannels(allChannels.filter(c => followIds.has(c.id)));
 
         setMyChannels(ownedRes?.data || []);
+        getLiveChannelQuota().then(setQuota);
       }
     } catch (err) {
       console.error('[LiveChannels] Failed to load:', err);
@@ -471,13 +458,15 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
       return;
     }
 
-    // SAFE COUNT QUERY - Get current channel count for user
-    const usedChannels = await getLiveChannelCount();
-    const maxChannels = entitlements.maxLiveChannels;
-    
-    // SAFE LIMIT CHECK - Fix the comparison
-    if (maxChannels !== null && usedChannels >= maxChannels) {
-      showUpgradePrompt('live_channel_create');
+    // One personal channel per account; re-check fresh in case it changed.
+    const freshQuota = await getLiveChannelQuota();
+    if (freshQuota) setQuota(freshQuota);
+    if (isAtChannelLimit(freshQuota)) {
+      toast({
+        title: 'Channel limit reached',
+        description: 'Each account has one live channel. Run all your broadcasts and events from it.',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -724,24 +713,16 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   return (
     <div className="space-y-6 min-w-0 max-w-full overflow-x-hidden">
       
-      {entitlements.canCreateLiveChannel && entitlements.maxLiveChannels !== null && myChannels.length >= entitlements.maxLiveChannels && (
+      {entitlements.canCreateLiveChannel && atChannelLimit && (
         <Alert className="bg-blue-50 border-blue-200">
           <AlertDescription className="ml-2">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <p className="font-semibold text-blue-900">Channel Limit Reached</p>
+                <p className="font-semibold text-blue-900">You have your live channel</p>
                 <p className="text-sm text-blue-700 mt-1">
-                  You've used all {entitlements.maxLiveChannels} of your channel slots. Upgrade for more channels.
+                  Each account has one live channel. Schedule all your broadcasts and events from it.
                 </p>
               </div>
-              <Button 
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white ml-4"
-                onClick={() => window.location.href = '/subscribe'}
-              >
-                <Crown className="h-3 w-3 mr-1" />
-                Upgrade
-              </Button>
             </div>
           </AlertDescription>
         </Alert>
@@ -760,25 +741,32 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           </Button>
           
           {/* Channel Usage Display */}
-          {entitlements.maxLiveChannels !== null && (
+          {quota && quota.max !== null && quota.max > 0 && (
             <div className="text-sm text-gray-600">
               <Badge variant="outline">
-                {myChannels.length} / {entitlements.maxLiveChannels} channels
+                {quota.used} / {quota.max} {quota.max === 1 ? 'channel' : 'channels'}
               </Badge>
             </div>
           )}
           
           <Button 
             onClick={() => {
-              if (!entitlements.canCreateLiveChannel || (entitlements.maxLiveChannels !== null && myChannels.length >= entitlements.maxLiveChannels)) {
+              if (!entitlements.canCreateLiveChannel) {
                 showUpgradePrompt('live_channel_create');
+                return;
+              }
+              if (atChannelLimit) {
+                toast({
+                  title: 'Channel limit reached',
+                  description: 'Each account has one live channel. Run all your broadcasts and events from it.',
+                });
                 return;
               }
               setShowCreateModal(true);
             }}
             disabled={false}
           >
-            {(!entitlements.canCreateLiveChannel || (entitlements.maxLiveChannels !== null && myChannels.length >= entitlements.maxLiveChannels)) && (
+            {(!entitlements.canCreateLiveChannel || (atChannelLimit)) && (
               <Lock className="h-4 w-4 mr-2" />
             )}
             <Plus className="h-4 w-4 mr-2" />

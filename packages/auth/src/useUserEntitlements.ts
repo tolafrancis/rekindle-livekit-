@@ -136,7 +136,8 @@ export function useUserEntitlements(): UserEntitlements {
         hasMinistryAccess:            isMinistry,
         isAdmin,
         // Partner features
-        canCreateLiveChannel:         isMinistry || isAdmin,
+        // Personal channel: Individual Partners and ministry-tier accounts.
+        canCreateLiveChannel:         isPartner || isMinistry || isAdmin,
         canAccessBookSummaries:       partnerOrAdmin,
         canAccessReplays:             partnerOrAdmin,
         canDownloadOffline:           partnerOrAdmin,
@@ -158,7 +159,9 @@ export function useUserEntitlements(): UserEntitlements {
         canAccessChannelAnalytics:    partnerOrAdmin || ministryOrAdmin,
         // Legacy compat
         hasPremiumAccess:             partnerOrAdmin,
-        maxLiveChannels:              isAdmin ? null : isMinistry ? 2 : 0,
+        // One personal channel per account (0395 enforces it server-side).
+        // Ministry channels use getLiveChannelQuota(ministryId) instead.
+        maxLiveChannels:              isAdmin ? null : (isPartner || isMinistry) ? 1 : 0,
         maxMeetingDuration:           ministryOrAdmin ? null : partnerOrAdmin ? 60 : 0,
         subscription:                 null,
       });
@@ -176,3 +179,24 @@ export function useUserEntitlements(): UserEntitlements {
 
   return { ...entitlements, isLoading, refreshEntitlements: loadEntitlements };
 }
+
+export interface LiveChannelQuota {
+  /** null = unlimited (platform admins). */
+  max: number | null;
+  used: number;
+}
+
+/**
+ * Live channel limit and current count, from get_live_channel_quota (0395).
+ * No ministryId = the caller's personal channels (1 each); with a ministryId =
+ * that ministry's channels (1, or 4 on Ministry Plus). Returns null when the
+ * RPC isn't available, so callers fall back to not blocking.
+ */
+export async function getLiveChannelQuota(ministryId?: string | null): Promise<LiveChannelQuota | null> {
+  const { data, error } = await supabase.rpc('get_live_channel_quota', { p_ministry_id: ministryId ?? null });
+  if (error || !data) return null;
+  const q = data as { max: number | null; used: number };
+  return { max: q.max ?? null, used: Number(q.used ?? 0) };
+}
+
+export const isAtChannelLimit = (q: LiveChannelQuota | null) => !!q && q.max !== null && q.used >= q.max;
