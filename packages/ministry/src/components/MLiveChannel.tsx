@@ -18,6 +18,7 @@ import { Badge } from '@rekindle/ui/badge';
 import { LiveChannelCard } from '@rekindle/live/components/LiveChannelCard';
 import { LiveChannelBroadcast } from '@rekindle/live/components/LiveChannelBroadcast';
 import { ChannelStreamConfig } from '@rekindle/live/components/ChannelStreamConfig';
+import { ChannelDetailsDialog } from '@rekindle/live/components/ChannelDetailsDialog';
 import { ChannelRecordingsViewer } from '@rekindle/live/components/ChannelRecordingsViewer';
 import { LiveChannelViewer } from '@rekindle/live/components/LiveChannelViewer';
 import { LiveChannelAnalyticsDashboard } from '@rekindle/live/components/LiveChannelAnalyticsDashboard';
@@ -43,7 +44,8 @@ import {
   Video,
   Youtube,
   Facebook,
-  Info
+  Info,
+  Pencil,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { toast } from '@rekindle/ui/use-toast';
@@ -125,6 +127,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
   // Active view state - mirrors LiveChannels
   const [selectedChannel, setSelectedChannel] = useState<LiveChannel | null>(null);
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
+  const [editChannel, setEditChannel] = useState<LiveChannel | null>(null);
   const [recordingsChannel, setRecordingsChannel] = useState<LiveChannel | null>(null);
   // Full-view switch (list ↔ broadcast/watch). Back returns to the list; composes
   // with the tab history above and the parent MinistrySpace via the state-merge.
@@ -278,13 +281,14 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
         const followed = (allChannels || []).filter(c => followIds.has(c.id));
         setFollowedChannels(followed);
 
-        // Load user's own channels within this ministry
-        const { data: owned } = await supabase
+        // Channels belong to the ministry: leaders manage all of them,
+        // everyone else sees the ones they created.
+        let ownedQuery = supabase
           .from('live_channels')
           .select('*')
-          .eq('owner_id', user.id)
-          .eq('ministry_id', ministryId)
-          .order('created_at', { ascending: false });
+          .eq('ministry_id', ministryId);
+        if (!isLeader) ownedQuery = ownedQuery.eq('owner_id', user.id);
+        const { data: owned } = await ownedQuery.order('created_at', { ascending: false });
 
         setMyChannels(owned || []);
         getLiveChannelQuota(ministryId).then(setQuota);
@@ -299,7 +303,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [user?.id, ministryId, categoryFilter, searchQuery]);
+  }, [user?.id, ministryId, isLeader, categoryFilter, searchQuery]);
 
   // Initial load
   useEffect(() => {
@@ -934,6 +938,15 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
                     onViewProfile={() => watchChannel(channel)}
                     onGoLive={() => goLive(channel)}
                   />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setEditChannel(channel)}
+                  >
+                    <Pencil className="h-4 w-4 mr-1.5" />
+                    {t('mLiveChannel', 'editChannelBtn', 'Edit channel')}
+                  </Button>
                   {/* Attractive "connect to socials" entry point — opens the same
                       Broadcast setup dialog, where the YouTube/Facebook restream lives. */}
                   <Button
@@ -1053,6 +1066,15 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
       </Tabs>
 
       {/* Create Channel Modal */}
+      {editChannel && (
+        <ChannelDetailsDialog
+          channel={editChannel}
+          open={!!editChannel}
+          onClose={() => setEditChannel(null)}
+          onChanged={() => loadChannels()}
+        />
+      )}
+
       {configChannel && (
         <ChannelStreamConfig
           channel={configChannel}

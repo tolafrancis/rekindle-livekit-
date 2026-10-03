@@ -31,6 +31,10 @@ export interface LiveChannel {
   ministry_id?: string | null;
   /** Caption (speech-to-text) language for on-demand captions — migration 0374. */
   source_language?: string;
+  /** false = hidden from everyone but the owner (and admins). */
+  is_active?: boolean;
+  /** Last rename; renames are limited to once every 14 days — migration 0396. */
+  name_changed_at?: string | null;
 }
 
 export interface ChannelEvent {
