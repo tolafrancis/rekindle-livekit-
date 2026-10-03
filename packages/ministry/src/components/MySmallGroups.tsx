@@ -6,9 +6,10 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
-import { Users, Loader2, Crown, Shield, X } from 'lucide-react';
+import { Users, Loader2, Crown, Shield, X, Settings } from 'lucide-react';
 import { SMALL_GROUP_ROLE_LABELS } from '../lib/smallGroupPermissions';
 import { SmallGroupPage } from './SmallGroupPage';
+import { SmallGroupDetailManager } from './SmallGroupDetailManager';
 
 interface MySmallGroupsProps {
   ministryId: string;
@@ -21,6 +22,9 @@ export const MySmallGroups: React.FC<MySmallGroupsProps> = ({ ministryId }) => {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  // Group leaders / assistant leaders manage their own groups from here; the
+  // Manage Groups tab is only shown to ministry admins.
+  const [managingGroupId, setManagingGroupId] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -55,6 +59,17 @@ export const MySmallGroups: React.FC<MySmallGroupsProps> = ({ ministryId }) => {
       toast({ title: t('smallGroupsMember', 'error', 'Error'), description: e.message, variant: 'destructive' });
     }
   };
+
+  if (managingGroupId) {
+    return (
+      <SmallGroupDetailManager
+        ministryId={ministryId}
+        groupId={managingGroupId}
+        isMinistryAdmin={false}
+        onBack={() => { setManagingGroupId(null); load(); }}
+      />
+    );
+  }
 
   if (selectedGroupId) {
     return <SmallGroupPage groupId={selectedGroupId} onBack={() => { setSelectedGroupId(null); load(); }} />;
@@ -109,7 +124,18 @@ export const MySmallGroups: React.FC<MySmallGroupsProps> = ({ ministryId }) => {
                   <h3 className="font-semibold">{r.small_groups?.name}</h3>
                 </div>
                 <p className="text-sm text-muted-foreground line-clamp-2">{r.small_groups?.description}</p>
-                <Badge variant="outline">{SMALL_GROUP_ROLE_LABELS[(r.role as 'leader' | 'assistant_leader' | 'member') || 'member']}</Badge>
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="outline">{SMALL_GROUP_ROLE_LABELS[(r.role as 'leader' | 'assistant_leader' | 'member') || 'member']}</Badge>
+                  {(r.role === 'leader' || r.role === 'assistant_leader') && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); setManagingGroupId(r.group_id); }}
+                    >
+                      <Settings className="h-4 w-4 mr-1" />{t('smallGroupsMember', 'manageGroup', 'Manage')}
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}
