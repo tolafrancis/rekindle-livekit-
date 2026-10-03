@@ -94,6 +94,7 @@ import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContex
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { ScripturePicker, type PickedScripture } from '@rekindle/features/components/ScripturePicker';
 import { useModeration } from '@rekindle/features/ModerationContext';
 import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip';
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
@@ -327,6 +328,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [showMRevForm, setShowMRevForm] = useState(false);
   const [mRevTitle, setMRevTitle] = useState('');
   const [mRevContent, setMRevContent] = useState('');
+  const [mRevScriptures, setMRevScriptures] = useState<PickedScripture[]>([]);
   const [mRevExpandedComments, setMRevExpandedComments] = useState<string | null>(null);
 
   // ── Ministry Community: Q&A ──
@@ -1143,6 +1145,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     if (!mRevTitle.trim() || !mRevContent.trim()) {
       toast({ title: t('ministrySpace', 'missingFields', 'Missing fields'), description: t('ministrySpace', 'addTitleContent', 'Please add a title and content.'), variant: 'destructive' }); return;
     }
+    // Same rule as the consumer app: a revelation must cite scripture.
+    if (mRevScriptures.length === 0) {
+      toast({ title: t('ministrySpace', 'scriptureRequired', 'Scripture required'), description: t('ministrySpace', 'addAtLeastOneScripture', 'Please add at least one scripture reference.'), variant: 'destructive' }); return;
+    }
     const { data, error } = await supabase.from('community_revelations').insert([{
       user_id: user.id,
       ministry_id: ministry.id,
@@ -1150,14 +1156,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       avatar: profile.avatar_url || '',
       title: mRevTitle.trim(),
       content: mRevContent.trim(),
-      scriptures: [],
+      scriptures: mRevScriptures,
       likes: 0,
       is_published: true,
       is_hidden: false,
     }]).select().single();
     if (error) { toast({ title: t('ministrySpace', 'error', 'Error'), description: t('ministrySpace', 'couldNotPostRevelation', 'Could not post revelation.'), variant: 'destructive' }); return; }
     setMRevelations(prev => [{ ...data, liked: false }, ...prev]);
-    setMRevTitle(''); setMRevContent('');
+    setMRevTitle(''); setMRevContent(''); setMRevScriptures([]);
     setShowMRevForm(false);
     toast({ title: t('ministrySpace', 'revelationShared', 'Revelation shared!') });
 
@@ -2601,16 +2607,30 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         placeholder={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')}
                         className="bg-white"
                       />
-                      <Textarea
-                        value={mRevContent}
-                        onChange={e => setMRevContent(e.target.value)}
-                        placeholder={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')}
-                        rows={4}
-                        className="bg-white"
-                      />
+                      {(() => {
+                        // Same 150-word limit as the consumer app's revelations.
+                        const words = mRevContent.trim().split(/\s+/).filter(Boolean).length;
+                        return (
+                          <div>
+                            <Textarea
+                              value={mRevContent}
+                              onChange={e => {
+                                if (e.target.value.trim().split(/\s+/).filter(Boolean).length <= 150) setMRevContent(e.target.value);
+                              }}
+                              placeholder={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')}
+                              rows={4}
+                              className="bg-white"
+                            />
+                            <p className={`text-xs mt-1 ${words >= 150 ? 'text-red-500' : 'text-gray-500'}`}>
+                              {t('ministrySpace', 'wordsCount150', '{count}/150 words').replace('{count}', String(words))}
+                            </p>
+                          </div>
+                        );
+                      })()}
+                      <ScripturePicker value={mRevScriptures} onChange={setMRevScriptures} />
                       <div className="flex gap-2 justify-end">
                         <Button variant="outline" size="sm" onClick={() => setShowMRevForm(false)}>{t('ministrySpace', 'cancel', 'Cancel')}</Button>
-                        <Button size="sm" style={{ backgroundColor: themeColor }} className="text-white" onClick={handlePostMRevelation}>
+                        <Button size="sm" style={{ backgroundColor: themeColor }} className="text-white" onClick={handlePostMRevelation} disabled={mRevScriptures.length === 0}>
                           <Send className="h-4 w-4 mr-1" />
                           {t('ministrySpace', 'post', 'Post')}
                         </Button>

@@ -10,10 +10,11 @@ import { toast } from '@rekindle/ui/use-toast';
 import { useModeration } from '../ModerationContext';
 import { ContentSafetyMenu } from './ContentSafetyMenu';
 import { 
-  Heart, TrendingUp, Award, BookOpen, Flame, 
+  Heart, Award, BookOpen, Flame, 
   Users, Filter, RefreshCw, Loader2, MessageCircle,
   Clock, Star, CheckCircle, Trophy, Target, Sparkles
 } from 'lucide-react';
+import { describeCommunityActivity } from '../communityActivityService';
 import { SearchFilterPanel, activeFilterChipClass, filterChipClass } from './SearchFilterPanel';
 
 interface Activity {
@@ -29,11 +30,6 @@ interface Activity {
   reaction_count: number;
   created_at: string;
   user_reaction?: string;
-}
-
-interface TrendingTopic {
-  topic: string;
-  count: number;
 }
 
 const REACTION_EMOJIS = {
@@ -59,7 +55,6 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
-  const [trendingTopics, setTrendingTopics] = useState<TrendingTopic[]>([]);
   const [reacting, setReacting] = useState<string | null>(null);
   
   const loadingRef = useRef(false);
@@ -68,7 +63,6 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
   useEffect(() => {
     isMounted.current = true;
     loadActivities();
-    loadTrendingTopics();
 
     // Set up realtime subscription
     const subscription = supabase
@@ -157,61 +151,6 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
         setLoading(false);
       }
       loadingRef.current = false;
-    }
-  };
-
-  const loadTrendingTopics = async () => {
-    try {
-      // Get prayer activities from last 7 days
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      let data: Array<{ title: string; content?: string | null; created_at?: string }> | null;
-      let error: unknown;
-      if (ministryId) {
-        ({ data, error } = await supabase.rpc('get_ministry_community_activities', {
-          p_ministry_id: ministryId,
-          p_activity_type: 'prayer',
-          p_limit: 100,
-        }));
-        data = (data ?? []).filter((a) => !a.created_at || new Date(a.created_at) >= sevenDaysAgo);
-      } else {
-        ({ data, error } = await supabase
-          .from('community_activities')
-          .select('title, content, metadata')
-          .eq('activity_type', 'prayer')
-          .gte('created_at', sevenDaysAgo.toISOString()));
-      }
-
-      if (error) throw error;
-
-      // Extract topics/keywords from titles and content
-      const topicCounts: Record<string, number> = {};
-      
-      data?.forEach(activity => {
-        const text = `${activity.title} ${activity.content || ''}`.toLowerCase();
-        const words = text.split(/\s+/).filter(w => w.length > 3);
-        
-        words.forEach(word => {
-          // Filter out common words
-          const commonWords = ['that', 'this', 'with', 'from', 'have', 'been', 'will', 'your', 'their', 'about'];
-          if (!commonWords.includes(word)) {
-            topicCounts[word] = (topicCounts[word] || 0) + 1;
-          }
-        });
-      });
-
-      // Sort by count and get top 5
-      const trending = Object.entries(topicCounts)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-        .map(([topic, count]) => ({ topic, count }));
-
-      if (isMounted.current) {
-        setTrendingTopics(trending);
-      }
-    } catch (err) {
-      console.error('Error loading trending topics:', err);
     }
   };
 
@@ -453,17 +392,13 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
                       />
                     </div>
 
-                    {/* Content */}
+                    {/* Content: only what the person did, never what they
+                        prayed, read or watched (older rows still hold that). */}
                     <div className="ml-13">
-                      <h4 className="font-semibold text-gray-900 mb-2">{activity.title}</h4>
-                      {activity.description && (
-                        <p className="text-gray-700 mb-2">{activity.description}</p>
-                      )}
-                      {activity.content && (
-                        <p className="text-gray-600 text-sm italic border-l-2 border-purple-200 pl-3 py-1">
-                          "{activity.content}"
-                        </p>
-                      )}
+                      {(() => {
+                        const summary = describeCommunityActivity(activity);
+                        return <p className="font-medium text-gray-900">{t('communityActivityFeed', summary.key, summary.text)}</p>;
+                      })()}
                     </div>
 
                     {/* Reactions */}
@@ -495,33 +430,6 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Trending Topics */}
-          <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <TrendingUp className="h-5 w-5 text-purple-500" />
-                {t('communityActivityFeed', 'trendingPrayerTopics', 'Trending Prayer Topics')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {trendingTopics.length === 0 ? (
-                <p className="text-sm text-gray-500">{t('communityActivityFeed', 'noTrendingTopics', 'No trending topics yet')}</p>
-              ) : (
-                <div className="space-y-2">
-                  {trendingTopics.map((topic, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-white/70 hover:bg-white">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-purple-600">#{idx + 1}</span>
-                        <span className="text-sm font-medium capitalize">{topic.topic}</span>
-                      </div>
-                      <Badge variant="secondary">{topic.count}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Quick Stats */}
           <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white">
             <CardHeader>

@@ -5,7 +5,8 @@ import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
 import { Alert, AlertDescription } from './ui/alert';
-import { ScriptureSelector, ScriptureReference } from './ScriptureSelector';
+import { ScriptureReference } from './ScriptureSelector';
+import { ScripturePicker } from '@rekindle/features/components/ScripturePicker';
 import { CommentSection, Comment } from './CommentSection';
 import { SocialShareModal } from './SocialShareModal';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,7 +15,7 @@ import { useUserEntitlements } from '@/hooks/useUserEntitlements';
 import { supabase } from '@/lib/supabase';
 import {
   Book, Heart, MessageCircle, Share2, Send, Bookmark, BookmarkCheck,
-  X, Download, Search, Lock, Crown, Loader2, Star, Sparkles,
+  X, Lock, Crown, Loader2, Star, Sparkles,
   HelpCircle, CheckCircle2, ChevronDown, ChevronUp, ThumbsUp, Plus
 } from 'lucide-react';
 import { notify } from '@/lib/notify';
@@ -154,9 +155,6 @@ export const CommunityRevelations: React.FC = () => {
   const [expandedRevComments, setExpandedRevComments] = useState<string | null>(null);
   const [shareModal, setShareModal] = useState<{ open: boolean; revelation: Revelation | null }>({ open: false, revelation: null });
   const [revFilter, setRevFilter] = useState<'all' | 'bookmarked'>('all');
-  const [scriptureInput, setScriptureInput] = useState('');
-  const [isScriptureLoading, setIsScriptureLoading] = useState(false);
-  const [scriptureSuggestions, setScriptureSuggestions] = useState<ScriptureReference[]>([]);
 
   // ── Testimonies state ──
   const [testimonies, setTestimonies] = useState<Testimony[]>([]);
@@ -294,59 +292,6 @@ export const CommunityRevelations: React.FC = () => {
     }
   };
 
-  const searchScriptures = async (query: string) => {
-    if (!query.trim()) { setScriptureSuggestions([]); return; }
-    setIsScriptureLoading(true);
-    setTimeout(() => {
-      const suggestions: ScriptureReference[] = [
-        { reference: 'John 3:16', text: 'For God so loved the world...', version: 'KJV' },
-        { reference: 'Psalm 23:1', text: 'The Lord is my shepherd...', version: 'NIV' },
-        { reference: 'Matthew 6:33', text: 'But seek first the kingdom of God...', version: 'NIV' },
-        { reference: 'Philippians 4:13', text: 'I can do all things through Christ...', version: 'ESV' },
-        { reference: 'Romans 8:28', text: 'And we know that all things work together for good...', version: 'KJV' },
-      ].filter(s => s.reference.toLowerCase().includes(query.toLowerCase()) || s.text.toLowerCase().includes(query.toLowerCase()));
-      setScriptureSuggestions(suggestions);
-      setIsScriptureLoading(false);
-    }, 500);
-  };
-
-  const handleScriptureInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setScriptureInput(value);
-    if (value.length > 2) searchScriptures(value);
-    else setScriptureSuggestions([]);
-  };
-
-  const handleAddScripture = (scripture: ScriptureReference) => {
-    if (!scriptures.some(s => s.reference === scripture.reference)) {
-      setScriptures([...scriptures, scripture]);
-      setScriptureInput(''); setScriptureSuggestions([]);
-    } else {
-      toast({ title: t('communityRevelations', 'alreadyAdded', 'Already Added'), description: t('communityRevelations', 'scriptureRefAlreadyAdded', 'This scripture reference has already been added') });
-    }
-  };
-
-  const handleRemoveScripture = (index: number) => setScriptures(scriptures.filter((_, i) => i !== index));
-
-  const handleDownloadScripture = async () => {
-    if (!scriptureInput.trim()) { toast({ title: t('communityRevelations', 'enterScripture', 'Enter Scripture'), description: t('communityRevelations', 'enterScriptureToDownload', 'Please enter a scripture reference to download'), variant: 'destructive' }); return; }
-    setIsScriptureLoading(true);
-    setTimeout(() => {
-      const fetched: ScriptureReference = {
-        reference: scriptureInput,
-        text: `This is the text for ${scriptureInput}. For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.`,
-        version: 'NIV',
-      };
-      if (!scriptures.some(s => s.reference === fetched.reference)) {
-        setScriptures([...scriptures, fetched]);
-        setScriptureInput(''); setScriptureSuggestions([]);
-        toast({ title: t('communityRevelations', 'scriptureDownloaded', 'Scripture Downloaded'), description: t('communityRevelations', 'scriptureAddedToYours', '{ref} has been added to your scriptures').replace('{ref}', scriptureInput) });
-      } else {
-        toast({ title: t('communityRevelations', 'alreadyAdded', 'Already Added'), description: t('communityRevelations', 'scriptureAlreadyInList', 'This scripture is already in your list') });
-      }
-      setIsScriptureLoading(false);
-    }, 800);
-  };
 
   // ─────────────────────────────────────────────
   // Testimonies helpers
@@ -732,69 +677,7 @@ export const CommunityRevelations: React.FC = () => {
                   <p className={`text-xs mt-1 ${revWordCount >= 150 ? 'text-red-500' : 'text-gray-500'}`}>{t('communityRevelations', 'wordsCount150', '{count}/150 words').replace('{count}', String(revWordCount))}</p>
                 </div>
 
-                <div>
-                  <p className="text-sm font-medium mb-2 text-purple-700">{t('communityRevelations', 'scriptureReferencesRequired', 'Scripture References (Required)')}</p>
-                  <div className="relative mb-4">
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input placeholder={t('communityRevelations', 'searchScripturesPlaceholder', 'Search scriptures (e.g., John 3:16)...')} value={scriptureInput} onChange={handleScriptureInputChange} className="pl-9 pr-10" />
-                        {isScriptureLoading && <div className="absolute right-3 top-1/2 transform -translate-y-1/2"><Loader2 className="h-4 w-4 animate-spin text-gray-400" /></div>}
-                      </div>
-                      <Button type="button" variant="outline" size="sm" className="h-10 px-3 flex items-center gap-1 border-purple-300 text-purple-700 hover:bg-purple-50" onClick={handleDownloadScripture} disabled={isScriptureLoading}>
-                        {isScriptureLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        <span className="text-xs">{t('communityRevelations', 'fetch', 'Fetch')}</span>
-                      </Button>
-                    </div>
-                    {scriptureSuggestions.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {scriptureSuggestions.map((s, i) => (
-                          <button key={i} type="button" className="w-full text-left px-4 py-2 hover:bg-purple-50 transition-colors border-b border-gray-100 last:border-b-0" onClick={() => handleAddScripture(s)}>
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-sm text-purple-700">{s.reference}</span>
-                              <Badge variant="outline" className="text-xs h-5">{s.version}</Badge>
-                            </div>
-                            <p className="text-xs text-gray-600 mt-1 truncate italic">"{s.text}"</p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {scriptures.length > 0 ? (
-                    <div className="space-y-2 mb-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">{t('communityRevelations', 'addedScriptures', 'Added Scriptures')}</p>
-                        <Button variant="ghost" size="sm" onClick={() => setScriptures([])} className="h-6 text-xs gap-1 text-red-500 hover:text-red-600"><X className="h-3 w-3" />{t('communityRevelations', 'clearAll', 'Clear All')}</Button>
-                      </div>
-                      {scriptures.map((scripture, index) => (
-                        <div key={index} className="flex items-start justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg group hover:bg-amber-100/50 transition-colors">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className="w-6 h-6 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center text-xs font-bold">{index + 1}</div>
-                              <span className="font-medium text-amber-800 text-sm"><Book className="h-3 w-3 inline mr-1" />{scripture.reference} ({scripture.version})</span>
-                              <Badge variant="outline" className="text-xs h-5">{scripture.version}</Badge>
-                            </div>
-                            <p className="text-sm text-gray-700 italic mt-1 ml-7">"{scripture.text}"</p>
-                          </div>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-500" onClick={() => handleRemoveScripture(index)}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg mb-4 bg-gray-50/50">
-                      <Book className="h-10 w-10 mx-auto text-gray-400 mb-3" />
-                      <p className="text-gray-500">{t('communityRevelations', 'noScripturesYet', 'No scriptures added yet')}</p>
-                      <p className="text-gray-400 text-sm mt-1">{t('communityRevelations', 'useFetchToAdd', 'Use the Fetch button above to add scriptures')}</p>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
-                    <span>{(scriptures.length === 1 ? t('communityRevelations', 'scriptureSelectedOne', '{count} scripture selected') : t('communityRevelations', 'scriptureSelectedMany', '{count} scriptures selected')).replace('{count}', String(scriptures.length))}</span>
-                    <span className={scriptures.length === 0 ? 'text-red-500' : 'text-green-600'}>{scriptures.length === 0 ? t('communityRevelations', 'atLeastOneRequired', 'At least 1 required') : t('communityRevelations', 'readyToPost', 'Ready to post')}</span>
-                  </div>
-                </div>
+                <ScripturePicker value={scriptures} onChange={setScriptures} />
 
                 <div className="flex gap-3 pt-2">
                   <Button variant="outline" onClick={() => { setShowRevForm(false); setRevTitle(''); setRevContent(''); setScriptures([]); }} className="flex-1">{t('communityRevelations', 'cancel', 'Cancel')}</Button>

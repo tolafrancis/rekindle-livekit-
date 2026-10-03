@@ -82,8 +82,8 @@ const FREE_ENTITLEMENTS: Omit<UserEntitlements, 'isLoading' | 'refreshEntitlemen
   canDownloadOffline:           false,
   hasUnlimitedDevotionals:      false,
   hasUnlimitedPrayerLibrary:    false,
-  canShareRevelations:          false,
   // Free features — always on
+  canShareRevelations:          true,
   canBookCounsellor:            true,
   hasUnlimitedScriptureMemory:  true,
   // Ministry features — locked
@@ -143,7 +143,7 @@ export function useUserEntitlements(): UserEntitlements {
         canDownloadOffline:           partnerOrAdmin,
         hasUnlimitedDevotionals:      partnerOrAdmin,
         hasUnlimitedPrayerLibrary:    true,  // prayer library free for all
-        canShareRevelations:          partnerOrAdmin,
+        canShareRevelations:          true,  // sharing revelations (and asking questions) is free for all
         // Free features
         canBookCounsellor:            true,
         hasUnlimitedScriptureMemory:  true,

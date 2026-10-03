@@ -48,11 +48,30 @@ interface CreateActivityParams {
   metadata?: ActivityMetadata;
 }
 
+/** Metadata keys that name what someone prayed, read or watched. The feed
+ *  only says what a person did, so these are never stored on an activity. */
+const PRIVATE_METADATA_KEY = /(Title|Topic|Name)$/;
+
+const publicMetadata = (kind: CommunityActivityType, metadata?: ActivityMetadata): ActivityMetadata => {
+  const out: ActivityMetadata = { kind };
+  for (const [key, value] of Object.entries(metadata ?? {})) {
+    if (!PRIVATE_METADATA_KEY.test(key)) out[key] = value;
+  }
+  return out;
+};
+
 /**
- * Post a new activity to the community feed
+ * Post a new activity to the community feed. Only what the person did is
+ * stored (e.g. "Prayed in the Prayer Library") — never the prayer, topic,
+ * series, devotional or book — so params.title/description/content stay on
+ * this device.
  */
 export const postCommunityActivity = async (params: CreateActivityParams): Promise<void> => {
   try {
+    const summary = describeCommunityActivity({
+      activity_type: mapActivityType(params.activityType),
+      metadata: { kind: params.activityType, streakCount: params.metadata?.streakCount },
+    });
     const { data, error } = await supabase
       .from('community_activities')
       .insert({
@@ -60,10 +79,10 @@ export const postCommunityActivity = async (params: CreateActivityParams): Promi
         user_name: params.userName,
         user_avatar: params.userAvatar,
         activity_type: mapActivityType(params.activityType),
-        title: params.title,
-        description: params.description,
-        content: params.content,
-        metadata: params.metadata,
+        title: summary.text,
+        description: null,
+        content: null,
+        metadata: publicMetadata(params.activityType, params.metadata),
         reaction_count: 0
       });
 
@@ -74,6 +93,70 @@ export const postCommunityActivity = async (params: CreateActivityParams): Promi
   } catch (error) {
     console.error('Failed to post community activity:', error);
   }
+};
+
+export interface ActivitySummary {
+  /** communityActivityFeed translation key */
+  key: string;
+  /** English text, used when there's no translation */
+  text: string;
+}
+
+const SUMMARIES: Record<CommunityActivityType, ActivitySummary> = {
+  prayer_topic_completed: { key: 'didPrayLibrary', text: 'Prayed in the Prayer Library' },
+  prayer_series_started: { key: 'didStartPrayerSeries', text: 'Started a prayer series' },
+  prayer_series_day_completed: { key: 'didPrayerSeriesDay', text: 'Prayed through a day of a prayer series' },
+  prayer_series_completed: { key: 'didCompletePrayerSeries', text: 'Completed a prayer series 🎉' },
+  prayer_watch_joined: { key: 'didJoinPrayerWatch', text: 'Joined a prayer watch' },
+  prayer_watch_completed: { key: 'didCompletePrayerWatch', text: 'Completed a prayer watch session' },
+  devotional_started: { key: 'didStartDevotional', text: 'Started a devotional' },
+  devotional_day_completed: { key: 'didDevotionalDay', text: 'Completed a day of a devotional' },
+  devotional_completed: { key: 'didCompleteDevotional', text: 'Completed a devotional 🙏' },
+  book_started: { key: 'didStartBook', text: 'Started reading a book' },
+  book_completed: { key: 'didFinishBook', text: 'Finished reading a book 📚' },
+  live_channel_joined: { key: 'didJoinLiveChannel', text: 'Joined a live channel' },
+  live_channel_event_attended: { key: 'didAttendLiveEvent', text: 'Attended a live event' },
+  prayer_milestone: { key: 'didPrayerMilestone', text: 'Reached a prayer milestone' },
+  streak_milestone: { key: 'didStreak', text: 'Reached a prayer streak 🔥' },
+};
+
+/** Older rows predate metadata.kind; work it out from what they did store. */
+const inferKind = (title: string, m: ActivityMetadata): CommunityActivityType | null => {
+  const started = /^started/i.test(title);
+  if (m.streakCount) return 'streak_milestone';
+  if (m.topicId) return 'prayer_topic_completed';
+  if (m.prayerWatchId || m.prayerWatchTopic) return /^joined/i.test(title) ? 'prayer_watch_joined' : 'prayer_watch_completed';
+  if (m.seriesId) return started ? 'prayer_series_started' : /day \d/i.test(title) ? 'prayer_series_day_completed' : 'prayer_series_completed';
+  if (m.devotionalId) return started ? 'devotional_started' : /day \d/i.test(title) ? 'devotional_day_completed' : 'devotional_completed';
+  if (m.bookId) return started ? 'book_started' : 'book_completed';
+  if (m.eventId || m.eventTitle) return 'live_channel_event_attended';
+  if (m.channelId) return 'live_channel_joined';
+  return null;
+};
+
+const GENERIC_SUMMARIES: Record<string, ActivitySummary> = {
+  prayer: { key: 'didPray', text: 'Spent time in prayer' },
+  devotional_completed: { key: 'didDevotional', text: 'Spent time in a devotional' },
+  milestone: { key: 'didMilestone', text: 'Reached a milestone 🎉' },
+  streak: { key: 'didStreak', text: 'Reached a prayer streak 🔥' },
+  challenge_completed: { key: 'didChallenge', text: 'Completed a challenge' },
+};
+
+/**
+ * What a community activity says in the feed: only what the person did,
+ * never what they prayed, read or watched.
+ */
+export const describeCommunityActivity = (activity: {
+  activity_type: string;
+  title?: string | null;
+  metadata?: ActivityMetadata | null;
+}): ActivitySummary => {
+  const m = activity.metadata ?? {};
+  const kind = (m.kind as CommunityActivityType | undefined) ?? inferKind(activity.title ?? '', m);
+  if (kind === 'streak_milestone' && m.streakCount) {
+    return { key: 'didStreakDays', text: `Reached a ${m.streakCount}-day prayer streak 🔥` };
+  }
+  return (kind && SUMMARIES[kind]) || GENERIC_SUMMARIES[activity.activity_type] || GENERIC_SUMMARIES.prayer;
 };
 
 /**
