@@ -36,6 +36,7 @@ import {
   Volume1, VolumeX, Volume, Music,
   Share2, Copy, Send
 } from 'lucide-react';
+import { publicWebOrigin } from '../platform';
 
 interface PrayerSeries {
   id: string;
@@ -1438,7 +1439,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
           {showPointShareModal && sharePointIndex !== null && selectedSeries && currentDay && (() => {
             const point = generatedPrayerPoints[sharePointIndex];
             if (!point) return null;
-            const seriesUrl = `${window.location.origin}/prayer-series/${selectedSeries.id}`;
+            const seriesUrl = `${publicWebOrigin()}/prayer-series/${selectedSeries.id}`;
             const shareMessage = [
               `🙏 ${point.title}`,
               '',
@@ -2058,7 +2059,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
                 {t('prayerSeriesViewer', 'completedAllDays', 'You\'ve completed all {n} days of "{title}"').replace('{n}', String(selectedSeries.total_days)).replace('{title}', selectedSeries.title)}
               </p>
               {(() => {
-                const seriesUrl = `${window.location.origin}/prayer-series/${selectedSeries.id}`;
+                const seriesUrl = `${publicWebOrigin()}/prayer-series/${selectedSeries.id}`;
                 const completionMsg = t('prayerSeriesViewer', 'completionShareMsg', '🙏 I just completed all {n} days of the "{title}" prayer series on ReKindle BC!\n\n{url}').replace('{n}', String(selectedSeries.total_days)).replace('{title}', selectedSeries.title).replace('{url}', seriesUrl);
                 const encodedMsg = encodeURIComponent(completionMsg);
                 const encodedUrl = encodeURIComponent(seriesUrl);

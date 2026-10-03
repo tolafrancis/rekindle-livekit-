@@ -32,6 +32,7 @@ import {
 import { toast } from './ui/use-toast';
 import { shareEvent } from '@/lib/liveShare';
 import { ChannelEvent, EventRegistration } from '@rekindle/types/liveChannelTypes';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface LiveChannelEventDetailsProps {
   event: ChannelEvent | null;
@@ -221,7 +222,7 @@ export const LiveChannelEventDetails: React.FC<LiveChannelEventDetailsProps> = (
 
   // Handle share
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/events/${event.id}`;
+    const shareUrl = `${publicWebOrigin()}/events/${event.id}`;
     const r = await shareEvent({
       title: event.title,
       channelName: (event as any).channel?.name,

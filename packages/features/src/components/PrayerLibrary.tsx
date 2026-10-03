@@ -38,6 +38,7 @@ import {
   Copy, Check, Lock, Crown, Music, Link
 } from 'lucide-react';
 import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass } from './SearchFilterPanel';
+import { publicWebOrigin } from '../platform';
 
 const buildShareLinks = (title: string, url: string) => {
   const encodedUrl = encodeURIComponent(url);
@@ -1279,7 +1280,7 @@ export function PrayerLibrary() {
               </h3>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredTopics.filter(t => t.is_featured).map(topic => {
-                  const shareUrl = `${window.location.origin}/prayer-topics/${topic.id}`;
+                  const shareUrl = `${publicWebOrigin()}/prayer-topics/${topic.id}`;
                   const lz = getLocalizedContent(topic, ['title', 'description', 'scripture_reference']);
 
                   return (
@@ -1353,7 +1354,7 @@ export function PrayerLibrary() {
             <h3 className="text-xl font-semibold mb-4">All Prayer Topics</h3>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredTopics.filter(t => !t.is_featured).map(topic => {
-                const shareUrl = `${window.location.origin}/prayer-topics/${topic.id}`;
+                const shareUrl = `${publicWebOrigin()}/prayer-topics/${topic.id}`;
                 const lz = getLocalizedContent(topic, ['title', 'description', 'scripture_reference']);
 
                 return (
@@ -1454,7 +1455,7 @@ export function PrayerLibrary() {
               </h3>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredSeries.filter(s => s.is_featured).map(s => {
-                  const shareUrl = `${window.location.origin}/prayer-series/${s.id}`;
+                  const shareUrl = `${publicWebOrigin()}/prayer-series/${s.id}`;
                   const lz = getLocalizedContent(s, ['title', 'subtitle', 'description']);
 
                   return (
@@ -1544,7 +1545,7 @@ export function PrayerLibrary() {
             <h3 className="text-xl font-semibold mb-4">All Prayer Series</h3>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredSeries.filter(s => !s.is_featured).map(s => {
-                const shareUrl = `${window.location.origin}/prayer-series/${s.id}`;
+                const shareUrl = `${publicWebOrigin()}/prayer-series/${s.id}`;
                 const lz = getLocalizedContent(s, ['title', 'subtitle', 'description']);
 
                 return (
@@ -1707,7 +1708,7 @@ export function PrayerLibrary() {
                     green: 'from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
                   };
 
-                  const shareUrl = `${window.location.origin}/prayer-watch/${topic.id}`;
+                  const shareUrl = `${publicWebOrigin()}/prayer-watch/${topic.id}`;
                   const lz = getLocalizedContent(topic, ['name', 'description']);
 
                   return (
@@ -1885,7 +1886,7 @@ export function PrayerLibrary() {
                                 {selectedPrayerWatchTopic && (
                                   <ShareButton 
                                     title={`${timeSlot.label} - ${selectedPrayerWatchTopic.name}`}
-                                    url={`${window.location.origin}/prayer-watch/${selectedPrayerWatchTopic.id}/${timeSlot.value}`}
+                                    url={`${publicWebOrigin()}/prayer-watch/${selectedPrayerWatchTopic.id}/${timeSlot.value}`}
                                   />
                                 )}
                               </>

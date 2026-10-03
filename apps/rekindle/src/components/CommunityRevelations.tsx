@@ -24,6 +24,7 @@ import { toast } from './ui/use-toast';
 import { Badge } from './ui/badge';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
 import { useModeration } from '@rekindle/features/ModerationContext';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 // ─────────────────────────────────────────────
 // Types
@@ -468,8 +469,8 @@ export const CommunityRevelations: React.FC = () => {
   const filteredRevelations = filterBlocked(revFilter === 'bookmarked' ? revelations.filter(r => r.bookmarked) : revelations, (r) => r.user_id);
   const filteredTestimonies = filterBlocked(testFilter === 'bookmarked' ? testimonies.filter(t => t.bookmarked) : testimonies, (t) => t.user_id);
 
-  const getShareUrl = (id: string) => `${window.location.origin}/revelations/${id}`;
-  const getTestShareUrl = (id: string) => `${window.location.origin}/testimonies/${id}`;
+  const getShareUrl = (id: string) => `${publicWebOrigin()}/revelations/${id}`;
+  const getTestShareUrl = (id: string) => `${publicWebOrigin()}/testimonies/${id}`;
 
   const categoryColor = (cat: string) => {
     const map: Record<string, string> = {

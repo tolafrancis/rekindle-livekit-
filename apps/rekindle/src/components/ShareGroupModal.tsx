@@ -6,6 +6,7 @@ import { PrayerGroup } from '@rekindle/types/prayerTypes';
 import { Facebook, MessageCircle, Copy, Check, Share2, Users } from 'lucide-react';
 import { toast } from './ui/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface Props {
   open: boolean;
@@ -16,7 +17,7 @@ interface Props {
 export const ShareGroupModal: React.FC<Props> = ({ open, onClose, group }) => {
   const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
-  const shareUrl = `${window.location.origin}/group/${group.id}`;
+  const shareUrl = `${publicWebOrigin()}/group/${group.id}`;
   const shareText = `Join "${group.name}" prayer group! ${group.description || 'Come pray with us!'}`;
 
   const copyLink = async () => {

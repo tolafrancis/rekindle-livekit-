@@ -17,6 +17,7 @@ import {
   Upload, Circle, Square, ChevronUp, ChevronDown, BarChart3, Users, Eye,
   Clock, X, Send, CalendarClock, FileText,
 } from 'lucide-react';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface Props {
   ministryId: string;
@@ -327,7 +328,7 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
         // title is required by send-email-broadcast; without it every call
         // was rejected with a 400 and members never got this email.
         title: video.title,
-        message: `${ministryName || 'Your ministry'} just posted a new video message${video.speaker_name ? ` from ${video.speaker_name}` : ''}: "${video.title}". Watch it now: ${window.location.origin}/ministry-videos/${video.id}`,
+        message: `${ministryName || 'Your ministry'} just posted a new video message${video.speaker_name ? ` from ${video.speaker_name}` : ''}: "${video.title}". Watch it now: ${publicWebOrigin()}/ministry-videos/${video.id}`,
         messageCategory: 'transactional',
       },
     }).catch((err) => console.error('Email notification failed (non-fatal):', err));

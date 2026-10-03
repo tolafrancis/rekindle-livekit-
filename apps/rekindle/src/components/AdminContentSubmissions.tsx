@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Check, X, MessageSquareWarning, Loader2, Copy } from 'lucide-react';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface DayEntry {
   day: number;
@@ -56,7 +57,7 @@ const STATUS_BADGE: Record<Submission['status'], { label: string; variant: 'seco
   rejected: { label: 'Rejected', variant: 'destructive' },
 };
 
-const SUBMIT_LINK = `${typeof window !== 'undefined' ? window.location.origin : ''}/write-for-us`;
+const SUBMIT_LINK = `${publicWebOrigin()}/write-for-us`;
 
 /**
  * Publishes an approved submission into the real content it maps to —

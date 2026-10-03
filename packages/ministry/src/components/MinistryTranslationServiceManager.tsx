@@ -18,6 +18,7 @@ import { playQuestionChime } from '@rekindle/live/questionAlert';
 import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
 import { LiveScriptureOperatorCard, type ScriptureSessionOption } from './LiveScriptureOperatorCard';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface MinistryTranslationServiceManagerProps {
   ministryId: string;
@@ -360,8 +361,8 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       if (error) throw error;
       const { session_id, speaker_token } = data as { session_id: string; speaker_token: string };
       setNewSpeakerLink({
-        speakerLink: `${window.location.origin}/speak/${session_id}?t=${speaker_token}`,
-        listenerLink: `${window.location.origin}/display/${session_id}`,
+        speakerLink: `${publicWebOrigin()}/speak/${session_id}?t=${speaker_token}`,
+        listenerLink: `${publicWebOrigin()}/display/${session_id}`,
       });
       setNewSpeakerService({ id: service.id, name: service.name });
       load();
@@ -434,7 +435,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   const [obsCaptionSessionId, setObsCaptionSessionId] = useState<string | null>(null);
 
   const copyDisplayLink = (sessionId: string) => {
-    const url = `${window.location.origin}/display/${sessionId}`;
+    const url = `${publicWebOrigin()}/display/${sessionId}`;
     navigator.clipboard.writeText(url).then(
       () => toast({ title: 'Display link copied' }),
       () => toast({ title: 'Could not copy link', description: url, variant: 'destructive' }),
@@ -456,7 +457,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       const { data, error } = await supabase.rpc('speaker_session_get_link', { p_session_id: session.id });
       if (error) throw error;
       const { session_id, speaker_token, restarted } = data as { session_id: string; speaker_token: string; restarted: boolean };
-      const url = `${window.location.origin}/speak/${session_id}?t=${speaker_token}`;
+      const url = `${publicWebOrigin()}/speak/${session_id}?t=${speaker_token}`;
       await navigator.clipboard.writeText(url);
       toast({
         title: restarted ? 'Restarted — speaker link copied' : 'Speaker link copied',
@@ -484,7 +485,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // Takes {id, name} rather than the full ServiceRow so the Speaker Link
   // flow's result screen (which only ever has those two fields) can reuse
   // these too, not just the multi-language "Start Service" cards.
-  const landingUrlFor = (service: { id: string; name: string }) => `${window.location.origin}/display?service_id=${service.id}`;
+  const landingUrlFor = (service: { id: string; name: string }) => `${publicWebOrigin()}/display?service_id=${service.id}`;
 
   const downloadQrOverlay = async (service: { id: string; name: string }) => {
     setGeneratingQrFor(service.id);

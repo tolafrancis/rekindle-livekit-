@@ -23,6 +23,7 @@ import {
   ChevronRight, Calendar, Users, Target, Loader2, Heart,
   Volume2, Video, MessageSquare, RefreshCw, ArrowLeft, Lock, Crown
 } from 'lucide-react';
+import { publicWebOrigin } from '../platform';
 
 interface Category {
   id: string;
@@ -510,7 +511,7 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
         entry={lzEntry}
         seriesTitle={lzSeries.title || 'Devotional'}
         totalDays={selectedSeries.total_days || 1}
-        shareUrl={`${window.location.origin}/devotional-series/${selectedSeries.id}`}
+        shareUrl={`${publicWebOrigin()}/devotional-series/${selectedSeries.id}`}
         onComplete={async () => {
           await loadUserProgress();
           await loadSeries();

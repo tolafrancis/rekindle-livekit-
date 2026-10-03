@@ -15,6 +15,7 @@ import { recordDailyActivity } from '@/lib/streak';
 import { shareDevotional } from '@/lib/devotionalShare';
 import { canNativeShare } from '@/lib/webShare';
 import { useLocalizedScriptures, ScriptureInput } from '@/hooks/useLocalizedScripture';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 // Scripture block for the widget. Isolated into its own component so the
 // useLocalizedScriptures hook runs unconditionally (the main widget body sits
@@ -408,14 +409,14 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   const shareDailyDevotional = () => {
     if (!todayDevotional) return;
     // Platform devotionals aren't ministry-owned — falls back to Rekindle branding.
-    shareLink(`${window.location.origin}/daily-devotional/${todayDevotional.id}`, todayDevotional.title || "Today's Devotional");
+    shareLink(`${publicWebOrigin()}/daily-devotional/${todayDevotional.id}`, todayDevotional.title || "Today's Devotional");
   };
   const shareMinistryDevotional = () => {
     if (!ministryDevotional) return;
     // Use the name prefetched on load (synchronous — so the native share sheet
     // keeps the user-activation gesture on iOS). Falls back to Rekindle branding
     // only if the name genuinely couldn't be resolved.
-    shareLink(`${window.location.origin}/ministry-devotional/${ministryDevotional.id}`, ministryDevotional.title || "Today's Devotional", ministryName);
+    shareLink(`${publicWebOrigin()}/ministry-devotional/${ministryDevotional.id}`, ministryDevotional.title || "Today's Devotional", ministryName);
   };
 
   // ── Render: full-screen devotional module ──────────────────
@@ -425,7 +426,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
       <DevotionalModule
         devotional={formatForModule(lz)}
         moduleNumber={1}
-        shareUrl={`${window.location.origin}/daily-devotional/${todayDevotional.id}`}
+        shareUrl={`${publicWebOrigin()}/daily-devotional/${todayDevotional.id}`}
         onComplete={() => { handleComplete(); handleCloseModule(); }}
         onClose={handleCloseModule}
       />
@@ -440,7 +441,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
         devotional={formatMinistryForModule(lz)}
         moduleNumber={1}
         ministryName={ministryName}
-        shareUrl={`${window.location.origin}/ministry-devotional/${ministryDevotional.id}`}
+        shareUrl={`${publicWebOrigin()}/ministry-devotional/${ministryDevotional.id}`}
         onComplete={() => { recordDailyActivity(user?.id, 'daily_devotional'); setShowMinistryModule(false); }}
         onClose={() => { setShowMinistryModule(false); }}
       />

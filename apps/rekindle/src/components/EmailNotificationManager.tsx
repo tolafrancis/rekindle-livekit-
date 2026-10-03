@@ -14,6 +14,7 @@ import {
   Mail, Send, Eye, Edit, Trash2, Plus, Save, X, 
   Users, CheckCircle, AlertCircle, Copy, Loader2
 } from 'lucide-react';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface EmailTemplate {
   id: string;
@@ -410,7 +411,7 @@ export const EmailNotificationManager: React.FC = () => {
           variables: {
             userName: 'Test User',
             date: new Date().toLocaleDateString(),
-            siteUrl: window.location.origin
+            siteUrl: publicWebOrigin()
           }
         }
       });

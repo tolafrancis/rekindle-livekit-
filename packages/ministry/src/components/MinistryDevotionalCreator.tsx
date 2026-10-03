@@ -44,6 +44,7 @@ import {
   Download
 } from 'lucide-react';
 import { fetchScripture, BIBLE_VERSIONS } from '@rekindle/features/bibleApi';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface MinistryDevotional {
   id: string;
@@ -309,7 +310,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
 
   // Generate deep link
   const generateDeepLink = (devotionalId: string, location: string) => {
-    const baseUrl = window.location.origin;
+    const baseUrl = publicWebOrigin();
     return `${baseUrl}/devotional/${devotionalId}?source=ministry&location=${location}`;
   };
 

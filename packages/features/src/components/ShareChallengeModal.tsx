@@ -6,6 +6,7 @@ import { Facebook, MessageCircle, Copy, Check, Share2, Send } from 'lucide-react
 import { toast } from '@rekindle/ui/use-toast';
 import { canNativeShare } from '../webShare';
 import { useLanguage } from '../LanguageContext';
+import { publicWebOrigin } from '../platform';
 
 interface Props {
   open: boolean;
@@ -18,7 +19,7 @@ interface Props {
 export const ShareChallengeModal: React.FC<Props> = ({ open, onClose, title, description, challengeId }) => {
   const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
-  const shareUrl = `${window.location.origin}/challenge/${challengeId}`;
+  const shareUrl = `${publicWebOrigin()}/challenge/${challengeId}`;
   const shareText = `Join me in the "${title}" prayer challenge! ${description}`;
 
   const copyLink = async () => {

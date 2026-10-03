@@ -15,6 +15,7 @@ import {
   slugify, buildJoinUrl, generateQrPngDataUrl, generateQrSvgString,
   downloadUrl, downloadTextFile, generateInviteCode, sha256Hex,
 } from '@rekindle/features/qrCode';
+import { publicWebOrigin } from '@rekindle/features/platform';
 
 interface Props {
   ministry: any;          // ministry_groups row (select '*')
@@ -221,7 +222,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
         <div className="space-y-2">
           <Label htmlFor="slug">{t('ministryRegistrationSettings', 'joinLinkAddress', 'Join link address')}</Label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400 whitespace-nowrap">{typeof window !== 'undefined' ? window.location.origin : ''}/join/</span>
+            <span className="text-sm text-gray-400 whitespace-nowrap">{publicWebOrigin()}/join/</span>
             <Input
               id="slug"
               value={slug}

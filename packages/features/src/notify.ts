@@ -19,6 +19,7 @@
  */
 
 import { supabase } from '@rekindle/supabase';
+import { publicWebOrigin } from './platform';
 
 export type NotifyEventType =
   | 'new_revelation'
@@ -118,7 +119,7 @@ export async function notify(payload: NotifyPayload): Promise<void> {
           title:      payload.title,
           message:    payload.body,
           senderName: payload.senderName ?? 'ReKindle BC',
-          siteUrl:    typeof window !== 'undefined' ? window.location.origin : '',
+          siteUrl:    publicWebOrigin(),
           ...(payload.emailVariables ?? {}),
         },
       }
