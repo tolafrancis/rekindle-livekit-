@@ -88,6 +88,7 @@ import { AcceptRulesModal } from './AcceptRulesModal';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
+import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
@@ -951,7 +952,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // ── Two-level grouped navigation (mirrors the consumer app) ──
   type NavChild = { id: string; label: string; icon: any };
   type NavGroup = { id: string; label: string; icon: any; gradient: string; children?: NavChild[] };
-  const GROUPS: NavGroup[] = [
+  // Platform-admin feature switches (migration 0394): a group switched off
+  // globally or for this ministry is dropped from the nav below.
+  const { isNavGroupOn: isFeatureNavGroupOn, loaded: featureTogglesLoaded } = useFeatureToggles(ministry.id);
+  const ALL_GROUPS: NavGroup[] = [
     { id: 'home', label: 'Home', icon: Home, gradient: 'from-violet-500 to-purple-600' },
     { id: 'word', label: 'The Word', icon: BookOpen, gradient: 'from-amber-500 to-orange-500', children: [
       { id: 'devotionals', label: 'Devotionals', icon: BookOpen },
@@ -1034,6 +1038,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ]
     }] : []),
   ];
+  const GROUPS = ALL_GROUPS.filter((g) => isFeatureNavGroupOn('ministry', g.id));
+
+  // A switched-off group also closes its screens, so a remembered tab or a
+  // deep link can't open it: fall back to Home.
+  const hiddenGroupTabs = ALL_GROUPS
+    .filter((g) => !GROUPS.includes(g))
+    .flatMap((g) => [g.id, ...(g.children ?? []).map((c) => c.id)])
+    .join(',');
+  useEffect(() => {
+    if (!featureTogglesLoaded || !hiddenGroupTabs) return;
+    if (hiddenGroupTabs.split(',').includes(activeTab)) setActiveTab('home');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featureTogglesLoaded, hiddenGroupTabs, activeTab]);
 
   // word/prayer/community children switch a sub-view; 'admin' children are their own activeTab.
   const SUBTAB: Record<string, { value: string; set: (v: any) => void }> = {
