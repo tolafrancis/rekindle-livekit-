@@ -18,6 +18,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Badge } from './ui/badge';
 import { LiveChannelCard } from './LiveChannelCard';
 import { ChannelStreamConfig } from './ChannelStreamConfig';
+import { ChannelDetailsDialog } from '@rekindle/live/components/ChannelDetailsDialog';
 import { LiveChannelEventScheduler } from './LiveChannelEventScheduler';
 import { LiveChannelEventsCalendar } from './LiveChannelEventsCalendar';
 import { LiveChannelEventCard } from './LiveChannelEventCard';
@@ -43,7 +44,8 @@ import {
   Church,
   Youtube,
   Facebook,
-  Info
+  Info,
+  Pencil,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { toast } from './ui/use-toast';
@@ -172,6 +174,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   // Active view state
   const [selectedChannel, setSelectedChannel] = useState<LiveChannel | null>(null);
   const [configChannel, setConfigChannel] = useState<LiveChannel | null>(null);
+  const [editChannel, setEditChannel] = useState<LiveChannel | null>(null);
   // Full-view switch (list ↔ broadcast/watch/recordings). Back returns to the list
   // instead of exiting the channels tab. selectedChannel stays plain companion state.
   const [viewMode, setViewMode] = useViewHistory<'list' | 'broadcast' | 'watch' | 'recordings'>('live-channels-view', 'list');
@@ -1019,6 +1022,15 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                       setViewMode('recordings');
                     }}
                   />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setEditChannel(channel)}
+                  >
+                    <Pencil className="h-4 w-4 mr-1.5" />
+                    {'Edit channel'}
+                  </Button>
                   {/* Attractive "connect to socials" entry point — opens the same
                       Broadcast setup dialog, where the YouTube/Facebook restream lives. */}
                   <Button
@@ -1219,6 +1231,15 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
       </Tabs>
 
       {/* Create Channel Modal */}
+      {editChannel && (
+        <ChannelDetailsDialog
+          channel={editChannel}
+          open={!!editChannel}
+          onClose={() => setEditChannel(null)}
+          onChanged={() => loadChannels()}
+        />
+      )}
+
       {configChannel && (
         <ChannelStreamConfig
           channel={configChannel}
