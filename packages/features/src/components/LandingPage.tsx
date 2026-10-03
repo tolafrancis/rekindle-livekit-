@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { FaqList } from './FaqList';
 import { Menu, X } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
+import { isNativeApp } from '../platform';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -21,6 +23,38 @@ const CONSUMER_APP_URL = import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.r
 // the download row is hidden independently until its URL is configured.
 const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL || '';
 const WINDOWS_INSTALLER_URL = import.meta.env.VITE_WINDOWS_INSTALLER_URL || '';
+// Both Android apps are live on Google Play (package ids from each app's
+// capacitor.config.ts). Shown on both domains, but not inside the native apps.
+const PLAY_STORE_APP_URL = import.meta.env.VITE_PLAY_STORE_APP_URL || 'https://play.google.com/store/apps/details?id=com.rekindlebc.app';
+const PLAY_STORE_MINISTRY_URL = import.meta.env.VITE_PLAY_STORE_MINISTRY_URL || 'https://play.google.com/store/apps/details?id=com.rekindlebc.ministry';
+
+// Google Play logo mark for the store buttons.
+const PlayIcon: React.FC<{ size?: number }> = ({ size = 22 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+    <path fill="#00d7fe" d="M3.6 1.8 13.4 12l-9.8 10.2c-.4-.2-.6-.7-.6-1.2V3c0-.5.2-1 .6-1.2Z" />
+    <path fill="#00f076" d="m16.8 8.6-3.4 3.4-9.8-10.2c.2-.1.5-.2.8-.2.3 0 .6.1.9.3l11.5 6.7Z" />
+    <path fill="#ff3a44" d="m16.8 15.4-11.5 6.7c-.3.2-.6.3-.9.3-.3 0-.6-.1-.8-.2l9.8-10.2 3.4 3.4Z" />
+    <path fill="#ffd500" d="M20.4 12c0 .5-.3 1-.8 1.3l-2.8 2.1-3.4-3.4 3.4-3.4 2.8 2.1c.5.3.8.8.8 1.3Z" />
+  </svg>
+);
+
+const PlayBadge: React.FC<{ href: string; caption: string; label: string }> = ({ href, caption, label }) => (
+  <a href={href} target="_blank" rel="noopener noreferrer" style={{
+    display: 'inline-flex', alignItems: 'center', gap: 12,
+    background: '#000', border: '1px solid rgba(255,255,255,.25)', color: '#fff',
+    padding: '9px 20px 9px 16px', borderRadius: 12, textDecoration: 'none', textAlign: 'left',
+    transition: 'border-color .2s',
+  }}
+    onMouseOver={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,.6)')}
+    onMouseOut={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,.25)')}
+  >
+    <PlayIcon />
+    <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+      <span style={{ fontSize: '.66rem', letterSpacing: '.04em', opacity: .75 }}>{caption}</span>
+      <span style={{ fontSize: '.98rem', fontWeight: 600 }}>{label}</span>
+    </span>
+  </a>
+);
 
 const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContext = 'consumer' }) => {
   const { t } = useLanguage();
@@ -50,6 +84,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   const ministryPartnerHref = appContext === 'ministry' ? '/settings/billing' : `${MINISTRY_APP_URL}/settings/billing`;
   const individualPartnerHref = appContext === 'ministry' ? CONSUMER_APP_URL : null;
   const legalBaseUrl = appContext === 'ministry' ? CONSUMER_APP_URL : '';
+  const showPlayStore = !isNativeApp();
 
   return (
     <>
@@ -194,6 +229,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
           <p className="rk-a rk-d3" style={{ fontSize: '.82rem', color: 'rgba(255,255,255,.35)', marginTop: 18 }}>
             {t('landing', 'freeForever', "Free forever · No credit card required")}
           </p>
+
+          {/* Google Play — both apps are live */}
+          {showPlayStore && (
+            <div className="rk-a rk-d3" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginTop: 26 }}>
+              <PlayBadge href={PLAY_STORE_APP_URL} caption={t('landing', 'playGetItOn', "GET IT ON GOOGLE PLAY")} label={t('landing', 'playAppName', "ReKindle BC")} />
+              <PlayBadge href={PLAY_STORE_MINISTRY_URL} caption={t('landing', 'playGetItOn', "GET IT ON GOOGLE PLAY")} label={t('landing', 'playMinistryName', "ReKindle BC Ministry")} />
+            </div>
+          )}
 
           {/* Native app downloads — each button is hidden independently until its
               app-specific release URL is configured, so this row can show one,
@@ -494,6 +537,42 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
           </div>
         </section>
 
+        {/* GET THE APPS — Google Play links for both Android apps */}
+        {showPlayStore && (
+          <section id="apps" style={{ background: 'linear-gradient(160deg,#0f0a1e 0%,#1e1040 55%,#2d1f5e 100%)', padding: '100px 0' }}>
+            <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px', textAlign: 'center' }}>
+              <p className="rk-reveal" style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#a78bfa', marginBottom: 12 }}>{t('landing', 'appsEyebrow', "Now on Google Play")}</p>
+              <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#fff' }}>{t('landing', 'appsTitle', "Take ReKindle BC with you")}</h2>
+              <p className="rk-reveal" style={{ color: 'rgba(255,255,255,.55)', fontSize: '1.05rem', maxWidth: 560, margin: '14px auto 0' }}>{t('landing', 'appsSubtitle', "Two Android apps, one account. Download the one that fits how you serve.")}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 20, marginTop: 48, textAlign: 'left' }}>
+                {[
+                  { name: t('landing', 'playAppName', "ReKindle BC"), desc: t('landing', 'appsConsumerDesc', "For every believer. Daily devotionals, prayer, Scripture memory, GraceCounsel AI, live worship and Live Translation."), href: PLAY_STORE_APP_URL },
+                  { name: t('landing', 'playMinistryName', "ReKindle BC Ministry"), desc: t('landing', 'appsMinistryDesc', "For ministry leaders and members. Go live, run meetings, manage members and small groups, and care for your congregation."), href: PLAY_STORE_MINISTRY_URL },
+                ].map(({ name, desc, href }, i) => (
+                  <div key={href} className="rk-reveal" style={{
+                    background: 'rgba(255,255,255,.04)', border: '1px solid rgba(167,139,250,.18)',
+                    borderRadius: 16, padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 14,
+                    transitionDelay: `${i * .08}s`,
+                  }}>
+                    <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.6rem', color: '#fff' }}>{name}</h3>
+                    <p style={{ color: 'rgba(255,255,255,.6)', fontSize: '.95rem', lineHeight: 1.65, flex: 1 }}>{desc}</p>
+                    <div><PlayBadge href={href} caption={t('landing', 'playGetItOn', "GET IT ON GOOGLE PLAY")} label={t('landing', 'playDownload', "Download")} /></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* FAQ — admin-managed (faq_items); FaqList renders nothing if empty. */}
+        <section id="faq" style={{ background: '#fff', padding: '100px 0' }}>
+          <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 24px' }}>
+            <p className="rk-reveal" style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: 12 }}>{t('landing', 'faqEyebrow', "Questions")}</p>
+            <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#0f0a1e', marginBottom: 32 }}>{t('landing', 'faqTitle', "Frequently asked questions")}</h2>
+            <FaqList />
+          </div>
+        </section>
+
         {/* FOOTER */}
         <footer style={{ background: '#070413', padding: '56px 0 32px', borderTop: '1px solid rgba(167,139,250,.08)' }}>
           <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 24px' }}>
@@ -505,7 +584,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                 <p style={{ fontSize: '.88rem', color: 'rgba(255,255,255,.35)', lineHeight: 1.7, maxWidth: 240 }}>{t('landing', 'footerTagline', "A faith-tech platform for believers, ministries, and counsellors. Deepen your walk. Reach your congregation.")}</p>
               </div>
               {[
-                { heading: t('landing', 'footPlatform', "Platform"), links: [[t('landing', 'navFeatures', "Features"),'#features'],[t('landing', 'navPartner', "Partner"),'#pricing']] },
+                { heading: t('landing', 'footPlatform', "Platform"), links: [[t('landing', 'navFeatures', "Features"),'#features'],[t('landing', 'navPartner', "Partner"),'#pricing'],[t('landing', 'navFaq', "FAQ"),'#faq']] },
+                ...(showPlayStore ? [{ heading: t('landing', 'footApps', "Get the apps"), links: [[t('landing', 'playAppName', "ReKindle BC"), PLAY_STORE_APP_URL], [t('landing', 'playMinistryName', "ReKindle BC Ministry"), PLAY_STORE_MINISTRY_URL]] }] : []),
                 { heading: t('landing', 'footLegal', "Legal"),    links: [[t('landing', 'footTerms', "Terms of Service"),`${legalBaseUrl}/terms`],[t('landing', 'footPrivacy', "Privacy Policy"),`${legalBaseUrl}/privacy`],[t('landing', 'footRefund', "Refund Policy"),'mailto:legal@rekindlebc.com?subject=Refund Request']] },
                 { heading: t('landing', 'footContact', "Contact"),  links: [['hello@rekindlebc.com','mailto:hello@rekindlebc.com'],['support@rekindlebc.com','mailto:support@rekindlebc.com']] },
               ].map(({ heading, links }) => (

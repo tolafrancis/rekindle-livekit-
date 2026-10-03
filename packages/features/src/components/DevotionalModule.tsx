@@ -1,5 +1,6 @@
 import { useSwipe } from '@rekindle/ui/useSwipe';
 import React, { useState, useEffect, useRef } from 'react';
+import { PlayerBackdrop } from './PlayerBackdrop';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@rekindle/ui/button';
 import { Progress } from '@rekindle/ui/progress';
@@ -922,13 +923,9 @@ export const DevotionalModule: React.FC<Props> = ({
     <div
       {...swipeHandlers}
       onClick={handleViewerTap}
-      className="fixed inset-0 z-[70] flex flex-col overflow-x-hidden"
-      style={{
-        backgroundImage: `url(${peacefulBackgrounds[backgroundIndex]})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center'
-      }}
+      className="fixed inset-0 z-[70] flex flex-col overflow-x-hidden bg-slate-950"
     >
+      <PlayerBackdrop src={peacefulBackgrounds[backgroundIndex]} />
       {/* Overlay for readability */}
       <div className="absolute inset-0 bg-black/40" />
 

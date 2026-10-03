@@ -1,5 +1,6 @@
 import { useSwipe } from '@rekindle/ui/useSwipe';
 import React, { useState, useEffect, useRef } from 'react';
+import { PlayerBackdrop, preloadImage } from './PlayerBackdrop';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -328,6 +329,9 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [showShareModal, setShowShareModal] = useState(false);
   const [showSlideShareModal, setShowSlideShareModal] = useState(false);
   const [backgroundIndex] = useState(() => Math.floor(Math.random() * peacefulBackgrounds.length));
+  // Start fetching the reading-view photo while the series list is open, so the
+  // player opens with its background already in cache.
+  useEffect(() => { void preloadImage(peacefulBackgrounds[backgroundIndex]); }, [backgroundIndex]);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [scrollSpeed, setScrollSpeed] = useState<'slow' | 'medium'>('medium');
@@ -1565,14 +1569,10 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       <div
         {...swipeHandlers}
         onClick={handleViewerTap}
-        className="fixed inset-0 z-[70] flex flex-col overflow-x-hidden"
-        style={{
-          backgroundImage: `url(${peacefulBackgrounds[backgroundIndex]})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          touchAction: 'pan-y'
-        }}
+        className="fixed inset-0 z-[70] flex flex-col overflow-x-hidden bg-slate-950"
+        style={{ touchAction: 'pan-y' }}
       >
+        <PlayerBackdrop src={peacefulBackgrounds[backgroundIndex]} />
         {/* Overlay for readability */}
         <div className="absolute inset-0 bg-black/40" />
 

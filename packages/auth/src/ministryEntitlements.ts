@@ -217,3 +217,28 @@ export async function checkMinistryMeetingQuota(
 
   return { allowed: true, used, limit: limitMinutes };
 }
+
+/** Members vs the plan's member cap. limit -1 = unlimited. */
+export interface MinistryMemberUsage {
+  count: number;
+  limit: number;
+  /** count / limit (0 when unlimited). */
+  ratio: number;
+}
+
+/** Share of the member cap at which admins start being warned. */
+export const MEMBER_LIMIT_WARN_RATIO = 0.8;
+
+export async function getMinistryMemberUsage(
+  ministryId: string | null | undefined,
+): Promise<MinistryMemberUsage | null> {
+  if (!ministryId) return null;
+  const entitlements = await getMinistryEntitlements(ministryId);
+  // RPC rather than a count(*) on ministry_group_members: that table's RLS only
+  // shows a user their own row. Returns null for non-admins.
+  const { data, error } = await supabase.rpc('get_ministry_member_count', { p_ministry_id: ministryId });
+  if (error || data === null || data === undefined) return null;
+  const limit = entitlements.limits.members;
+  const n = Number(data) || 0;
+  return { count: n, limit, ratio: limit > 0 ? n / limit : 0 };
+}

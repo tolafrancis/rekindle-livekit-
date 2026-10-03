@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
+import { MemberLimitMeter } from './MemberLimitMeter';
 import { supabase } from '@rekindle/supabase';
 import {
   Users, BookOpen, Heart, Calendar, Gift, MessageSquare,
@@ -175,6 +176,8 @@ export const MinistryOverviewDashboard: React.FC<MinistryOverviewDashboardProps>
 
   return (
     <div className="space-y-6">
+      <MemberLimitMeter ministryId={ministryId} variant="banner" />
+
       {/* Quick Actions */}
       <Card>
         <CardHeader>

@@ -1,5 +1,6 @@
 import { useSwipe } from '@rekindle/ui/useSwipe';
 import React, { useState, useEffect, useRef } from 'react';
+import { PlayerBackdrop } from './PlayerBackdrop';
 import { Button } from '@rekindle/ui/button';
 import { Progress } from '@rekindle/ui/progress';
 import { PrayerPoint, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
@@ -119,6 +120,7 @@ export const InteractivePrayerSession: React.FC<Props> = ({
   
   const track = instrumentalTracks.find(t => t.id === instrumentalId) || instrumentalTracks[0];
   const currentBackground = peacefulBackgrounds[currentSlide % peacefulBackgrounds.length];
+  const nextBackground = peacefulBackgrounds[(currentSlide + 1) % peacefulBackgrounds.length];
 
   // For Prayer Watch sessions, add timer icon to header
   const showPrayerWatchIndicator = isPrayerWatch;
@@ -190,49 +192,6 @@ export const InteractivePrayerSession: React.FC<Props> = ({
   const currentPoint = currentSlide > 0 && currentSlide <= prayerPoints.length 
     ? prayerPoints[currentSlide - 1] : null;
 
-  if (completed) {
-    // Calculate total time for display
-    const totalDuration = timeElapsed + (continueMode ? extraTime : 0);
-    const totalMinutes = Math.round(totalDuration / 60);
-    
-    return (
-      <div 
-        {...swipeHandlers} className="fixed inset-0 z-50 flex items-center justify-center"
-        style={{
-          backgroundImage: `url(${peacefulBackgrounds[7]})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center'
-        }}
-      >
-        <div className="absolute inset-0 bg-black/40" />
-        <div className="relative text-center text-white p-8 max-w-lg">
-          <div className="relative mb-6">
-            <CheckCircle className="h-24 w-24 mx-auto text-green-400 drop-shadow-lg" />
-            {showPrayerWatchIndicator && (
-              <div className="absolute -top-2 -right-2 bg-purple-600 p-2 rounded-full">
-                <Timer className="h-6 w-6 text-white" />
-              </div>
-            )}
-          </div>
-          <h2 className="text-4xl font-serif font-bold mb-4 drop-shadow-lg">{t('prayerSession', 'prayerComplete', 'Prayer Complete!')}</h2>
-          <p className="text-xl opacity-90 mb-8 drop-shadow">{t('prayerSession', 'peacePresence', "May God's peace and presence be with you today and always.")}</p>
-          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-6">
-            <p className="text-lg">{t('prayerSession', 'sessionDuration', 'Session Duration')}: {sessionLabel}</p>
-            <p className="text-sm opacity-80">{t('prayerSession', 'youCompletedPoints', 'You completed {n} prayer points').replace('{n}', String(prayerPoints.length))}</p>
-            {totalDuration > 0 && (
-              <p className="text-sm opacity-80 mt-1">
-                {t('prayerSession', 'totalPrayerTime', 'Total prayer time')}: {formatTime(totalDuration)}
-              </p>
-            )}
-          </div>
-          <Button onClick={onClose} className="bg-white text-purple-900 hover:bg-gray-100 px-8 py-3 text-lg">
-            {t('common', 'close', 'Close')}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   useEffect(() => {
     const isPlayingAudio = audioStarted && !isPaused && !completed;
     if (isPlayingAudio) {
@@ -268,15 +227,50 @@ export const InteractivePrayerSession: React.FC<Props> = ({
     };
   }, []);
 
+  if (completed) {
+    // Calculate total time for display
+    const totalDuration = timeElapsed + (continueMode ? extraTime : 0);
+    const totalMinutes = Math.round(totalDuration / 60);
+    
+    return (
+      <div 
+        {...swipeHandlers} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950"
+      >
+        <PlayerBackdrop src={peacefulBackgrounds[7]} />
+        <div className="absolute inset-0 bg-black/40" />
+        <div className="relative text-center text-white p-8 max-w-lg">
+          <div className="relative mb-6">
+            <CheckCircle className="h-24 w-24 mx-auto text-green-400 drop-shadow-lg" />
+            {showPrayerWatchIndicator && (
+              <div className="absolute -top-2 -right-2 bg-purple-600 p-2 rounded-full">
+                <Timer className="h-6 w-6 text-white" />
+              </div>
+            )}
+          </div>
+          <h2 className="text-4xl font-serif font-bold mb-4 drop-shadow-lg">{t('prayerSession', 'prayerComplete', 'Prayer Complete!')}</h2>
+          <p className="text-xl opacity-90 mb-8 drop-shadow">{t('prayerSession', 'peacePresence', "May God's peace and presence be with you today and always.")}</p>
+          <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-6">
+            <p className="text-lg">{t('prayerSession', 'sessionDuration', 'Session Duration')}: {sessionLabel}</p>
+            <p className="text-sm opacity-80">{t('prayerSession', 'youCompletedPoints', 'You completed {n} prayer points').replace('{n}', String(prayerPoints.length))}</p>
+            {totalDuration > 0 && (
+              <p className="text-sm opacity-80 mt-1">
+                {t('prayerSession', 'totalPrayerTime', 'Total prayer time')}: {formatTime(totalDuration)}
+              </p>
+            )}
+          </div>
+          <Button onClick={onClose} className="bg-white text-purple-900 hover:bg-gray-100 px-8 py-3 text-lg">
+            {t('common', 'close', 'Close')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      {...swipeHandlers} onClick={handleViewerTap} className="fixed inset-0 z-50 flex flex-col"
-      style={{
-        backgroundImage: `url(${currentBackground})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center'
-      }}
+      {...swipeHandlers} onClick={handleViewerTap} className="fixed inset-0 z-50 flex flex-col bg-slate-950"
     >
+      <PlayerBackdrop src={currentBackground} preload={[nextBackground, peacefulBackgrounds[7]]} />
       <div className="absolute inset-0 bg-black/30" />
       <audio ref={audioRef} src={track.file_url} loop />
 

@@ -13,7 +13,7 @@ import {
   Building2, Users, DollarSign, Shield, Settings, AlertTriangle,
   RefreshCw, BarChart3, Server, FileText, Flag, Activity,
   Crown, Loader2, TrendingUp, HardDrive, Clock, CheckCircle,
-  XCircle, Database, Zap, MessageSquare, Globe
+  XCircle, Database, Zap, MessageSquare, Globe, HelpCircle
 } from 'lucide-react';
 
 import { MinistryTenantManager } from './MinistryTenantManager';
@@ -26,6 +26,7 @@ import { SupportTicketsManager } from './SupportTicketsManager';
 import { AuditLogsViewer } from './AuditLogsViewer';
 import { FlaggedContentManager } from './FlaggedContentManager';
 import { PlatformAnnouncementsManager } from './PlatformAnnouncementsManager';
+import { FaqManager } from './FaqManager';
 // LanguageManager moved to the main Admin dashboard (AdminDashboard "Languages" tab).
 
 interface PlatformStats {
@@ -242,7 +243,7 @@ const PlatformAdminDashboard: React.FC = () => {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 lg:grid-cols-12 gap-1 h-auto p-1 bg-gray-100">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-[repeat(13,minmax(0,1fr))] gap-1 h-auto p-1 bg-gray-100">
           <TabsTrigger value="overview" className="text-xs px-2 py-2">
             <BarChart3 className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabOverview', 'Overview')}
@@ -292,6 +293,10 @@ const PlatformAdminDashboard: React.FC = () => {
           <TabsTrigger value="announcements" className="text-xs px-2 py-2">
             <Globe className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabAnnounce', 'Announce')}
+          </TabsTrigger>
+          <TabsTrigger value="faq" className="text-xs px-2 py-2">
+            <HelpCircle className="h-4 w-4 mr-1" />
+            {t('platformAdminDashboard', 'tabFaq', 'FAQ')}
           </TabsTrigger>
           <TabsTrigger value="settings" className="text-xs px-2 py-2">
             <Settings className="h-4 w-4 mr-1" />
@@ -495,6 +500,10 @@ const PlatformAdminDashboard: React.FC = () => {
         {/* Announcements Tab */}
         <TabsContent value="announcements" className="mt-6">
           <PlatformAnnouncementsManager />
+        </TabsContent>
+
+        <TabsContent value="faq" className="mt-6">
+          <FaqManager />
         </TabsContent>
 
         {/* Settings Tab — platform-wide feature toggles */}
