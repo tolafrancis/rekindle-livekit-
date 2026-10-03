@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { toast } from '@rekindle/ui/use-toast';
 import {
   Loader2, Save, Plus, Trash2, User, Users, Phone, Heart, Bell, ShieldCheck, Baby,
-  LogOut, AlertTriangle,
+  LogOut, AlertTriangle, ArrowLeft,
 } from 'lucide-react';
 
 // Same address PrivacyPolicy.tsx's §7 "Your Rights" points members to for
@@ -32,6 +32,14 @@ const CONSENT_LABEL: Record<string, string> = {
 
 const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) => {
   const params = useParams<{ slug: string }>();
+  const navigate = useNavigate();
+  // Back to wherever the member came from (the ministry space's profile icon,
+  // a profile-completion prompt); straight to the app home if they landed here
+  // directly with no history.
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/');
+  };
   const slug = slugProp || params.slug;
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -281,6 +289,9 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-5">
+      <Button variant="ghost" size="sm" className="-ml-2" onClick={goBack}>
+        <ArrowLeft className="h-4 w-4 mr-1" />{t('common', 'back', 'Back')}
+      </Button>
       <div>
         <h1 className="text-xl font-bold">{ministry.name}</h1>
         <p className="text-sm text-gray-500">{t('memberMinistryProfile', 'yourMembershipProfile', 'Your membership profile')}</p>
