@@ -69,7 +69,7 @@ interface SubscriptionPlansManagerProps {
 const PLAN_CONFIGS = {
   starter: {
     name: 'Starter',
-    member_limit: -1, // gated by feature set (no CRM), not a headcount cap
+    member_limit: 50,
     storage_limit_mb: 5120, // 5 GB
     api_calls_limit: 10000,
     broadcast_limit: -1,
@@ -81,7 +81,7 @@ const PLAN_CONFIGS = {
   },
   growth_partner: {
     name: 'Growth Partner',
-    member_limit: 50,
+    member_limit: 100,
     storage_limit_mb: 5120, // 5 GB
     api_calls_limit: 25000,
     broadcast_limit: -1,
@@ -93,7 +93,7 @@ const PLAN_CONFIGS = {
   },
   ministry_partner: {
     name: 'Ministry Partner',
-    member_limit: 200,
+    member_limit: 300,
     storage_limit_mb: 25600, // 25 GB
     api_calls_limit: 100000,
     broadcast_limit: -1,
@@ -105,7 +105,7 @@ const PLAN_CONFIGS = {
   },
   ministry_plus: {
     name: 'Ministry Plus',
-    member_limit: 500, // +$20/mo per additional 500 via ministry_addons
+    member_limit: 600, // +$20/mo per additional 500 via ministry_addons
     storage_limit_mb: 102400, // 100 GB
     api_calls_limit: 250000,
     broadcast_limit: -1,
