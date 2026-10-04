@@ -133,6 +133,9 @@ export interface IVideoRoomWrapper {
   getVideoDevices(): Promise<MediaDeviceInfo[]>;
   getAudioInputDevices(): Promise<MediaDeviceInfo[]>;
   switchActiveDevice?(kind: MediaDeviceKind, deviceId: string): Promise<boolean>;
+  /** LiveKit only: resolve once the server has granted this participant
+   *  canPublish (true), or false if that never arrives within timeoutMs. */
+  waitForPublishPermission?(timeoutMs?: number): Promise<boolean>;
   isJoined(): boolean;
   isJoining(): boolean;
   isVideoEnabled(): boolean;

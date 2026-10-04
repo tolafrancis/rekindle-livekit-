@@ -1626,8 +1626,38 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     if (autoSpeakerClearTimerRef.current) clearTimeout(autoSpeakerClearTimerRef.current);
   }, []);
 
+  // Monitor the local mic's real state. Real bug reported live (2026-10-04):
+  // on LiveKit `callObject` is always null, so the Daily-only check below
+  // pinned audioStatus at 'inactive' and the top bar read "Mic Muted" the
+  // whole time the mic was ON. Read the published LiveKit mic track instead:
+  // no track yet = still publishing, a track the OS has muted (another app
+  // holding the mic) = genuinely not sending audio, otherwise live.
+  useEffect(() => {
+    if (!isLiveKitBackend()) return;
+    if (!isConnected || !isMicOn) {
+      setAudioStatus('inactive');
+      return;
+    }
+    const track = localParticipant?.audioTrack;
+    const check = () => {
+      if (!track || track.readyState !== 'live') setAudioStatus('detecting');
+      else if (track.muted) setAudioStatus('inactive');
+      else setAudioStatus('active');
+    };
+    check();
+    track?.addEventListener('mute', check);
+    track?.addEventListener('unmute', check);
+    track?.addEventListener('ended', check);
+    return () => {
+      track?.removeEventListener('mute', check);
+      track?.removeEventListener('unmute', check);
+      track?.removeEventListener('ended', check);
+    };
+  }, [isConnected, isMicOn, localParticipant?.audioTrack]);
+
   // Monitor audio track state from Daily SDK
   useEffect(() => {
+    if (isLiveKitBackend()) return;
     if (!callObject || !isConnected) {
       setAudioStatus('inactive');
       return;
@@ -1803,14 +1833,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     if (!isConnected || !backstageInitialRef.current) return;
     const initial = backstageInitialRef.current;
     backstageInitialRef.current = null;
-    if (initial.micEnabled !== isMicOn) toggleMic();
-    if (initial.cameraEnabled !== isCameraOn) toggleCamera();
-    if (initial.cameraBackground !== 'none') setVideoBackground(initial.cameraBackground);
-    // The mic picked in backstage (the camera goes through selectedCameraId,
-    // applied by its own effect above).
-    if (initial.micDeviceId && switchActiveDevice) {
-      void switchActiveDevice('audioinput', initial.micDeviceId);
-    }
+    // Real bug reported live (2026-10-04): the mic device switch used to fire
+    // un-awaited right alongside the mic publish, so the two raced inside
+    // LiveKit and the mic could come up unpublished while the button said ON
+    // (voice never reached the room or the live stream). Pick the backstage
+    // mic first, while no mic track exists yet (it only sets the capture
+    // default then), and only then publish — one mic, opened once. The camera
+    // goes through selectedCameraId, applied by its own effect above.
+    (async () => {
+      if (initial.micDeviceId && switchActiveDevice) {
+        await switchActiveDevice('audioinput', initial.micDeviceId).catch(() => false);
+      }
+      if (initial.micEnabled !== isMicOn) await toggleMic();
+      if (initial.cameraEnabled !== isCameraOn) await toggleCamera();
+      if (initial.cameraBackground !== 'none') setVideoBackground(initial.cameraBackground);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected]);
 

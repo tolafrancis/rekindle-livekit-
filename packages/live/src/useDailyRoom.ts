@@ -2061,9 +2061,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       // §1D — LiveKit viewer tokens have canPublish:false, so the SFU rejects a
       // publish until permissions are widened server-side. Do that before enabling.
       if (isLiveKitBackend() && options.viewerOnlyMode && !options.isHost) {
-        await supabase.functions.invoke('livekit-token', {
+        const { error: grantError } = await supabase.functions.invoke('livekit-token', {
           body: { action: 'grant-publish', roomName: options.roomName, context: { channelId: options.channelId } },
         });
+        if (grantError) console.error('[Daily] enableSpeakerMedia: grant-publish failed:', grantError);
+        // The widened grant reaches this client asynchronously — publishing
+        // before it lands is refused and the mic stays silent.
+        if (wrapper.waitForPublishPermission && !(await wrapper.waitForPublishPermission())) {
+          console.warn('[Daily] enableSpeakerMedia: publish permission never arrived');
+          toast({ title: 'Microphone Error', description: 'Could not get permission to speak. Please try again.', variant: 'destructive' });
+          return;
+        }
       }
 
       const audioOn = await wrapper.setAudio(true);

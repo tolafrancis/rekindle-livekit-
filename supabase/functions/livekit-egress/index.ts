@@ -196,7 +196,12 @@ async function resolveHostTracks(
         if (t.source === TrackSource.CAMERA) videoTrackId = t.sid;
       }
       last = { audioTrackId, videoTrackId };
-      const haveEnough = (audioTrackId || videoTrackId) && (!needsVideo || videoTrackId);
+      // Audio is always required: the client only starts a channel broadcast
+      // once the host's mic is on, so a lookup that sees only the camera means
+      // the mic publish hasn't landed yet. Starting on video alone locked the
+      // stream silent for the whole broadcast (real report 2026-10-04: "voice
+      // is not transferred to the livestream").
+      const haveEnough = !!audioTrackId && (!needsVideo || !!videoTrackId);
       if (haveEnough) return last;
     } catch (lookupErr) {
       console.warn(`[livekit-egress] host track lookup attempt ${i + 1}/${attempts} failed:`, lookupErr);
@@ -702,7 +707,7 @@ serve(async (req) => {
         });
       } else if (isChannel) {
         const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
-        const canUseTrackComposite = (audioTrackId || videoTrackId) && (!expectVideo || videoTrackId);
+        const canUseTrackComposite = !!audioTrackId && (!expectVideo || !!videoTrackId);
 
         if (canUseTrackComposite) {
           info = await egressClient.startTrackCompositeEgress(
