@@ -18,6 +18,7 @@ import { MeetingParticipantsPanel } from '../components/MeetingParticipantsPanel
 import { listMinistryWebinars, openWebinarBackstage, type MinistryWebinar, type WebinarStatus } from './webinarControl';
 import { CreateWebinarWizard } from './CreateWebinarWizard';
 import { WebinarAnalytics } from './WebinarAnalytics';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 
 interface WebinarDashboardProps {
   ministryId: string;
@@ -376,6 +377,8 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
 /** Ministry's webinar list — mirrors MinistryInteractiveMeetings' role in the
  *  meetings tab, but scoped to ministry_webinars (a wholly separate table/UI). */
 export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: WebinarDashboardProps) {
+  // Sub-tab kept in history state so a remount or Back keeps the tab the user was on.
+  const [tab, setTab] = useViewHistory<string>('webinar-dashboard-tab', 'upcoming');
   const [webinars, setWebinars] = useState<MinistryWebinar[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -527,7 +530,7 @@ export function WebinarDashboard({ ministryId, isLeader, renderRecordingsTab }: 
         )}
       </div>
 
-      <Tabs defaultValue="upcoming">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="live">Live{live.length > 0 ? ` (${live.length})` : ''}</TabsTrigger>
           <TabsTrigger value="upcoming">Upcoming</TabsTrigger>

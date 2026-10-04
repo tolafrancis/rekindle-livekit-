@@ -113,7 +113,8 @@ export const ChannelWatchPage: React.FC<{ context?: 'main' | 'ministry' }> = ({ 
   return (
     <LiveChannelViewer
       channel={channel}
-      onLeave={() => navigate('/')}
+      // Back to where the viewer came from; home only when the link was opened fresh.
+      onLeave={() => (((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0 ? navigate(-1) : navigate('/'))}
       isFollowing={isFollowing}
       onToggleFollow={user?.id ? toggleFollow : undefined}
       context={context}

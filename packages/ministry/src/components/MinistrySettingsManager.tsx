@@ -21,6 +21,7 @@ import { buildJoinUrl } from '@rekindle/features/qrCode';
 import {
   Settings, Palette, Globe, Bell, Shield, Loader2, Save, Link, Image, Upload, Radio, CreditCard, Receipt
 } from 'lucide-react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 
 interface Ministry {
   id: string;
@@ -53,6 +54,8 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
   ministry,
   onUpdate
 }) => {
+  // Sub-tab kept in history state so a remount or Back keeps the tab the user was on.
+  const [tab, setTab] = useViewHistory<string>('ministry-settings-tab', 'general');
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [savingRestream, setSavingRestream] = useState(false);
@@ -209,7 +212,7 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
   const colorOptions = ['#7c3aed', '#2563eb', '#059669', '#dc2626', '#ea580c', '#0891b2', '#7c2d12', '#1e3a8a'];
 
   return (
-    <Tabs defaultValue="general" className="w-full space-y-6">
+    <Tabs value={tab} onValueChange={setTab} className="w-full space-y-6">
       <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
         <TabsTrigger value="general" className="gap-2">
           <Settings className="h-4 w-4" />
