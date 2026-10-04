@@ -219,20 +219,16 @@ async function isEntitled(
 ): Promise<boolean> {
   const ctx = body.context ?? {};
 
-  // Ministry meeting — caller MUST belong to the meeting's ministry (member/leader/owner).
+  // Ministry meeting — the meeting's share link is the invite (Tola's
+  // decision, 2026-10-04). Guests holding it already join without any
+  // membership check, so a signed-in non-member holding the same link joins
+  // too: before this, joining as a guest worked while signing in got 403
+  // not_entitled. The meeting still has to exist; access_level only decides
+  // who sees it listed in the app.
   if (ctx.kind === 'ministry_meeting' && ctx.meetingId) {
     const { data: m } = await admin
       .from('ministry_video_meetings').select('ministry_id').eq('id', ctx.meetingId).maybeSingle();
-    const mid = (m as { ministry_id?: string } | null)?.ministry_id;
-    if (!mid) return false;
-    const { data: mem } = await admin
-      .from('ministry_group_members').select('user_id')
-      .eq('ministry_id', mid).eq('user_id', userId).maybeSingle();
-    if (mem) return true;
-    const { data: g } = await admin
-      .from('ministry_groups').select('id')
-      .eq('id', mid).or(`owner_id.eq.${userId},leader_id.eq.${userId}`).maybeSingle();
-    return !!g;
+    return !!(m as { ministry_id?: string } | null)?.ministry_id;
   }
 
   // Ministry webinar — public webinars bypass membership (anyone can watch/

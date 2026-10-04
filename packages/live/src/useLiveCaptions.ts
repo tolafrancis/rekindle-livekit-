@@ -10,12 +10,12 @@ import { updateCaptionPrefs, useCaptionPrefs, type CaptionSize, type CaptionStat
  * action is needed.
  *
  * Turning CC on:
- *   1. sets this participant's LiveKit attribute captions=on (the agent keeps
- *      running while anyone has it on, and stops 3 minutes after nobody does)
- *   2. calls the captions-start edge function with this participant's own
- *      room token, which starts the room's agent if it isn't running yet —
- *      idempotent, so everyone tapping at once still starts just one.
- * Turning CC off (or leaving) sets captions=off.
+ *   calls the captions-start edge function with this participant's own
+ *   room token. It sets their LiveKit attribute captions=on (the agent keeps
+ *   running while anyone has it on, and stops 3 minutes after nobody does)
+ *   and starts the room's agent if it isn't running yet — idempotent, so
+ *   everyone tapping at once still starts just one.
+ * Turning CC off (or leaving) sets captions=off through the same function.
  *
  * Captions arrive as LiveKit transcription events from the room's hidden
  * caption agent. Nothing is stored server-side, so a late joiner only sees
@@ -51,13 +51,21 @@ export function useLiveCaptions(bridge: LiveCaptionsBridge | null, { roomName, k
   const [status, setStatus] = useState<CaptionStatus>('off');
   const [lines, setLines] = useState<CaptionLine[]>([]);
   const receivedRef = useRef(false);
+  // Only clear the attribute if this participant actually set it — CC is off
+  // by default, and every join shouldn't cost an edge-function call.
+  const attributeOnRef = useRef(false);
 
-  const ensureAgent = useCallback(async (b: LiveCaptionsBridge): Promise<boolean> => {
+  // captions-start also sets this participant's captions attribute: tokens
+  // can't update their own attributes (see that function), so 'off' goes
+  // through it too.
+  const ensureAgent = useCallback(async (b: LiveCaptionsBridge, captions: 'on' | 'off' = 'on'): Promise<boolean> => {
     const livekitToken = b.getAccessToken();
     if (!livekitToken) return false;
+    if (captions === 'off' && !attributeOnRef.current) return true;
     const { data, error } = await supabase.functions.invoke('captions-start', {
-      body: { roomName, livekitToken, context: { kind } },
+      body: { roomName, livekitToken, context: { kind }, captions },
     });
+    attributeOnRef.current = captions === 'on';
     if (error || data?.error) {
       throw new Error(data?.error || error?.message || 'Could not start captions');
     }
@@ -73,7 +81,7 @@ export function useLiveCaptions(bridge: LiveCaptionsBridge | null, { roomName, k
     if (!prefs.enabled) {
       setStatus('off');
       setLines([]);
-      bridge.setLocalAttributes({ captions: 'off' }).catch(() => {});
+      ensureAgent(bridge, 'off').catch(() => {});
       return;
     }
 
@@ -83,7 +91,6 @@ export function useLiveCaptions(bridge: LiveCaptionsBridge | null, { roomName, k
 
     const start = async () => {
       try {
-        await bridge.setLocalAttributes({ captions: 'on' });
         await ensureAgent(bridge);
         if (!cancelled && !receivedRef.current) setStatus('waiting');
       } catch (err) {
@@ -113,9 +120,9 @@ export function useLiveCaptions(bridge: LiveCaptionsBridge | null, { roomName, k
   useEffect(() => {
     if (!bridge) return;
     return () => {
-      bridge.setLocalAttributes({ captions: 'off' }).catch(() => {});
+      ensureAgent(bridge, 'off').catch(() => {});
     };
-  }, [bridge]);
+  }, [bridge, ensureAgent]);
 
   // Incoming segments: interim updates replace their line in place (same
   // id); an empty final removes it. Only the most recent lines are kept.
