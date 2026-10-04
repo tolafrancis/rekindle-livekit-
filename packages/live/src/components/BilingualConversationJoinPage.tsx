@@ -116,6 +116,16 @@ export const BilingualConversationJoinPage: React.FC = () => {
     }
   };
 
+  // The guest gets a "you left" card. The signed-in host goes back to where
+  // they opened the conversation from (the ministry's Conversation tab), and
+  // only falls back to the home page when this link was opened fresh.
+  const hostOrGuestLeave = () => {
+    if (phase.kind === 'room' && phase.seatToken) { setPhase({ kind: 'left' }); return; }
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground" style={{ minHeight: '100dvh' }}>
       {phase.kind === 'room' && conversationId ? (
@@ -123,7 +133,7 @@ export const BilingualConversationJoinPage: React.FC = () => {
           <BilingualConversationRoom
             conversationId={conversationId}
             seatToken={phase.seatToken}
-            onLeave={() => (phase.seatToken ? setPhase({ kind: 'left' }) : navigate('/'))}
+            onLeave={hostOrGuestLeave}
             onSeatLost={(message) => { if (conversationId) clearSeatToken(conversationId); setPhase({ kind: 'error', message }); }}
           />
         </div>

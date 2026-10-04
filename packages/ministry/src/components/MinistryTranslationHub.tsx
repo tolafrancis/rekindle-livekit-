@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from 'react';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Radio, HardDrive, Settings as SettingsIcon, Languages, Loader2 } from 'lucide-react';
 import { MinistryTranslationServiceManager } from './MinistryTranslationServiceManager';
@@ -20,6 +21,10 @@ interface MinistryTranslationHubProps {
 // Mirrors the MinistryWhatsAppHub pattern: one tabbed hub, three focused
 // sub-managers underneath.
 export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ ministryId, ministryName }) => {
+  // Kept in history state so a remount (or Back) lands on the sub-tab the
+  // leader was on, e.g. Conversation after a conversation ends, not Service.
+  const [tab, setTab] = useViewHistory<string>('ministry-translation-tab', 'service');
+
   return (
     <div className="space-y-4">
       <div>
@@ -33,7 +38,7 @@ export const MinistryTranslationHub: React.FC<MinistryTranslationHubProps> = ({ 
         </p>
       </div>
 
-      <Tabs defaultValue="service">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full flex-wrap md:w-auto">
           <TabsTrigger value="service" className="gap-2">
             <Radio className="h-4 w-4" />

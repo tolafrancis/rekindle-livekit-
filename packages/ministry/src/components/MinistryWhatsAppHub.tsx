@@ -7,6 +7,7 @@ import { MinistryWhatsAppBroadcast } from './MinistryWhatsAppBroadcast';
 import { MinistryWhatsAppUsage } from './MinistryWhatsAppUsage';
 import { supabase } from '@rekindle/supabase';
 import type { MinistryWABAConfig } from './MinistryWhatsAppConnect';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 
 interface MinistryWhatsAppHubProps {
   ministryId: string;
@@ -17,6 +18,8 @@ export const MinistryWhatsAppHub: React.FC<MinistryWhatsAppHubProps> = ({
   ministryId,
   ministryName,
 }) => {
+  // Sub-tab kept in history state so a remount or Back keeps the tab the user was on.
+  const [tab, setTab] = useViewHistory<string>('ministry-whatsapp-tab', 'connect');
   const [wabaConfig, setWabaConfig] = useState<MinistryWABAConfig | null>(null);
   const [connectionStatus, setConnectionStatus] =
     useState<MinistryWABAConfig['connection_status']>('pending');
@@ -64,7 +67,7 @@ export const MinistryWhatsAppHub: React.FC<MinistryWhatsAppHubProps> = ({
         </p>
       </div>
 
-      <Tabs defaultValue="connect">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full md:w-auto">
           <TabsTrigger value="connect" className="gap-2">
             <MessageSquare className="h-4 w-4" />
