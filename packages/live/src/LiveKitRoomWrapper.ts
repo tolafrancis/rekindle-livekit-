@@ -272,10 +272,24 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     if (!lp || !this.joined) return this.localAudioEnabled;
     try {
       await lp.setMicrophoneEnabled(on);
-      this.syncLocalMediaState();
     } catch (e) {
-      this.callbacks.onError?.(e);
+      // A mic picked by device id (backstage, device menu) can be gone or
+      // refuse to open by the time we publish (unplugged headset, Android
+      // handing out a fresh id). Rather than leave the person silently
+      // unpublished, fall back to the system default mic once.
+      if (on && this.room) {
+        console.warn('[LiveKitRoomWrapper] mic publish failed, retrying on the default mic:', e);
+        try {
+          await this.room.switchActiveDevice('audioinput', 'default', false);
+          await lp.setMicrophoneEnabled(true);
+        } catch (retryErr) {
+          this.callbacks.onError?.(retryErr);
+        }
+      } else {
+        this.callbacks.onError?.(e);
+      }
     }
+    this.syncLocalMediaState();
     return this.localAudioEnabled;
   }
 
@@ -583,6 +597,28 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       this.callbacks.onError?.(e);
       return false;
     }
+  }
+
+  /** A promoted viewer joined on a canPublish:false token; livekit-token's
+   *  grant-publish widens it server-side, but the update reaches this client
+   *  asynchronously. Publishing the mic before it lands is refused by the SFU,
+   *  leaving the person "on" locally with no voice in the room or stream. */
+  async waitForPublishPermission(timeoutMs = 5000): Promise<boolean> {
+    const room = this.room;
+    if (!room) return false;
+    if (room.localParticipant.permissions?.canPublish !== false) return true;
+    return new Promise<boolean>((resolve) => {
+      const onChange = () => {
+        if (room.localParticipant.permissions?.canPublish) done(true);
+      };
+      const timer = setTimeout(() => done(false), timeoutMs);
+      const done = (ok: boolean) => {
+        clearTimeout(timer);
+        room.off(RoomEvent.ParticipantPermissionsChanged, onChange);
+        resolve(ok);
+      };
+      room.on(RoomEvent.ParticipantPermissionsChanged, onChange);
+    });
   }
 
   isJoined(): boolean { return this.joined; }
