@@ -27,6 +27,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useActiveCallOptional } from '../ActiveCallContext';
 import { useAudioOutput } from '../AudioOutputContext';
+import { useDuckedVolume } from '../translationDuck';
 import { useToast } from '@rekindle/ui/use-toast';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Progress } from '@rekindle/ui/progress';
@@ -983,6 +984,7 @@ const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ particip
   // legitimately can: Bluetooth headsets, wired headphones, multi-speaker
   // desktop setups.
   const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
+  useDuckedVolume(ref);
   useEffect(() => {
     const track = participant.audioTrack;
     const el = ref.current;
@@ -1018,6 +1020,7 @@ const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ 
 const RemoteScreenAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
   const ref = useRef<HTMLAudioElement>(null);
   const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
+  useDuckedVolume(ref);
   useEffect(() => {
     const track = participant.screenAudioTrack;
     const el = ref.current;

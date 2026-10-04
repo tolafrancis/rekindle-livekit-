@@ -13,3 +13,5 @@
 2026-10-04 Sub-tabs remembered in WhatsApp, Settings, Webinars
 2026-10-04 live mic fix (packages/live: mic status, backstage mic publish, speaker publish permission)
 2026-10-04 captions permission fix + caption style options (packages/live)
+2026-10-04 live translation ducks the original instead of muting it (packages/live)
+2026-10-04 meeting mode tip + Presentation renamed to Broadcast (packages/ministry)

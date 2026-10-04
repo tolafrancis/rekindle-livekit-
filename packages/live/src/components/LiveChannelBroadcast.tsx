@@ -6,6 +6,7 @@ import { supabase } from '@rekindle/supabase';
 import { useDailyRoom } from '../useDailyRoom';
 import { provisionChannelStream, getChannelStreamCreds, listSimulcastTargets, reprovisionChannelStream, startChannelBroadcast, stopChannelBroadcast } from '../channelStreamControl';
 import { isLiveKitBackend } from '../videoBackend';
+import { useDuckedVolume } from '../translationDuck';
 import { useMeetingPresence } from '../useMeetingPresence';
 import { useMeetingReactions } from '../useMeetingReactions';
 import { MeetingReactionsLayer, ReactionButton } from './MeetingReactions';
@@ -97,6 +98,7 @@ const BroadcastSpeakerTile: React.FC<{
 }> = ({ participant }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  useDuckedVolume(audioRef);
 
   useEffect(() => {
     if (participant.videoTrack && participant.videoTrack.readyState === 'live' && videoRef.current) {

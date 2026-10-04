@@ -535,7 +535,7 @@ const EnhancedVideoCallWrapper = ({
               <div className="flex flex-col items-center justify-center h-full text-gray-300 p-6 text-center gap-3">
                 <PhoneOff className="h-8 w-8 text-gray-400" />
                 <div>
-                  <p className="font-medium">{t('ministryInteractiveMeetings', 'presentationEnded', 'The presentation has ended')}</p>
+                  <p className="font-medium">{t('ministryInteractiveMeetings', 'presentationEnded', 'The broadcast has ended')}</p>
                   <p className="text-sm text-gray-500">{t('ministryInteractiveMeetings', 'thanksForJoining', 'Thanks for joining.')}</p>
                 </div>
               </div>
@@ -543,7 +543,7 @@ const EnhancedVideoCallWrapper = ({
               <HlsPlayer src={hlsUrl} onEnded={() => setMeetingEnded(true)} className="w-full h-full" />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-300 p-6 text-center">
-                {t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the presentation…')}
+                {t('ministryInteractiveMeetings', 'waitingForHostPresentation', 'Waiting for the host to start the broadcast…')}
               </div>
             )}
           </div>
@@ -1400,7 +1400,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
               onChange={(e) => setFormData({ ...formData, max_participants: Math.max(1, parseInt(e.target.value) || 1) })}
             />
             <p className="text-xs text-gray-500">
-              {t('ministryInteractiveMeetings', 'maxParticipantsTip', 'This decides whether Meeting or Presentation mode is auto-selected below.')}
+              {t('ministryInteractiveMeetings', 'maxParticipantsTip', 'This decides whether Meeting or Broadcast mode is auto-selected below.')}
             </p>
             {formData.max_participants > MEETING_PARTICIPANT_CAP && (
               <div className="rounded-lg bg-red-50 border border-red-200 p-3">
@@ -1415,15 +1415,37 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
             )}
           </div>
 
-          {/* Mode: Meeting vs Presentation (an Interactive-Meetings-native large-group
+          {/* Mode: Meeting vs Broadcast (an Interactive-Meetings-native large-group
               sub-mode — distinct from the separate, dedicated Webinar meeting type
               under the Webinars tab, which has its own roster, Q&A, polls, registration
-              and analytics. Label kept as "Presentation" specifically so hosts don't
+              and analytics. Labelled "Broadcast" (was "Presentation") so hosts don't
               confuse the two; the underlying mode value stays 'webinar' unchanged
               (ministry_video_meetings.mode — renaming the stored value would be a much
               bigger, unnecessary schema-wide change for a label-only distinction). */}
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
+            {/* Broadcast is auto-picked for 15+ expected participants (the
+                default is 50), so hosts who wanted a normal call kept ending up
+                in Broadcast. Shown until the host picks a mode themselves. */}
+            {formData.mode === 'webinar' && !modeTouched && (
+              <div className="flex items-start gap-2 rounded-lg border-2 border-amber-400 bg-amber-50 p-3">
+                <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-amber-900">
+                    {t('ministryInteractiveMeetings', 'presentationDefaultTip', 'Broadcast was picked for you, so only the host is on camera and everyone else just watches. If people should be able to talk and turn on their camera, choose Meeting.')}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-500 text-amber-900 hover:bg-amber-100"
+                    onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'meeting' }); }}
+                  >
+                    {t('ministryInteractiveMeetings', 'switchToMeeting', 'Switch to Meeting')}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -1438,7 +1460,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }:
                 onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'webinar' }); }}
                 className={`rounded-lg border p-3 text-left transition ${formData.mode === 'webinar' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
               >
-                <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modePresentation', 'Presentation')}</p>
+                <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modePresentation', 'Broadcast')}</p>
                 <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'modePresentationDesc', 'Host presents, audience watches.')}</p>
               </button>
             </div>
@@ -2077,7 +2099,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <h4 className="text-lg font-semibold">{meeting.title}</h4>
                           {meeting.mode === 'webinar' && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Presentation')}</Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Broadcast')}</Badge>
                           )}
                           <Badge className="bg-green-500 text-white border-0">
                             <span className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse" />
@@ -2252,7 +2274,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <h4 className="text-lg font-semibold">{meeting.title}</h4>
                           {meeting.mode === 'webinar' && (
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Presentation')}</Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{t('ministryInteractiveMeetings', 'presentationBadge', 'Broadcast')}</Badge>
                           )}
                           <Badge variant="outline" className="border-gray-300">
                             <Globe className="h-3 w-3 mr-1" />
