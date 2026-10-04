@@ -1,19 +1,40 @@
 import { useSyncExternalStore } from 'react';
 
 /** On-demand caption preferences, shared by the in-room (useLiveCaptions)
- *  and HLS (useHlsCaptions) caption hooks, so CC on/off and text size follow
+ *  and HLS (useHlsCaptions) caption hooks, so CC on/off and caption style follow
  *  the viewer between meetings and webinars. Stored per device. */
 
 export type CaptionSize = 'sm' | 'md' | 'lg';
 export type CaptionStatus = 'off' | 'starting' | 'waiting' | 'live' | 'error';
+/** solid / semi = a box behind the text; outline = no box, outlined text
+ *  (stays readable on any video); none = plain text. */
+export type CaptionBackground = 'solid' | 'semi' | 'outline' | 'none';
+export type CaptionColor = 'white' | 'yellow' | 'cyan' | 'green';
+/** 'custom' = wherever the viewer dragged it (dragX/dragY). */
+export type CaptionPosition = 'bottom' | 'top' | 'custom';
 
 export interface CaptionPrefs {
   enabled: boolean;
   size: CaptionSize;
+  background: CaptionBackground;
+  color: CaptionColor;
+  position: CaptionPosition;
+  /** Centre of the caption box as a fraction (0..1) of the video area,
+   *  used when position is 'custom'. */
+  dragX: number;
+  dragY: number;
 }
 
 const PREFS_KEY = 'rekindle.captions.prefs';
-const DEFAULT_PREFS: CaptionPrefs = { enabled: false, size: 'md' };
+const DEFAULT_PREFS: CaptionPrefs = {
+  enabled: false, size: 'md', background: 'semi', color: 'white', position: 'bottom', dragX: 0.5, dragY: 0.8,
+};
+
+const BACKGROUNDS: CaptionBackground[] = ['solid', 'semi', 'outline', 'none'];
+const COLORS: CaptionColor[] = ['white', 'yellow', 'cyan', 'green'];
+const POSITIONS: CaptionPosition[] = ['bottom', 'top', 'custom'];
+const fraction = (v: unknown, fallback: number) =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
 
 export function readPrefs(): CaptionPrefs {
   try {
@@ -23,6 +44,11 @@ export function readPrefs(): CaptionPrefs {
     return {
       enabled: parsed.enabled === true,
       size: parsed.size === 'sm' || parsed.size === 'lg' ? parsed.size : 'md',
+      background: BACKGROUNDS.includes(parsed.background as CaptionBackground) ? parsed.background as CaptionBackground : DEFAULT_PREFS.background,
+      color: COLORS.includes(parsed.color as CaptionColor) ? parsed.color as CaptionColor : DEFAULT_PREFS.color,
+      position: POSITIONS.includes(parsed.position as CaptionPosition) ? parsed.position as CaptionPosition : DEFAULT_PREFS.position,
+      dragX: fraction(parsed.dragX, DEFAULT_PREFS.dragX),
+      dragY: fraction(parsed.dragY, DEFAULT_PREFS.dragY),
     };
   } catch {
     return DEFAULT_PREFS;

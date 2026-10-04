@@ -25,7 +25,8 @@
 //
 // ── Request (POST JSON body) ─────────────────────────────────────────────────
 //   In the room (meeting participants, webinar host/speakers):
-//     { roomName, livekitToken, context: { kind: 'ministry_meeting'|'ministry_webinar' } }
+//     { roomName, livekitToken, context: { kind: 'ministry_meeting'|'ministry_webinar' }, captions?: 'on'|'off' }
+//     Sets the caller's captions attribute server-side; 'off' starts nothing.
 //     (Live Broadcast channels: kind 'channel', roomName 'channel-<channel id>')
 //   Audiences watching over HLS (never in the LiveKit room):
 //     { hls: true, webinarId }   or   { hls: true, channelId }
@@ -58,6 +59,9 @@ interface RequestBody {
   hls?: boolean;
   webinarId?: string;
   channelId?: string;
+  /** In the room only: this participant's own CC state. 'off' just clears
+   *  the flag and starts nothing. Defaults to 'on'. */
+  captions?: 'on' | 'off';
 }
 
 // Meeting and webinar rooms, keyed by context.kind. Both tables carry
@@ -225,6 +229,20 @@ serve(async (req) => {
     if (!participants.some((p) => p.identity === identity)) {
       return json({ error: 'Not a participant of this room' }, 403);
     }
+
+    // The agent keeps running while any participant has the captions=on
+    // attribute. Set it here rather than from the browser: participant tokens
+    // deliberately lack canUpdateOwnMetadata (the same permission would let
+    // them rewrite the role in their own metadata), so the client-side
+    // setAttributes failed with "does not have permission to update own
+    // metadata" (real report 2026-10-04).
+    const captions = body.captions === 'off' ? 'off' : 'on';
+    await withTimeout(
+      svc.updateParticipant(roomName, identity, { attributes: { captions } }),
+      8000,
+      'updateParticipant',
+    );
+    if (captions === 'off') return json({ success: true, captions });
 
     // 3) Resolve the room server-side — never trust a client-supplied org or
     //    language.
