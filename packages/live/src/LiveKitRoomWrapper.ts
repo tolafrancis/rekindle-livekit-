@@ -39,6 +39,7 @@ import type {
   IVideoRoomWrapper,
 } from '@rekindle/types/videoRoom';
 import type { ParticipantRole } from '@rekindle/types/liveChannelTypes';
+import { DUCKED_LEVEL, setTranslationDuck } from './translationDuck';
 
 interface PreviewState {
   isActive: boolean;
@@ -232,6 +233,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   }
 
   async leaveMeeting(): Promise<void> {
+    await this.setTranslationLanguage(null);
     if (this.room) {
       try {
         await this.room.disconnect();
@@ -360,7 +362,6 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
   // dedicated tile-filter is a reasonable follow-up, not done here.
 
   private translationAudioEl: HTMLAudioElement | null = null;
-  private mutedSpeakerTracks: RemoteTrack[] = [];
   private currentTranslationLanguage: string | null = null;
 
   /** Every "rlt-translated-{lang}" track currently published by any rlt-bot-*
@@ -384,32 +385,19 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
 
   /**
    * Switch the local listener's audio to a translated track, or back to
-   * "Original" with `language = null`. Every real (non-bot) participant's
-   * microphone gets locally muted while a translation plays and restored
-   * on switch-back — build plan §2.7: "Selecting 'Translated': subscribes
-   * to the rlt-translated LiveKit audio track; mutes the original track."
-   * This mute is local only (MediaStreamTrack.enabled = false) — it
-   * doesn't touch what anyone publishes or what anyone else hears.
+   * "Original" with `language = null`. While a translation plays, the room's
+   * own audio is ducked (translationDuck.ts) only while the translated voice
+   * is actually talking, and comes back to full volume in the gaps.
    *
-   * Real bug found live (2026-08-19): this used to take an
-   * `originalSpeakerIdentity` param and mute only that one specific
-   * identity — but MinistryInteractiveMeetings.tsx never actually passed
-   * one to FloatingTranslationButton, so the mute never fired at all and
-   * a participant heard the real voice AND the translated bot voice
-   * simultaneously. Muting every non-bot participant instead of hunting
-   * for "the" configured speaker sidesteps that plumbing gap entirely —
-   * it also just makes more sense: choosing a translated language is
-   * "give me dubbed audio instead of the room's," not "mute one
-   * specific person," and it works identically whether or not a
-   * ministry has ever configured language_configs.speaker_identity.
+   * Real report (2026-10-04): this used to disable every speaker's mic track
+   * outright. LiveKit re-enables a remote track's MediaStreamTrack whenever
+   * its publisher unmutes, so the original voice came back over the
+   * translation, and while it did work it also silenced singing and music
+   * the translation has nothing to say about. Ducking on the translated
+   * voice's level fixes both.
    */
   async setTranslationLanguage(language: string | null): Promise<void> {
-    if (this.mutedSpeakerTracks.length > 0) {
-      for (const track of this.mutedSpeakerTracks) {
-        try { track.mediaStreamTrack.enabled = true; } catch { /* track may be gone already */ }
-      }
-      this.mutedSpeakerTracks = [];
-    }
+    this.stopTranslationDuck();
     if (this.translationAudioEl) {
       this.translationAudioEl.pause();
       this.translationAudioEl.srcObject = null;
@@ -437,20 +425,56 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       el.autoplay = true;
       el.srcObject = new MediaStream([track.mediaStreamTrack]);
       this.translationAudioEl = el;
+      this.startTranslationDuck(track.mediaStreamTrack);
     }
 
-    this.room.remoteParticipants.forEach((p) => {
-      if (p.identity.startsWith('rlt-bot-')) return; // bots don't publish a mic track anyway
-      const micPub = p.getTrackPublication(Track.Source.Microphone);
-      if (micPub?.track) {
-        try {
-          micPub.track.mediaStreamTrack.enabled = false;
-          this.mutedSpeakerTracks.push(micPub.track as RemoteTrack);
-        } catch { /* ignore */ }
-      }
-    });
-
     this.currentTranslationLanguage = language;
+  }
+
+  private duckCtx: AudioContext | null = null;
+  private duckTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Watches the translated voice's level and ducks the room's own audio
+   *  while it talks, holding a moment after each phrase so the original
+   *  doesn't flicker up between words. */
+  private startTranslationDuck(translated: MediaStreamTrack): void {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) {
+      setTranslationDuck(DUCKED_LEVEL); // can't measure, so keep the translation clear
+      return;
+    }
+    try {
+      const ctx = new Ctx();
+      ctx.resume().catch(() => {});
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(new MediaStream([translated])).connect(analyser);
+      const buf = new Float32Array(analyser.fftSize);
+      const HOLD_MS = 900;
+      const THRESHOLD = 0.012; // RMS, about -38 dBFS; TTS output is clean
+      let lastVoiceAt = 0;
+      this.duckCtx = ctx;
+      this.duckTimer = setInterval(() => {
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const now = Date.now();
+        if (Math.sqrt(sum / buf.length) > THRESHOLD) lastVoiceAt = now;
+        setTranslationDuck(now - lastVoiceAt < HOLD_MS ? DUCKED_LEVEL : 1);
+      }, 50);
+    } catch (e) {
+      console.warn('[LiveKitRoomWrapper] translation ducking unavailable:', e);
+      setTranslationDuck(DUCKED_LEVEL);
+    }
+  }
+
+  private stopTranslationDuck(): void {
+    if (this.duckTimer) clearInterval(this.duckTimer);
+    this.duckTimer = null;
+    this.duckCtx?.close().catch(() => {});
+    this.duckCtx = null;
+    setTranslationDuck(1);
   }
 
   /** Called from wireEvents() whenever a bot's tracks or presence change, so the
@@ -745,26 +769,9 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
         if (p.isLocal) this.syncLocalMediaState();
       })
-      .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+      .on(RoomEvent.TrackSubscribed, (track, _pub, p) => {
         this.callbacks.onTrackStarted?.({ track, participant: p });
         this.refreshRealParticipantForShadow(p);
-        // Real bug found live (2026-08-19): setTranslationLanguage() only
-        // muted whoever ALREADY had a published mic at the moment a
-        // language was selected — a one-time snapshot, not a standing
-        // rule. A participant exploring the picker before the host even
-        // unmuted would select a language, the mute loop would find
-        // nothing to mute (no mic published yet), and the host's mic —
-        // subscribed later — would play completely unmuted for the rest
-        // of the call: real double audio, confirmed live. Now enforced
-        // continuously: any mic that shows up (or comes back) WHILE a
-        // translation is selected gets muted immediately, not just
-        // whatever existed at selection time.
-        if (this.currentTranslationLanguage && !p.identity.startsWith('rlt-bot-') && pub.source === Track.Source.Microphone) {
-          try {
-            track.mediaStreamTrack.enabled = false;
-            this.mutedSpeakerTracks.push(track as RemoteTrack);
-          } catch { /* ignore */ }
-        }
       })
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => {
         this.callbacks.onTrackStopped?.({ track, participant: p });
