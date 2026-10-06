@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate, useL
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { ModerationProvider } from '@rekindle/features/ModerationContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
+import { BrowserTranslationTip } from '@rekindle/features/components/BrowserTranslationTip';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
 import { canShowPurchaseUI } from '@rekindle/features/platform';
@@ -359,6 +360,7 @@ export default function App() {
                   Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
               <Toaster />
               <Sonner />
+              <BrowserTranslationTip />
               <BrowserRouter>
                 <PushNotificationNavHandler />
                 <SharedContentDeepLinkHandler />
