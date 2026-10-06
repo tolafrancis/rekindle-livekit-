@@ -247,7 +247,8 @@ export const AdminAffirmationManager: React.FC<AdminAffirmationManagerProps> = (
     setGenerating(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('generate-declaration', {
+      // Five-part structure: identity, truth, declaration, action, closing faith statement.
+      const { data, error } = await supabase.functions.invoke('generate-affirmation', {
         body: { category, title, scripture },
       });
       if (error) throw error;
@@ -617,7 +618,7 @@ export const AdminAffirmationManager: React.FC<AdminAffirmationManagerProps> = (
                 className="font-serif text-base leading-relaxed"
               />
               <p className="text-xs text-gray-400">
-                {t('adminAffirmationManager', 'patternHelp', 'Pattern: Opening sentence → Declarations (I am, I have, I walk...) → "In Jesus\'s name, I believe and say amen."')}
+                {t('adminAffirmationManager', 'patternHelp', 'AI Generate writes five parts: Identity (who I am in Christ) → Truth (what God says) → Declaration (what I choose to believe) → Action (how I will live today) → Closing faith statement.')}
               </p>
             </div>
 

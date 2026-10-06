@@ -316,6 +316,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
   const [devotionalStreams, setDevotionalStreams] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
   // '' = all streams; otherwise a stream id (or 'none' for unassigned) to filter the list.
   const [devotionalStreamFilter, setDevotionalStreamFilter] = useState('');
+  // '' = all, else 'published' | 'unpublished' (off, but has a schedule date) | 'draft' (off, no date)
+  const [devotionalStatusFilter, setDevotionalStatusFilter] = useState('');
+  // Rows ticked for bulk delete (ContentTable with `selectable`). Kept here because
+  // ContentTable is re-created on every render and would lose its own state.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [music, setMusic] = useState<any[]>([]);
   const [affirmations, setAffirmations] = useState<any[]>([]);
   const [prayerWallPosts, setPrayerWallPosts] = useState<any[]>([]);
@@ -561,6 +566,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
       if (error) throw error;
 
       toast({ title: t('adminDashboard', 'success', 'Success'), description: t('adminDashboard', 'itemDeleted', 'Item deleted successfully') });
+      loadAllData();
+    } catch (err: any) {
+      toast({ title: t('adminDashboard', 'deleteError', 'Delete Error'), description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async (type: string, ids: string[]) => {
+    if (ids.length === 0) return;
+    if (!confirm(t('adminDashboard', 'confirmBulkDelete', 'Delete {n} selected items? This cannot be undone.').replace('{n}', String(ids.length)))) return;
+
+    try {
+      const tableMap: Record<string, string> = {
+        devotional: 'devotionals',
+        music: 'music',
+        affirmation: 'affirmations'
+      };
+
+      const { error } = await supabase
+        .from(tableMap[type])
+        .delete()
+        .in('id', ids);
+
+      if (error) throw error;
+
+      setSelectedIds(new Set());
+      toast({ title: t('adminDashboard', 'success', 'Success'), description: t('adminDashboard', 'itemsDeleted', '{n} items deleted').replace('{n}', String(ids.length)) });
       loadAllData();
     } catch (err: any) {
       toast({ title: t('adminDashboard', 'deleteError', 'Delete Error'), description: err.message, variant: 'destructive' });
@@ -1041,12 +1072,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     data: any[];
     type: string;
     columns: Array<{ key: string; label: string }>;
-  }> = ({ data, type, columns }) => {
+    selectable?: boolean;
+  }> = ({ data, type, columns, selectable }) => {
     const filteredData = data.filter((item) =>
       Object.values(item).some((val) =>
         String(val).toLowerCase().includes(searchTerm.toLowerCase())
       )
     );
+    // Only rows currently visible count, so a filter change never deletes hidden rows.
+    const visibleSelected = selectable ? filteredData.filter((item) => selectedIds.has(String(item.id))) : [];
+    const allVisibleSelected = filteredData.length > 0 && visibleSelected.length === filteredData.length;
+    const toggleRow = (id: string) => {
+      const next = new Set(selectedIds);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      setSelectedIds(next);
+    };
+    const toggleAllVisible = () => {
+      const next = new Set(selectedIds);
+      filteredData.forEach((item) => {
+        if (allVisibleSelected) next.delete(String(item.id)); else next.add(String(item.id));
+      });
+      setSelectedIds(next);
+    };
 
     return (
       <div className="space-y-4">
@@ -1066,11 +1113,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           </Button>
         </div>
 
+        {selectable && visibleSelected.length > 0 && (
+          <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2">
+            <span className="text-sm text-red-700">
+              {t('adminDashboard', 'nSelected', '{n} selected').replace('{n}', String(visibleSelected.length))}
+            </span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleBulkDelete(type, visibleSelected.map((item) => String(item.id)))}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t('adminDashboard', 'deleteSelected', 'Delete selected')}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+              {t('adminDashboard', 'clearSelection', 'Clear')}
+            </Button>
+          </div>
+        )}
+
         <div className="border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
+                  {selectable && (
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={t('adminDashboard', 'selectAll', 'Select all')}
+                        checked={allVisibleSelected}
+                        onChange={toggleAllVisible}
+                        className="h-4 w-4 cursor-pointer"
+                      />
+                    </th>
+                  )}
                   {columns.map((col) => (
                     <th key={col.key} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {col.label}
@@ -1084,6 +1161,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredData.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
+                    {selectable && (
+                      <td className="w-10 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label={t('adminDashboard', 'selectRow', 'Select')}
+                          checked={selectedIds.has(String(item.id))}
+                          onChange={() => toggleRow(String(item.id))}
+                          className="h-4 w-4 cursor-pointer"
+                        />
+                      </td>
+                    )}
                     {columns.map((col) => (
                       <td key={col.key} className="px-4 py-3 text-sm">
                         {col.key === 'is_published' || col.key === 'is_daily' ? (
@@ -1727,6 +1815,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                   : devotionalStreamFilter === 'none'
                     ? !d.stream_id
                     : d.stream_id === devotionalStreamFilter)
+              .filter((d) =>
+                !devotionalStatusFilter
+                  ? true
+                  : devotionalStatusFilter === 'published'
+                    ? !!d.is_published
+                    : devotionalStatusFilter === 'unpublished'
+                      ? !d.is_published && !!d.schedule_date
+                      : !d.is_published && !d.schedule_date)
               .map((d) => ({ ...d, stream_name: streamName(d.stream_id) }));
             return (
               <div className="space-y-3">
@@ -1742,6 +1838,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                       <SelectItem value="none">{t('adminDashboard', 'noStream', '(No stream)')}</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Label className="text-sm text-gray-600 ml-2">{t('adminDashboard', 'filterByStatus', 'Status')}</Label>
+                  <Select value={devotionalStatusFilter || 'all'} onValueChange={(v) => setDevotionalStatusFilter(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('adminDashboard', 'allStatuses', 'All statuses')}</SelectItem>
+                      <SelectItem value="published">{t('adminDashboard', 'statusPublished', 'Published')}</SelectItem>
+                      <SelectItem value="unpublished">{t('adminDashboard', 'statusUnpublished', 'Unpublished')}</SelectItem>
+                      <SelectItem value="draft">{t('adminDashboard', 'statusDraft', 'Draft')}</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <span className="text-xs text-gray-400">
                     {t('adminDashboard', 'streamCount', '{n} devotionals').replace('{n}', String(rows.length))}
                   </span>
@@ -1749,6 +1855,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                 <ContentTable
                   data={rows}
                   type="devotional"
+                  selectable
                   columns={[
                     { key: 'title', label: 'Title' },
                     { key: 'stream_name', label: 'Stream' },
