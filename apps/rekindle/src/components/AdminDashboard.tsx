@@ -316,6 +316,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
   const [devotionalStreams, setDevotionalStreams] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
   // '' = all streams; otherwise a stream id (or 'none' for unassigned) to filter the list.
   const [devotionalStreamFilter, setDevotionalStreamFilter] = useState('');
+  // '' = all, else 'published' | 'unpublished' (off, but has a schedule date) | 'draft' (off, no date)
+  const [devotionalStatusFilter, setDevotionalStatusFilter] = useState('');
   const [music, setMusic] = useState<any[]>([]);
   const [affirmations, setAffirmations] = useState<any[]>([]);
   const [prayerWallPosts, setPrayerWallPosts] = useState<any[]>([]);
@@ -1727,6 +1729,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                   : devotionalStreamFilter === 'none'
                     ? !d.stream_id
                     : d.stream_id === devotionalStreamFilter)
+              .filter((d) =>
+                !devotionalStatusFilter
+                  ? true
+                  : devotionalStatusFilter === 'published'
+                    ? !!d.is_published
+                    : devotionalStatusFilter === 'unpublished'
+                      ? !d.is_published && !!d.schedule_date
+                      : !d.is_published && !d.schedule_date)
               .map((d) => ({ ...d, stream_name: streamName(d.stream_id) }));
             return (
               <div className="space-y-3">
@@ -1740,6 +1750,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                         <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                       ))}
                       <SelectItem value="none">{t('adminDashboard', 'noStream', '(No stream)')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Label className="text-sm text-gray-600 ml-2">{t('adminDashboard', 'filterByStatus', 'Status')}</Label>
+                  <Select value={devotionalStatusFilter || 'all'} onValueChange={(v) => setDevotionalStatusFilter(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('adminDashboard', 'allStatuses', 'All statuses')}</SelectItem>
+                      <SelectItem value="published">{t('adminDashboard', 'statusPublished', 'Published')}</SelectItem>
+                      <SelectItem value="unpublished">{t('adminDashboard', 'statusUnpublished', 'Unpublished')}</SelectItem>
+                      <SelectItem value="draft">{t('adminDashboard', 'statusDraft', 'Draft')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <span className="text-xs text-gray-400">
