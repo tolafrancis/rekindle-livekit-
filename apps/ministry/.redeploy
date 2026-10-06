@@ -15,3 +15,4 @@
 2026-10-04 captions permission fix + caption style options (packages/live)
 2026-10-04 live translation ducks the original instead of muting it (packages/live)
 2026-10-04 meeting mode tip + Presentation renamed to Broadcast (packages/ministry)
+2026-10-06 translation display: Listen moved into header menu, captions default (packages/live)
