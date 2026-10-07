@@ -44,6 +44,13 @@ function preprocessTextForTTS(text: string): string {
   return processed;
 }
 
+// Short, stable fingerprint of the narration text (djb2), for the cache key.
+function textHash(value: string): string {
+  let h = 5381;
+  for (let i = 0; i < value.length; i++) h = ((h << 5) + h + value.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 // Check for cached audio
 async function getCachedAudio(contentId: string, contentType: string, language: string) {
   try {
@@ -382,8 +389,12 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
     setUseBrowserTTS(false);
 
     try {
-      // Build a per-slide cache key so each slide gets its own cached audio
-      const slideContentId = `${contentId}_slide${slideAtStart}`;
+      // Build a per-slide cache key so each slide gets its own cached audio.
+      // The text hash is part of the key so changed narration text (an
+      // edited devotional, or the narration-text fix that stopped reading
+      // the ministry/series name) generates fresh audio instead of
+      // replaying a stale clip cached under the same slide.
+      const slideContentId = `${contentId}_slide${slideAtStart}_${textHash(text)}`;
 
       setLoadProgress(25);
       const cached = await getCachedAudio(slideContentId, contentType, language);

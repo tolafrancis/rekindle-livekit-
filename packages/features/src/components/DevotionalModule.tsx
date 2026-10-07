@@ -295,8 +295,11 @@ export const DevotionalModule: React.FC<Props> = ({
   };
 
   const getDevotionalAudioText = () => {
-    let text = `${displayTitle}\n\n`;
     const currentSlideData = slides[currentSlide];
+    // The first screen opens with the devotional's own title. Not
+    // displayTitle: that's the series or ministry name (MinistrySpace passes
+    // ministry.name), which was being read out instead of the title.
+    let text = currentSlideData?.type === 'intro' && currentSlideData.title ? `${currentSlideData.title}.\n\n` : '';
     
     if (currentSlideData?.scripture) {
       text += `${currentSlideData.scripture}\n`;
