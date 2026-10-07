@@ -204,6 +204,9 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   const [showMinistryModule, setShowMinistryModule] = useState(false);
   // Ministry name for branded share text — resolved via the name-only RPC.
   const [ministryName, setMinistryName]             = useState<string | null>(null);
+  // Share branding for a platform devotional: its stream's name (e.g. "Open
+  // Heavens"), or null for the default stream so it reads "Rekindle Devotional".
+  const [streamShareName, setStreamShareName]       = useState<string | null>(null);
 
   const loadMinistryDevotional = useCallback(async () => {
     if (!ministryId) return;
@@ -339,6 +342,23 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
     }
   }, [user, source, ministryId, streamId, loadTodayDevotional, loadMinistryDevotional]);
 
+  // Prefetched (not resolved on tap) so the native share sheet keeps the
+  // user-activation gesture on iOS.
+  const todayStreamId = (todayDevotional as any)?.stream_id as string | undefined;
+  useEffect(() => {
+    if (!todayStreamId) { setStreamShareName(null); return; }
+    let cancelled = false;
+    supabase
+      .from('devotional_streams')
+      .select('name, is_default')
+      .eq('id', todayStreamId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setStreamShareName(data && !data.is_default ? data.name : null);
+      });
+    return () => { cancelled = true; };
+  }, [todayStreamId]);
+
   const handleStartDevotional = async () => {
     if (!todayDevotional) return;
     setShowModule(true);
@@ -398,8 +418,8 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   // The branded message (ministry name + title + CTA + link) is built by
   // shareDevotional, which uses the native share sheet on mobile and copies to
   // the clipboard on web.
-  const shareLink = async (url: string, title: string, ministry?: string | null) => {
-    const result = await shareDevotional({ ministryName: ministry, title, url });
+  const shareLink = async (url: string, title: string, ministry?: string | null, author?: string | null) => {
+    const result = await shareDevotional({ ministryName: ministry, author, title, url });
     if (result.method === 'clipboard') {
       toast({ title: t('devotionals', 'copiedToShare', 'Copied to share!'), description: t('devotionals', 'copiedToShareDesc', 'The devotional message is on your clipboard — paste it anywhere to invite someone.') });
     } else if (result.method === 'none' && !canNativeShare()) {
@@ -408,15 +428,25 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   };
   const shareDailyDevotional = () => {
     if (!todayDevotional) return;
-    // Platform devotionals aren't ministry-owned — falls back to Rekindle branding.
-    shareLink(`${publicWebOrigin()}/daily-devotional/${todayDevotional.id}`, todayDevotional.title || "Today's Devotional");
+    // Platform devotionals are branded with their stream (Rekindle for the default one).
+    shareLink(
+      `${publicWebOrigin()}/daily-devotional/${todayDevotional.id}`,
+      todayDevotional.title || "Today's Devotional",
+      streamShareName,
+      todayDevotional.author || todayDevotional.author_name,
+    );
   };
   const shareMinistryDevotional = () => {
     if (!ministryDevotional) return;
     // Use the name prefetched on load (synchronous — so the native share sheet
     // keeps the user-activation gesture on iOS). Falls back to Rekindle branding
     // only if the name genuinely couldn't be resolved.
-    shareLink(`${publicWebOrigin()}/ministry-devotional/${ministryDevotional.id}`, ministryDevotional.title || "Today's Devotional", ministryName);
+    shareLink(
+      `${publicWebOrigin()}/ministry-devotional/${ministryDevotional.id}`,
+      ministryDevotional.title || "Today's Devotional",
+      ministryName,
+      ministryDevotional.author_name || ministryDevotional.author,
+    );
   };
 
   // ── Render: full-screen devotional module ──────────────────
@@ -426,6 +456,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
       <DevotionalModule
         devotional={formatForModule(lz)}
         moduleNumber={1}
+        ministryName={streamShareName}
         shareUrl={`${publicWebOrigin()}/daily-devotional/${todayDevotional.id}`}
         onComplete={() => { handleComplete(); handleCloseModule(); }}
         onClose={handleCloseModule}

@@ -90,6 +90,8 @@ import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
+import { shareDevotional } from '@rekindle/features/devotionalShare';
+import { canNativeShare } from '@rekindle/features/webShare';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
@@ -186,6 +188,7 @@ interface MinistryDevotional {
   prayer_focus?: string;
   featured_image?: string;
   audio_url?: string;
+  author_name?: string | null;
   scheduled_date?: string | null;
   is_published?: boolean;
   created_at: string;
@@ -868,6 +871,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     }
   };
 
+  // Same branded message as the consumer home's share button: ministry name,
+  // author, title, and a public preview link.
+  const handleShareDevotional = async (devotional: MinistryDevotional) => {
+    const url = `${publicWebOrigin()}/ministry-devotional/${devotional.id}`;
+    const result = await shareDevotional({ ministryName: ministry.name, author: devotional.author_name, title: devotional.title, url });
+    if (result.method === 'clipboard') {
+      toast({ title: t('devotionals', 'copiedToShare', 'Copied to share!'), description: t('devotionals', 'copiedToShareDesc', 'The devotional message is on your clipboard — paste it anywhere to invite someone.') });
+    } else if (result.method === 'none' && !canNativeShare()) {
+      toast({ title: t('ministrySpace', 'share', 'Share'), description: url });
+    }
+  };
+
   const handleStartDevotional = (devotional: MinistryDevotional) => {
     // Count opening a devotional toward the member's faithfulness streak.
     void recordDailyActivity(user?.id, 'daily_devotional');
@@ -890,6 +905,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       prayer:              (devotional as any).prayer || (devotional as any).prayer_focus || '',
       cover_image_url:     (devotional as any).image_url || (devotional as any).featured_image || '',
       audio_url:           devotional.audio_url || '',
+      author_name:         devotional.author_name || null,
     };
 
     setSelectedDevotional(formattedEntry);
@@ -1764,9 +1780,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               })}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Today's Devotional */}
-              <div className="lg:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Today's Devotional: one column, the same width as the consumer home's card */}
+              <div>
                 {(() => {
                   const today = getLocalDateString();
                   const available = devotionals.filter(dev =>
@@ -1843,15 +1859,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <div className="flex items-center gap-2 text-sm opacity-70">
                         <Clock className="h-4 w-4" /><span>{t('ministrySpace', 'about8Minutes', '~8 minutes')}</span>
                       </div>
-                      <Button
-                        className="w-full bg-white font-semibold"
-                        style={{ color: themeColor }}
-                        onClick={() => handleStartDevotional(todaysDev)}
-                      >
-                        <Play className="h-4 w-4 mr-2" />
-                        {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
-                        <ChevronRight className="h-4 w-4 ml-2" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1 bg-white font-semibold"
+                          style={{ color: themeColor }}
+                          onClick={() => handleStartDevotional(todaysDev)}
+                        >
+                          <Play className="h-4 w-4 mr-2" />
+                          {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                        <Button
+                          onClick={() => handleShareDevotional(todaysDev)}
+                          variant="outline"
+                          size="icon"
+                          title={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                          aria-label={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                          className="shrink-0 bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white"
+                        >
+                          <Share2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <Card className="h-full flex items-center justify-center p-8 text-center">
@@ -1866,7 +1894,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </div>
 
               {/* Latest Announcements — now beside the devotional (swapped with Prayer Requests) */}
-              <Card>
+              <Card className="lg:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
                     <Megaphone className="h-5 w-5" style={{ color: themeColor }} />
@@ -2260,15 +2288,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <div className="flex items-center gap-2 text-sm opacity-70">
                     <Clock className="h-4 w-4" /><span>{t('ministrySpace', 'about8Minutes', '~8 minutes')}</span>
                   </div>
-                  <Button
-                    className="w-full bg-white font-semibold"
-                    style={{ color: themeColor }}
-                    onClick={() => handleStartDevotional(todaysDev)}
-                  >
-                    <Play className="h-4 w-4 mr-2" />
-                    {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1 bg-white font-semibold"
+                      style={{ color: themeColor }}
+                      onClick={() => handleStartDevotional(todaysDev)}
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
+                      <ChevronRight className="h-4 w-4 ml-2" />
+                    </Button>
+                    <Button
+                      onClick={() => handleShareDevotional(todaysDev)}
+                      variant="outline"
+                      size="icon"
+                      title={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                      aria-label={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                      className="shrink-0 bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                   );
               })() : (
@@ -3304,9 +3344,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             video_url: selectedDevotional.video_url,
             cover_image_url: selectedDevotional.featured_image || selectedDevotional.cover_image_url,
             background_music_id: selectedDevotional.background_music_id,
+            author: selectedDevotional.author_name || undefined,
             is_bookmarked: false
           }}
           seriesTitle={ministry.name}
+          ministryName={ministry.name}
           totalDays={1}
           shareUrl={`${publicWebOrigin()}/ministry-devotional/${selectedDevotional.id}`}
           onComplete={async () => {

@@ -125,7 +125,7 @@ interface Props {
   /** Public deep-link URL used by the in-module Share dialog (routes recipients
    *  to this devotional's free-taste preview). Falls back to the current URL. */
   shareUrl?: string;
-  /** Ministry name for branded share text. Falls back to Rekindle when absent. */
+  /** Ministry or devotional-stream name for branded share text. Falls back to Rekindle when absent. */
   ministryName?: string | null;
   onComplete: () => void;
   onClose: () => void;
@@ -1200,6 +1200,7 @@ export const DevotionalModule: React.FC<Props> = ({
           description={normalizedDevotional.excerpt || normalizedDevotional.message.slice(0, 100)}
           url={shareUrl || window.location.href}
           ministryName={ministryName}
+          author={normalizedDevotional.author}
         />
       )}
 

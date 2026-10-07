@@ -10,18 +10,32 @@
 import { canNativeShare } from './webShare';
 
 export interface DevotionalShareInput {
-  /** Ministry name. When missing we fall back to "Rekindle Devotional". */
+  /** Where the devotional comes from: the ministry's name, or the devotional
+   *  stream's name (e.g. "Open Heavens"). When missing, or for the default
+   *  stream, we fall back to "Rekindle Devotional". */
   ministryName?: string | null;
+  /** The devotional's author. Without one, Rekindle-branded shares credit
+   *  "Rekindle's Team" and other sources leave the line out. */
+  author?: string | null;
   /** Devotional title. */
   title?: string | null;
   /** Public deep-link URL to the devotional. */
   url: string;
 }
 
-/** Header line: `🙏 <Ministry> Devotional`, or `🙏 Rekindle Devotional`. */
+/** Header line: `🙏 <Source> Devotional`, or `🙏 Rekindle Devotional`. */
 export function buildShareHeader(ministryName?: string | null): string {
   const name = (ministryName || '').trim();
-  return name ? `🙏 ${name} Devotional` : '🙏 Rekindle Devotional';
+  if (!name) return '🙏 Rekindle Devotional';
+  // A stream already called "… Devotional" shouldn't read "Devotional Devotional".
+  return /devotionals?$/i.test(name) ? `🙏 ${name}` : `🙏 ${name} Devotional`;
+}
+
+/** "Written by …" line, or null when a non-Rekindle source has no author. */
+export function buildShareByline(ministryName?: string | null, author?: string | null): string | null {
+  const by = (author || '').trim();
+  if (by) return `Written by ${by}`;
+  return (ministryName || '').trim() ? null : "Written by Rekindle's Team";
 }
 
 /** The call-to-action body shared for every devotional. */
@@ -31,7 +45,8 @@ const CTA_LINE =
 /**
  * The full, social-optimised share message:
  *
- *   🙏 <Ministry> Devotional
+ *   🙏 <Source> Devotional
+ *   Written by <Author>
  *
  *   📖 Today's Devotional: "<Title>"
  *
@@ -44,12 +59,14 @@ const CTA_LINE =
  * separate field (Facebook, Telegram, X) to avoid a duplicated URL.
  */
 export function buildDevotionalShareText(
-  { ministryName, title, url }: DevotionalShareInput,
+  { ministryName, author, title, url }: DevotionalShareInput,
   includeUrl = true,
 ): string {
   const cleanTitle = (title || '').trim() || "Today's Devotional";
+  const byline = buildShareByline(ministryName, author);
   const lines = [
     buildShareHeader(ministryName),
+    ...(byline ? [byline] : []),
     '',
     `📖 Today's Devotional: "${cleanTitle}"`,
     '',
