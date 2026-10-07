@@ -15,6 +15,13 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
+const CHUNK_RELOAD_KEY = 'rk-chunk-reload-at';
+
+/** Chrome / Firefox / Safari wording for a failed dynamic import. */
+const isChunkLoadError = (error: Error) =>
+  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk .* failed/i
+    .test(error?.message || '');
+
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
@@ -27,6 +34,20 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // A lazily loaded screen's file couldn't be fetched: almost always a
+    // deploy that replaced the build while this page was open (or still
+    // rolling out). Reload once to pick up the current build instead of
+    // showing the error screen. Rate-limited so a real outage can't loop.
+    if (isChunkLoadError(error)) {
+      try {
+        const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+        if (Date.now() - last > 30_000) {
+          sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+          window.location.reload();
+          return;
+        }
+      } catch { /* storage unavailable: fall through to the error screen */ }
+    }
     console.error('[ErrorBoundary] Caught error:', error, errorInfo);
     Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
     this.setState({ errorInfo });
