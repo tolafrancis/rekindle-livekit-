@@ -38,3 +38,4 @@
 2026-10-07 meeting Background picker no longer closes the Meeting Controls menu (packages/live)
 2026-10-07: Bible Passage slide for stream devotionals in ministry spaces (packages/ministry)
 2026-10-07 reload once when a lazy screen's chunk fails to load after a deploy (packages/features ErrorBoundary)
+2026-10-08 rebuild: previous rekindle-livekit Pages build failed on Cloudflare (builds locally)
