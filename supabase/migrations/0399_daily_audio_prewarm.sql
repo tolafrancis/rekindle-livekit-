@@ -11,9 +11,20 @@ on conflict (key) do nothing;
 
 -- Hourly: the job covers today's and tomorrow's devotionals (UTC dates), only
 -- generates what isn't cached yet, and leaves anything past its time budget
--- for the next run. private.call_edge_fn sends the cron shared secret.
+-- for the next run. Authenticates with the vault's service role key, rather than
+-- going through private.call_edge_fn, which calls public.get_cron_secret() — dropped in
+-- 0258, so that helper currently fails for every job that uses it.
 select cron.schedule(
   'prewarm-devotional-audio',
   '20 * * * *',
-  $$ select private.call_edge_fn('prewarm-devotional-audio') $$
+  $$
+  select net.http_post(
+    url     := 'https://vpnpembyqbbaaiynfvli.supabase.co/functions/v1/prewarm-devotional-audio',
+    headers := jsonb_build_object(
+                 'Content-Type', 'application/json',
+                 'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')),
+    body    := '{}'::jsonb,
+    timeout_milliseconds := 150000
+  );
+  $$
 );

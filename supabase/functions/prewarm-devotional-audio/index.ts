@@ -19,9 +19,9 @@
 // ({ enabled, languages }), set in Platform Admin > Bulk TTS > Daily audio.
 // English only until an admin turns more on.
 //
-// Callers: pg_cron via private.call_edge_fn (x-cron-secret), or a platform
-// admin's "Run now" (their JWT). Deployed with verify_jwt = false because
-// the cron path authenticates with the shared secret.
+// Callers: pg_cron (service role key from the vault, migration 0399), or a
+// platform admin's "Run now" (their JWT). The function checks both itself,
+// so it's deployed with verify_jwt = false.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -151,11 +151,12 @@ serve(async (req) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
-  // Cron (shared secret) or a platform admin.
+  // Cron (the service role key, or the shared cron secret) or a platform admin.
+  const authHeader = req.headers.get('Authorization')
   const cronSecret = req.headers.get('x-cron-secret')
-  const fromCron = !!cronSecret && cronSecret === Deno.env.get('CRON_SHARED_SECRET')
+  const fromCron = (!!serviceKey && authHeader === `Bearer ${serviceKey}`)
+    || (!!cronSecret && cronSecret === Deno.env.get('CRON_SHARED_SECRET'))
   if (!fromCron) {
-    const authHeader = req.headers.get('Authorization')
     if (!authHeader) return json({ error: 'Unauthorized' }, 401)
     const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
       global: { headers: { Authorization: authHeader } },
