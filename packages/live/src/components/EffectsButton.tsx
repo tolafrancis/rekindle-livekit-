@@ -16,6 +16,13 @@ const PRESETS: { label: string; url: string }[] = [
   { label: 'Office', url: '/backgrounds/office.png' },
   { label: 'Warm', url: '/backgrounds/warm.png' },
   { label: 'Nature', url: '/backgrounds/nature.png' },
+  // Illustrated scenes from scripts/generate-meeting-backgrounds.py.
+  { label: 'Library', url: '/backgrounds/library.jpg' },
+  { label: 'Beach', url: '/backgrounds/beach.jpg' },
+  { label: 'Mountains', url: '/backgrounds/mountains.jpg' },
+  { label: 'Sanctuary', url: '/backgrounds/sanctuary.jpg' },
+  { label: 'Living room', url: '/backgrounds/living-room.jpg' },
+  { label: 'Garden', url: '/backgrounds/garden.jpg' },
 ];
 
 // The Web Audio Output Devices API only gives free-text labels, no structured

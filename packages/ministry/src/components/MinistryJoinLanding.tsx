@@ -52,6 +52,13 @@ const MinistryJoinLanding: React.FC = () => {
     if (groupId) setDeepLink({ type: 'small-group', id: groupId });
   }, [groupId]);
 
+  // Same for a shared ministry devotional (?devotional=, from the devotional
+  // preview's "Join the ministry" choice): it opens once they're in.
+  const devotionalId = sp.get('devotional') || '';
+  useEffect(() => {
+    if (devotionalId) setDeepLink({ type: 'ministry-devotional', id: devotionalId });
+  }, [devotionalId]);
+
   const [stage, setStage] = useState<'loading' | 'error' | 'branding'>('loading');
   const [ministry, setMinistry] = useState<MinistryBranding | null>(null);
   const [codeStatus, setCodeStatus] = useState('');

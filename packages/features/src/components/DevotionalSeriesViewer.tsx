@@ -595,7 +595,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const getDevotionalAudioText = (): string => {
     const slide = slides[currentSlide];
     if (!slide) return '';
-    let text = '';
+    // The first screen opens with its title (the devotional's), then its text.
+    let text = slide.type === 'intro' && slide.title ? `${slide.title}. ` : '';
     if (slide.scripture && slide.scriptureText) text += `${slide.scripture}. ${slide.scriptureText}. `;
     if (slide.type === 'reflection' && slide.questions) {
       text += slide.content + ' ';

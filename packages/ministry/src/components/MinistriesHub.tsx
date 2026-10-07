@@ -25,7 +25,7 @@ import {
 // needed once a ministry is entered, so it's its own chunk rather than being
 // downloaded — along with the video stack it pulls in — just to show the list.
 const MinistrySpace = lazy(() => import('./MinistrySpace'));
-import { peekDeepLink } from '@rekindle/features/deepLink';
+import { peekDeepLink, consumeDeepLink } from '@rekindle/features/deepLink';
 
 interface Ministry {
   id: string;
@@ -319,7 +319,25 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           return;
         }
         const { data: ministry } = await supabase.from('ministry_groups').select('*').eq('id', targetMinistryId).maybeSingle();
-        if (ministry) handleEnterMinistry(ministry);
+        if (ministry) {
+          handleEnterMinistry(ministry);
+          return;
+        }
+        // Not a member, so the ministry itself isn't readable: send a shared
+        // devotional's reader to the ministry's join page, carrying the
+        // devotional so it opens once they've joined.
+        // Only once per devotional, so someone still waiting on approval
+        // isn't sent back to the join page every time they come home.
+        if (dl.type === 'ministry-devotional') {
+          consumeDeepLink('ministry-devotional');
+          const onceKey = `rk_join_redirect_${dl.id}`;
+          if (sessionStorage.getItem(onceKey)) return;
+          const { data: slug } = await supabase.rpc('get_ministry_join_slug', { mid: targetMinistryId });
+          if (typeof slug === 'string' && slug) {
+            sessionStorage.setItem(onceKey, '1');
+            navigate(`/join/${encodeURIComponent(slug)}?devotional=${encodeURIComponent(dl.id)}`);
+          }
+        }
       } catch (err) {
         console.error('Error resolving shared link:', err);
       }

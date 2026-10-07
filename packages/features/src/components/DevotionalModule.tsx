@@ -32,9 +32,11 @@ import {
 } from 'lucide-react';
 import { instrumentalTracks } from '../data/instrumentals';
 import { SocialShareModal } from './SocialShareModal';
+import { GetTheAppCard } from './GetTheAppCard';
 import { useAuth } from '../AuthContext';
 import { useTakeDeclarationHandler } from '../takeDeclarationContext';
 import { useLanguage } from '../LanguageContext';
+import { buildDevotionalNarrationSlides, devotionalSlideNarration, type NarrationSlide } from '../devotionalNarration';
 import { useLocalizedScripture } from '../useLocalizedScripture';
 import { useTapGesture, useOneTimeTip, ViewerGestureTip } from './viewerGestures';
 import { recordDailyActivity, getStreakSummary, type StreakSummary } from '../streak';
@@ -124,7 +126,7 @@ interface Props {
   /** Public deep-link URL used by the in-module Share dialog (routes recipients
    *  to this devotional's free-taste preview). Falls back to the current URL. */
   shareUrl?: string;
-  /** Ministry name for branded share text. Falls back to Rekindle when absent. */
+  /** Ministry or devotional-stream name for branded share text. Falls back to Rekindle when absent. */
   ministryName?: string | null;
   onComplete: () => void;
   onClose: () => void;
@@ -294,129 +296,24 @@ export const DevotionalModule: React.FC<Props> = ({
     return Math.ceil(readingTimeSeconds);
   };
 
-  const getDevotionalAudioText = () => {
-    let text = `${displayTitle}\n\n`;
-    const currentSlideData = slides[currentSlide];
-    
-    if (currentSlideData?.scripture) {
-      text += `${currentSlideData.scripture}\n`;
-    }
-    if (currentSlideData?.scriptureText) {
-      text += `${currentSlideData.scriptureText}\n\n`;
-    }
-    
-    // Reflection slides: read the intro sentence AND each question
-    if (currentSlideData?.type === 'reflection' && currentSlideData?.questions?.length) {
-      text += currentSlideData.content + ' ';
-      currentSlideData.questions.forEach((q, idx) => {
-        text += `Question ${idx + 1}: ${q}. `;
-      });
-    } else {
-      text += currentSlideData?.content || '';
-    }
-    
-    if (currentSlideData?.type === 'prayer' || currentSlideData?.title.toLowerCase().includes('prayer')) {
-      text = `Prayer:\n${text}`;
-    }
-    
-    return text;
-  };
+  const getDevotionalAudioText = () => devotionalSlideNarration(slides[currentSlide]);
 
+  // Slide content (and so the narration) is built by the shared builder that
+  // the prewarm-devotional-audio job also uses; only pacing is added here.
   const slides: DevotionalSlide[] = React.useMemo(() => {
-    // Intro: welcome-by-title line, plus the author entered when the devotional
-    // was created (shown only when an author is set; no fallback text).
-    const authorName = normalizedDevotional.author?.trim();
-    const welcomeLine = t('devotionals', 'readerWelcome', "You are welcome to today's devotional. This time is set apart for you and God.");
-    const introContent = authorName
-      ? `${welcomeLine}\n\n${t('devotionals', 'readerWrittenBy', 'Written by')} ${authorName}`
-      : welcomeLine;
-
-    const slideList: DevotionalSlide[] = [
-      {
-        type: 'intro',
-        title: normalizedDevotional.title,
-        content: introContent,
-        duration: 20
+    const slideDuration = (slide: NarrationSlide): number => {
+      switch (slide.type) {
+        case 'intro': return 20;
+        case 'passage': return slide.isLongPassage ? calculateReadingTime(slide.scriptureText || '', 30) : 25;
+        case 'devotional': return calculateReadingTime(slide.content, 120);
+        case 'reflection': return 30;
+        case 'prayer': return calculateReadingTime(slide.content, 90);
+        case 'spirit': return 60;
+        case 'closing': return 20;
       }
-    ];
-
-    if (normalizedDevotional.scriptureReferences.length > 0) {
-      normalizedDevotional.scriptureReferences.forEach((ref, idx) => {
-        slideList.push({
-          type: 'passage',
-          title: idx === 0 ? t('devotionals', 'readerScripturePassage', 'Scripture Passage') : t('devotionals', 'readerAdditionalScripture', 'Additional Scripture'),
-          content: t('devotionals', 'readerReadSlowly', 'Read slowly. Let the words rest in your heart.'),
-          scripture: ref.reference,
-          scriptureText: ref.text,
-          scriptureVersion: ref.version,
-          duration: 25
-        });
-      });
-    } else if (normalizedDevotional.scripture || normalizedDevotional.scriptureText) {
-      slideList.push({
-        type: 'passage',
-        title: t('devotionals', 'readerScripturePassage', 'Scripture Passage'),
-        content: t('devotionals', 'readerReadSlowly', 'Read slowly. Let the words rest in your heart.'),
-        scripture: normalizedDevotional.scripture,
-        scriptureText: normalizedDevotional.scriptureText,
-        duration: 25
-      });
-    }
-
-    if (normalizedDevotional.biblePassageReference || normalizedDevotional.biblePassageText) {
-      slideList.push({
-        type: 'passage',
-        title: t('devotionals', 'readerBiblePassage', 'Bible Passage'),
-        content: t('devotionals', 'readerReadSlowly', 'Read slowly. Let the words rest in your heart.'),
-        scripture: normalizedDevotional.biblePassageReference,
-        scriptureText: normalizedDevotional.biblePassageText,
-        isLongPassage: true,
-        duration: calculateReadingTime(normalizedDevotional.biblePassageText, 30)
-      });
-    }
-
-    slideList.push({
-      type: 'devotional',
-      title: t('devotionals', 'readerDevotional', 'Devotional'),
-      content: normalizedDevotional.message,
-      duration: calculateReadingTime(normalizedDevotional.message, 120)
-    });
-
-    if (normalizedDevotional.reflectionQuestions.length > 0) {
-      slideList.push({
-        type: 'reflection',
-        title: t('devotionals', 'readerReflectionQuestions', 'Reflection Questions'),
-        content: t('devotionals', 'readerReflectionContent', 'Consider how this truth meets you where you are today.'),
-        questions: normalizedDevotional.reflectionQuestions,
-        duration: 30
-      });
-    }
-
-    if (normalizedDevotional.prayer && normalizedDevotional.prayer.trim()) {
-      slideList.push({
-        type: 'prayer',
-        title: t('devotionals', 'readerGuidedPrayer', 'Guided Prayer'),
-        content: normalizedDevotional.prayer,
-        duration: calculateReadingTime(normalizedDevotional.prayer, 90)
-      });
-    }
-
-    slideList.push(
-      {
-        type: 'spirit',
-        title: t('devotionals', 'readerPrayInSpirit', 'Pray in the Spirit'),
-        content: t('devotionals', 'readerPrayInSpiritContent', 'There is no hurry. Stay as long as you need.\n\nWhen you are ready, gently mark this time complete.'),
-        duration: 60
-      },
-      {
-        type: 'closing',
-        title: t('devotionals', 'readerGoInPeace', 'Go in Peace'),
-        content: t('devotionals', 'readerGoInPeaceContent', 'May the Lord bless you and keep you.\nMay His face shine upon you and give you peace.\nGo forth in His love today.'),
-        duration: 20
-      }
-    );
-
-    return slideList;
+    };
+    return buildDevotionalNarrationSlides(normalizedDevotional, (key, fallback) => t('devotionals', key, fallback))
+      .map((slide) => ({ ...slide, duration: slideDuration(slide) }));
   }, [normalizedDevotional, t]);
 
   const currentSlideData = slides[currentSlide];
@@ -1240,6 +1137,8 @@ export const DevotionalModule: React.FC<Props> = ({
               </Button>
             </div>
           )}
+
+          {currentSlideData.type === 'closing' && <GetTheAppCard />}
         </div>
       </div>
 
@@ -1304,6 +1203,7 @@ export const DevotionalModule: React.FC<Props> = ({
           description={normalizedDevotional.excerpt || normalizedDevotional.message.slice(0, 100)}
           url={shareUrl || window.location.href}
           ministryName={ministryName}
+          author={normalizedDevotional.author}
         />
       )}
 

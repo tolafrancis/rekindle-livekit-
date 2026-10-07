@@ -12,6 +12,7 @@ import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { useGlobalAudio } from '../GlobalAudioContext';
+import { devotionalAudioContentId } from '../devotionalNarration';
 
 interface HighQualityAudioPlayerProps {
   text: string;
@@ -382,8 +383,12 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
     setUseBrowserTTS(false);
 
     try {
-      // Build a per-slide cache key so each slide gets its own cached audio
-      const slideContentId = `${contentId}_slide${slideAtStart}`;
+      // Build a per-slide cache key so each slide gets its own cached audio.
+      // The text hash is part of the key so changed narration text (an
+      // edited devotional, or the narration-text fix that stopped reading
+      // the ministry/series name) generates fresh audio instead of
+      // replaying a stale clip cached under the same slide.
+      const slideContentId = devotionalAudioContentId(contentId, slideAtStart, text);
 
       setLoadProgress(25);
       const cached = await getCachedAudio(slideContentId, contentType, language);

@@ -6,7 +6,8 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
-import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
+import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, VolumeX, MoreVertical, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
 import { ScripturePanel } from './ScripturePanel';
 
 interface SessionInfo {
@@ -524,8 +525,8 @@ export const TranslationDisplayPage: React.FC = () => {
       room.on(RoomEvent.Disconnected, () => {
         if (cancelled) return;
         // Unexpected drop (not our own teardown, which sets `cancelled`
-        // first) — reset all the way back to idle so the "Listen" button
-        // reappears and a re-tap actually re-triggers this effect (it only
+        // first) — reset all the way back to idle so "Listen" in the header
+        // menu is offered again and a re-tap actually re-triggers this effect (it only
         // fires on a false→true transition of `listening`).
         setAudioStatus('idle');
         setListening(false);
@@ -737,6 +738,11 @@ export const TranslationDisplayPage: React.FC = () => {
     );
   }
 
+  const stopListening = () => {
+    setListening(false);
+    setAudioStatus('idle');
+    setNeedsUnlock(false);
+  };
   const statusDot = connStatus === 'live' ? 'bg-emerald-500' : connStatus === 'ended' ? 'bg-slate-500' : 'bg-amber-500';
   const visibleLines = presenterMode ? lines.slice(-1) : lines;
   const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors';
@@ -816,6 +822,30 @@ export const TranslationDisplayPage: React.FC = () => {
           >
             <Maximize2 className="h-4 w-4" />
           </button>
+          {/* Listen lives behind this menu, not as a full-width button: the
+              captions are the default view, and a prominent "Listen" got
+              tapped by almost everyone on arrival. */}
+          {session && session.status !== 'error' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={`${iconBtn} relative`} title="More options" aria-label="More options">
+                  <MoreVertical className="h-4 w-4" />
+                  {listening && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {listening ? (
+                  <DropdownMenuItem onSelect={stopListening}>
+                    <VolumeX className="h-4 w-4 mr-2" /> Stop listening
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => setListening(true)}>
+                    <Volume2 className="h-4 w-4 mr-2" /> Listen to live audio
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <span className={`ml-1 h-2.5 w-2.5 rounded-full shrink-0 ${statusDot}`} title={connStatus} />
         </header>
       )}
@@ -963,7 +993,8 @@ export const TranslationDisplayPage: React.FC = () => {
       )}
 
       {/* session.status === 'ended' never reaches here, same as above. */}
-      {!presenterMode && session && session.status !== 'error' && (
+      {/* Only shown once the visitor turns audio on from the header menu. */}
+      {!presenterMode && session && session.status !== 'error' && audioStatus !== 'idle' && (
         <footer className="border-t border-white/10 px-4 py-3">
           {audioStatus === 'live' && needsUnlock && (
             <Button
@@ -983,7 +1014,15 @@ export const TranslationDisplayPage: React.FC = () => {
               {/* WebRTC direct — same room the bot publishes into, not a
                   segmented HLS pull, so this is real-time (sub-second),
                   not the "2–8s behind" caption the old HLS player carried. */}
-              <span className="text-xs text-white/50">Listening — live audio, real time.</span>
+              <span className="text-xs text-white/50 flex-1">Listening — live audio, real time.</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white shrink-0"
+                onClick={stopListening}
+              >
+                Stop
+              </Button>
             </div>
           )}
           {(audioStatus === 'connecting' || audioStatus === 'waiting-for-bot') && (
@@ -1008,21 +1047,6 @@ export const TranslationDisplayPage: React.FC = () => {
                 Try again
               </Button>
             </div>
-          )}
-          {audioStatus === 'idle' && (
-            // Explicit text/border/hover colors — outline variant's default
-            // ("border border-input bg-background", no text color of its own)
-            // inherited this page's text-white onto bg-background's light
-            // theme, same near-invisible white-on-white bug as the landing
-            // page's language buttons and the PIN-screen Cards above.
-            <Button
-              variant="outline"
-              className="w-full text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
-              onClick={() => setListening(true)}
-            >
-              <Volume2 className="h-4 w-4 mr-2" />
-              Listen
-            </Button>
           )}
         </footer>
       )}

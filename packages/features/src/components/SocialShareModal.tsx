@@ -17,10 +17,12 @@ interface Props {
   imageUrl?: string;
   /** Ministry name for branded share text. Falls back to Rekindle when absent. */
   ministryName?: string | null;
+  /** Devotional author, for the share message's "Written by" line. */
+  author?: string | null;
 }
 
 export const SocialShareModal: React.FC<Props> = ({
-  isOpen, onClose, title, description, url, imageUrl, ministryName
+  isOpen, onClose, title, description, url, imageUrl, ministryName, author
 }) => {
   const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
@@ -29,8 +31,8 @@ export const SocialShareModal: React.FC<Props> = ({
   // targets that only accept free text — WhatsApp, SMS, Email, native share);
   // `messageNoLink` is used where the URL is passed in a dedicated field
   // (Facebook, Telegram, X) to avoid a duplicated link.
-  const fullMessage = buildDevotionalShareText({ ministryName, title, url });
-  const messageNoLink = buildDevotionalShareText({ ministryName, title, url }, false);
+  const fullMessage = buildDevotionalShareText({ ministryName, author, title, url });
+  const messageNoLink = buildDevotionalShareText({ ministryName, author, title, url }, false);
   const header = buildShareHeader(ministryName);
 
   const encodedFull = encodeURIComponent(fullMessage);
@@ -88,7 +90,7 @@ export const SocialShareModal: React.FC<Props> = ({
   // blank and the web link buttons below are the reliable path.
   const hasNativeShare = canNativeShare();
   const nativeShare = async () => {
-    const result = await shareDevotional({ ministryName, title, url });
+    const result = await shareDevotional({ ministryName, author, title, url });
     if (result.method === 'native') onClose();
   };
 

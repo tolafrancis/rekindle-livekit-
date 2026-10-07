@@ -15,6 +15,13 @@ const PRESETS: { label: string; url: string }[] = [
   { label: 'Office', url: '/backgrounds/office.png' },
   { label: 'Warm', url: '/backgrounds/warm.png' },
   { label: 'Nature', url: '/backgrounds/nature.png' },
+  // Illustrated scenes from scripts/generate-meeting-backgrounds.py.
+  { label: 'Library', url: '/backgrounds/library.jpg' },
+  { label: 'Beach', url: '/backgrounds/beach.jpg' },
+  { label: 'Mountains', url: '/backgrounds/mountains.jpg' },
+  { label: 'Sanctuary', url: '/backgrounds/sanctuary.jpg' },
+  { label: 'Living room', url: '/backgrounds/living-room.jpg' },
+  { label: 'Garden', url: '/backgrounds/garden.jpg' },
 ];
 
 interface Props {
@@ -71,7 +78,7 @@ export const VirtualBackgroundButton: React.FC<Props> = ({ value, onChange, trig
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align={align} className="w-56 p-3">
+      <PopoverContent align={align} className="w-56 p-3 max-h-[70vh] overflow-y-auto">
         <p className="text-xs font-semibold text-gray-700 mb-2">Background</p>
         <div className="grid grid-cols-3 gap-2">
           <button type="button" onClick={() => select('none')} className={`${cell} ${sel(value === 'none')} bg-gray-50 text-gray-600`}>
