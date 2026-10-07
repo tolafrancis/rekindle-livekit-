@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { instrumentalTracks } from '../data/instrumentals';
 import { SocialShareModal } from './SocialShareModal';
+import { GetTheAppCard } from './GetTheAppCard';
 import { useAuth } from '../AuthContext';
 import { useTakeDeclarationHandler } from '../takeDeclarationContext';
 import { useLanguage } from '../LanguageContext';
@@ -1136,6 +1137,8 @@ export const DevotionalModule: React.FC<Props> = ({
               </Button>
             </div>
           )}
+
+          {currentSlideData.type === 'closing' && <GetTheAppCard />}
         </div>
       </div>
 
