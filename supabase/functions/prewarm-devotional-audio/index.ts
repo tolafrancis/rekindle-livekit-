@@ -19,9 +19,9 @@
 // ({ enabled, languages }), set in Platform Admin > Bulk TTS > Daily audio.
 // English only until an admin turns more on.
 //
-// Callers: pg_cron (service role key from the vault, migration 0399), or a
-// platform admin's "Run now" (their JWT). The function checks both itself,
-// so it's deployed with verify_jwt = false.
+// Callers: pg_cron with a service-role JWT from the vault (migration 0399),
+// or a platform admin's "Run now" (their JWT). The gateway verifies the JWT
+// (verify_jwt = true); the function then checks its role.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -35,7 +35,7 @@ import {
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 const SETTINGS_KEY = 'daily_audio_prewarm'
@@ -141,6 +141,18 @@ async function loadStrings(supabase: SupabaseClient, language: string) {
 
 interface Job { contentId: string; language: string; text: string }
 
+function jwtRole(authHeader: string | null): string | null {
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  const payload = token.split('.')[1]
+  if (!payload) return null
+  try {
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payload.length / 4) * 4, '='))
+    return JSON.parse(json)?.role ?? null
+  } catch {
+    return null
+  }
+}
+
 serve(async (req) => {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -151,11 +163,11 @@ serve(async (req) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
 
-  // Cron (the service role key, or the shared cron secret) or a platform admin.
+  // Cron (a service-role JWT) or a platform admin. The gateway has already
+  // verified the JWT's signature (verify_jwt = true), so its role claim can
+  // be trusted here.
   const authHeader = req.headers.get('Authorization')
-  const cronSecret = req.headers.get('x-cron-secret')
-  const fromCron = (!!serviceKey && authHeader === `Bearer ${serviceKey}`)
-    || (!!cronSecret && cronSecret === Deno.env.get('CRON_SHARED_SECRET'))
+  const fromCron = jwtRole(authHeader) === 'service_role'
   if (!fromCron) {
     if (!authHeader) return json({ error: 'Unauthorized' }, 401)
     const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
