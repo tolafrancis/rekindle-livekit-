@@ -3366,7 +3366,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             video_url: selectedDevotional.video_url,
             cover_image_url: selectedDevotional.featured_image || selectedDevotional.cover_image_url,
             background_music_id: selectedDevotional.background_music_id,
-            author: selectedDevotional.author_name || undefined,
             is_bookmarked: false
           }}
           seriesTitle={ministry.name}
