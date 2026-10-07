@@ -2,7 +2,7 @@
 // Audio controls are now HIGHLY VISIBLE in traditional prayer mode
 
 import { useSwipe } from '@rekindle/ui/useSwipe';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
