@@ -698,9 +698,24 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       })();
     }
 
+    // A shared devotional link opens that devotional in the reader (it may be
+    // an older one, not today's), over the Devotionals tab.
     const dlDev = consumeDeepLink('ministry-devotional');
     if (dlDev?.id) {
       setActiveTab('devotionals');
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from('ministry_devotionals')
+            .select('*')
+            .eq('id', dlDev.id)
+            .eq('ministry_id', ministry.id)
+            .maybeSingle();
+          if (data) handleStartDevotional(data as MinistryDevotional);
+        } catch (err) {
+          console.error('Error opening shared devotional:', err);
+        }
+      })();
     }
 
     const dlPrayer = consumeDeepLink('ministry-prayer');

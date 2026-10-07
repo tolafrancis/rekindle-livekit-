@@ -16,6 +16,7 @@ import { shareDevotional } from '@/lib/devotionalShare';
 import { canNativeShare } from '@/lib/webShare';
 import { useLocalizedScriptures, ScriptureInput } from '@/hooks/useLocalizedScripture';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { consumeDeepLink } from '@rekindle/features/deepLink';
 
 // Scripture block for the widget. Isolated into its own component so the
 // useLocalizedScriptures hook runs unconditionally (the main widget body sits
@@ -207,6 +208,49 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   // Share branding for a platform devotional: its stream's name (e.g. "Open
   // Heavens"), or null for the default stream so it reads "Rekindle Devotional".
   const [streamShareName, setStreamShareName]       = useState<string | null>(null);
+
+  // A devotional opened from a shared link (/daily-devotional/:id or
+  // /ministry-devotional/:id). It opens straight in the reader, whichever day
+  // it is and whether or not the reader belongs to that ministry.
+  const [sharedDevotional, setSharedDevotional] = useState<
+    | { kind: 'platform'; row: PlatformDevotional; name: string | null }
+    | { kind: 'ministry'; row: MinistryDevotional; name: string | null }
+    | null
+  >(null);
+
+  useEffect(() => {
+    const dlMinistry = consumeDeepLink('ministry-devotional');
+    const dlDaily = dlMinistry ? null : consumeDeepLink('daily-devotional');
+    if (!dlMinistry?.id && !dlDaily?.id) return;
+    let active = true;
+    (async () => {
+      try {
+        if (dlMinistry?.id) {
+          const { data } = await supabase
+            .from('ministry_devotionals').select('*')
+            .eq('id', dlMinistry.id).eq('is_published', true).maybeSingle();
+          if (!data) return;
+          const { data: mn } = await supabase.rpc('get_ministry_name', { mid: data.ministry_id });
+          if (active) setSharedDevotional({ kind: 'ministry', row: data as MinistryDevotional, name: mn ? String(mn) : null });
+        } else if (dlDaily?.id) {
+          const { data } = await supabase
+            .from('devotionals').select('*')
+            .eq('id', dlDaily.id).eq('is_published', true).maybeSingle();
+          if (!data) return;
+          let name: string | null = null;
+          if (data.stream_id) {
+            const { data: stream } = await supabase
+              .from('devotional_streams').select('name, is_default').eq('id', data.stream_id).maybeSingle();
+            name = stream && !stream.is_default ? stream.name : null;
+          }
+          if (active) setSharedDevotional({ kind: 'platform', row: data as PlatformDevotional, name });
+        }
+      } catch (err) {
+        console.error('Error opening shared devotional:', err);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const loadMinistryDevotional = useCallback(async () => {
     if (!ministryId) return;
@@ -448,6 +492,31 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
       ministryDevotional.author_name || ministryDevotional.author,
     );
   };
+
+  // ── Render: devotional opened from a shared link ───────────
+  if (sharedDevotional) {
+    const { kind, row, name } = sharedDevotional;
+    const close = () => setSharedDevotional(null);
+    return kind === 'ministry' ? (
+      <DevotionalModule
+        devotional={formatMinistryForModule(getLocalizedContent(row, MINISTRY_LOCALIZED_FIELDS))}
+        moduleNumber={1}
+        ministryName={name}
+        shareUrl={`${publicWebOrigin()}/ministry-devotional/${row.id}`}
+        onComplete={() => { recordDailyActivity(user?.id, 'daily_devotional'); close(); }}
+        onClose={close}
+      />
+    ) : (
+      <DevotionalModule
+        devotional={formatForModule(getLocalizedContent(row, PLATFORM_LOCALIZED_FIELDS))}
+        moduleNumber={1}
+        ministryName={name}
+        shareUrl={`${publicWebOrigin()}/daily-devotional/${row.id}`}
+        onComplete={() => { recordDailyActivity(user?.id, 'daily_devotional'); close(); }}
+        onClose={close}
+      />
+    );
+  }
 
   // ── Render: full-screen devotional module ──────────────────
   if (showModule && todayDevotional) {

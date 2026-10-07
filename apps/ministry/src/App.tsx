@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { toast } from '@rekindle/ui/use-toast';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
@@ -47,6 +47,9 @@ import LandingPage from '@rekindle/features/components/LandingPage';
 import { registerPush } from '@rekindle/features/usePushNotifications';
 import { ErrorBoundary } from '@rekindle/features/components/ErrorBoundary';
 import AuthScreen from './screens/AuthScreen';
+
+// Public preview for a shared ministry devotional (signed-out visitors only).
+const SharedContentPreview = lazy(() => import('@rekindle/features/components/SharedContentPreview'));
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
 // entry, an auth gate, self-onboarding for members with no ministry, and an authed
@@ -193,6 +196,21 @@ function AuthedArea() {
           onSignIn={() => navigate('/auth')}
           onSignUp={() => navigate('/auth', { state: { mode: 'signup' } })}
         />
+      );
+    }
+    // A shared ministry devotional gets the same public preview the consumer
+    // app shows, with the choice to join the ministry or just read it on
+    // Rekindle. SharedContentDeepLinkHandler has already saved the link, so
+    // signing in from here still opens the devotional.
+    if (location.pathname.startsWith('/ministry-devotional/')) {
+      return (
+        <Suspense fallback={<LoadingScreen />}>
+          <SharedContentPreview
+            appContext="ministry"
+            onSignIn={() => navigate('/auth')}
+            onSignUp={() => navigate('/auth', { state: { mode: 'signup' } })}
+          />
+        </Suspense>
       );
     }
     return <Navigate to="/auth" replace />;
