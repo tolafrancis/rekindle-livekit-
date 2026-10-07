@@ -31,3 +31,5 @@
 2026-10-07 merge main into devotional sharing work
 2026-10-07 original-language captions in the translation menu
 2026-10-07 captions off by default, fullscreen button above spotlight badges
+2026-10-07 captions delivered as data on rekindle.captions (packages/live)
+2026-10-07 Live Scripture verse visible to participants without their own switch (packages/live)
