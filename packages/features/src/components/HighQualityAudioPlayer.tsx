@@ -12,6 +12,7 @@ import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { useGlobalAudio } from '../GlobalAudioContext';
+import { devotionalAudioContentId } from '../devotionalNarration';
 
 interface HighQualityAudioPlayerProps {
   text: string;
@@ -42,13 +43,6 @@ function preprocessTextForTTS(text: string): string {
   processed = processed.replace(/(\w+)\s+(\d+):(\d+)/g, '$1 chapter $2, verse $3');
   processed = processed.replace(/\s+/g, ' ').trim();
   return processed;
-}
-
-// Short, stable fingerprint of the narration text (djb2), for the cache key.
-function textHash(value: string): string {
-  let h = 5381;
-  for (let i = 0; i < value.length; i++) h = ((h << 5) + h + value.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
 }
 
 // Check for cached audio
@@ -394,7 +388,7 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
       // edited devotional, or the narration-text fix that stopped reading
       // the ministry/series name) generates fresh audio instead of
       // replaying a stale clip cached under the same slide.
-      const slideContentId = `${contentId}_slide${slideAtStart}_${textHash(text)}`;
+      const slideContentId = devotionalAudioContentId(contentId, slideAtStart, text);
 
       setLoadProgress(25);
       const cached = await getCachedAudio(slideContentId, contentType, language);

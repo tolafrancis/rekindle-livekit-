@@ -381,3 +381,9 @@ enabled = true
 # period (or that ran far past their booked time), so any valid JWT may call
 # it; gateway verification still keeps unsigned callers out.
 verify_jwt = true
+
+[functions.prewarm-devotional-audio]
+enabled = true
+# Called by pg_cron (x-cron-secret) or a platform admin's "Run now"; the
+# function checks both itself, so gateway JWT verification is off.
+verify_jwt = false

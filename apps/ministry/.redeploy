@@ -17,3 +17,4 @@
 2026-10-04 meeting mode tip + Presentation renamed to Broadcast (packages/ministry)
 2026-10-06 translation display: Listen moved into header menu, captions default (packages/live)
 2026-10-07 devotional read aloud reads the title, not the ministry/series name (packages/features)
+2026-10-07 daily devotional audio prewarm + shared narration builder (packages/features)

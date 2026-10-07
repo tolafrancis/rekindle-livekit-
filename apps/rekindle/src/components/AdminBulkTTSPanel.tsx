@@ -7,11 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BulkTTSUploader } from '@/components/BulkTTSUploader';
 import { BulkTTSJobMonitor } from '@/components/BulkTTSJobMonitor';
+import { DailyAudioPrewarmSettings } from '@/components/DailyAudioPrewarmSettings';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { 
   Globe, History, Settings, InfoIcon, 
-  Zap, DollarSign, Clock
+  Zap, DollarSign, Clock, CalendarClock
 } from 'lucide-react';
 
 export const AdminBulkTTSPanel: React.FC = () => {
@@ -84,10 +85,14 @@ export const AdminBulkTTSPanel: React.FC = () => {
       
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="upload" className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
             Generate Audio
+          </TabsTrigger>
+          <TabsTrigger value="daily" className="flex items-center gap-2">
+            <CalendarClock className="h-4 w-4" />
+            Daily Audio
           </TabsTrigger>
           <TabsTrigger value="jobs" className="flex items-center gap-2">
             <History className="h-4 w-4" />
@@ -110,6 +115,11 @@ export const AdminBulkTTSPanel: React.FC = () => {
           />
         </TabsContent>
         
+        {/* Daily Audio Tab: the prewarm-devotional-audio job's settings */}
+        <TabsContent value="daily" className="space-y-4">
+          <DailyAudioPrewarmSettings />
+        </TabsContent>
+
         {/* Jobs Tab */}
         <TabsContent value="jobs" className="space-y-4">
           <BulkTTSJobMonitor />
