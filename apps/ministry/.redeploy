@@ -35,3 +35,4 @@
 2026-10-07 Live Scripture verse visible to participants without their own switch (packages/live)
 2026-10-07 removed the "You've joined muted" toast on joining a meeting (packages/live)
 2026-10-07 Live Scripture tip + Open settings link from a meeting; settings re-read mid-meeting (packages/live, packages/ministry)
+2026-10-07 meeting Background picker no longer closes the Meeting Controls menu (packages/live)

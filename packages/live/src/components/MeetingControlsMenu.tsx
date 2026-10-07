@@ -47,6 +47,11 @@ export const MeetingControlsMenu: React.FC<MeetingControlsMenuProps> = ({
   useEffect(() => {
     if (!open) return;
     const onDocPointerDown = (e: PointerEvent) => {
+      // Pickers opened from this menu (Background, Layout, Spotlight) render
+      // their popover in a portal outside containerRef. A press inside one
+      // isn't "outside": closing here unmounted the picker before its click
+      // landed, so choosing a background just closed the menu.
+      if ((e.target as Element | null)?.closest?.('[data-radix-popper-content-wrapper]')) return;
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
