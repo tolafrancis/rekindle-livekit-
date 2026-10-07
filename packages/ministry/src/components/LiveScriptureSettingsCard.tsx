@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
@@ -48,8 +48,16 @@ export const LiveScriptureSettingsCard: React.FC<{ ministryId: string }> = ({ mi
     options.push({ value: settings.preferred_version, label: settings.preferred_version_label });
   }
 
+  // Opened from a meeting's "Open settings" tip: bring this card into view.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let scroll = false;
+    try { scroll = sessionStorage.getItem('rk-scroll-live-scripture') === '1'; sessionStorage.removeItem('rk-scroll-live-scripture'); } catch { /* non-fatal */ }
+    if (scroll) setTimeout(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+  }, []);
+
   return (
-    <Card>
+    <Card ref={cardRef} id="live-scripture-settings">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-indigo-600" /> Live Scripture

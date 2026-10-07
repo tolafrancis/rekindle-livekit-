@@ -1,3 +1,4 @@
+import { useActiveCallOptional } from '../ActiveCallContext';
 import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
@@ -108,6 +109,11 @@ export interface ScriptureControlState {
   /** Only the host sees the manual-entry/hide controls (matches the old
    *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
   canControl: boolean;
+  /** The ministry's "Detect references automatically" or "Show confirmed
+   *  verses automatically" setting is off, so nothing shows on its own. */
+  autoOff: boolean;
+  /** Minimizes the meeting and opens Live Translation settings. */
+  onOpenSettings: () => void;
 }
 
 /** Live-translation language picker + status, styled to match the other
@@ -362,6 +368,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureManualError, setScriptureManualError] = useState<string | null>(null);
   const [scriptureHiding, setScriptureHiding] = useState(false);
   const scriptureSettings = useScriptureSettings(ministryId);
+  const activeCall = useActiveCallOptional();
   // Watching without the switch on: whoever hasn't turned Live Scripture on
   // themselves (every participant, usually) still sees the verse the host
   // puts up. Their switch is per device and off by default, and the overlay
@@ -552,6 +559,29 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     else setScriptureManual('');
   };
 
+  // The ministry app's Live > Live Translation > Settings tab, reached with
+  // MinistrySpace's "rk:ministry-go" event (the meeting renders above the
+  // tab router, so it can't switch tabs itself). The sub-tab is seeded in
+  // history state for MinistryTranslationHub's useViewHistory, and the flag
+  // tells LiveScriptureSettingsCard to scroll itself into view. The meeting
+  // is minimized, not left: it keeps running in the mini player.
+  const openScriptureSettings = () => {
+    try {
+      window.history.replaceState({ ...(window.history.state ?? {}), 'vh:ministry-translation-tab': 'settings' }, '', window.location.href);
+      sessionStorage.setItem('rk-scroll-live-scripture', '1');
+    } catch { /* non-fatal */ }
+    const detail = { group: 'live', child: 'live-tech', handled: false };
+    window.dispatchEvent(new CustomEvent('rk:ministry-go', { detail }));
+    if (detail.handled) {
+      activeCall?.minimize();
+    } else {
+      toast({
+        title: 'Open Live Translation settings',
+        description: "In your ministry, go to Live > Live Translation > Settings and switch on both options in the Live Scripture card.",
+      });
+    }
+  };
+
   const hideVerse = async () => {
     if (!scriptureSessionId) return;
     setScriptureHiding(true);
@@ -575,9 +605,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       hiding: scriptureHiding,
       onHide: hideVerse,
       canControl: !!(scriptureOn && isHost && scriptureSessionId),
+      autoOff: !(scriptureSettings.auto_detect && scriptureSettings.auto_show),
+      onOpenSettings: openScriptureSettings,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId]);
+  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId, scriptureSettings.auto_detect, scriptureSettings.auto_show]);
 
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
