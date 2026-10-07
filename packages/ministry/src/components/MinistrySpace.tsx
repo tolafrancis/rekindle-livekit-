@@ -565,6 +565,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           content: d.message || d.content || '',
           scripture_reference: d.scripture_reference || d.scripture || '',
           scripture_text: d.scripture_text || '',
+          // The player builds the Scripture slides from these, and the long
+          // "Bible Passage" slide from bible_passage_*; dropping them here hid
+          // those slides for ministries that follow a stream.
+          scripture_references: d.scripture_references,
+          bible_passage_reference: d.bible_passage_reference || '',
+          bible_passage_text: d.bible_passage_text || '',
+          background_music_id: d.background_music_id,
           reflection_questions: d.reflection_questions,
           prayer_focus: d.prayer || d.prayer_focus || '',
           featured_image: d.image_url || d.cover_image_url || '',
