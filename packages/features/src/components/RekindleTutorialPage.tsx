@@ -401,7 +401,8 @@ const TutorialContent: React.FC = () => (
       path={['Manage', 'Live', 'Live Channel']}
       steps={[
         { text: <>In your dashboard open <strong>Live › Live Channel</strong>.</>, shot: 'live-channel.png', alt: 'Your ministry’s Live Channel' },
-        { text: <><strong>From a phone or laptop:</strong> tap <strong>Go Live</strong>, allow camera and microphone, give the broadcast a title and start.</> },
+        { text: <><strong>From a phone or laptop (no OBS needed):</strong> tap <strong>Go Live</strong> and allow camera and microphone. Choose your camera from the <strong>Camera Device</strong> list: the built-in camera, a USB camera, or your phone as a webcam (for example with DroidCam).</> },
+        { text: <>Give the broadcast a title and tap <strong>Go Live</strong> once. Your camera and mic come on and viewers see you straight away.</> },
         { text: <><strong>From OBS or a video mixer:</strong> tap <strong>Broadcast setup (OBS / encoder)</strong>, open <strong>Advanced</strong> for the OBS / encoder details, copy them into your software and start streaming from there. The same screen lets you restream to YouTube Live and Facebook Live and turn recording on or off.</> },
         { text: <>Share your channel link. Viewers don’t need to sign in to watch.</> },
         { text: <>When you end the broadcast, the recording is saved to the channel for catch-up.</> },
