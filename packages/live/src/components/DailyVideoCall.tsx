@@ -2350,7 +2350,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     {/* Spotlight (host, global) vs pin (this viewer). Nothing for
                         an automatic active speaker. Below the top status bar. */}
                     {stage.reason !== 'active' && stage.reason !== 'none' && (
-                      <div className="absolute top-12 sm:top-14 left-2 z-10">
+                      <div className="absolute top-14 sm:top-20 left-2 z-10">
                         {stage.reason === 'spotlight' ? (
                           <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
                             <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
@@ -2365,7 +2365,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     {/* Anyone can unpin their own pin; only a host or co-host
                         can remove a spotlight. */}
                     {stage.reason === 'pin' ? (
-                      <div className="absolute top-12 sm:top-14 right-2 z-10">
+                      <div className="absolute top-14 sm:top-20 right-2 z-10">
                         <button
                           onClick={() => pinParticipant(null)}
                           className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
@@ -2374,7 +2374,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                         </button>
                       </div>
                     ) : stage.reason === 'spotlight' && isModerator ? (
-                      <div className="absolute top-12 sm:top-14 right-2 z-10">
+                      <div className="absolute top-14 sm:top-20 right-2 z-10">
                         <button
                           onClick={() => removeFromSpotlight(featuredParticipant.sessionId)}
                           className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
@@ -2383,7 +2383,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="absolute top-12 sm:top-14 right-2 z-10">{renderTileControls(featuredParticipant)}</div>
+                      <div className="absolute top-14 sm:top-20 right-2 z-10">{renderTileControls(featuredParticipant)}</div>
                     )}
                   </div>
                 </div>
@@ -2494,7 +2494,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         {/* Top bar. Extra right padding reserves room for the wrapper's top-right
             Copy Link / End for All buttons so the meeting's own right controls
             (participant count · mini-player · fullscreen) don't sit under them. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-36 sm:px-4 sm:py-4 sm:pr-96">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent px-2 py-2 pr-36 sm:px-4 sm:py-4 sm:pr-96">
           <div className="pointer-events-auto flex items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">

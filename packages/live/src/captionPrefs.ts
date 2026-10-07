@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 /** On-demand caption preferences, shared by the in-room (useLiveCaptions)
- *  and HLS (useHlsCaptions) caption hooks, so CC on/off and caption style follow
- *  the viewer between meetings and webinars. Stored per device. */
+ *  and HLS (useHlsCaptions) caption hooks. Caption style is stored per
+ *  device; CC on/off lasts only until the page is reloaded. */
 
 export type CaptionSize = 'sm' | 'md' | 'lg';
 export type CaptionStatus = 'off' | 'starting' | 'waiting' | 'live' | 'error';
@@ -42,7 +42,10 @@ export function readPrefs(): CaptionPrefs {
     if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Partial<CaptionPrefs>;
     return {
-      enabled: parsed.enabled === true,
+      // CC starts off on every page load; only the caption look is
+      // remembered. A remembered "on" read as captions being on by default
+      // and quietly started a paid caption agent in every meeting joined.
+      enabled: false,
       size: parsed.size === 'sm' || parsed.size === 'lg' ? parsed.size : 'md',
       background: BACKGROUNDS.includes(parsed.background as CaptionBackground) ? parsed.background as CaptionBackground : DEFAULT_PREFS.background,
       color: COLORS.includes(parsed.color as CaptionColor) ? parsed.color as CaptionColor : DEFAULT_PREFS.color,
