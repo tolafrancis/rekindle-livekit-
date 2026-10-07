@@ -5,6 +5,7 @@ import { Languages, Check, Volume2, Captions, X, Loader2, BookOpen } from 'lucid
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { updateCaptionPrefs, useCaptionPrefs } from '../captionPrefs';
 import { ScripturePanel } from './ScripturePanel';
 
 interface AvailableSession {
@@ -135,6 +136,26 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
     setCaptionModeState(mode);
     try { localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode); } catch { /* private-browsing / quota — non-fatal */ }
   };
+  // Where the "Show Captions" row is hidden, original-language captions come
+  // from on-demand CC (CaptionsButton / captionPrefs) instead. Listeners
+  // looked for them here next to the translated languages and didn't find
+  // them, so "Original" sits in this list too and drives the same CC switch.
+  // Only one caption source shows at a time.
+  const captionPrefs = useCaptionPrefs();
+  const originalCcOn = !showCaptionsOption && captionPrefs.enabled;
+  const pickCaptionMode = (mode: CaptionMode) => {
+    if (captionPrefs.enabled) updateCaptionPrefs({ enabled: false });
+    setCaptionMode(mode);
+  };
+  const turnOnOriginalCc = () => {
+    setCaptionMode('off');
+    updateCaptionPrefs({ enabled: true });
+  };
+  // CC turned on from the separate CC button: drop any translated captions.
+  useEffect(() => {
+    if (originalCcOn && captionMode !== 'off') setCaptionMode('off');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalCcOn]);
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   // Near-real-time interim text (2026-09-23, captions pipeline review Phase
   // 3, F-CAP-1) — mirrors FloatingTranslationButton.tsx's own interimText.
@@ -841,14 +862,21 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
             </p>
           )}
 
-          {(showCaptionsOption || realSessions.length > 0) && (<>
+          <>
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Captions</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
-            <button type="button" onClick={() => setCaptionMode('off')} className={`${row} ${sel(captionMode === 'off')}`}>
+            <button type="button" onClick={() => pickCaptionMode('off')} className={`${row} ${sel(captionMode === 'off' && !originalCcOn)}`}>
               <X className="h-4 w-4" />
               <span className="flex-1">Off</span>
-              {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+              {captionMode === 'off' && !originalCcOn && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            {!showCaptionsOption && (
+            <button type="button" onClick={turnOnOriginalCc} className={`${row} ${sel(originalCcOn)}`}>
+              <Captions className="h-4 w-4" />
+              <span className="flex-1">Original</span>
+              {originalCcOn && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+            </button>
+            )}
             {showCaptionsOption && (
             <button
               type="button"
@@ -865,7 +893,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
               <button
                 key={`caption-${s.id}`}
                 type="button"
-                onClick={() => setCaptionMode(s.target_language)}
+                onClick={() => pickCaptionMode(s.target_language)}
                 className={`${row} ${sel(captionMode === s.target_language)}`}
               >
                 <Captions className="h-4 w-4" />
@@ -874,7 +902,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
               </button>
             ))}
           </div>
-          </>)}
+          </>
           {captionsError && (
             <p className="text-xs text-red-600 px-2.5 pt-1.5">{captionsError}</p>
           )}
