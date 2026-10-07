@@ -25,3 +25,7 @@
 2026-10-07 record shared devotional opens for next-day email
 2026-10-07 guide: go live camera picker
 2026-10-07 landing page: new features
+2026-10-06 DOM translation guard for Sentry NotFoundError (packages/features, packages/live)
+2026-10-06 browser translation tip (packages/features)
+2026-10-06: show devotional author in the ministry player
+2026-10-07 merge main into devotional sharing work

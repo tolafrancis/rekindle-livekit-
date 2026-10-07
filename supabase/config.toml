@@ -19,6 +19,11 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.generate-affirmation]
+enabled = true
+# Admin/super_admin only, same pattern as generate-prayer-content.
+verify_jwt = true
+
 [functions.generate-devotional-series]
 enabled = true
 # Admin/super_admin only (checked via user_profiles.role inside the function,

@@ -13,6 +13,7 @@ import { ActiveCallProvider } from "@rekindle/live/ActiveCallContext";
 import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
 import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { BrowserTranslationTip } from "@rekindle/features/components/BrowserTranslationTip";
 import Index from "./pages/Index";
 import { BackToTop } from "./components/BackToTop";
 import RouteFallback from "./components/RouteFallback";
@@ -113,6 +114,7 @@ const App = () => {
                 <ActiveCallProvider>
                 <Toaster />
                 <Sonner />
+                <BrowserTranslationTip />
                 <BrowserRouter>
                   <PushNotificationNavHandler />
                   <Suspense fallback={<RouteFallback />}>

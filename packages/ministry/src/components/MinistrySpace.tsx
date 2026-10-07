@@ -183,6 +183,7 @@ interface MinistryDevotional {
   id: string;
   title: string;
   content: string;
+  author_name?: string;
   scripture_reference: string;
   scripture_text?: string;
   reflection_questions?: any;
@@ -560,6 +561,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         setDevotionals((streamDevs || []).map((d: any) => ({
           id: d.id,
           title: d.title,
+          author_name: d.author || d.author_name || '',
           content: d.message || d.content || '',
           scripture_reference: d.scripture_reference || d.scripture || '',
           scripture_text: d.scripture_text || '',
@@ -3351,6 +3353,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             series_id: selectedDevotional.series_id,
             day_number: selectedDevotional.day_number || 1,
             title: selectedDevotional.title,
+            author: selectedDevotional.author_name || selectedDevotional.author || '',
             scripture_reference: selectedDevotional.scripture_reference,
             scripture_text: selectedDevotional.scripture_text,
             bible_passage_reference: selectedDevotional.bible_passage_reference,
