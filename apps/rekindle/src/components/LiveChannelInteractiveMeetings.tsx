@@ -152,7 +152,8 @@ const EnhancedVideoCallWrapper = ({
   isHost, 
   onLeave, 
   channelId, 
-  onEndMeeting 
+  onEndMeeting,
+  ministryId,
 }: { 
   meeting: LiveChannelVideoMeeting; 
   userName: string;
@@ -161,6 +162,9 @@ const EnhancedVideoCallWrapper = ({
   onLeave: () => void;
   channelId: string;
   onEndMeeting?: () => void;
+  /** The channel's ministry, null for a personal channel. Was read here
+   *  without being passed in, which threw a ReferenceError in the call. */
+  ministryId?: string | null;
 }) => {
   const { t } = useLanguage();
   const [meetingEnded, setMeetingEnded] = useState(false);
@@ -1589,6 +1593,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
           onLeave={doLeave}
           channelId={channelId}
           onEndMeeting={isHost ? doEnd : undefined}
+          ministryId={ministryId}
         />
       ),
     });
