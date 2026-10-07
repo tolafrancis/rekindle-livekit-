@@ -14,6 +14,7 @@ import { supabase } from '@rekindle/supabase';
 import { getLocalDateString, endOfLocalDayISO } from '@rekindle/ui/utils';
 import { getMinistryStreamId } from '@rekindle/features/devotionalStreams';
 import { consumeDeepLink } from '@rekindle/features/deepLink';
+import { recordSharedDevotionalOpen } from '@rekindle/features/sharedDevotionalFollowup';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -711,7 +712,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             .eq('id', dlDev.id)
             .eq('ministry_id', ministry.id)
             .maybeSingle();
-          if (data) handleStartDevotional(data as MinistryDevotional);
+          if (data) {
+            handleStartDevotional(data as MinistryDevotional);
+            recordSharedDevotionalOpen(user?.id, 'ministry', data.id, 'ministry');
+          }
         } catch (err) {
           console.error('Error opening shared devotional:', err);
         }

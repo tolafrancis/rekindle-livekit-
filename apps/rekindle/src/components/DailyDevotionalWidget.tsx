@@ -17,6 +17,7 @@ import { canNativeShare } from '@/lib/webShare';
 import { useLocalizedScriptures, ScriptureInput } from '@/hooks/useLocalizedScripture';
 import { publicWebOrigin } from '@rekindle/features/platform';
 import { consumeDeepLink } from '@rekindle/features/deepLink';
+import { recordSharedDevotionalOpen } from '@rekindle/features/sharedDevotionalFollowup';
 
 // Scripture block for the widget. Isolated into its own component so the
 // useLocalizedScriptures hook runs unconditionally (the main widget body sits
@@ -232,6 +233,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
           if (!data) return;
           const { data: mn } = await supabase.rpc('get_ministry_name', { mid: data.ministry_id });
           if (active) setSharedDevotional({ kind: 'ministry', row: data as MinistryDevotional, name: mn ? String(mn) : null });
+          recordSharedDevotionalOpen(user?.id, 'ministry', data.id, 'consumer');
         } else if (dlDaily?.id) {
           const { data } = await supabase
             .from('devotionals').select('*')
@@ -244,6 +246,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
             name = stream && !stream.is_default ? stream.name : null;
           }
           if (active) setSharedDevotional({ kind: 'platform', row: data as PlatformDevotional, name });
+          recordSharedDevotionalOpen(user?.id, 'daily', data.id, 'consumer');
         }
       } catch (err) {
         console.error('Error opening shared devotional:', err);

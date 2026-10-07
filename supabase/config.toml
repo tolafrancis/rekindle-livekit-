@@ -387,3 +387,7 @@ enabled = true
 # Called by pg_cron with a service-role JWT, or by a platform admin's
 # "Run now". The gateway verifies the JWT; the function checks the role.
 verify_jwt = true
+
+[functions.send-shared-devotional-followup]
+enabled = true
+verify_jwt = true
