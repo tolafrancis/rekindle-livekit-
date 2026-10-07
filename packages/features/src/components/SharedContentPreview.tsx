@@ -4,6 +4,8 @@ import { marked } from 'marked';
 import { supabase } from '@rekindle/supabase';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
+import { isNativeApp, isDesktopApp } from '../platform';
+import { DEFAULT_APP_DOWNLOAD_LINKS, loadAppDownloadLinks, type AppDownloadLinks } from '../appDownloadLinks';
 import {
   BookOpen, Calendar, Star, Lock, ArrowRight, Heart, Sparkles,
   Quote, Loader2, User, CheckCircle, Flame, Building2,
@@ -83,6 +85,14 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
   const [day1, setDay1] = useState<any | null>(null);
   const [ministryName, setMinistryName] = useState<string | null>(null);
   const [ministrySlug, setMinistrySlug] = useState<string | null>(null);
+  // Store links (Platform Admin > Settings > App download links), for the
+  // ministry devotional choice. Hidden inside the native and desktop apps.
+  const [downloadLinks, setDownloadLinks] = useState<AppDownloadLinks>(DEFAULT_APP_DOWNLOAD_LINKS);
+  const showStoreLinks = !isNativeApp() && !isDesktopApp();
+  useEffect(() => {
+    if (kind !== 'ministry-devotional' || !showStoreLinks) return;
+    loadAppDownloadLinks().then(setDownloadLinks).catch(() => {});
+  }, [kind, showStoreLinks]);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -201,6 +211,19 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
   // ministry that shared it (ministry app, ministry join page), or just read
   // it with a free Rekindle account (consumer app). The link carries the
   // devotional so either way it opens once they're in.
+  const StoreLinks = ({ playStore, appStore }: { playStore: string; appStore: string }) =>
+    showStoreLinks && (playStore || appStore) ? (
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-gray-500">Or get the app:</span>
+        {playStore && (
+          <a href={playStore} target="_blank" rel="noopener noreferrer" className="font-semibold text-purple-700 underline">Google Play</a>
+        )}
+        {appStore && (
+          <a href={appStore} target="_blank" rel="noopener noreferrer" className="font-semibold text-purple-700 underline">App Store</a>
+        )}
+      </div>
+    ) : null;
+
   const MinistryDevotionalChoice = () => {
     const ministryLabel = ministryName || 'this ministry';
     const joinMinistry = () => {
@@ -233,6 +256,7 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
               Join the ministry
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            <StoreLinks playStore={downloadLinks.ministryPlayStore} appStore={downloadLinks.ministryAppStore} />
           </div>
           <div className="flex flex-col rounded-xl border bg-white p-4">
             <div className="mb-2 flex items-center gap-2 font-semibold text-gray-900">
@@ -246,6 +270,7 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
               Keep reading free
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
+            <StoreLinks playStore={downloadLinks.consumerPlayStore} appStore={downloadLinks.consumerAppStore} />
           </div>
         </div>
         <p className="mt-4 text-center text-xs text-gray-500">
