@@ -362,7 +362,13 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureManualError, setScriptureManualError] = useState<string | null>(null);
   const [scriptureHiding, setScriptureHiding] = useState(false);
   const scriptureSettings = useScriptureSettings(ministryId);
-  const onScreenVerse = useCurrentScripture(scriptureSessionId ?? undefined);
+  // Watching without the switch on: whoever hasn't turned Live Scripture on
+  // themselves (every participant, usually) still sees the verse the host
+  // puts up. Their switch is per device and off by default, and the overlay
+  // used to need it, so participants never saw any verse.
+  const [watchSessionId, setWatchSessionId] = useState<string | null>(null);
+  const displaySessionId = scriptureOn ? scriptureSessionId : watchSessionId;
+  const onScreenVerse = useCurrentScripture(displaySessionId ?? undefined);
   // Draggable (2026-09-29, real usability report: the fixed top position sat
   // right under the "Copy Link" / stream-config buttons every host layout
   // puts in the top-right corner — WebinarStage.tsx and
@@ -370,7 +376,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // Same pattern as captionOverlay above: default position clears that
   // button row, draggable anywhere afterward, resets on a fresh off → on.
   const scriptureOverlay = useDraggableOverlay({
-    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
+    resetKey: displaySessionId ? 'on' : 'off',
     baseTransform: 'translateX(-50%)',
   });
 
@@ -432,6 +438,47 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId]);
+
+  // Find the room's Live Scripture session without starting one: the latest
+  // live session for this room now, then any session a verse is shown on
+  // later (the host may switch it on after this participant joined).
+  useEffect(() => {
+    if (scriptureOn || !ministryId) { setWatchSessionId(null); return; }
+    let cancelled = false;
+    const roomSessions = new Map<string, boolean>();
+    const inThisRoom = async (sessionId: string) => {
+      if (!roomSessions.has(sessionId)) {
+        const { data } = await supabase
+          .from('translation_sessions')
+          .select('id')
+          .eq('id', sessionId)
+          .eq('livekit_room_name', roomName)
+          .maybeSingle();
+        roomSessions.set(sessionId, !!data);
+      }
+      return roomSessions.get(sessionId)!;
+    };
+    supabase
+      .from('translation_sessions')
+      .select('id')
+      .eq('livekit_room_name', roomName)
+      .in('status', ['initialising', 'joining', 'active', 'paused'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled && data) setWatchSessionId((cur) => cur ?? data.id); }, () => {});
+    const channel = supabase
+      .channel(`scripture-watch-${roomName}-${Math.random().toString(36).slice(2, 10)}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'translation_scripture_events', filter: `ministry_id=eq.${ministryId}` },
+        (payload) => {
+          const sessionId = (payload.new as { session_id?: string }).session_id;
+          if (!sessionId) return;
+          void inThisRoom(sessionId).then((ok) => { if (ok && !cancelled) setWatchSessionId(sessionId); });
+        })
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [scriptureOn, ministryId, roomName]);
 
   // Auto-detect (2026-09-29) — the original workflow: put a confirmed
   // reference on screen the moment it's heard, no manual "Show" tap needed.
@@ -785,7 +832,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           near any toolbar; still draggable anywhere afterward, same as the
           captions box below. Matches the same ScripturePanel "display" card
           /display renders (see TranslationDisplayPage.tsx). */}
-      {scriptureOn && scriptureSessionId && (
+      {displaySessionId && (
         <div
           ref={scriptureOverlay.ref}
           className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
@@ -799,7 +846,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             title="Drag to move"
             className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           >
-            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+            <ScripturePanel sessionId={displaySessionId} variant="display" />
           </div>
         </div>
       )}
