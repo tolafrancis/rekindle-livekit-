@@ -508,7 +508,7 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
     const lzEntry = getLocalizedContent(currentEntry, ['title', 'scripture_reference', 'scripture_text', 'content', 'prayer', 'reflection_questions']);
     return (
       <DevotionalModule
-        entry={lzEntry}
+        entry={{ ...lzEntry, author: (lzEntry as any).author || selectedSeries.author || '' }}
         seriesTitle={lzSeries.title || 'Devotional'}
         totalDays={selectedSeries.total_days || 1}
         shareUrl={`${publicWebOrigin()}/devotional-series/${selectedSeries.id}`}

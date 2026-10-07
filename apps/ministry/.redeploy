@@ -17,3 +17,4 @@
 2026-10-04 meeting mode tip + Presentation renamed to Broadcast (packages/ministry)
 2026-10-06 DOM translation guard for Sentry NotFoundError (packages/features, packages/live)
 2026-10-06 browser translation tip (packages/features)
+2026-10-06: show devotional author in the ministry player
