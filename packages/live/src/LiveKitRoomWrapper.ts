@@ -41,6 +41,9 @@ import type {
 import type { ParticipantRole } from '@rekindle/types/liveChannelTypes';
 import { DUCKED_LEVEL, setTranslationDuck } from './translationDuck';
 
+/** Data-packet topic the caption agent (agents/captions) publishes on. */
+const CAPTIONS_TOPIC = 'rekindle.captions';
+
 interface PreviewState {
   isActive: boolean;
   videoStream: MediaStream | null;
@@ -819,7 +822,34 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       .on(RoomEvent.ConnectionStateChanged, (s: ConnectionState) => {
         if (s === ConnectionState.Disconnected) this.joined = false;
       })
-      .on(RoomEvent.DataReceived, (payload: Uint8Array, participant) => {
+      .on(RoomEvent.DataReceived, (payload: Uint8Array, participant, _kind, topic?: string) => {
+        // On-demand captions (agents/captions) arrive as data on their own
+        // topic: LiveKit Cloud doesn't deliver the legacy transcription
+        // packets publishTranscription sends, so TranscriptionReceived above
+        // never fires for them. `speaker` is who said it, not the sender.
+        if (topic === CAPTIONS_TOPIC) {
+          try {
+            const c = JSON.parse(new TextDecoder().decode(payload)) as {
+              id: string; text: string; final: boolean; language: string;
+              startMs: number; endMs: number; speaker: string;
+            };
+            const room = this.room;
+            const speaker = room?.localParticipant.identity === c.speaker
+              ? room.localParticipant
+              : room?.remoteParticipants.get(c.speaker);
+            this.callbacks.onTranscription?.([{
+              id: c.id,
+              text: c.text,
+              final: c.final,
+              language: c.language,
+              startTime: c.startMs,
+              endTime: c.endMs,
+              speakerIdentity: c.speaker,
+              speakerName: speaker?.name || c.speaker,
+            }]);
+          } catch { /* malformed caption ignored */ }
+          return;
+        }
         try {
           this.callbacks.onData?.(JSON.parse(new TextDecoder().decode(payload)), participant?.identity);
         } catch { /* non-JSON data ignored */ }
