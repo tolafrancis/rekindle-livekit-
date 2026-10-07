@@ -5,9 +5,11 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { initSentry } from '@rekindle/features/sentry';
+import { installDomTranslationGuard } from '@rekindle/features/domTranslationGuard';
 import App from './App.tsx'
 import './index.css'
 
+installDomTranslationGuard();
 initSentry({ dsn: import.meta.env.VITE_SENTRY_DSN, appName: 'rekindle' });
 
 let callIsActive = false;

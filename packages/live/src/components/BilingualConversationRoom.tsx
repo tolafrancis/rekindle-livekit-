@@ -250,7 +250,10 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
   const connectionChip = CONNECTION_COPY[connection];
 
   return (
-    <div className="flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border bg-card">
+    // translate="no": this room already shows each line in both languages,
+    // and browser page translation rewriting it mid-conversation both garbles
+    // the transcript and fights React for the DOM (NotFoundError in Sentry).
+    <div translate="no" className="notranslate flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border bg-card">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2.5 sm:px-4">
         <Languages className="h-5 w-5 text-indigo-500" />
