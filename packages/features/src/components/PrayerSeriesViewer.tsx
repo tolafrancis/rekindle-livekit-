@@ -162,6 +162,20 @@ const canUnlockDay = (
   return { canUnlock: true };
 };
 
+// Strip the quote marks some stored passages carry, since the UI adds its own.
+const unquote = (text?: string) => text?.trim().replace(/^["“”']+|["“”']+$/g, '').trim() || undefined;
+
+const getDayScriptures = (day: PrayerDay): { reference: string; text?: string }[] => {
+  const list: { reference: string; text?: string }[] = [];
+  if (day.scripture_reference) {
+    list.push({ reference: day.scripture_reference, text: unquote(day.scripture_text) });
+  }
+  (day.scriptures || []).forEach(s => {
+    if (s?.reference) list.push({ reference: s.reference, text: unquote(s.text) });
+  });
+  return list;
+};
+
 const generatePrayerPointsFromDay = (day: PrayerDay): PrayerPoint[] => {
   console.log('🔍 Generating prayer points for day:', day.day_number);
   console.log('📋 Day prayer_points:', day.prayer_points);
@@ -175,14 +189,20 @@ const generatePrayerPointsFromDay = (day: PrayerDay): PrayerPoint[] => {
     
     if (validPoints.length > 0) {
       console.log('✅ Using existing prayer points:', validPoints.length);
-      return validPoints.map(point => ({
-        title: point.title || '',
-        content: point.content || point.title || 'Pray about this topic.',
-        scripture: point.scripture,
-        scriptureText: point.scriptureText,
-        reflection: point.reflection,
-        duration: point.duration || 60
-      }));
+      // Most authored points carry no scripture of their own, so pair each with
+      // one of the day's scriptures: point N gets the Nth, the rest the main one.
+      const dayScriptures = getDayScriptures(day);
+      return validPoints.map((point, idx) => {
+        const fallback = point.scripture ? undefined : (dayScriptures[idx] || dayScriptures[0]);
+        return {
+          title: point.title || '',
+          content: point.content || point.title || 'Pray about this topic.',
+          scripture: point.scripture || fallback?.reference,
+          scriptureText: point.scripture ? point.scriptureText : fallback?.text,
+          reflection: point.reflection,
+          duration: point.duration || 60
+        };
+      });
     }
   }
   
