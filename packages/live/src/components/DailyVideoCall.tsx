@@ -1273,22 +1273,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   });
 
-  // One-time nudge: the room joins MUTED (mic + camera OFF) to avoid the auto-
-  // enable timing race, so tell the user to turn them on. Restores the pre-
-  // migration "please unmute / enable video" prompt.
-  const mutedPromptShownRef = useRef(false);
-  useEffect(() => {
-    if (isConnected && !mutedPromptShownRef.current) {
-      mutedPromptShownRef.current = true;
-      toast({
-        title: t('dailyVideoCall', 'joinedMuted', "You've joined muted"),
-        description: t('dailyVideoCall', 'tapMicCamToStart', 'Tap the microphone and camera buttons below to turn on your audio and video.'),
-      });
-    }
-  }, [isConnected, toast, t]);
+  // (The one-time "You've joined muted" toast on joining was removed
+  // 2026-10-07 at the owner's request.)
 
-  // Hooks must stay at the top level: these were nested inside the effect
-  // above (07c9c21), which threw React error #321 the moment a meeting joined.
+  // Hooks must stay at the top level: these were once nested inside an effect
+  // (07c9c21), which threw React error #321 the moment a meeting joined.
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   // Apply selected camera device upon joining/connecting to the room
