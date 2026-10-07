@@ -396,3 +396,15 @@ verify_jwt = true
 [functions.send-shared-devotional-followup]
 enabled = true
 verify_jwt = true
+
+[functions.process-scheduled-broadcasts]
+enabled = true
+# Called by pg_cron (private.call_edge_fn) with a service-role JWT. The
+# gateway verifies the JWT; the function checks the role.
+verify_jwt = true
+
+[functions.process-prayer-reminders]
+enabled = true
+# Called by pg_cron (private.call_edge_fn) with a service-role JWT. The
+# gateway verifies the JWT; the function checks the role.
+verify_jwt = true
