@@ -40,3 +40,4 @@
 2026-10-07 reload once when a lazy screen's chunk fails to load after a deploy (packages/features ErrorBoundary)
 2026-10-08 rebuild: previous rekindle-livekit Pages build failed on Cloudflare (builds locally)
 2026-10-08: devotional player no longer steps past the last slide (packages/features)
+2026-10-08: share links for stream devotionals in ministry spaces (packages/ministry)

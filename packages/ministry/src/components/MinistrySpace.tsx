@@ -91,6 +91,17 @@ import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
+
+const CONSUMER_APP_URL = (import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.rekindlebc.com').replace(/\/+$/, '');
+
+// Public link to a devotional shown in a ministry space. A devotional from a
+// followed stream (e.g. Open Heavens) lives in `devotionals`, not
+// `ministry_devotionals`, so a /ministry-devotional/ link to it can't load;
+// it gets the consumer app's daily-devotional link, which has the preview and reader.
+const ministryDevotionalShareUrl = (d: { id: string; from_stream?: boolean }) =>
+  d.from_stream
+    ? `${CONSUMER_APP_URL}/daily-devotional/${d.id}`
+    : `${publicWebOrigin()}/ministry-devotional/${d.id}`;
 import { shareDevotional } from '@rekindle/features/devotionalShare';
 import { canNativeShare } from '@rekindle/features/webShare';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
@@ -184,6 +195,8 @@ interface MinistryDevotional {
   title: string;
   content: string;
   author_name?: string;
+  /** True for a devotional from the stream this ministry follows (a `devotionals` row). */
+  from_stream?: boolean;
   scripture_reference: string;
   scripture_text?: string;
   reflection_questions?: any;
@@ -560,6 +573,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         // homepage renderer expects.
         setDevotionals((streamDevs || []).map((d: any) => ({
           id: d.id,
+          from_stream: true,
           title: d.title,
           author_name: d.author || d.author_name || '',
           content: d.message || d.content || '',
@@ -902,7 +916,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Same branded message as the consumer home's share button: ministry name,
   // author, title, and a public preview link.
   const handleShareDevotional = async (devotional: MinistryDevotional) => {
-    const url = `${publicWebOrigin()}/ministry-devotional/${devotional.id}`;
+    const url = ministryDevotionalShareUrl(devotional);
     const result = await shareDevotional({ ministryName: ministry.name, author: devotional.author_name, title: devotional.title, url });
     if (result.method === 'clipboard') {
       toast({ title: t('devotionals', 'copiedToShare', 'Copied to share!'), description: t('devotionals', 'copiedToShareDesc', 'The devotional message is on your clipboard — paste it anywhere to invite someone.') });
@@ -3378,7 +3392,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           seriesTitle={ministry.name}
           ministryName={ministry.name}
           totalDays={1}
-          shareUrl={`${publicWebOrigin()}/ministry-devotional/${selectedDevotional.id}`}
+          shareUrl={ministryDevotionalShareUrl(selectedDevotional)}
           onComplete={async () => {
             // Mark devotional as completed
             try {
