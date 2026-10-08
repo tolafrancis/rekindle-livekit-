@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { checkAiLimit, type AiLimitStatus } from '@/lib/aiCompanionLimits';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface Message {
   id: string;
@@ -166,7 +167,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
 
   const addWelcomeMessage = async (sessionId: string) => {
     const welcomeMessage: Message = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'assistant',
       content: 'Welcome, beloved! I am your AI Spiritual Companion, here to journey with you in faith, rooted deeply in the Word of God. "Come to me, all you who are weary and burdened, and I will give you rest" (Matthew 11:28). How may I support you in your walk with Christ today?',
       scriptureReference: 'Matthew 11:28',
@@ -250,7 +251,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
     }
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'user',
       content: input.trim(),
       created_at: new Date().toISOString()
@@ -296,7 +297,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
 
       // Create assistant message
       const assistantMessage: Message = {
-        id: crypto.randomUUID(),
+        id: randomId(),
         role: 'assistant',
         content: response.content,
         scriptureReference: response.scriptureReference,

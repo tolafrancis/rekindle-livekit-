@@ -9,6 +9,7 @@ import { Label } from '@rekindle/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
 import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, VolumeX, MoreVertical, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
 import { ScripturePanel } from './ScripturePanel';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface SessionInfo {
   id: string;
@@ -182,7 +183,7 @@ export const TranslationDisplayPage: React.FC = () => {
     try {
       let fp = localStorage.getItem('rk-question-fingerprint');
       if (!fp) {
-        fp = crypto.randomUUID();
+        fp = randomId();
         localStorage.setItem('rk-question-fingerprint', fp);
       }
       fingerprintRef.current = fp;

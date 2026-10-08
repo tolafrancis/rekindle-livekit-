@@ -8,6 +8,7 @@ import { useMeetingChat } from '../useMeetingChat';
 import type { ChatAttachment } from '@rekindle/types/liveChannelTypes';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
 import { useModeration } from '@rekindle/features/ModerationContext';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface MeetingChatPanelProps {
   meetingId: string;
@@ -71,7 +72,7 @@ export const MeetingChatPanel: React.FC<MeetingChatPanelProps> = ({
     setUploading(true);
     try {
       const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `chat/${meetingId}/${crypto.randomUUID()}-${safe}`;
+      const path = `chat/${meetingId}/${randomId()}-${safe}`;
       const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
         contentType: file.type || 'application/octet-stream',
         upsert: false,
