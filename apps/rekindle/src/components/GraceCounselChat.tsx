@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SpiritualCompanionService } from '@/lib/AiSpiritualCompanion';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { randomId } from '@rekindle/ui/uuid';
 
 marked.setOptions({ breaks: true, gfm: true });
 const toHtml = (text: string) => marked.parse(text || '') as string;
@@ -142,7 +143,7 @@ export const GraceCounselChat: React.FC = () => {
 
   const addWelcomeMessage = async (id: string) => {
     const welcomeMsg: Message = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'ai',
       content: t('grace', 'welcomeMessage', "Welcome! I am GraceCounsel, your AI spiritual companion rooted in the Word of God. \"Come to me, all you who are weary and burdened, and I will give you rest\" (Matthew 11:28). How may I support you today?"),
       scripture: 'Matthew 11:28',
@@ -166,7 +167,7 @@ export const GraceCounselChat: React.FC = () => {
     if (!input.trim() || !spiritualCompanion || !sessionId) return;
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
@@ -193,7 +194,7 @@ export const GraceCounselChat: React.FC = () => {
       );
 
       const aiMessage: Message = {
-        id: crypto.randomUUID(),
+        id: randomId(),
         role: 'ai',
         content: response.content,
         scripture: response.scriptureReference,

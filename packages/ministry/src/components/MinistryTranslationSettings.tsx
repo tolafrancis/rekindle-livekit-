@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { LiveScriptureSettingsCard } from './LiveScriptureSettingsCard';
 import { toast } from '@rekindle/ui/use-toast';
 import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown, Mic, Upload, Trash2, Search, LibraryBig } from 'lucide-react';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface MinistryTranslationSettingsProps {
   ministryId: string;
@@ -441,7 +442,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
     setCloning(true);
     try {
       const ext = cloneFile.name.split('.').pop() || 'audio';
-      const samplePath = `${ministryId}/${crypto.randomUUID()}.${ext}`;
+      const samplePath = `${ministryId}/${randomId()}.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from('translation-voice-samples')
         .upload(samplePath, cloneFile);
@@ -495,7 +496,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
     setReplacingVoiceId(targetId);
     try {
       const ext = file.name.split('.').pop() || 'audio';
-      const samplePath = `${ministryId}/${crypto.randomUUID()}.${ext}`;
+      const samplePath = `${ministryId}/${randomId()}.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from('translation-voice-samples')
         .upload(samplePath, file);
