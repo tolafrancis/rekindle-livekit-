@@ -316,7 +316,8 @@ export const DevotionalModule: React.FC<Props> = ({
       .map((slide) => ({ ...slide, duration: slideDuration(slide) }));
   }, [normalizedDevotional, t]);
 
-  const currentSlideData = slides[currentSlide];
+  // Clamped so an out-of-range index can never render an undefined slide.
+  const currentSlideData = slides[Math.min(currentSlide, slides.length - 1)];
   const progressPercent = ((currentSlide + 1) / slides.length) * 100;
 
   // Localize the current slide's scripture to a published Bible version in the
@@ -338,9 +339,12 @@ export const DevotionalModule: React.FC<Props> = ({
 
   // Function definitions (must be before useEffects that reference them)
   const goToNextSlide = () => {
-    if (currentSlide < slides.length - 1) {
+    // Read the live slide from the ref: timers and audio callbacks call a
+    // goToNextSlide captured on an earlier render, and judging by that stale
+    // `currentSlide` let two advances land at once and step past the last slide.
+    if (currentSlideRef.current < slides.length - 1) {
       stopSpeaking(); // Stop any ongoing speech before changing slide
-      setCurrentSlide(prev => prev + 1);
+      setCurrentSlide(prev => Math.min(prev + 1, slides.length - 1));
       setTimeElapsed(0);
     } else {
       handleComplete();
