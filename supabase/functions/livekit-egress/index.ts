@@ -487,6 +487,28 @@ serve(async (req) => {
     const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
     const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
 
+    // A room can have a manual recording (filepath recordings/...) and the
+    // audience HLS (broadcasts/...) running at once, and both rows say
+    // kind 'meeting'/'channel'/'webinar'. Stops used to take "the newest
+    // recording row in the room" and could stop the wrong one, leaving the
+    // other billing (2026-10-10). Returns this room's rows of one purpose
+    // that LiveKit says are still running (all of them if LiveKit can't be
+    // asked).
+    const activeEgresses = async (room: string, purpose: 'recordings' | 'broadcasts') => {
+      const { data } = await admin.from('livekit_recordings')
+        .select('id, egress_id, playback_url')
+        .eq('room_name', room).eq('status', 'recording').like('filepath', `${purpose}/%`)
+        .order('started_at', { ascending: false });
+      const rows = (data ?? []) as { id: string; egress_id: string; playback_url: string | null }[];
+      if (rows.length === 0) return rows;
+      try {
+        const live = new Set((await egressClient.listEgress({ roomName: room, active: true })).map((e: any) => e.egressId));
+        return rows.filter((r) => live.has(r.egress_id));
+      } catch {
+        return rows;
+      }
+    };
+
     // list-simulcast — host only (2026-10-10; it used to sit above the auth
     // check and returned every column, stream_key included).
     if (action === 'list-simulcast') {
@@ -556,6 +578,11 @@ serve(async (req) => {
         const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast || isWebinar ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
       }
+
+      // Idempotent: a double-click or a retry after a lost response must not
+      // start a second recording of the same room.
+      const [running] = await activeEgresses(body.roomName, 'recordings');
+      if (running) return json({ egressId: running.egress_id, recordingId: running.id, playbackUrl: running.playback_url, alreadyRunning: true });
 
       const ts = Date.now();
       const prefix = `recordings/${body.roomName}/${ts}`;
@@ -635,6 +662,13 @@ serve(async (req) => {
       if (hlsMinistryId) {
         const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel || isWebinarHls ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
+      }
+
+      // Never leave an earlier audience egress of this room running (a host
+      // reload or a retry used to orphan it, billing until the room closed).
+      for (const old of await activeEgresses(body.roomName, 'broadcasts')) {
+        await egressClient.stopEgress(old.egress_id).catch(() => {});
+        await admin.from('livekit_recordings').update({ status: 'processing', ended_at: new Date().toISOString() }).eq('egress_id', old.egress_id);
       }
 
       const ts = Date.now();
@@ -799,8 +833,10 @@ serve(async (req) => {
         const { data: cs } = await admin.from('channel_streams').select('hls_egress_id').eq('channel_id', channelId).maybeSingle();
         egressId = (cs as { hls_egress_id?: string } | null)?.hls_egress_id;
       } else if (body.roomName && roomBound) {
+        // The audience HLS only, never the manual recording.
         const { data } = await admin.from('livekit_recordings')
           .select('egress_id').eq('room_name', body.roomName).eq('status', 'recording')
+          .like('filepath', 'broadcasts/%')
           .order('started_at', { ascending: false }).limit(1).maybeSingle();
         egressId = (data as { egress_id?: string } | null)?.egress_id;
       }
@@ -865,6 +901,8 @@ serve(async (req) => {
           .select('egress_id')
           .eq('room_name', body.roomName)
           .eq('status', 'recording')
+          // The manual recording only, never the audience HLS.
+          .like('filepath', 'recordings/%')
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();

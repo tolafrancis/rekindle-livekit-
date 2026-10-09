@@ -618,6 +618,7 @@ const EnhancedVideoCallWrapper = ({
         meetingKind="ministry_meeting"
         onCallEnd={handleLeave}
         onSessionComplete={handleSessionComplete}
+        onEndForAll={isHost && onEndMeeting ? handleHostEndMeeting : undefined}
         showControls={true}
         autoJoin={true}
         showParticipantList={isHost}

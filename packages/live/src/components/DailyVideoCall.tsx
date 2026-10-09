@@ -42,6 +42,10 @@ interface DailyVideoCallProps {
   sessionId?: string;
   onCallEnd?: () => void;
   onSessionComplete?: (duration: number) => void;
+  /** Host's "End meeting for everyone": the page's own end-for-all (marks the
+   *  meeting ended, stops translation, closes the LiveKit room). Without it
+   *  the call just closes the LiveKit room. */
+  onEndForAll?: () => Promise<void> | void;
   showControls?: boolean;
   autoJoin?: boolean;
   meetingId?: string;
@@ -1052,6 +1056,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   sessionId,
   onCallEnd,
   onSessionComplete,
+  onEndForAll,
   showControls = true,
   autoJoin = false,
   meetingId,
@@ -1172,6 +1177,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isConnecting,
     isJoining,
     connectionError,
+    deleteRoom,
     isReconnecting,
     audioPlaybackBlocked,
     enableAudioPlayback,
@@ -1522,10 +1528,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     if (hasHost) {
       console.log('[DailyVideoCall] Host detected in meeting - admitting participant');
       setHostHasJoined(true);
-    } else {
-      console.log('[DailyVideoCall] No host present - participant waiting');
-      setHostHasJoined(false);
+      return;
     }
+    // Debounced (2026-10-10): a host's network blip or full reconnect briefly
+    // drops them from the roster, which used to throw every attendee back to
+    // the waiting screen mid-meeting. Only treat the host as gone if they stay
+    // gone.
+    console.log('[DailyVideoCall] No host present - participant waiting');
+    const timer = setTimeout(() => setHostHasJoined(false), hostHasJoined ? 20000 : 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, participants, isHost]);
 
   // Track participants in waiting room (for host view)
@@ -1744,20 +1756,24 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
    *  flash through, regardless of which action this is. */
   const handleEndCall = async (endForAll: boolean = true) => {
     isExitingRef.current = true;
-    if (isHost && meetingId && endForAll) {
+    // Before 2026-10-10 this only wrote to the unused `meetings` table, so
+    // "End meeting for everyone" from the call bar just made the host leave
+    // while everyone else stayed in the room.
+    if (isHost && endForAll) {
+      if (onEndForAll) {
+        const duration = sessionDuration;
+        await leaveRoom();
+        onSessionComplete?.(duration);
+        await onEndForAll();
+        return;
+      }
       try {
-        await supabase
-          .from('meetings')
-          .update({
-            status: 'ended',
-            ended_at: new Date().toISOString()
-          })
-          .eq('id', meetingId);
-
-        toast({
-          title: t('dailyVideoCall', 'meetingEnded', 'Meeting Ended'),
-          description: t('dailyVideoCall', 'meetingEndedForAll', 'The meeting has been ended for all participants')
-        });
+        if (await deleteRoom()) {
+          toast({
+            title: t('dailyVideoCall', 'meetingEnded', 'Meeting Ended'),
+            description: t('dailyVideoCall', 'meetingEndedForAll', 'The meeting has been ended for all participants')
+          });
+        }
       } catch (error) {
         console.error('[DailyVideoCall] Error ending meeting:', error);
       }
@@ -1822,8 +1838,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // the wrapper-not-ready branch and surfaces a spurious "Not supported"
   // toast). toggleMic/toggleCamera default to on, so only flip what the
   // person actually turned off in the preview.
+  //
+  // Not while an attendee sits on the "waiting for host" screen (2026-10-10):
+  // that screen has no mic button and plays no audio, so publishing the mic
+  // there meant a live mic the person couldn't see or turn off. The choice is
+  // applied the moment the host arrives.
+  const mediaAllowed = isHost || hostHasJoined;
   useEffect(() => {
-    if (!isConnected || !backstageInitialRef.current) return;
+    if (!isConnected || !mediaAllowed || !backstageInitialRef.current) return;
     const initial = backstageInitialRef.current;
     backstageInitialRef.current = null;
     // Real bug reported live (2026-10-04): the mic device switch used to fire
@@ -1842,7 +1864,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       if (initial.cameraBackground !== 'none') setVideoBackground(initial.cameraBackground);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected]);
+  }, [isConnected, mediaAllowed]);
 
   const handleBackstageReady = (state: BackstageReadyState) => {
     backstageInitialRef.current = state;
@@ -2013,6 +2035,32 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           onCallEnd?.();
         }}
       />
+    );
+  }
+
+  // A join that never succeeded (token refused, meeting locked or full,
+  // timeout). Before 2026-10-10 this fell through to the normal call screen
+  // with no tiles, where every button silently did nothing. 'waiting-room'
+  // isn't a failure: the admit round-trip rejoins on its own.
+  if (connectionError && connectionError !== 'waiting-room' && !wasEverConnected && !isConnected && !isConnecting && !isJoining && !isExitingRef.current) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-6">
+            <AlertCircle className="h-10 w-10 text-red-600" />
+          </div>
+          <h3 className="text-xl font-semibold mb-2">Couldn't join the call</h3>
+          <p className="text-gray-500 mb-6">{connectionError}</p>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={() => { isExitingRef.current = true; onCallEnd?.(); }}>
+              Leave
+            </Button>
+            <Button onClick={handleJoinRoom} className="flex-1 bg-purple-600 hover:bg-purple-700">
+              Try again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 

@@ -91,7 +91,11 @@ export const ActiveCallHost: React.FC = () => {
       {/* The meeting itself. Stays mounted whether full-screen or minimized, so the
           LiveKit connection persists while the user browses other tabs. Flex container
           ensures content is properly centered and fills the space. */}
-      <div className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-gray-900">{call.node}</div>
+      {/* Keyed by call id: starting a different call while one is minimized
+          must unmount the old meeting (and disconnect it). Without the key React
+          reused the same component and the user stayed in meeting A under
+          meeting B's title, chat and leave handler. */}
+      <div key={call.id} className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-gray-900">{call.node}</div>
 
       {minimized && (
         <>
