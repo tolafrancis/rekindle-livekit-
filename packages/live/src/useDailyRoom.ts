@@ -12,7 +12,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { createVideoWrapper, isLiveKitBackend } from './videoBackend';
 import { NativeScreenShare } from './NativeScreenShare';
-import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant } from '@rekindle/types/videoRoom';
+import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant, TrackAttachSource } from '@rekindle/types/videoRoom';
 import type { LiveCaptionsBridge } from './useLiveCaptions';
 import {
   DEFAULT_LAYOUT_STATE,
@@ -107,6 +107,9 @@ export interface UseDailyRoomReturn {
    *  LiveKitRoomWrapper.ts's own doc comment. */
   setParticipantVideoSubscribed: (identity: string, subscribed: boolean) => void;
   setParticipantVideoQuality: (identity: string, quality: 'high' | 'low') => void;
+  /** Play a participant's track in an element via LiveKit's attach(); null
+   *  when it isn't available yet. See IVideoRoomWrapper.attachTrack. */
+  attachTrack: (identity: string, source: TrackAttachSource, el: HTMLMediaElement) => (() => void) | null;
 
   // Room info
   roomUrl: string | null;
@@ -804,6 +807,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     const track = isLiveKitBackend()
       ? (local as NormalizedParticipant).videoTrack
       : ((local as DailyParticipant).tracks?.video?.persistentTrack || (local as DailyParticipant).tracks?.video?.track);
+
+    // Through LiveKit's attach() so the self-view shows the background
+    // effect and follows camera restarts (attach is a no-op when the same
+    // element is already attached).
+    const el = localVideoRef.current;
+    if (track && track.readyState === 'live' && isLiveKitBackend() && wrapper.attachTrack) {
+      const id = (local as NormalizedParticipant).sessionId;
+      if (wrapper.attachTrack(id, 'camera', el)) return;
+    }
 
     if (track && track.readyState === 'live') {
       // Don't reattach the same track — reassigning srcObject reloads the <video>
@@ -2475,6 +2487,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     wrapperRef.current?.setParticipantVideoSubscribed(identity, subscribed);
   }, []);
 
+  const attachTrack = useCallback((identity: string, source: TrackAttachSource, el: HTMLMediaElement) =>
+    wrapperRef.current?.attachTrack?.(identity, source, el) ?? null, []);
+
   // Main stage → high layer, thumbnails → low (see LiveKitRoomWrapper).
   const setParticipantVideoQuality = useCallback((identity: string, quality: 'high' | 'low') => {
     wrapperRef.current?.setParticipantVideoQuality?.(identity, quality);
@@ -2947,6 +2962,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     connectionQuality,
     setParticipantVideoSubscribed,
     setParticipantVideoQuality,
+    attachTrack,
     roomUrl,
     roomToken,
     roomName: options.roomName,

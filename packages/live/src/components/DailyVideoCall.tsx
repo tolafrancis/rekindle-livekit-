@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo, createContext, useContext } from 'react';
+import type { TrackAttachSource } from '@rekindle/types/videoRoom';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -749,6 +750,15 @@ const WaitingRoom: React.FC<{
   );
 };
 
+// LiveKit's attach() for the current call (useDailyRoom.attachTrack). Tiles
+// render through it when present, so LiveKit sees every element: adaptive
+// stream sizes each video to its tile and pauses it when hidden, autoplay
+// blocking is detected (the "Tap to enable sound" banner), and the local
+// camera picks up background effects and restarts by itself. Falls back to
+// handing the raw track to srcObject if a track isn't attachable yet.
+type AttachFn = (identity: string, source: TrackAttachSource, el: HTMLMediaElement) => (() => void) | null;
+const TrackAttachContext = createContext<AttachFn | null>(null);
+
 // Participant Video Component with Audio Element
 const ParticipantVideo: React.FC<{
   participant: DailyParticipantInfo;
@@ -768,9 +778,20 @@ const ParticipantVideo: React.FC<{
   // back to the initial-letter circle. Reset if the URL itself changes (e.g.
   // the user re-uploads mid-call), so a fixed one isn't stuck hidden.
   useEffect(() => { setAvatarError(false); }, [participant.avatarUrl]);
+  const attachTrack = useContext(TrackAttachContext);
 
   // Attach video track - with retry logic for tracks that aren't immediately ready
   useEffect(() => {
+    const el = videoRef.current;
+    if (attachTrack && el && participant.hasVideo) {
+      const detach = attachTrack(participant.sessionId, 'camera', el);
+      if (detach) {
+        setVideoAttached(true);
+        el.play().catch(() => { /* autoplay may defer */ });
+        return () => { detach(); setVideoAttached(false); };
+      }
+    }
+
     let retryCount = 0;
     const maxRetries = 10;
     let retryTimeout: NodeJS.Timeout | null = null;
@@ -845,14 +866,15 @@ const ParticipantVideo: React.FC<{
     // `fill` is included so switching into the mini-player (a fresh, empty <video>)
     // re-runs the attach — otherwise the host's own tile could stay a black frame
     // until the camera was toggled (the old "re-toggle to show" bug).
-  }, [participant.videoTrack, participant.hasVideo, participant.userName, participant.sessionId, fill]);
+  }, [participant.videoTrack, participant.hasVideo, participant.userName, participant.sessionId, fill, attachTrack]);
 
   // NOTE: audio is intentionally NOT played here. It's handled by the persistent
   // RemoteAudioLayer so it survives layout changes (screen share / pin / reflow)
   // that unmount these tiles. Playing it here too would double up.
 
-  // Determine if we should show video
-  const showVideo = videoAttached || participant.hasVideo;
+  // Only once something is actually attached: a camera that's on but not
+  // playable yet shows the avatar, not a black tile.
+  const showVideo = videoAttached && participant.hasVideo;
 
   return (
     <div className={`relative bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center ${fill ? 'w-full h-full' : isLarge ? 'aspect-video' : 'aspect-square'}`}>
@@ -868,6 +890,8 @@ const ParticipantVideo: React.FC<{
         onLoadedMetadata={() => { videoRef.current?.play().catch(() => {}); }}
         onCanPlay={() => { videoRef.current?.play().catch(() => {}); }}
         className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
+        // Your own camera mirrored, like the self-view and every video app.
+        style={participant.isLocal ? { transform: 'scaleX(-1)' } : undefined}
       />
       
       {/* Avatar fallback when no video — a real uploaded photo (participant.avatarUrl,
@@ -929,9 +953,18 @@ const ParticipantVideo: React.FC<{
 const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const attachTrack = useContext(TrackAttachContext);
 
   useEffect(() => {
     const track = participant.screenVideoTrack;
+    const el0 = videoRef.current;
+    if (attachTrack && el0 && track) {
+      const detach = attachTrack(participant.sessionId, 'screen', el0);
+      if (detach) {
+        el0.play().catch(() => { /* autoplay may defer until interaction */ });
+        return detach;
+      }
+    }
     let tries = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const attach = () => {
@@ -948,7 +981,7 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
     };
     attach();
     return () => { if (timer) clearTimeout(timer); if (videoRef.current) videoRef.current.srcObject = null; };
-  }, [participant.screenVideoTrack]);
+  }, [participant.screenVideoTrack, participant.sessionId, attachTrack]);
 
   return (
     <div className="flex flex-col h-full gap-2 p-2">
@@ -988,11 +1021,20 @@ const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ particip
   // legitimately can: Bluetooth headsets, wired headphones, multi-speaker
   // desktop setups.
   const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
+  const attachTrack = useContext(TrackAttachContext);
   useDuckedVolume(ref);
   useEffect(() => {
     const track = participant.audioTrack;
     const el = ref.current;
     if (!el || !track || track.readyState !== 'live') return;
+    // Through LiveKit: it plays the element and, if the browser blocks
+    // autoplay, raises the "Tap to enable sound" banner, whose button
+    // (startAudio) resumes every attached element.
+    const detach = attachTrack?.(participant.sessionId, 'microphone', el);
+    if (detach) {
+      registerAudioElement(el);
+      return () => { unregisterAudioElement(el); detach(); };
+    }
     el.srcObject = new MediaStream([track]);
     registerAudioElement(el);
     el.play().catch(() => {
@@ -1004,7 +1046,7 @@ const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ particip
       unregisterAudioElement(el);
       if (el) el.srcObject = null;
     };
-  }, [participant.audioTrack, registerAudioElement, unregisterAudioElement]);
+  }, [participant.audioTrack, participant.sessionId, attachTrack, registerAudioElement, unregisterAudioElement]);
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 };
 
@@ -1024,11 +1066,17 @@ const RemoteAudioLayer: React.FC<{ participants: DailyParticipantInfo[] }> = ({ 
 const RemoteScreenAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ participant }) => {
   const ref = useRef<HTMLAudioElement>(null);
   const { registerAudioElement, unregisterAudioElement } = useAudioOutput();
+  const attachTrack = useContext(TrackAttachContext);
   useDuckedVolume(ref);
   useEffect(() => {
     const track = participant.screenAudioTrack;
     const el = ref.current;
     if (!el || !track || track.readyState !== 'live') return;
+    const detach = attachTrack?.(participant.sessionId, 'screen-audio', el);
+    if (detach) {
+      registerAudioElement(el);
+      return () => { unregisterAudioElement(el); detach(); };
+    }
     el.srcObject = new MediaStream([track]);
     registerAudioElement(el);
     el.play().catch(() => {
@@ -1039,7 +1087,7 @@ const RemoteScreenAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ pa
       unregisterAudioElement(el);
       if (el) el.srcObject = null;
     };
-  }, [participant.screenAudioTrack, registerAudioElement, unregisterAudioElement]);
+  }, [participant.screenAudioTrack, participant.sessionId, attachTrack, registerAudioElement, unregisterAudioElement]);
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 };
 
@@ -1184,6 +1232,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     connectionQuality,
     setParticipantVideoSubscribed,
     setParticipantVideoQuality,
+    attachTrack,
     participants,
     participantStates,
     localParticipant,
@@ -2171,6 +2220,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // control bar, reactions or filmstrip (those belong to full-screen; the host's
   // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
   const isPiP = (activeCallCtx?.minimized || activeCallCtx?.isSystemPiP) ?? false;
+  const withAttach = (node: React.ReactNode) => (
+    <TrackAttachContext.Provider value={attachTrack}>{node}</TrackAttachContext.Provider>
+  );
   if (isPiP) {
     // Prefer whoever is actually on-camera so the tiny frame isn't a black tile:
     // screen share → featured (if it has video) → any remote with video → local →
@@ -2184,11 +2236,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       featuredParticipant ||
       remoteParticipants[0] ||
       localParticipant;
-    return (
+    return withAttach(
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
         <RemoteAudioLayer participants={remoteParticipants} />
         <RemoteScreenAudioLayer participants={remoteParticipants} />
-        {miniFeature ? (
+        {screenSharer ? (
+          // A share in progress: show the shared screen, not the presenter's camera.
+          <ScreenShareView key={`mini-screen-${screenSharer.sessionId}`} participant={screenSharer} />
+        ) : miniFeature ? (
           // fill: the mini-player parent already fixes the frame size; without it
           // the aspect-ratio box collapses to zero width and the video goes blank.
           // key on the feature's id forces a clean remount (and re-attach) whenever
@@ -2232,7 +2287,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   }
 
   // Active call screen - all media controls come from useDailyRoom
-  return (
+  return withAttach(
     <div
       ref={containerRef}
       className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-gray-900 sm:flex-row ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}

@@ -65,6 +65,7 @@ import {
   Captions,
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
+import { useTrackElement, type AttachTrackFn } from '../useTrackElement';
 import { LiveChannel, ChannelCoHost } from '@rekindle/types/liveChannelTypes';
 
 interface RaisedHandRequest {
@@ -95,19 +96,15 @@ const BroadcastSpeakerTile: React.FC<{
     videoTrack?: MediaStreamTrack;
     audioTrack?: MediaStreamTrack;
   };
-}> = ({ participant }) => {
+  attach?: AttachTrackFn;
+}> = ({ participant, attach }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   useDuckedVolume(audioRef);
 
-  useEffect(() => {
-    if (participant.videoTrack && participant.videoTrack.readyState === 'live' && videoRef.current) {
-      videoRef.current.srcObject = new MediaStream([participant.videoTrack]);
-      videoRef.current.play().catch(() => {});
-    } else if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, [participant.videoTrack, participant.hasVideo]);
+  // Through the room's attach(): with adaptive stream on, an unattached
+  // remote video counts as hidden and is paused (see useTrackElement).
+  useTrackElement(videoRef, attach, participant.sessionId, 'camera', participant.videoTrack, participant.hasVideo);
 
   useEffect(() => {
     if (participant.audioTrack && participant.audioTrack.readyState === 'live' && audioRef.current) {
@@ -1634,7 +1631,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                   </div>
                   <div className={`flex flex-col gap-1 ${remoteSpeakers.length === 1 ? 'w-40' : 'w-48'}`}>
                     {remoteSpeakers.map(sp => (
-                      <BroadcastSpeakerTile key={sp.sessionId} participant={sp} />
+                      <BroadcastSpeakerTile key={sp.sessionId} participant={sp} attach={dailyRoom.attachTrack} />
                     ))}
                   </div>
                 </div>

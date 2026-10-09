@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { ShareChannelButton } from './ShareChannelButton';
+import { useTrackElement, type AttachTrackFn } from '../useTrackElement';
 import { LiveChannel } from '@rekindle/types/liveChannelTypes';
 import {
   Dialog,
@@ -79,18 +80,14 @@ const SpeakerVideoTile: React.FC<{
   participant: { sessionId: string; userName: string; isOwner: boolean; hasVideo: boolean; hasAudio: boolean; videoTrack?: MediaStreamTrack; audioTrack?: MediaStreamTrack };
   muted: boolean;
   isLarge?: boolean;
-}> = ({ participant, muted, isLarge = false }) => {
+  attach?: AttachTrackFn;
+}> = ({ participant, muted, isLarge = false, attach }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  useEffect(() => {
-    if (participant.videoTrack && participant.videoTrack.readyState === 'live' && videoRef.current) {
-      videoRef.current.srcObject = new MediaStream([participant.videoTrack]);
-      videoRef.current.play().catch(() => {});
-    } else if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, [participant.videoTrack, participant.hasVideo]);
+  // Through the room's attach(): with adaptive stream on, an unattached
+  // remote video counts as hidden and is paused (see useTrackElement).
+  useTrackElement(videoRef, attach, participant.sessionId, 'camera', participant.videoTrack, participant.hasVideo);
 
   useEffect(() => {
     if (participant.audioTrack && participant.audioTrack.readyState === 'live' && audioRef.current) {
@@ -1249,6 +1246,7 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                     participant={visibleParticipants[0]}
                     muted={isMuted || translationMuteOverride}
                     isLarge
+                    attach={dailyRoom.attachTrack}
                   />
                 );
               }
@@ -1259,13 +1257,13 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
                 <div className="w-full h-full flex gap-1 p-1">
                   {/* Main / host feed */}
                   <div className="flex-1 min-w-0">
-                    <SpeakerVideoTile participant={hostP} muted={isMuted || translationMuteOverride} isLarge />
+                    <SpeakerVideoTile participant={hostP} muted={isMuted || translationMuteOverride} isLarge attach={dailyRoom.attachTrack} />
                   </div>
                   {/* Speaker strip on the right */}
                   <div className={`flex flex-col gap-1 ${speakerPs.length === 1 ? 'w-24 sm:w-40' : 'w-28 sm:w-48'}`}>
                     {speakerPs.map(sp => (
                       <div key={sp.sessionId} className="flex-1 min-h-0">
-                        <SpeakerVideoTile participant={sp} muted={isMuted || translationMuteOverride} />
+                        <SpeakerVideoTile participant={sp} muted={isMuted || translationMuteOverride} attach={dailyRoom.attachTrack} />
                       </div>
                     ))}
                   </div>

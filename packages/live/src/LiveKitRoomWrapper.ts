@@ -38,6 +38,7 @@ import type {
   NormalizedParticipant,
   VideoWrapperCallbacks,
   IVideoRoomWrapper,
+  TrackAttachSource,
 } from '@rekindle/types/videoRoom';
 import type { ParticipantRole } from '@rekindle/types/liveChannelTypes';
 import { DUCKED_LEVEL, setTranslationDuck } from './translationDuck';
@@ -166,7 +167,14 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // is now set explicitly per participant (setParticipantVideoQuality,
       // driven by DailyVideoCall's stage), which LiveKit only allows with
       // adaptiveStream off. Dynacast stays on so unwatched layers pause.
-      const room = new Room({ adaptiveStream: false, dynacast: true });
+      //
+      // adaptiveStream back ON (2026-10-10, later the same day): tiles now
+      // render through track.attach() (attachTrack below), so LiveKit sees
+      // every element. The explicit per-participant quality still applies
+      // as a ceiling (LiveKit uses the smaller of the two). Not paused in
+      // the background: the system picture-in-picture window keeps showing
+      // the call while the page itself is hidden.
+      const room = new Room({ adaptiveStream: { pauseVideoInBackground: false }, dynacast: true });
       this.room = room;
       this.wireEvents(room);
 
@@ -706,6 +714,35 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     this.videoQualityByIdentity.set(identity, quality);
     const pub = this.room?.remoteParticipants.get(identity)?.getTrackPublication(Track.Source.Camera) as RemoteTrackPublication | undefined;
     pub?.setVideoQuality(quality === 'low' ? VideoQuality.LOW : VideoQuality.HIGH);
+  }
+
+  /** See IVideoRoomWrapper.attachTrack. Rendering through attach() (instead
+   *  of handing the raw MediaStreamTrack to srcObject) is what lets LiveKit
+   *  see each <video>: adaptive stream sizes the layer to it and pauses it
+   *  when hidden, and a local camera restart or background effect swaps the
+   *  picture in every attached element by itself (2026-10-10). */
+  attachTrack(identity: string, source: TrackAttachSource, el: HTMLMediaElement): (() => void) | null {
+    const room = this.room;
+    if (!room) return null;
+    const lk = {
+      camera: Track.Source.Camera,
+      microphone: Track.Source.Microphone,
+      screen: Track.Source.ScreenShare,
+      'screen-audio': Track.Source.ScreenShareAudio,
+    }[source];
+    const p: Participant | undefined = identity === room.localParticipant.identity
+      ? room.localParticipant
+      : room.remoteParticipants.get(identity);
+    let track = p ? this.pub(p, lk)?.track : undefined;
+    // Native Android screen share arrives on the "<identity>-screenshare"
+    // shadow participant (see normalize()).
+    if (!track && source === 'screen') {
+      const shadow = room.remoteParticipants.get(`${identity}-screenshare`);
+      track = shadow ? this.pub(shadow, lk)?.track : undefined;
+    }
+    if (!track) return null;
+    track.attach(el);
+    return () => { track!.detach(el); };
   }
 
   // ============================================================

@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useDailyRoom, DailyParticipantInfo } from '@/hooks/useDailyRoom';
+import { useTrackElement, type AttachTrackFn } from '@rekindle/live/useTrackElement';
 import {
   Mic, MicOff, Video, VideoOff, Phone, PhoneOff,
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
@@ -54,18 +55,15 @@ const ParticipantVideo: React.FC<{
   onMute?: () => void;
   isHost?: boolean;
   connectionQuality?: 'good' | 'fair' | 'poor';
-}> = ({ participant, isLarge = false, onRemove, onMute, isHost, connectionQuality = 'good' }) => {
+  attach?: AttachTrackFn;
+}> = ({ participant, isLarge = false, onRemove, onMute, isHost, connectionQuality = 'good', attach }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [showControls, setShowControls] = useState(false);
 
-  useEffect(() => {
-    if (videoRef.current && participant.videoTrack) {
-      const stream = new MediaStream([participant.videoTrack]);
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(() => {});
-    }
-  }, [participant.videoTrack]);
+  // Through the room's attach(): with adaptive stream on, an unattached
+  // remote video counts as hidden and is paused (see useTrackElement).
+  useTrackElement(videoRef, attach, participant.sessionId, 'camera', participant.videoTrack);
 
   return (
     <div 
@@ -188,7 +186,8 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
     callObject,
     muteParticipant,
     removeParticipant,
-    muteAll
+    muteAll,
+    attachTrack
   } = useDailyRoom({
     roomName,
     userName,
@@ -377,6 +376,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
                   participant={participant}
                   isLarge={remoteParticipants.length === 1}
                   isHost={isHost}
+                  attach={attachTrack}
                   onMute={() => handleMuteParticipant(participant)}
                   onRemove={() => handleRemoveParticipant(participant)}
                 />

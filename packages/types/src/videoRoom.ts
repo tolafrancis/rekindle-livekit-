@@ -107,6 +107,8 @@ export interface VideoWrapperCallbacks {
  * hook) while the LiveKit wrapper returns `NormalizedParticipant` directly; the hook
  * branches on the active backend.
  */
+export type TrackAttachSource = 'camera' | 'microphone' | 'screen' | 'screen-audio';
+
 export interface IVideoRoomWrapper {
   startCameraPreview(preferredDeviceId?: string): Promise<MediaStream | null>;
   stopCameraPreview(): Promise<void>;
@@ -155,6 +157,11 @@ export interface IVideoRoomWrapper {
   setParticipantVideoSubscribed(identity: string, subscribed: boolean): void;
   /** 'high' for the main stage, 'low' for thumbnails (LiveKit only). */
   setParticipantVideoQuality?(identity: string, quality: 'high' | 'low'): void;
+  /** Play a participant's track in an element through the SDK's own
+   *  attach() (LiveKit only), so adaptive stream sees the element and local
+   *  effects / camera restarts update it. Returns the detach function, or
+   *  null when the track isn't available yet. identity == NormalizedParticipant.id. */
+  attachTrack?(identity: string, source: TrackAttachSource, el: HTMLMediaElement): (() => void) | null;
 
   /** On-demand captions: set the local participant's LiveKit attributes
    *  (captions=on|off). Optional — LiveKit-only. */
