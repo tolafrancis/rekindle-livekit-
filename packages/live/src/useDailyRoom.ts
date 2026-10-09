@@ -106,6 +106,7 @@ export interface UseDailyRoomReturn {
   /** Subscribe/unsubscribe a remote participant's camera track — see
    *  LiveKitRoomWrapper.ts's own doc comment. */
   setParticipantVideoSubscribed: (identity: string, subscribed: boolean) => void;
+  setParticipantVideoQuality: (identity: string, quality: 'high' | 'low') => void;
 
   // Room info
   roomUrl: string | null;
@@ -2365,6 +2366,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     wrapperRef.current?.setParticipantVideoSubscribed(identity, subscribed);
   }, []);
 
+  // Main stage → high layer, thumbnails → low (see LiveKitRoomWrapper).
+  const setParticipantVideoQuality = useCallback((identity: string, quality: 'high' | 'low') => {
+    wrapperRef.current?.setParticipantVideoQuality?.(identity, quality);
+  }, []);
+
   // Delete room — actually closes the LiveKit room via livekit-token's
   // delete-room action. Real bug found live (2026-09-23, meeting
   // architecture review): this used to unconditionally return true with no
@@ -2819,6 +2825,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     enableAudioPlayback,
     connectionQuality,
     setParticipantVideoSubscribed,
+    setParticipantVideoQuality,
     roomUrl,
     roomToken,
     roomName: options.roomName,

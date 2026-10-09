@@ -21,6 +21,7 @@ import {
   RoomEvent,
   Track,
   ConnectionState,
+  VideoQuality,
   type Participant,
   type RemoteParticipant,
   type LocalParticipant,
@@ -156,7 +157,16 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
-      const room = new Room({ adaptiveStream: true, dynacast: true });
+      // adaptiveStream OFF (2026-10-10): it sizes each remote video to the
+      // <video> elements LiveKit sees through track.attach(), but our tiles
+      // render the raw MediaStreamTrack (srcObject), so LiveKit saw no
+      // element at all: 0x0 dimensions and "not visible" after any tab or
+      // app switch, which sent viewers a low layer (reported: the host
+      // looking dull/blurry to the other person in a two-way call). Quality
+      // is now set explicitly per participant (setParticipantVideoQuality,
+      // driven by DailyVideoCall's stage), which LiveKit only allows with
+      // adaptiveStream off. Dynacast stays on so unwatched layers pause.
+      const room = new Room({ adaptiveStream: false, dynacast: true });
       this.room = room;
       this.wireEvents(room);
 
@@ -685,6 +695,18 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     }
   }
 
+  /** Which simulcast layer to receive for a participant's camera: 'high'
+   *  for anyone on the main stage, 'low' for thumbnails. Remembered and
+   *  re-applied when their camera track (re)subscribes. Screen share is a
+   *  separate publication and always arrives at full quality. */
+  private videoQualityByIdentity = new Map<string, 'high' | 'low'>();
+
+  setParticipantVideoQuality(identity: string, quality: 'high' | 'low'): void {
+    this.videoQualityByIdentity.set(identity, quality);
+    const pub = this.room?.remoteParticipants.get(identity)?.getTrackPublication(Track.Source.Camera) as RemoteTrackPublication | undefined;
+    pub?.setVideoQuality(quality === 'low' ? VideoQuality.LOW : VideoQuality.HIGH);
+  }
+
   // ============================================================
   // internals
   // ============================================================
@@ -772,7 +794,12 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
         if (p.isLocal) this.syncLocalMediaState();
       })
-      .on(RoomEvent.TrackSubscribed, (track, _pub, p) => {
+      .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+        // A camera that (re)publishes gets the quality its tile asked for.
+        if (pub.source === Track.Source.Camera) {
+          const wanted = this.videoQualityByIdentity.get(p.identity);
+          if (wanted) pub.setVideoQuality(wanted === 'low' ? VideoQuality.LOW : VideoQuality.HIGH);
+        }
         this.callbacks.onTrackStarted?.({ track, participant: p });
         this.refreshRealParticipantForShadow(p);
       })

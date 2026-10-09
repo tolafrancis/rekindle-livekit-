@@ -1177,6 +1177,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     enableAudioPlayback,
     connectionQuality,
     setParticipantVideoSubscribed,
+    setParticipantVideoQuality,
     participants,
     participantStates,
     localParticipant,
@@ -1901,6 +1902,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // still-decoding) element. The big tiles (stage.main) are never capped.
   const MAX_ONSCREEN_TILES = 12;
   const lastOnScreenRef = useRef<Set<string>>(new Set());
+  const lastQualityRef = useRef<Map<string, 'high' | 'low'>>(new Map());
   const capTiles = (list: any[]): { visible: any[]; overflowCount: number } => {
     if (list.length <= MAX_ONSCREEN_TILES) return { visible: list, overflowCount: 0 };
     const ordered = [...list].sort((a, b) => (b.isSpeaking ? 1 : 0) - (a.isSpeaking ? 1 : 0));
@@ -1912,9 +1914,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // same follow-up) — the room auto-subscribes every remote CAMERA track on
   // join regardless of what's actually rendered, so capping the grid visually
   // alone still pulled full video bandwidth for everyone off-screen. Only the
-  // big tiles and the visible thumbnails stay subscribed; adaptiveStream then
-  // sizes each one to its tile, so thumbnails pull a low layer and the
-  // spotlit speakers a high one. Audio is deliberately left untouched —
+  // big tiles and the visible thumbnails stay subscribed, and each is asked
+  // for a quality to match its tile below (thumbnails a low layer, the main
+  // stage a high one). Audio is deliberately left untouched —
   // hearing someone still matters even while their tile is off-screen.
   //
   // Real bug found live (2026-09-23): hooks here must run on every render,
@@ -1934,7 +1936,21 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       }
     });
     lastOnScreenRef.current = onScreen;
-  }, [cappedThumbnails.visible, mainParticipants, remoteParticipants, setParticipantVideoSubscribed]);
+
+    // Receive quality: high for whoever is on the main stage, low for
+    // thumbnails. Set explicitly because adaptiveStream can't see our tiles
+    // (they render the raw track), and only re-sent when it changes.
+    const onStage = new Set<string>(mainParticipants.filter((p: any) => !p.isLocal).map((p: any) => p.id));
+    const prevQuality = lastQualityRef.current;
+    const nextQuality = new Map<string, 'high' | 'low'>();
+    remoteParticipants.forEach((p: any) => {
+      if (!onScreen.has(p.id)) return;
+      const q: 'high' | 'low' = onStage.has(p.id) ? 'high' : 'low';
+      nextQuality.set(p.id, q);
+      if (prevQuality.get(p.id) !== q) setParticipantVideoQuality(p.id, q);
+    });
+    lastQualityRef.current = nextQuality;
+  }, [cappedThumbnails.visible, mainParticipants, remoteParticipants, setParticipantVideoSubscribed, setParticipantVideoQuality]);
 
   const layoutActions: LayoutActions = useMemo(() => ({
     spotlightOnly: (id: string) => spotlightParticipant(id),

@@ -153,6 +153,8 @@ export interface IVideoRoomWrapper {
    *  screen-share they may be presenting. identity is their LiveKit
    *  identity (== NormalizedParticipant.id). */
   setParticipantVideoSubscribed(identity: string, subscribed: boolean): void;
+  /** 'high' for the main stage, 'low' for thumbnails (LiveKit only). */
+  setParticipantVideoQuality?(identity: string, quality: 'high' | 'low'): void;
 
   /** On-demand captions: set the local participant's LiveKit attributes
    *  (captions=on|off). Optional — LiveKit-only. */
