@@ -46,3 +46,4 @@
 2026-10-09 Gift Aid CSV import for donations and paper declarations (packages/ministry)
 2026-10-10 Gift Aid: public declaration page + QR, registration declarations, Help/FAQ tab (packages/ministry)
 2026-10-10 meeting video: explicit receive quality (host sharp for participants) (packages/live)
+2026-10-10 meeting video quality: gallery/screen tiles, resubscribe resend, off-screen unsubscribe; Sentry NegotiationError filter (packages/live, packages/features)

@@ -1926,21 +1926,28 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     const onScreen = new Set<string>(cappedThumbnails.visible.map((p: any) => p.id));
     mainParticipants.forEach((p: any) => { if (!p.isLocal) onScreen.add(p.id); });
 
-    // Diff against what was last requested and only call for identities whose
-    // subscribed state actually flipped.
-    const prevOnScreen = lastOnScreenRef.current;
-    remoteParticipants.forEach((p: any) => {
-      const shouldShow = onScreen.has(p.id);
-      if (prevOnScreen.has(p.id) !== shouldShow) {
-        setParticipantVideoSubscribed(p.id, shouldShow);
-      }
-    });
+    // State the desired subscription for EVERY remote participant on every
+    // run: the wrapper remembers it, skips no-op calls, and applies it when a
+    // camera is published later. Diffing against the last run missed anyone
+    // who was never on screen (or turned their camera on while off screen),
+    // leaving them streaming unseen at full quality.
+    remoteParticipants.forEach((p: any) => setParticipantVideoSubscribed(p.id, onScreen.has(p.id)));
     lastOnScreenRef.current = onScreen;
 
-    // Receive quality: high for whoever is on the main stage, low for
-    // thumbnails. Set explicitly because adaptiveStream can't see our tiles
-    // (they render the raw track), and only re-sent when it changes.
-    const onStage = new Set<string>(mainParticipants.filter((p: any) => !p.isLocal).map((p: any) => p.id));
+    // Receive quality, chosen by how big each tile is drawn (adaptiveStream
+    // can't measure our tiles: they render the raw track):
+    //  - spotlight / speaker / dual / multi: the main-stage tiles are big;
+    //  - gallery (nobody spotlit) of up to 4 tiles: every tile is big;
+    //  - screen share: the presenter's camera is a small side tile;
+    //  - everything else (thumbnails, larger galleries): small.
+    const GALLERY_HIGH_MAX = 4;
+    const onStage = new Set<string>(
+      stage.kind === 'screen'
+        ? []
+        : stage.kind === 'gallery'
+          ? (cappedThumbnails.visible.length <= GALLERY_HIGH_MAX ? cappedThumbnails.visible.map((p: any) => p.id) : [])
+          : mainParticipants.filter((p: any) => !p.isLocal).map((p: any) => p.id),
+    );
     const prevQuality = lastQualityRef.current;
     const nextQuality = new Map<string, 'high' | 'low'>();
     remoteParticipants.forEach((p: any) => {
@@ -1950,7 +1957,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       if (prevQuality.get(p.id) !== q) setParticipantVideoQuality(p.id, q);
     });
     lastQualityRef.current = nextQuality;
-  }, [cappedThumbnails.visible, mainParticipants, remoteParticipants, setParticipantVideoSubscribed, setParticipantVideoQuality]);
+  }, [stage.kind, cappedThumbnails.visible, mainParticipants, remoteParticipants, setParticipantVideoSubscribed, setParticipantVideoQuality]);
 
   const layoutActions: LayoutActions = useMemo(() => ({
     spotlightOnly: (id: string) => spotlightParticipant(id),

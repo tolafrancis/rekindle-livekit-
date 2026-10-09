@@ -685,14 +685,15 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
    *  audio is deliberately left alone regardless of visibility — hearing
    *  someone still matters even while their tile is scrolled off / behind
    *  the "+N more" overflow indicator. */
+  // Desired camera subscription per identity, so a camera published later
+  // (most people join with it off) still gets it, via TrackPublished.
+  private videoSubscribedByIdentity = new Map<string, boolean>();
+
   setParticipantVideoSubscribed(identity: string, subscribed: boolean): void {
+    this.videoSubscribedByIdentity.set(identity, subscribed);
     if (!this.room) return;
-    for (const p of this.room.remoteParticipants.values()) {
-      if (p.identity !== identity) continue;
-      const pub = p.getTrackPublication(Track.Source.Camera);
-      pub?.setSubscribed(subscribed);
-      return;
-    }
+    const pub = this.room.remoteParticipants.get(identity)?.getTrackPublication(Track.Source.Camera) as RemoteTrackPublication | undefined;
+    if (pub && pub.isDesired !== subscribed) pub.setSubscribed(subscribed);
   }
 
   /** Which simulcast layer to receive for a participant's camera: 'high'
@@ -798,7 +799,13 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         // A camera that (re)publishes gets the quality its tile asked for.
         if (pub.source === Track.Source.Camera) {
           const wanted = this.videoQualityByIdentity.get(p.identity);
-          if (wanted) pub.setVideoQuality(wanted === 'low' ? VideoQuality.LOW : VideoQuality.HIGH);
+          if (wanted) {
+            pub.setVideoQuality(wanted === 'low' ? VideoQuality.LOW : VideoQuality.HIGH);
+            // setVideoQuality is a no-op when the value is unchanged, but a
+            // re-subscription resets the server side to the default (high),
+            // so resend the stored setting explicitly.
+            (pub as unknown as { emitTrackUpdate?: () => void }).emitTrackUpdate?.();
+          }
         }
         this.callbacks.onTrackStarted?.({ track, participant: p });
         this.refreshRealParticipantForShadow(p);
@@ -811,7 +818,12 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // or STOPPING) must refresh that participant so tiles recompute. Without the
       // unpublished case, a viewer's screen-share stage stayed frozen after the host
       // stopped sharing until some other event forced a re-render (a manual toggle).
-      .on(RoomEvent.TrackPublished, (_pub, p: Participant) => {
+      .on(RoomEvent.TrackPublished, (pub, p: Participant) => {
+        // A camera published by someone currently off screen: apply the
+        // stored "don't subscribe" before autoSubscribe pulls it.
+        if (pub.source === Track.Source.Camera && this.videoSubscribedByIdentity.get(p.identity) === false) {
+          (pub as RemoteTrackPublication).setSubscribed(false);
+        }
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
         if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
       })
