@@ -12,7 +12,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import {
   HandCoins, Loader2, RefreshCw, Search, CheckCircle2, XCircle, Ban, RotateCcw, Settings,
-  FileDown, HelpCircle, ChevronDown, ChevronUp,
+  FileDown, FileUp, HelpCircle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import {
   loadGiftAidSettings,
@@ -28,6 +28,7 @@ import { GiftAidClaimsManager } from './GiftAidClaimsManager';
 import { GiftAidAutoSubmitGuide } from './GiftAidAutoSubmitGuide';
 import { GiftAidReports } from './GiftAidReports';
 import { GiftAidDeclarationsManager } from './GiftAidDeclarationsManager';
+import { GiftAidCsvImport } from './GiftAidCsvImport';
 
 interface Props {
   ministryId: string;
@@ -64,6 +65,9 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
   // tab history, so Back steps through these sections then back out to the tab.
   const [view, setView] = useViewHistory<'donations' | 'claims' | 'declarations' | 'reports'>('ministry-giftaid', 'donations');
   const [csvBusy, setCsvBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  // Bumped after an import so the Declarations list reloads.
+  const [declarationsKey, setDeclarationsKey] = useState(0);
   const [showGuide, setShowGuide] = useState(false);
   const [rows, setRows] = useState<EligibleDonationRow[]>([]);
   const [campaignNames, setCampaignNames] = useState<Record<string, string>>({});
@@ -264,10 +268,18 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
                 {csvBusy ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileDown className="h-4 w-4 mr-1" />}
                 {t('ministryGiftAidDashboard', 'downloadCsvHmrc', 'Download CSV for HMRC')}
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                <FileUp className="h-4 w-4 mr-1" /> {t('ministryGiftAidDashboard', 'importCsv', 'Import CSV')}
+              </Button>
               <Button variant="outline" size="sm" onClick={load}>
                 <RefreshCw className="h-4 w-4 mr-1" /> {t('ministryGiftAidDashboard', 'refresh', 'Refresh')}
               </Button>
             </>
+          )}
+          {view === 'declarations' && (
+            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+              <FileUp className="h-4 w-4 mr-1" /> {t('ministryGiftAidDashboard', 'importCsv', 'Import CSV')}
+            </Button>
           )}
         </div>
       </div>
@@ -277,8 +289,17 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
       )}
 
       {view === 'declarations' && (
-        <GiftAidDeclarationsManager ministryId={ministryId} themeColor={themeColor} />
+        <GiftAidDeclarationsManager key={declarationsKey} ministryId={ministryId} themeColor={themeColor} />
       )}
+
+      <GiftAidCsvImport
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        ministryId={ministryId}
+        initialKind={view === 'declarations' ? 'declarations' : 'donations'}
+        themeColor={themeColor}
+        onImported={() => { void load(); setDeclarationsKey((k) => k + 1); }}
+      />
 
       {view === 'reports' && (
         <GiftAidReports ministryId={ministryId} ministryName={ministryName} themeColor={themeColor} />

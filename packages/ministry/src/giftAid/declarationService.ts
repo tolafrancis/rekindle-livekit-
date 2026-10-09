@@ -303,8 +303,17 @@ export interface AdminDeclarationInput {
  */
 export async function saveAdminDeclaration(
   input: AdminDeclarationInput,
-  opts: { supersedeId?: string | null; actorUserId?: string | null } = {},
+  opts: {
+    supersedeId?: string | null;
+    actorUserId?: string | null;
+    /** e.g. 'csv_import'; defaults to admin_entry / admin_correction. */
+    source?: string;
+    /** YYYY-MM-DD the donor signed (paper forms); defaults to today. */
+    effectiveFrom?: string;
+  } = {},
 ): Promise<GiftAidDeclarationResult> {
+  const source = opts.source || (opts.supersedeId ? 'admin_correction' : 'admin_entry');
+  const effectiveFrom = opts.effectiveFrom || new Date().toISOString().slice(0, 10);
   try {
     const { data: created, error } = await supabase
       .from('gift_aid_declarations')
@@ -324,7 +333,7 @@ export async function saveAdminDeclaration(
         is_taxpayer_confirmed: input.isTaxpayerConfirmed ?? true,
         declaration_text: GIFT_AID_DECLARATION_TEXT,
         declaration_version: GIFT_AID_DECLARATION_VERSION,
-        source: opts.supersedeId ? 'admin_correction' : 'admin_entry',
+        source,
         status: 'active',
       })
       .select('id')
@@ -353,7 +362,7 @@ export async function saveAdminDeclaration(
           donor_email: input.donorEmail,
           status: 'active',
           current_declaration_id: newId,
-          effective_from: new Date().toISOString().slice(0, 10),
+          effective_from: effectiveFrom,
         },
         { onConflict: 'ministry_id,donor_email' },
       );
@@ -367,7 +376,7 @@ export async function saveAdminDeclaration(
         declaration_id: newId,
         actor_user_id: opts.actorUserId || null,
         event_type: opts.supersedeId ? 'declaration_corrected' : 'declaration_created',
-        event_data: { source: opts.supersedeId ? 'admin_correction' : 'admin_entry', superseded: opts.supersedeId || null },
+        event_data: { source, superseded: opts.supersedeId || null, effective_from: effectiveFrom },
       });
     } catch (auditErr) {
       console.warn('gift_aid_audit_log insert failed:', auditErr);
