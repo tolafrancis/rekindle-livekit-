@@ -14,6 +14,7 @@ import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
 import MinistryKiosk from '@rekindle/ministry/components/MinistryKiosk';
+import GiftAidDeclarationPage from '@rekindle/ministry/components/GiftAidDeclarationPage';
 import MemberMinistryProfile from '@rekindle/ministry/components/MemberMinistryProfile';
 import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWizard';
 import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSettings';
@@ -237,6 +238,7 @@ function AppRoutes() {
       <Route path="/join/:slug" element={<MinistryJoinLanding />} />
       <Route path="/register/:slug" element={<MinistryJoinLanding />} />
       <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
+      <Route path="/gift-aid/:slug" element={<GiftAidDeclarationPage />} />
       <Route path="/my-membership/:slug" element={<MemberMinistryProfile />} />
       <Route path="/auth" element={<AuthRoute />} />
 

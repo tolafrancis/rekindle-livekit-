@@ -44,3 +44,4 @@
 2026-10-08 Google sign-in falls back to the browser when native sign-in fails (packages/features)
 2026-10-09 Gift Aid dashboard back in the ministry nav (Ministry > Gift Aid, UK ministries) (packages/ministry)
 2026-10-09 Gift Aid CSV import for donations and paper declarations (packages/ministry)
+2026-10-10 Gift Aid: public declaration page + QR, registration declarations, Help/FAQ tab (packages/ministry)

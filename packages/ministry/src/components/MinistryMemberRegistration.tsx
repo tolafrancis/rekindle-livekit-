@@ -1,4 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { GIFT_AID_DECLARATION_TEXT, loadGiftAidSettings, submitGiftAidDeclaration } from '../giftAid';
+import {
+  GiftAidDeclarationFields,
+  emptyGiftAidState,
+  isGiftAidDeclarationComplete,
+  type GiftAidFormState,
+} from './GiftAidDeclarationFields';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -48,13 +55,28 @@ const MinistryMemberRegistration: React.FC<Props> = ({
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
-  const showGiftAid = (country || '').toUpperCase() === 'UK' && !!giftAidEnabled;
+  // Gift Aid is on when the ministry's Gift Aid settings say so (Settings >
+  // Finance & Billing), the same switch the donation form and dashboard use.
+  // The older ministry_groups.country/gift_aid_enabled pair is still honoured.
+  const [giftAidOn, setGiftAidOn] = useState(false);
+  const [giftAidCharity, setGiftAidCharity] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadGiftAidSettings(ministryId).then((s) => {
+      if (!cancelled) { setGiftAidOn(s.enabled); setGiftAidCharity(s.charityName); }
+    });
+    return () => { cancelled = true; };
+  }, [ministryId]);
+  const showGiftAid = giftAidOn || ((country || '').toUpperCase() === 'UK' && !!giftAidEnabled);
+  // Ticking Gift Aid records a real HMRC declaration (name, home address,
+  // taxpayer confirmation), not just a consent flag.
+  const [giftAid, setGiftAid] = useState<GiftAidFormState>(emptyGiftAidState);
 
   const CONSENT_TEXTS: Record<string, string> = {
     privacy_policy: `I have read and agree to the Privacy Policy and to how ${ministryName} stores and uses my data.`,
     data_processing: `I consent to ${ministryName} processing my personal data for membership, pastoral care, and communication.`,
     photo_media: `I consent to photos and video taken at services and events, which may include me, being used by ${ministryName}.`,
-    gift_aid: `I am a UK taxpayer and would like ${ministryName} to reclaim Gift Aid on my donations.`,
+    gift_aid: GIFT_AID_DECLARATION_TEXT,
   };
 
   const [step, setStep] = useState(1);
@@ -260,10 +282,38 @@ const MinistryMemberRegistration: React.FC<Props> = ({
       toast({ title: t('ministryMemberRegistration', 'consentRequired', 'Consent required'), description: t('ministryMemberRegistration', 'consentRequiredDesc', 'Please agree to the Privacy Policy and data processing to continue.'), variant: 'destructive' });
       return;
     }
+    if (showGiftAid && giftAid.optedIn && !isGiftAidDeclarationComplete(giftAid)) {
+      toast({ title: 'Complete your Gift Aid details', description: 'Please add your home address (house number or name, and postcode) and confirm you are a UK taxpayer, or untick Gift Aid.', variant: 'destructive' });
+      return;
+    }
     setSubmitting(true);
     try {
       const shown: string[] = ['privacy_policy', 'data_processing', 'photo_media'];
       if (showGiftAid) shown.push('gift_aid');
+
+      // The Gift Aid declaration itself (immutable HMRC evidence), recorded
+      // through the same function as the donation form. Its failure mustn't
+      // block the registration, so it's reported but not thrown.
+      const recordGiftAid = async () => {
+        if (!showGiftAid || !giftAid.optedIn) return;
+        const res = await submitGiftAidDeclaration({
+          ministryId,
+          donorUserId: user?.id || null,
+          donorEmail: f.email.trim().toLowerCase(),
+          title: giftAid.title,
+          firstName: giftAid.firstName || f.first_name.trim(),
+          lastName: giftAid.lastName || f.last_name.trim(),
+          houseNumberOrName: giftAid.houseNumberOrName,
+          addressLine1: giftAid.addressLine1,
+          city: giftAid.city || f.city.trim(),
+          postcode: giftAid.postcode.trim().toUpperCase(),
+          isTaxpayerConfirmed: giftAid.taxpayerConfirmed,
+          source: kioskMode ? 'kiosk_registration' : 'member_registration',
+        });
+        if (!res.ok) {
+          toast({ title: 'Gift Aid not recorded', description: 'Your registration is saved, but we couldn’t record your Gift Aid declaration. You can make it later from the church’s Gift Aid link or when you give.', variant: 'destructive' });
+        }
+      };
 
       if (guestMode && onGuestSubmit) {
         const payload = {
@@ -275,6 +325,7 @@ const MinistryMemberRegistration: React.FC<Props> = ({
           consents: shown.map((ct) => ({ type: ct, given: (f as any)[`consent_${ct}`] === true, text: CONSENT_TEXTS[ct], version: DECLARATION_VERSION })),
         };
         const st = await onGuestSubmit(payload);
+        await recordGiftAid();
         setDone(st);
         onComplete?.(st);
         return;
@@ -311,6 +362,7 @@ const MinistryMemberRegistration: React.FC<Props> = ({
       if (status === 'active') events.push({ ministry_id: ministryId, user_id: user?.id, profile_id: id, event_type: 'approved' });
       supabase.from('member_registration_audit').insert(events).then(() => {}, () => {});
 
+      await recordGiftAid();
       setDone(status);
       onComplete?.(status);
     } catch (e: any) {
@@ -463,7 +515,6 @@ const MinistryMemberRegistration: React.FC<Props> = ({
             ['consent_privacy_policy', 'privacy_policy', true],
             ['consent_data_processing', 'data_processing', true],
             ['consent_photo_media', 'photo_media', false],
-            ...(showGiftAid ? [['consent_gift_aid', 'gift_aid', false]] : []),
           ] as [string, string, boolean][]).map(([field, type, required]) => (
             // Wrapper is a div, not a label, so the "Read Privacy Policy" link
             // below (a sibling of the label, not a descendant of it) doesn't
@@ -492,6 +543,21 @@ const MinistryMemberRegistration: React.FC<Props> = ({
               )}
             </div>
           ))}
+          {showGiftAid && (
+            <GiftAidDeclarationFields
+              value={giftAid}
+              charityName={giftAidCharity || ministryName}
+              onChange={(next) => {
+                // Prefill the declaration's name from the registration the
+                // moment the member opts in.
+                const filled = next.optedIn && !giftAid.optedIn
+                  ? { ...next, firstName: next.firstName || f.first_name.trim(), lastName: next.lastName || f.last_name.trim(), city: next.city || f.city.trim() }
+                  : next;
+                setGiftAid(filled);
+                set({ consent_gift_aid: filled.optedIn });
+              }}
+            />
+          )}
         </div>
       )}
 

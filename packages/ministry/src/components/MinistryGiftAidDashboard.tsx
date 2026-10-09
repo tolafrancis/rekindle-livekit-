@@ -29,6 +29,7 @@ import { GiftAidAutoSubmitGuide } from './GiftAidAutoSubmitGuide';
 import { GiftAidReports } from './GiftAidReports';
 import { GiftAidDeclarationsManager } from './GiftAidDeclarationsManager';
 import { GiftAidCsvImport } from './GiftAidCsvImport';
+import { GiftAidHelp, GiftAidShareLink } from './GiftAidHelp';
 
 interface Props {
   ministryId: string;
@@ -63,7 +64,7 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
   const [enabled, setEnabled] = useState(false);
   // Nested inside MinistrySpace — the hook's state-merge composes with the parent
   // tab history, so Back steps through these sections then back out to the tab.
-  const [view, setView] = useViewHistory<'donations' | 'claims' | 'declarations' | 'reports'>('ministry-giftaid', 'donations');
+  const [view, setView] = useViewHistory<'donations' | 'claims' | 'declarations' | 'reports' | 'help'>('ministry-giftaid', 'donations');
   const [csvBusy, setCsvBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   // Bumped after an import so the Declarations list reloads.
@@ -227,7 +228,7 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <HandCoins className="h-5 w-5" style={{ color: themeColor }} />
@@ -235,8 +236,8 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
           </h2>
           <p className="text-sm text-gray-500">{ministryName || t('ministryGiftAidDashboard', 'yourMinistry', 'Your ministry')} · {t('ministryGiftAidDashboard', 'ukDonations', 'UK donations')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border p-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex flex-wrap rounded-lg border p-0.5">
             <button
               onClick={() => setView('donations')}
               className={`px-3 py-1.5 text-sm rounded-md ${view === 'donations' ? 'bg-gray-100 font-medium' : 'text-gray-500'}`}
@@ -260,6 +261,12 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
               className={`px-3 py-1.5 text-sm rounded-md ${view === 'reports' ? 'bg-gray-100 font-medium' : 'text-gray-500'}`}
             >
               {t('ministryGiftAidDashboard', 'reports', 'Reports')}
+            </button>
+            <button
+              onClick={() => setView('help')}
+              className={`px-3 py-1.5 text-sm rounded-md ${view === 'help' ? 'bg-gray-100 font-medium' : 'text-gray-500'}`}
+            >
+              {t('ministryGiftAidDashboard', 'help', 'Help')}
             </button>
           </div>
           {view === 'donations' && (
@@ -289,7 +296,14 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
       )}
 
       {view === 'declarations' && (
-        <GiftAidDeclarationsManager key={declarationsKey} ministryId={ministryId} themeColor={themeColor} />
+        <>
+          <GiftAidShareLink ministryId={ministryId} ministryName={ministryName} themeColor={themeColor} compact />
+          <GiftAidDeclarationsManager key={declarationsKey} ministryId={ministryId} themeColor={themeColor} />
+        </>
+      )}
+
+      {view === 'help' && (
+        <GiftAidHelp ministryId={ministryId} ministryName={ministryName} themeColor={themeColor} onGoToSettings={onGoToSettings} />
       )}
 
       <GiftAidCsvImport
@@ -307,6 +321,17 @@ export const MinistryGiftAidDashboard: React.FC<Props> = ({
 
       {view === 'donations' && (
         <>
+      <button
+        type="button"
+        onClick={() => setView('help')}
+        className="flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-sm text-amber-900 hover:bg-amber-100"
+      >
+        <HelpCircle className="h-4 w-4 shrink-0" />
+        <span>
+          <strong>Tip:</strong> new to Gift Aid, or need the declaration link and QR code for cash donors? Open <strong>Help</strong> for the full step-by-step guide and FAQ.
+        </span>
+      </button>
+
       {/* How to file manually */}
       <Card>
         <button

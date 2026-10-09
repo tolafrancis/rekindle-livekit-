@@ -89,6 +89,14 @@ enabled = true
 # kept on, matching livekit-token / livekit-egress / livekit-ingress.
 verify_jwt = true
 
+[functions.gift-aid-declaration]
+enabled = true
+# Donors declare from the public /gift-aid/:slug page, the kiosk and guest
+# registration without signing in; the function validates the payload and
+# checks Gift Aid is enabled for the ministry itself. Matches the deployed
+# setting.
+verify_jwt = false
+
 [functions.livekit-webhook]
 enabled = true
 # LiveKit signs webhook requests using its API Key & Secret HMAC payload signature,
