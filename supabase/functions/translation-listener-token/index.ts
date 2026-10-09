@@ -148,6 +148,10 @@ serve(async (req) => {
       canSubscribe: true,
       canPublish: false,
       canPublishData: false,
+      // Invisible to the room (2026-10-10): listeners used to appear as
+      // "Listener" tiles in the host's meeting and count toward its
+      // occupancy and participant cap.
+      hidden: true,
     });
 
     return json({

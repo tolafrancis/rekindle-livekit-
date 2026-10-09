@@ -21,6 +21,7 @@ import {
   RoomEvent,
   Track,
   ConnectionState,
+  DisconnectReason,
   VideoQuality,
   type Participant,
   type RemoteParticipant,
@@ -39,7 +40,15 @@ import type {
   VideoWrapperCallbacks,
   IVideoRoomWrapper,
   TrackAttachSource,
+  DisconnectKind,
 } from '@rekindle/types/videoRoom';
+
+/** A capture device that's missing, busy or can't satisfy the constraints:
+ *  the only errors where retrying on another device makes sense. */
+const isDeviceError = (e: unknown) =>
+  ['NotFoundError', 'OverconstrainedError', 'NotReadableError', 'AbortError'].includes((e as { name?: string })?.name ?? '');
+
+const errorMessage = (e: unknown, fallback: string) => (e as Error)?.message || fallback;
 import type { ParticipantRole } from '@rekindle/types/liveChannelTypes';
 import { DUCKED_LEVEL, setTranslationDuck } from './translationDuck';
 
@@ -154,7 +163,11 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     // upgrade) the promise never settles, the catch below never runs, and the
     // "Connecting…" spinner spins forever with nothing to log. Racing it
     // against a timer guarantees the catch fires either way.
-    const CONNECT_TIMEOUT_MS = 15000;
+    // 40s (2026-10-10, was 15s): LiveKit's own signal and peer-connection
+    // timeouts plus region failover and TURN/TCP fallback on restrictive
+    // networks can legitimately take longer than 15s, and cutting them off
+    // turned slow-but-working joins into "Timed out".
+    const CONNECT_TIMEOUT_MS = 40000;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
@@ -209,15 +222,10 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // what was set before this participant joined has to be read now.
       this.callbacks.onRoomMetadataChanged?.(room.metadata ?? '');
 
-      // Set local participant name explicitly — ensures guest display names persist.
-      // The LiveKit token should include the name, but set it explicitly as a backup.
-      if (userName && this.room?.localParticipant) {
-        try {
-          this.room.localParticipant.setName(userName);
-        } catch (err) {
-          console.warn('[LiveKitRoomWrapper] Could not set local participant name:', err);
-        }
-      }
+      // (A setName(userName) call used to sit here. The token already carries
+      // the name, and tokens can't update their own metadata, so it only
+      // produced an unhandled rejection on every join.)
+      void userName;
 
       // Join MUTED: mic + camera start OFF (unless viewer-only, which can't publish
       // anyway). Auto-publishing on join raced the browser permission prompt +
@@ -286,55 +294,92 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
 
   // ---- media controls ----
 
+  // Mic/camera changes run one at a time per source, and a toggle works from
+  // the state the user last ASKED for, not the state the last (possibly still
+  // running) publish reached. Before 2026-10-10 a quick "off" click while the
+  // first publish was still in flight read the old state, asked for "on"
+  // again, and the mic ended up live.
+  private audioWanted: boolean | null = null;
+  private videoWanted: boolean | null = null;
+  private audioChain: Promise<unknown> = Promise.resolve();
+  private videoChain: Promise<unknown> = Promise.resolve();
+  private micOpInFlight = false;
+  private cameraOpInFlight = false;
+
   async toggleAudio(): Promise<boolean> {
-    return this.setAudio(!this.localAudioEnabled);
+    return this.setAudio(!(this.audioWanted ?? this.localAudioEnabled));
   }
 
   async setAudio(on: boolean): Promise<boolean> {
+    this.audioWanted = on;
+    const run = this.audioChain.then(() => (this.audioWanted === on ? this.applyAudio(on) : this.localAudioEnabled));
+    this.audioChain = run.catch(() => {});
+    const result = await run;
+    if (this.audioWanted === on) this.audioWanted = null;
+    return result;
+  }
+
+  private async applyAudio(on: boolean): Promise<boolean> {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return this.localAudioEnabled;
+    this.micOpInFlight = true;
     try {
       await lp.setMicrophoneEnabled(on);
     } catch (e) {
       // A mic picked by device id (backstage, device menu) can be gone or
       // refuse to open by the time we publish (unplugged headset, Android
-      // handing out a fresh id). Rather than leave the person silently
-      // unpublished, fall back to the system default mic once.
-      if (on && this.room) {
+      // handing out a fresh id). Fall back to the system default mic once,
+      // but only for a device problem: a negotiation timeout or a missing
+      // publish permission used to overwrite the chosen mic too.
+      if (on && this.room && isDeviceError(e)) {
         console.warn('[LiveKitRoomWrapper] mic publish failed, retrying on the default mic:', e);
         try {
           await this.room.switchActiveDevice('audioinput', 'default', false);
           await lp.setMicrophoneEnabled(true);
         } catch (retryErr) {
-          this.callbacks.onError?.(retryErr);
+          this.callbacks.onWarning?.(`Couldn't turn on your microphone: ${errorMessage(retryErr, 'unknown error')}`);
         }
       } else {
-        this.callbacks.onError?.(e);
+        this.callbacks.onWarning?.(`Couldn't ${on ? 'turn on' : 'turn off'} your microphone: ${errorMessage(e, 'unknown error')}`);
       }
+    } finally {
+      this.micOpInFlight = false;
     }
     this.syncLocalMediaState();
     return this.localAudioEnabled;
   }
 
   async toggleVideo(): Promise<boolean> {
-    return this.setVideo(!this.localVideoEnabled);
+    return this.setVideo(!(this.videoWanted ?? this.localVideoEnabled));
   }
 
   async setVideo(on: boolean): Promise<boolean> {
+    this.videoWanted = on;
+    const run = this.videoChain.then(() => (this.videoWanted === on ? this.applyVideo(on) : this.localVideoEnabled));
+    this.videoChain = run.catch(() => {});
+    const result = await run;
+    if (this.videoWanted === on) this.videoWanted = null;
+    return result;
+  }
+
+  private async applyVideo(on: boolean): Promise<boolean> {
     const lp = this.room?.localParticipant;
     if (!lp || !this.joined) return this.localVideoEnabled;
+    this.cameraOpInFlight = true;
     try {
       await lp.setCameraEnabled(
         on,
         undefined,
         this.isHost ? { videoEncoding: LiveKitRoomWrapper.HOST_VIDEO_ENCODING } : undefined,
       );
-      // The camera track is fresh each time it turns on, so re-apply any chosen
-      // virtual background to the new track.
+      // Re-apply any chosen virtual background (a no-op if it's already on
+      // this track: LiveKit restarts the processor itself on unmute).
       if (on && this.cameraBackground !== 'none') await this.applyCameraBackground();
       this.syncLocalMediaState();
     } catch (e) {
       this.callbacks.onCameraError?.(e);
+    } finally {
+      this.cameraOpInFlight = false;
     }
     return this.localVideoEnabled;
   }
@@ -384,6 +429,10 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
 
   private translationAudioEl: HTMLAudioElement | null = null;
   private currentTranslationLanguage: string | null = null;
+  /** The language the listener chose, kept across a reconnect or a bot
+   *  republishing its track so playback can be re-bound (2026-10-10). */
+  private wantedTranslationLanguage: string | null = null;
+  private reconnecting = false;
 
   /** Every "rlt-translated-{lang}" track currently published by any rlt-bot-*
    *  participant in the room — i.e. every language a listener can switch to. */
@@ -418,6 +467,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
    * voice's level fixes both.
    */
   async setTranslationLanguage(language: string | null): Promise<void> {
+    this.wantedTranslationLanguage = language;
     this.stopTranslationDuck();
     if (this.translationAudioEl) {
       this.translationAudioEl.pause();
@@ -440,16 +490,27 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     // Should already be auto-subscribed (this wrapper never disables
     // autoSubscribe); explicit call is a defensive no-op either way.
     targetPub.setSubscribed(true);
+    // Not subscribed yet: TrackSubscribed re-binds it once it is (see
+    // wireEvents), instead of leaving the picker on a language that plays
+    // nothing.
     const track = targetPub.track as RemoteTrack | undefined;
     if (track) {
       const el = new Audio();
       el.autoplay = true;
       el.srcObject = new MediaStream([track.mediaStreamTrack]);
+      el.play().catch(() => this.callbacks.onAudioPlaybackBlocked?.());
       this.translationAudioEl = el;
       this.startTranslationDuck(track.mediaStreamTrack);
     }
 
     this.currentTranslationLanguage = language;
+  }
+
+  /** The translated track the listener wants (re)appeared: bind it again. */
+  private rebindTranslation(pub: TrackPublication, p: Participant): void {
+    const wanted = this.wantedTranslationLanguage;
+    if (!wanted || !p.identity.startsWith('rlt-bot-') || pub.trackName !== `rlt-translated-${wanted}`) return;
+    this.setTranslationLanguage(wanted).catch(() => {});
   }
 
   private duckCtx: AudioContext | null = null;
@@ -503,7 +564,9 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
    *  language list and fall back to Original if the selected one disappeared. */
   private notifyTranslationTracksChanged(): void {
     const tracks = this.getAvailableTranslations();
-    if (this.currentTranslationLanguage && !tracks.some((t) => t.language === this.currentTranslationLanguage)) {
+    // Mid-reconnect every participant briefly "leaves"; don't drop the
+    // listener back to Original for that (it's re-applied on Reconnected).
+    if (!this.reconnecting && this.currentTranslationLanguage && !tracks.some((t) => t.language === this.currentTranslationLanguage)) {
       this.setTranslationLanguage(null).catch(() => {});
     }
     this.callbacks.onTranslationTracksChanged?.(tracks);
@@ -561,7 +624,6 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // in-browser screen capture at all. Fail fast with an accurate message instead
       // of letting the call below throw a generic, misleading error.
       this.lastScreenShareError = LiveKitRoomWrapper.SCREEN_SHARE_UNSUPPORTED_MESSAGE;
-      this.callbacks.onError?.(new Error(LiveKitRoomWrapper.SCREEN_SHARE_UNSUPPORTED_MESSAGE));
       return false;
     }
 
@@ -581,8 +643,11 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       const message = isMobile
         ? LiveKitRoomWrapper.SCREEN_SHARE_UNSUPPORTED_MESSAGE
         : ((e as Error)?.message || 'Could not start screen sharing');
-      this.lastScreenShareError = message;
-      this.callbacks.onError?.(isMobile ? new Error(message) : e);
+      // Reported by the caller (useDailyRoom reads getLastScreenShareError
+      // for its toast). Never through onError: that one means "the
+      // connection failed" and used to black out the whole broadcast when
+      // someone simply cancelled the screen picker.
+      this.lastScreenShareError = (e as { name?: string })?.name === 'NotAllowedError' && !isMobile ? null : message;
       return false;
     } finally {
       this.acquiringScreenShare = false;
@@ -639,7 +704,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       return true;
     } catch (e) {
       console.warn(`[LiveKitRoomWrapper] Failed to switch active ${kind} device to ${deviceId}:`, e);
-      this.callbacks.onError?.(e);
+      this.callbacks.onWarning?.(`Couldn't switch to that ${kind === 'videoinput' ? 'camera' : kind === 'audioinput' ? 'microphone' : 'device'}: ${errorMessage(e, 'unknown error')}`);
       return false;
     }
   }
@@ -754,9 +819,24 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
     room
       .on(RoomEvent.Connected, () => this.callbacks.onJoined?.())
       .on(RoomEvent.RoomMetadataChanged, (metadata: string) => this.callbacks.onRoomMetadataChanged?.(metadata))
-      .on(RoomEvent.Disconnected, () => {
+      .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
         this.joined = false;
-        this.callbacks.onLeft?.();
+        this.reconnecting = false;
+        // An unexpected disconnect skips leaveMeeting(): stop the translation
+        // playback and its ducking here, or the room audio stays ducked.
+        this.stopTranslationDuck();
+        if (this.translationAudioEl) {
+          this.translationAudioEl.pause();
+          this.translationAudioEl.srcObject = null;
+          this.translationAudioEl = null;
+        }
+        const kind: DisconnectKind =
+          reason === DisconnectReason.DUPLICATE_IDENTITY ? 'duplicate_identity'
+            : reason === DisconnectReason.PARTICIPANT_REMOVED ? 'removed'
+            : reason === DisconnectReason.ROOM_DELETED ? 'room_deleted'
+            : reason === DisconnectReason.CLIENT_INITIATED ? 'client'
+            : 'other';
+        this.callbacks.onLeft?.(kind);
       })
       // Reconnection UX (2026-09-23, meeting architecture review) — these
       // were never wired at all before, so a transient network blip gave
@@ -764,8 +844,15 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // nothing told the user it was over. Reconnecting can fire more than
       // once per outage (LiveKit retries); Reconnected always follows a
       // successful recovery.
-      .on(RoomEvent.Reconnecting, () => this.callbacks.onReconnecting?.())
-      .on(RoomEvent.Reconnected, () => this.callbacks.onReconnected?.())
+      .on(RoomEvent.Reconnecting, () => { this.reconnecting = true; this.callbacks.onReconnecting?.(); })
+      .on(RoomEvent.Reconnected, () => {
+        this.reconnecting = false;
+        this.callbacks.onReconnected?.();
+        // A full reconnect rebuilt every remote participant; re-bind the
+        // translation the listener had chosen and refresh the language list.
+        if (this.wantedTranslationLanguage) this.setTranslationLanguage(this.wantedTranslationLanguage).catch(() => {});
+        this.notifyTranslationTracksChanged();
+      })
       // Same review, Issue 2/4 — a blocked autoplay used to leave a joined
       // user watching full video with no sound and no explanation. LiveKit
       // itself tells us via this event whenever room.canPlaybackAudio flips;
@@ -773,6 +860,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // fires once autoplay succeeds).
       .on(RoomEvent.AudioPlaybackStatusChanged, () => {
         if (!this.room?.canPlaybackAudio) this.callbacks.onAudioPlaybackBlocked?.();
+        else this.callbacks.onAudioPlaybackResumed?.();
       })
       // On-demand captions (agents/captions): the agent publishes each
       // segment attributed to the SPEAKER's identity, so `p` is who said it.
@@ -795,16 +883,25 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
       // Surfaced through the existing generic error callback rather than a
       // dedicated one — same review — this is another connect-time failure
       // class (like a publish/subscribe error), not a new kind of UI state.
+      // Logged only (2026-10-10): this used to go to onError, which the
+      // channel viewer treats as fatal, so one track failing to subscribe
+      // replaced the whole player with "Connection Failed".
       .on(RoomEvent.TrackSubscriptionFailed, (trackSid: string, p: RemoteParticipant, reason) => {
         console.error(`[LiveKitRoomWrapper] failed to subscribe to track ${trackSid} from ${p.identity}:`, reason);
-        this.callbacks.onError?.(new Error(`Failed to subscribe to a track from ${p.identity}`));
       })
+      // A full reconnect disconnects and rebuilds every remote participant.
+      // Reporting those as real leaves/joins dropped raised hands, fired
+      // "left" handlers and reset translation; during a reconnect just
+      // refresh the roster. The Android screen-share shadow isn't a person
+      // either (useDailyRoom filters it from the list).
       .on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
-        this.callbacks.onParticipantJoined?.(this.normalize(p, false));
+        if (this.reconnecting || p.identity.endsWith('-screenshare')) this.callbacks.onParticipantUpdated?.(this.normalize(p, false));
+        else this.callbacks.onParticipantJoined?.(this.normalize(p, false));
         if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
       })
       .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
-        this.callbacks.onParticipantLeft?.(this.normalize(p, false));
+        if (this.reconnecting || p.identity.endsWith('-screenshare')) this.callbacks.onParticipantUpdated?.(this.normalize(p, false));
+        else this.callbacks.onParticipantLeft?.(this.normalize(p, false));
         if (p.identity.startsWith('rlt-bot-')) this.notifyTranslationTracksChanged();
         // Covers an unclean shadow disconnect (app killed mid-share, etc.) that
         // never fires TrackUnpublished — without this the real participant's
@@ -846,6 +943,7 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         }
         this.callbacks.onTrackStarted?.({ track, participant: p });
         this.refreshRealParticipantForShadow(p);
+        this.rebindTranslation(pub, p);
       })
       .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => {
         this.callbacks.onTrackStopped?.({ track, participant: p });
@@ -859,6 +957,10 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         // A camera published by someone currently off screen: apply the
         // stored "don't subscribe" before autoSubscribe pulls it.
         if (pub.source === Track.Source.Camera && this.videoSubscribedByIdentity.get(p.identity) === false) {
+          (pub as RemoteTrackPublication).setSubscribed(false);
+        }
+        // Our own Android screen-share shadow: never download our own screen.
+        if (this.room && p.identity === `${this.room.localParticipant.identity}-screenshare`) {
           (pub as RemoteTrackPublication).setSubscribed(false);
         }
         this.callbacks.onParticipantUpdated?.(this.normalize(p, p.isLocal));
@@ -881,19 +983,27 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         const lp = this.room?.localParticipant;
         if (lp) this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
       })
-      .on(RoomEvent.LocalTrackUnpublished, () => {
+      .on(RoomEvent.LocalTrackUnpublished, (pub: TrackPublication) => {
+        // The browser's own "Stop sharing" bar (or the shared tab closing)
+        // ends the share without going through stopScreenShare().
+        if (pub.source === Track.Source.ScreenShare) this.callbacks.onScreenShareStopped?.();
         this.syncLocalMediaState();
         const lp = this.room?.localParticipant;
         if (lp) this.callbacks.onParticipantUpdated?.(this.normalize(lp, true));
       })
-      .on(RoomEvent.MediaDevicesError, (e: Error) => {
+      .on(RoomEvent.MediaDevicesError, (e: Error, kind?: MediaDeviceKind) => {
         // setScreenShareEnabled() failures (common on mobile browsers, which mostly
         // lack getDisplayMedia) also fire this event. startScreenShare()'s own catch
-        // already reports those via onError — don't ALSO mislabel it here as a
-        // camera failure ("Camera Error: Failed to access camera" is confusing when
-        // the user was trying to share their screen, not their camera).
+        // already reports those — don't ALSO mislabel it here as a camera failure.
         if (this.acquiringScreenShare) return;
-        this.callbacks.onCameraError?.(e);
+        // Failures of our own mic/camera calls are reported by those calls;
+        // reporting them here too toasted twice. A microphone problem used
+        // to be shown as "Camera Error" and turned the camera button off.
+        if (kind === 'audioinput') {
+          if (!this.micOpInFlight) this.callbacks.onWarning?.(`Microphone problem: ${errorMessage(e, 'unknown error')}`);
+          return;
+        }
+        if (!this.cameraOpInFlight) this.callbacks.onCameraError?.(e);
       })
       .on(RoomEvent.ConnectionStateChanged, (s: ConnectionState) => {
         if (s === ConnectionState.Disconnected) this.joined = false;
@@ -904,6 +1014,9 @@ export class LiveKitRoomWrapper implements IVideoRoomWrapper {
         // packets publishTranscription sends, so TranscriptionReceived above
         // never fires for them. `speaker` is who said it, not the sender.
         if (topic === CAPTIONS_TOPIC) {
+          // Only the hidden caption agent may publish captions; anyone else
+          // could put words in another person's mouth (2026-10-10).
+          if (participant && !participant.identity.startsWith('caption-agent-')) return;
           try {
             const c = JSON.parse(new TextDecoder().decode(payload)) as {
               id: string; text: string; final: boolean; language: string;

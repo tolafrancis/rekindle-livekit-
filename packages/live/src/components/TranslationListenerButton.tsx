@@ -434,11 +434,29 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
       // targeting the same publication could each call playTrack, building
       // two independent MediaStreamSource/DelayNode graphs off the same
       // track ("every speech is said twice").
-      let audioWired = false;
+      //
+      // Keyed on the track itself (2026-10-10): a reconnect or the bot
+      // republishing delivers a NEW track, which a plain "already wired" flag
+      // ignored, leaving the listener on a dead track in silence. A new track
+      // is moved onto the existing graph instead (still one graph).
+      let wiredTrack: MediaStreamTrack | null = null;
+      let wiredSource: MediaStreamAudioSourceNode | null = null;
+      let wiredDelay: DelayNode | null = null;
 
       const playTrack = (track: RemoteTrack) => {
-        if (stale() || audioWired) return;
-        audioWired = true;
+        if (stale() || track.mediaStreamTrack === wiredTrack) return;
+        if (wiredDelay && audioCtxRef.current) {
+          try {
+            wiredSource?.disconnect();
+            wiredSource = audioCtxRef.current.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+            wiredSource.connect(wiredDelay);
+            wiredTrack = track.mediaStreamTrack;
+          } catch (err) {
+            console.error(`[${logTag}] re-binding the translated track failed:`, err);
+          }
+          return;
+        }
+        wiredTrack = track.mediaStreamTrack;
         markTiming(`translated track subscribed — wiring up audio (~${delaySeconds}s alignment delay still ahead)`);
         try {
           // Prefer the context primed synchronously in the click handler
@@ -462,6 +480,8 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
           delayNode.delayTime.value = delaySecondsRef.current;
           source.connect(delayNode);
           delayNode.connect(audioCtx.destination);
+          wiredSource = source;
+          wiredDelay = delayNode;
 
           setAudioStatus('live');
           audioCtx.resume().then(() => {

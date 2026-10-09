@@ -387,7 +387,9 @@ export const SpeakerPage: React.FC = () => {
     });
 
     try {
-      await room.connect(url, token);
+      // Publish-only: this page never plays anything from the room, so don't
+      // download every track in it (2026-10-10).
+      await room.connect(url, token, { autoSubscribe: false });
       // setMicrophoneEnabled handles getUserMedia + publish in one call —
       // if the visitor denies the permission prompt, it rejects here. Its
       // own return value is the fresh publication, no separate lookup needed.

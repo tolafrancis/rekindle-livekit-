@@ -211,7 +211,12 @@ serve(async (req) => {
     //    THIS room, with join rights.
     let identity: string;
     try {
-      const grants = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(body.livekitToken);
+      // Signature and room are what prove it's ours; expiry isn't. A join
+      // token only has to be valid when connecting (LiveKit refreshes it for
+      // connected clients), so after 2h every in-call CC request failed with
+      // "expired" (2026-10-10). 12h tolerance; step 2 below still requires
+      // the caller to be connected to the room right now.
+      const grants = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(body.livekitToken, 12 * 60 * 60);
       if (!grants.sub || grants.video?.room !== roomName || !grants.video?.roomJoin) {
         return json({ error: 'Not a participant of this room' }, 403);
       }

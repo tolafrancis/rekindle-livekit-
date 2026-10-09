@@ -81,14 +81,20 @@ export const MeetingBackstage: React.FC<MeetingBackstageProps> = ({ userName, on
       analyser.fftSize = 256;
       source.connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
+      // One loop only, and it stops once stopLevelMeter has replaced or
+      // cleared it. It used to start two loops (rAF plus a direct tick())
+      // and cancel only one, so a meter kept running for the whole meeting
+      // and every mic switch added another.
+      const meter = { ctx, raf: 0 };
       const tick = () => {
+        if (levelMeterRef.current !== meter) return;
         analyser.getByteFrequencyData(data);
         const avg = data.reduce((sum, v) => sum + v, 0) / data.length;
         if (levelBarRef.current) levelBarRef.current.style.width = `${Math.min(100, (avg / 128) * 100)}%`;
-        levelMeterRef.current = { ctx, raf: requestAnimationFrame(tick) };
+        meter.raf = requestAnimationFrame(tick);
       };
-      levelMeterRef.current = { ctx, raf: requestAnimationFrame(tick) };
-      tick();
+      levelMeterRef.current = meter;
+      meter.raf = requestAnimationFrame(tick);
     } catch {
       // Level meter is a nicety — a failure here shouldn't block backstage.
     }

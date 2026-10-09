@@ -12,7 +12,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { createVideoWrapper, isLiveKitBackend } from './videoBackend';
 import { NativeScreenShare } from './NativeScreenShare';
-import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant, TrackAttachSource } from '@rekindle/types/videoRoom';
+import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant, TrackAttachSource, DisconnectKind } from '@rekindle/types/videoRoom';
 import type { LiveCaptionsBridge } from './useLiveCaptions';
 import {
   DEFAULT_LAYOUT_STATE,
@@ -99,6 +99,10 @@ export interface UseDailyRoomReturn {
    *  to enable sound" banner. Call enableAudioPlayback() from that button's
    *  own click handler (must be a real user gesture). */
   audioPlaybackBlocked: boolean;
+  /** Why the last connection ended (set on an unexpected disconnect, cleared
+   *  on the next join): another tab/device, removed by the host, or the
+   *  room closed. */
+  disconnectReason: DisconnectKind | null;
   enableAudioPlayback: () => Promise<void>;
   /** Per-participant network quality, keyed by LiveKit identity ('' for the
    *  local participant). */
@@ -287,6 +291,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // indicator; not yet rendered anywhere.
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState<DisconnectKind | null>(null);
   const [connectionQuality, setConnectionQuality] = useState<Record<string, string>>({});
 
   // Room info
@@ -874,6 +879,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       const wrapper = await createVideoWrapper({
         onJoined: live(() => {
           console.log('[Daily] Wrapper: onJoined callback');
+          setDisconnectReason(null);
           setIsConnected(true);
           setIsConnecting(false);
           setIsJoining(false);
@@ -909,9 +915,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             options.onHostJoined?.();
           }
         }),
-        onLeft: live(() => {
-          console.log('[Daily] Wrapper: onLeft callback');
+        onLeft: live((reason?: DisconnectKind) => {
+          console.log('[Daily] Wrapper: onLeft callback', reason);
           setIsConnected(false);
+          // A drop ends any reconnect attempt; don't leave its banner up.
+          setIsReconnecting(false);
+          if (reason && reason !== 'client') setDisconnectReason(reason);
           
           if (durationIntervalRef.current) {
             clearInterval(durationIntervalRef.current);
@@ -973,8 +982,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         },
         onError: live((event: any) => {
           console.error('[Daily] Wrapper: Error', event);
-          setConnectionError(event?.errorMsg || 'An error occurred');
+          setConnectionError(event?.errorMsg || event?.message || 'An error occurred');
         }),
+        // Non-fatal problems (mic won't open, device switch failed...): a
+        // toast, never the full-screen connection error (2026-10-10).
+        onWarning: live((message: string) => {
+          console.warn('[Daily] Wrapper: Warning', message);
+          toast({ title: 'Something went wrong', description: message, variant: 'destructive' });
+        }),
+        onScreenShareStopped: live(() => setIsScreenSharing(false)),
         onData: (data: any, fromIdentity?: string) => {
           // LiveKit advisory data channel (§3C) → the same control-message handler
           // Daily uses. fromIdentity == sessionId (we align identity/sessionId).
@@ -1016,6 +1032,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         onReconnecting: live(() => setIsReconnecting(true)),
         onReconnected: live(() => setIsReconnecting(false)),
         onAudioPlaybackBlocked: () => setAudioPlaybackBlocked(true),
+        onAudioPlaybackResumed: () => setAudioPlaybackBlocked(false),
         onConnectionQualityChanged: (identity, quality) => {
           setConnectionQuality(prev => (prev[identity] === quality ? prev : { ...prev, [identity]: quality }));
         },
@@ -2375,9 +2392,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, []);
 
   // Start screen share
+  // isScreenSharing only flips once the picker resolves, so a second click
+  // while it's open used to start a second share (and a renegotiation race).
+  const screenShareStartingRef = useRef(false);
   const startScreenShare = useCallback(async () => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || isScreenSharing) return;
+    if (!wrapper || isScreenSharing || screenShareStartingRef.current) return;
+    screenShareStartingRef.current = true;
 
     try {
       // Native Android: the WebView's getDisplayMedia is a non-functional stub
@@ -2425,12 +2446,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         // fire-and-forget and nothing else surfaces its message to the user, so
         // without reading it back here every failure looked like the same
         // generic "Could not start screen sharing".
+        // No detail means the person cancelled the browser's picker: say nothing.
         const detail = (wrapper as any).getLastScreenShareError?.();
-        toast({
-          title: 'Screen Share Error',
-          description: detail || 'Could not start screen sharing',
-          variant: 'destructive'
-        });
+        if (detail) {
+          toast({
+            title: 'Screen Share Error',
+            description: detail,
+            variant: 'destructive'
+          });
+        }
       }
     } catch (error: any) {
       console.error('[Daily] Failed to start screen share:', error);
@@ -2442,6 +2466,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           variant: 'destructive'
         });
       }
+    } finally {
+      screenShareStartingRef.current = false;
     }
   }, [isScreenSharing, roleContext]);
 
@@ -2958,6 +2984,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     connectionError,
     isReconnecting,
     audioPlaybackBlocked,
+    disconnectReason,
     enableAudioPlayback,
     connectionQuality,
     setParticipantVideoSubscribed,

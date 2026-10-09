@@ -503,6 +503,15 @@ export const TranslationDisplayPage: React.FC = () => {
       // we joined) — both paths funnel through here.
       const playTrack = (track: RemoteTrack) => {
         if (cancelled) return;
+        // A bot handover or reconnect can deliver the track again: replace
+        // the previous element rather than play both (2026-10-10).
+        const prev = audioElRef.current;
+        if (prev) {
+          const cur = prev.srcObject;
+          if (cur instanceof MediaStream && cur.getAudioTracks()[0] === track.mediaStreamTrack) return;
+          prev.pause();
+          prev.srcObject = null;
+        }
         const el = new Audio();
         el.autoplay = true;
         el.srcObject = new MediaStream([track.mediaStreamTrack]);

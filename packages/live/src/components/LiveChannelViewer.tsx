@@ -493,8 +493,14 @@ export const LiveChannelViewer: React.FC<LiveChannelViewerProps> = ({
     // is exactly the shape of a leftover-audio bug.
     const hostParticipant = dailyRoom.remoteParticipants.find(p => p.isOwner);
     if (hostParticipant?.audioTrack && remoteAudioRef.current && !channel.is_video_enabled) {
-      const stream = new MediaStream([hostParticipant.audioTrack]);
-      remoteAudioRef.current.srcObject = stream;
+      // Only when the track actually changed: this effect re-runs on every
+      // roster update (remoteParticipants is a new array each render), and
+      // rebuilding the stream each time gave audible clicks and dropouts
+      // (2026-10-10).
+      const cur = remoteAudioRef.current.srcObject;
+      if (!(cur instanceof MediaStream) || cur.getAudioTracks()[0] !== hostParticipant.audioTrack) {
+        remoteAudioRef.current.srcObject = new MediaStream([hostParticipant.audioTrack]);
+      }
       // translationActive OR-ed in — same reasoning as the HLS path below:
       // BroadcastTranslationButton now also works on this WebRTC fallback
       // path (2026-08-20), so the ORIGINAL audio has to be muted while a

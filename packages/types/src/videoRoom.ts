@@ -52,7 +52,8 @@ export interface LiveCaptionSegment {
  *  plus `onData` (LiveKit data channel → Phase 3 advisory handler). */
 export interface VideoWrapperCallbacks {
   onJoined?: () => void;
-  onLeft?: () => void;
+  /** reason: why the room connection ended, when LiveKit says (2026-10-10). */
+  onLeft?: (reason?: DisconnectKind) => void;
   // Participant/event args are `any` to stay drop-in compatible with the existing
   // hook callback bodies (which read Daily-ish fields defensively) across both backends.
   onParticipantJoined?: (participant: any) => void;
@@ -62,6 +63,13 @@ export interface VideoWrapperCallbacks {
   onTrackStopped?: (event: any) => void;
   onError?: (error: any) => void;
   onCameraError?: (error: any) => void;
+  /** Something failed that doesn't affect the connection (a mic that won't
+   *  open, a device switch, a cancelled screen share...). Shown as a toast,
+   *  never as the full-screen connection error that onError means. */
+  onWarning?: (message: string) => void;
+  /** Our own screen share ended outside our control (the browser's "Stop
+   *  sharing" bar, the shared tab closing). */
+  onScreenShareStopped?: () => void;
   onMediaStateChange?: (video: boolean, audio: boolean) => void;
   /** LiveKit `DataReceived` — feeds the Phase 3 advisory (hand-raise/spotlight) handler. */
   onData?: (data: any, fromIdentity?: string) => void;
@@ -83,6 +91,8 @@ export interface VideoWrapperCallbacks {
    *  nothing, with no indication why. Fired from RoomEvent.
    *  AudioPlaybackStatusChanged whenever room.canPlaybackAudio is false. */
   onAudioPlaybackBlocked?: () => void;
+  /** Audio can play again (the user tapped, or the browser allowed it). */
+  onAudioPlaybackResumed?: () => void;
   /** Per-participant network quality (same review) — identity is the
    *  participant's LiveKit identity ('' for the local participant's own
    *  updates, mirroring how RoomEvent.ConnectionQualityChanged reports the
@@ -107,6 +117,10 @@ export interface VideoWrapperCallbacks {
  * hook) while the LiveKit wrapper returns `NormalizedParticipant` directly; the hook
  * branches on the active backend.
  */
+/** Why a room connection ended: another tab/device took the same identity,
+ *  a host removed us, the room was closed for everyone, or anything else. */
+export type DisconnectKind = 'duplicate_identity' | 'removed' | 'room_deleted' | 'client' | 'other';
+
 export type TrackAttachSource = 'camera' | 'microphone' | 'screen' | 'screen-audio';
 
 export interface IVideoRoomWrapper {

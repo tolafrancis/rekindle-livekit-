@@ -1037,12 +1037,12 @@ const RemoteAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ particip
     }
     el.srcObject = new MediaStream([track]);
     registerAudioElement(el);
-    el.play().catch(() => {
-      // Autoplay can be blocked until a user gesture — resume on the next click.
-      const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
-      document.addEventListener('click', resume);
-    });
+    // Autoplay can be blocked until a user gesture — resume on the next click
+    // (and stop listening once unmounted: this listener used to leak).
+    const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
+    el.play().catch(() => document.addEventListener('click', resume));
     return () => {
+      document.removeEventListener('click', resume);
       unregisterAudioElement(el);
       if (el) el.srcObject = null;
     };
@@ -1079,11 +1079,10 @@ const RemoteScreenAudio: React.FC<{ participant: DailyParticipantInfo }> = ({ pa
     }
     el.srcObject = new MediaStream([track]);
     registerAudioElement(el);
-    el.play().catch(() => {
-      const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
-      document.addEventListener('click', resume);
-    });
+    const resume = () => { el.play().catch(() => {}); document.removeEventListener('click', resume); };
+    el.play().catch(() => document.addEventListener('click', resume));
     return () => {
+      document.removeEventListener('click', resume);
       unregisterAudioElement(el);
       if (el) el.srcObject = null;
     };
@@ -1225,6 +1224,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     isConnecting,
     isJoining,
     connectionError,
+    disconnectReason,
     deleteRoom,
     isReconnecting,
     audioPlaybackBlocked,
@@ -1357,22 +1357,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // disconnected — Rejoin" screen (below) is what recovers it. Timer keyed
   // off the connection actually being established, not mount, so it's
   // accurate regardless of how long the pre-join screen took.
-  const TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // must match livekit-token/index.ts's `ttl: '2h'`
-  const TOKEN_WARNING_LEAD_MS = 5 * 60 * 1000;
-  const tokenWarningShownRef = useRef(false);
-  useEffect(() => {
-    if (!isConnected) return;
-    tokenWarningShownRef.current = false;
-    const timer = setTimeout(() => {
-      if (tokenWarningShownRef.current) return;
-      tokenWarningShownRef.current = true;
-      toast({
-        title: "Your session will reconnect soon",
-        description: "This call has been running a while and will briefly disconnect in about 5 minutes to refresh — just rejoin if it does.",
-      });
-    }, Math.max(TOKEN_TTL_MS - TOKEN_WARNING_LEAD_MS, 0));
-    return () => clearTimeout(timer);
-  }, [isConnected, toast]);
+  //
+  // Removed 2026-10-10: the premise was wrong. A LiveKit token is only
+  // checked when connecting, and the server sends connected clients fresh
+  // ones, so nothing happens at 2h; the warning only made people leave and
+  // rejoin for no reason. (captions-start, the one thing that re-checked the
+  // join token later, now ignores its expiry.)
 
   // Attendance tracking: report this participant joined once connected, and
   // report them left on disconnect/unmount (tab-close won't fire the cleanup —
@@ -2130,13 +2120,30 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           <div className="w-20 h-20 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-6">
             <AlertCircle className="h-10 w-10 text-red-600" />
           </div>
-          <h3 className="text-xl font-semibold mb-2">You've been disconnected</h3>
+          <h3 className="text-xl font-semibold mb-2">
+            {disconnectReason === 'duplicate_identity' ? 'Joined from somewhere else'
+              : disconnectReason === 'removed' ? 'You were removed from the call'
+              : disconnectReason === 'room_deleted' ? 'This call has ended'
+              : "You've been disconnected"}
+          </h3>
           <p className="text-gray-500 mb-6">
-            Your connection to the call dropped. {isHost ? 'Attendees stop seeing you until you rejoin.' : "Rejoin to get back in."}
+            {disconnectReason === 'duplicate_identity'
+              ? 'You joined this call in another tab or on another device, so this one was disconnected. Rejoin here to move the call back.'
+              : disconnectReason === 'removed'
+                ? 'The host removed you from this call.'
+                : disconnectReason === 'room_deleted'
+                  ? 'The host ended the call for everyone.'
+                  : <>Your connection to the call dropped. {isHost ? 'Attendees stop seeing you until you rejoin.' : 'Rejoin to get back in.'}</>}
           </p>
-          <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
-            Rejoin
-          </Button>
+          {disconnectReason === 'removed' || disconnectReason === 'room_deleted' ? (
+            <Button onClick={() => { isExitingRef.current = true; onCallEnd?.(); }} className="w-full bg-purple-600 hover:bg-purple-700">
+              Close
+            </Button>
+          ) : (
+            <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
+              Rejoin
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

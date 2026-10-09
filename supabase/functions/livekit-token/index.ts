@@ -501,8 +501,15 @@ serve(async (req) => {
       let realCount = 0;
       try {
         const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
-        // The hidden on-demand caption agent (agents/captions) never takes a seat.
-        realCount = participants.filter((p) => !p.identity.startsWith('caption-agent-')).length;
+        // Only real people take a seat: not the hidden caption agent or
+        // translation listeners, the translation bot, screen-share shadows or
+        // recording/stream egress (2026-10-10, those used to count).
+        const EGRESS_KIND = 2; // livekit ParticipantInfo.Kind.EGRESS
+        realCount = participants.filter((p) =>
+          !p.permission?.hidden && p.kind !== EGRESS_KIND &&
+          !p.identity.startsWith('caption-agent-') && !p.identity.startsWith('rlt-') &&
+          !p.identity.endsWith('-screenshare'),
+        ).length;
       } catch { /* room not up yet → 0 real participants */ }
 
       if (realCount >= MEETING_PARTICIPANT_CAP) {
