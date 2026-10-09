@@ -40,6 +40,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 import { AwsClient } from 'https://esm.sh/aws4fetch@1';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 // The host's recording layout choices (packages/live/src/layout/meetingLayout.ts).
 // Every one but 'gallery' renders packages/live/src/components/RecordingTemplatePage.tsx.
@@ -413,22 +414,6 @@ serve(async (req) => {
       return json({ success: true });
     }
 
-    if (action === 'list-simulcast') {
-      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
-      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
-      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
-      const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
-      const { data } = await admin
-        .from(table)
-        .select('*')
-        .eq(idCol, targetId);
-      // Same shape as channel-simulcast (stream keys omitted; hasKey substitute).
-      return json({
-        success: true,
-        targets: (data ?? []).map((t: any) => ({ ...t, hasKey: !!t.egress_id, mux_target_id: t.mux_target_id ?? null })),
-      });
-    }
-
     // track-participant is a self-report (any current participant, including
     // guests with no Supabase auth session — see meeting_attendance's header
     // comment) — no host check, and no egress/roomService needed.
@@ -475,10 +460,49 @@ serve(async (req) => {
     });
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: 'Unauthorized' }, 401);
+
+    // Room binding (2026-10-10). Host status comes from body.context, but the
+    // egress actions run against body.roomName and the top-level ids. Keep only
+    // the part of the context that owns roomName, and make the top-level ids
+    // follow it, so hosting one meeting/channel can't record, stream or stop
+    // someone else's room.
+    let roomBound = false;
+    if (body.roomName) {
+      const bound = await bindRoomContext(admin, body.roomName, body.context);
+      if (!bound.ok) return json({ error: 'room_mismatch' }, 403);
+      roomBound = bound.bound;
+      body.context = bound.ctx;
+    } else {
+      // No room: the action is keyed on one resource id. Keep exactly one, so
+      // host of a channel can't pair it with somebody else's meeting id.
+      const c = body.context ?? {};
+      body.context = c.kind === 'channel' ? { kind: 'channel', channelId: c.channelId } : { kind: c.kind, meetingId: c.meetingId };
+    }
+    body.meetingId = body.context?.meetingId;
+    body.channelId = body.context?.channelId;
     if (!(await isDbHost(admin, user.id, body.context))) return json({ error: 'Only the host can record' }, 403);
+    const ROOM_ACTIONS = ['start-recording', 'stop-recording', 'start-hls', 'add-simulcast'];
+    if (ROOM_ACTIONS.includes(action) && !roomBound) return json({ error: 'context_required' }, 400);
 
     const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
     const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+
+    // list-simulcast — host only (2026-10-10; it used to sit above the auth
+    // check and returned every column, stream_key included).
+    if (action === 'list-simulcast') {
+      const isMeeting = body.context?.kind !== 'channel';
+      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
+      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
+      const { data } = await admin
+        .from(table)
+        .select('*')
+        .eq(idCol, isMeeting ? body.meetingId : body.channelId);
+      // Same shape as channel-simulcast (stream keys omitted; hasKey substitute).
+      return json({
+        success: true,
+        targets: (data ?? []).map(({ stream_key: _k, ...t }: any) => ({ ...t, hasKey: !!t.egress_id, mux_target_id: t.mux_target_id ?? null })),
+      });
+    }
 
     // list-participants — per-meeting attendance analytics. Host-only (auth
     // already checked above): names + join times are participant PII.
@@ -774,7 +798,7 @@ serve(async (req) => {
       if (isChannel && channelId) {
         const { data: cs } = await admin.from('channel_streams').select('hls_egress_id').eq('channel_id', channelId).maybeSingle();
         egressId = (cs as { hls_egress_id?: string } | null)?.hls_egress_id;
-      } else if (body.roomName) {
+      } else if (body.roomName && roomBound) {
         const { data } = await admin.from('livekit_recordings')
           .select('egress_id').eq('room_name', body.roomName).eq('status', 'recording')
           .order('started_at', { ascending: false }).limit(1).maybeSingle();
@@ -832,7 +856,10 @@ serve(async (req) => {
 
     if (action === 'stop-recording') {
       let egressId = body.egressId as string | undefined;
-      if (!egressId) {
+      if (egressId) {
+        const { data: rec } = await admin.from('livekit_recordings').select('room_name').eq('egress_id', egressId).maybeSingle();
+        if ((rec as { room_name?: string } | null)?.room_name !== body.roomName) return json({ error: 'room_mismatch' }, 403);
+      } else {
         const { data } = await admin
           .from('livekit_recordings')
           .select('egress_id')

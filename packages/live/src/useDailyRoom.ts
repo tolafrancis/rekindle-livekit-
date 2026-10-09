@@ -2417,18 +2417,26 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         messageType: data.type
       });
       
-      if (!isFromHost && (
-        data.type === 'mute-participant' ||
-        data.type === 'allow-unmute' ||
-        data.type === 'mute-all' ||
-        data.type === 'disable-video' ||
-        data.type === 'allow-video' ||
-        data.type === 'disable-all-video' ||
-        data.type === 'remove-participant'
-      )) {
+      // Data messages can be sent by anyone in the room, so every host-only
+      // command must come from a host/co-host (role read from the server-minted
+      // LiveKit metadata). Before 2026-10-10 only the mute/video/remove ones
+      // were checked: any participant could eject someone with a fake
+      // 'reject-from-waiting-room', or flip everyone's lock/settings state.
+      const HOST_ONLY = [
+        'mute-participant', 'allow-unmute', 'request-unmute', 'mute-all',
+        'disable-video', 'allow-video', 'request-video', 'disable-all-video',
+        'remove-participant', 'role-change', 'admit-from-waiting-room',
+        'reject-from-waiting-room', 'meeting-lock-change', 'settings-update',
+      ];
+      if (!isFromHost && HOST_ONLY.includes(data.type)) {
         console.log('[Control] Ignoring control message from non-host');
         return;
       }
+      // Self-reports must be about the sender: you raise your own hand and sign
+      // your own chat messages. A host may lower anyone's hand.
+      if (data.type === 'hand-raised' && data.participantId !== fromId) return;
+      if (data.type === 'hand-lowered' && !isFromHost && data.participantId !== fromId) return;
+      if (data.type === 'chat-message' && data.message?.sender_id !== fromId) return;
 
       const localPart = participants.find(p => p.isLocal);
       const localSessionId = localPart?.sessionId;

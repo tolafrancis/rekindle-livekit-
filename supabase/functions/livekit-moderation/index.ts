@@ -33,6 +33,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { RoomServiceClient, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -167,6 +168,12 @@ serve(async (req) => {
 
     const admin = createClient(SB_URL!, SB_SERVICE!);
     const svc = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+
+    // Only the part of the context that owns roomName counts (2026-10-10):
+    // hosting one meeting/channel must not authorize moderating another room.
+    const bound = await bindRoomContext(admin, body.roomName, body.context);
+    if (!bound.ok) return json({ error: 'room_mismatch' }, 403);
+    body.context = bound.ctx;
 
     // Authorize as host (DB) or co-host (LiveKit metadata).
     let authorized = await isDbHost(admin, user.id, body.context);

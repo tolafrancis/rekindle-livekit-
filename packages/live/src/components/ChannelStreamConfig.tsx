@@ -48,10 +48,11 @@ const STATUS_DOT: Record<SimulcastTarget['status'], string> = {
   error: 'bg-red-500',
 };
 
-const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contextKind?: StreamContext['kind']; isLive: boolean }> = ({ channelId, meetingId, contextKind = 'channel', isLive }) => {
+const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; roomName?: string; contextKind?: StreamContext['kind']; isLive: boolean }> = ({ channelId, meetingId, roomName, contextKind = 'channel', isLive }) => {
   const { t } = useLanguage();
   const targetId = meetingId ?? channelId ?? '';
-  const streamCtx: StreamContext = { kind: contextKind, id: targetId };
+  // roomName matters: livekit-egress only streams a room its context owns.
+  const streamCtx: StreamContext = { kind: contextKind, id: targetId, roomName };
   const blank = <T,>(v: T) => ({ youtube: v, facebook: v } as Record<SimulcastPlatform, T>);
 
   const [loading, setLoading] = useState(true);
@@ -679,6 +680,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
             <RestreamSection
               channelId={!isMeeting ? channel?.id : undefined}
               meetingId={isMeeting ? targetId : undefined}
+              roomName={streamCtx.roomName}
               contextKind={resolvedKind}
               isLive={isMeeting ? false : !!channel?.is_live}
             />

@@ -180,7 +180,7 @@ async function callSimulcast<T>(action: string, payload: Record<string, unknown>
 /** Attach (or replace) a simulcast target for a platform (RTMP Egress destination). */
 export const addSimulcastTarget = (ctxInput: string | StreamContext, platform: SimulcastPlatform, serverUrl: string, streamKey: string) => {
   const ctx = resolveStreamContext(ctxInput);
-  const isMeeting = ctx.kind === 'meeting';
+  const isMeeting = ctx.kind !== 'channel'; // meeting / ministry_meeting / channel_meeting / ministry_webinar
   return callSimulcast<{ success: true; target: SimulcastTarget }>('add-simulcast', {
     context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
     [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
@@ -193,7 +193,7 @@ export const addSimulcastTarget = (ctxInput: string | StreamContext, platform: S
 /** Detach a platform's simulcast target and delete its row. */
 export const removeSimulcastTarget = (ctxInput: string | StreamContext, platform: SimulcastPlatform) => {
   const ctx = resolveStreamContext(ctxInput);
-  const isMeeting = ctx.kind === 'meeting';
+  const isMeeting = ctx.kind !== 'channel'; // meeting / ministry_meeting / channel_meeting / ministry_webinar
   return callSimulcast<{ success: true; platform: SimulcastPlatform }>('remove-simulcast', {
     context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
     [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
@@ -204,7 +204,7 @@ export const removeSimulcastTarget = (ctxInput: string | StreamContext, platform
 /** List a channel or meeting's simulcast targets (stream keys omitted; `hasKey` instead). */
 export const listSimulcastTargets = (ctxInput: string | StreamContext) => {
   const ctx = resolveStreamContext(ctxInput);
-  const isMeeting = ctx.kind === 'meeting';
+  const isMeeting = ctx.kind !== 'channel'; // meeting / ministry_meeting / channel_meeting / ministry_webinar
   return callSimulcast<{ success: true; targets: SimulcastTarget[] }>('list-simulcast', {
     context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
     [isMeeting ? 'meetingId' : 'channelId']: ctx.id,

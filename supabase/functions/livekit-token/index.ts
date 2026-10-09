@@ -36,6 +36,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { AccessToken, RoomServiceClient } from 'https://esm.sh/livekit-server-sdk@2';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -322,9 +323,30 @@ serve(async (req) => {
     // random one so LiveKit never collapses two guests into one participant.
     const identity = user?.id ?? `guest-${crypto.randomUUID()}`;
 
-    const role: Role = isGuest
-      ? (body.viewerOnly ? 'viewer' : 'attendee')
-      : await resolveRole(admin, user!.id, body);
+    // Room binding (2026-10-10): roles below come from body.context, but every
+    // action runs against body.roomName. Keep only the part of the context that
+    // genuinely owns this room, so being host of one meeting/channel can't be
+    // replayed against someone else's room. room-occupancy only reveals a
+    // head count, so it stays unbound.
+    if (action !== 'room-occupancy') {
+      const bound = await bindRoomContext(admin, body.roomName, body.context);
+      if (!bound.ok) return json({ error: 'room_mismatch' }, 403);
+      // A join token (and anything a non-host does) needs a room we can
+      // identify; an unbound room has no owner, so nobody may manage it either.
+      if (!bound.bound) return json({ error: 'context_required' }, 400);
+      body.context = bound.ctx as RequestBody['context'];
+    }
+    const kind = body.context?.kind;
+
+    // Guests: public share links exist for meetings, channels and webinars only.
+    // Never counselling (a private 1:1 session). Channel broadcasts and webinars
+    // are watch-only for guests; meetings honour the viewerOnly request.
+    if (isGuest && action === 'token' && kind === 'counselling') {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+    const guestRole: Role = body.viewerOnly || kind === 'channel' || kind === 'ministry_webinar' ? 'viewer' : 'attendee';
+
+    const role: Role = isGuest ? guestRole : await resolveRole(admin, user!.id, body);
     const isHost = role === 'host';
 
     // ── Room occupancy (read-only) ─────────────────────────────────────────
@@ -436,6 +458,11 @@ serve(async (req) => {
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,
     // UNLESS a host has already admitted them (status='admitted' → fall through
     // and mint the token; that's how admitFromWaitingRoom lets the client back in).
+    if (body.enableWaitingRoom && !isHost && isGuest) {
+      // The queue is keyed on a user id a guest doesn't have, so a guest could
+      // never be admitted; before 2026-10-10 they simply skipped it instead.
+      return json({ error: 'sign_in_required' }, 403);
+    }
     if (body.enableWaitingRoom && !isHost && !isGuest) {
       const meetingKey = body.context?.meetingId ?? body.roomName;
       const { data: existing } = await admin
