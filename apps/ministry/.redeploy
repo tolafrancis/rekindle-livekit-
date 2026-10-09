@@ -42,3 +42,4 @@
 2026-10-08: devotional player no longer steps past the last slide (packages/features)
 2026-10-08: share links for stream devotionals in ministry spaces (packages/ministry)
 2026-10-08 Google sign-in falls back to the browser when native sign-in fails (packages/features)
+2026-10-09 Gift Aid dashboard back in the ministry nav (Ministry > Gift Aid, UK ministries) (packages/ministry)

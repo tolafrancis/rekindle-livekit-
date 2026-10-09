@@ -26,13 +26,14 @@ import {
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
-  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard,
+  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard, HandCoins,
 } from 'lucide-react';
 
 // Every workspace tab (live, meetings, webinars, recordings, settings, the
 // shared Word/Prayer/Community screens …) is its own chunk, loaded when the tab
 // is opened, instead of all of them downloading on entering a ministry.
 const MinistrySettingsHub = lazy(() => import('./MinistrySettingsHub').then((m) => ({ default: m.MinistrySettingsHub })));
+const MinistryGiftAidDashboard = lazy(() => import('./MinistryGiftAidDashboard').then((m) => ({ default: m.MinistryGiftAidDashboard })));
 const MinistryLiveTechSettings = lazy(() => import('./MinistryLiveTechSettings').then((m) => ({ default: m.MinistryLiveTechSettings })));
 const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
 const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
@@ -108,6 +109,7 @@ import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContex
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { isUkCountryCode } from '../giftAid';
 import { ScripturePicker, type PickedScripture } from '@rekindle/features/components/ScripturePicker';
 import { useModeration } from '@rekindle/features/ModerationContext';
 import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip';
@@ -132,6 +134,8 @@ interface Ministry {
   is_public: boolean;
   join_method: string;
   theme_color: string;
+  /** ISO country; 'GB' turns on Gift Aid (see giftAid/countries.ts). */
+  country_code?: string | null;
   owner_id: string;
   leader_id: string;
   is_active: boolean;
@@ -1080,6 +1084,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
+      // Gift Aid claims, declarations and reports for UK ministries. It only
+      // lived in MinistryManagement, which nothing renders any more (the
+      // settings half moved to Settings > Finance & Billing), so leaders had
+      // no way to reach it.
+      ...(canManageMinistry && isUkCountryCode(ministry.country_code) ? [{ id: 'gift-aid', label: 'Gift Aid', icon: HandCoins }] : []),
       { id: 'meetings', label: 'Meetings', icon: Video },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
@@ -1698,6 +1707,17 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             settings={ministry.settings}
             themeColor={themeColor}
             onSourceChange={loadMinistryData}
+          />
+        )}
+
+        {/* Gift Aid (UK ministries, leaders/admins) */}
+        {activeTab === 'gift-aid' && canManageMinistry && isUkCountryCode(ministry.country_code) && (
+          <MinistryGiftAidDashboard
+            ministryId={ministry.id}
+            ministryName={ministry.name}
+            themeColor={themeColor}
+            countryCode={ministry.country_code}
+            onGoToSettings={() => { setActiveTab('settings'); setSettingsSection('finance-billing'); }}
           />
         )}
 
