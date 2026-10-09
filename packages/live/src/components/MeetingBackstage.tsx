@@ -203,12 +203,19 @@ export const MeetingBackstage: React.FC<MeetingBackstageProps> = ({ userName, on
   );
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-gray-950 p-4">
-      <div className="w-full max-w-xl rounded-2xl bg-gray-900 p-6 shadow-2xl">
+    // The meeting is mounted inside ActiveCallHost's fixed, overflow-hidden
+    // 100dvh frame, so the page's own scrollbar can't reach anything below the
+    // fold. This screen scrolls itself (h-full + overflow-y-auto, capped at
+    // 100dvh in case the parent height doesn't resolve), and m-auto centers the
+    // card without pushing its top or the Join button out of reach on short
+    // windows. z-[60] keeps the call's floating buttons (z-50) from sitting on
+    // top of it before the person has joined.
+    <div className="relative z-[60] flex h-full max-h-[100dvh] min-h-0 w-full flex-col overflow-y-auto bg-gray-950 p-4">
+      <div className="m-auto w-full max-w-xl rounded-2xl bg-gray-900 p-6 shadow-2xl">
         <h2 className="text-center text-xl font-semibold text-white">Check your camera and mic</h2>
         <p className="mt-1 text-center text-sm text-gray-400">Only you can see this — {userName}</p>
 
-        <div className="relative mt-5 aspect-video w-full overflow-hidden rounded-xl bg-black">
+        <div className="relative mt-5 aspect-video max-h-[40dvh] w-full overflow-hidden rounded-xl bg-black">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
