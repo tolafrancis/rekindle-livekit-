@@ -9,6 +9,14 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Rekindle</title>
+    <!-- The landing page's fonts, requested up front: they used to start
+         downloading only after the page had rendered (an @import inside the
+         component), so the text visibly swapped fonts a moment after load. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=block" />
+    <style>html.rk-dark-boot, html.rk-dark-boot body { background: #0f0a1e; }</style>
+    <script src="/boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

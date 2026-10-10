@@ -57,10 +57,24 @@ const SharedContentPreview = lazy(() => import('@rekindle/features/components/Sh
 // entry, an auth gate, self-onboarding for members with no ministry, and an authed
 // area (current-ministry context) hosting the hub + ministry settings.
 
+// Signed-out visitors on "/" get a dark first paint (public/boot.js) because
+// the landing page they're about to see is dark.
+const darkBoot = () => document.documentElement.classList.contains('rk-dark-boot');
+const endDarkBoot = () => document.documentElement.classList.remove('rk-dark-boot');
+
 function LoadingScreen() {
+  // "Loading…" only if loading actually takes a while: on a normal visit
+  // this screen lasts ~100ms, and flashing text for that long read as a
+  // flicker (2026-10-10).
+  const [showText, setShowText] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setShowText(true), 400);
+    return () => clearTimeout(id);
+  }, []);
+  if (darkBoot()) return <div className="min-h-screen" />;
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-      <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>
+      {showText && <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>}
     </div>
   );
 }
@@ -189,6 +203,11 @@ function AuthedArea() {
   const { user, loading, initialized } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  // The dark first paint is only for the landing page.
+  const showingLanding = !loading && initialized && !user && location.pathname === '/';
+  useEffect(() => {
+    if (!loading && initialized && !showingLanding) endDarkBoot();
+  }, [loading, initialized, showingLanding]);
   if (loading || !initialized) return <LoadingScreen />;
   if (!user) {
     if (location.pathname === '/') {

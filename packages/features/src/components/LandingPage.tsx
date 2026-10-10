@@ -68,6 +68,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // The ministry app paints a dark first frame for this page (its
+  // public/boot.js); hand the page back its normal background once we leave.
+  useEffect(() => () => document.documentElement.classList.remove('rk-dark-boot'), []);
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -110,7 +114,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=block');
         * { box-sizing: border-box; }
         .rk-reveal { opacity:0; transform:translateY(28px); transition:opacity .65s ease,transform .65s ease; }
         .rk-reveal.rk-visible { opacity:1; transform:translateY(0); }
