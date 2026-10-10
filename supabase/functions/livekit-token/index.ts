@@ -35,7 +35,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { AccessToken, RoomServiceClient } from 'https://esm.sh/livekit-server-sdk@2';
+import { AccessToken, RoomServiceClient, TokenVerifier } from 'https://esm.sh/livekit-server-sdk@2';
 import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 const corsHeaders = {
@@ -81,6 +81,10 @@ interface RequestBody {
   // rlt-bot- handling) — never a client-chosen identity, always `<caller's own
   // resolved identity>-screenshare`, so this can't be used to spoof anyone else.
   asScreenShareShadow?: boolean;
+  /** With asScreenShareShadow: the token the caller joined the room with.
+   *  Required for guests, whose identity is random per token: the shadow
+   *  must be named after the identity they're actually connected as. */
+  joinToken?: string;
 }
 
 // meetings tables that carry host_id, keyed by context.kind.
@@ -443,16 +447,38 @@ serve(async (req) => {
     // not just redundant. A viewer can't publish at all (grantFor already denies
     // canPublish for that role), so screen share is denied here the same way.
     if (body.asScreenShareShadow) {
-      if (role === 'viewer') return json({ error: 'Viewers cannot share their screen' }, 403);
-      const shadowIdentity = `${identity}-screenshare`;
+      // A guest's identity is minted fresh for every token, so the shadow used
+      // to get a different random guest id from the one actually in the room:
+      // nobody's tile matched it and the share was invisible (2026-10-10).
+      // Take the identity and role from the guest's own join token instead,
+      // after checking it's one we signed for this room. Expiry doesn't
+      // matter (LiveKit refreshes tokens of connected clients).
+      let baseIdentity = identity;
+      let shadowRole: Role = role;
+      if (isGuest) {
+        if (!body.joinToken) return json({ error: 'join_token_required' }, 400);
+        try {
+          const g = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(body.joinToken, 12 * 60 * 60);
+          if (!g.sub?.startsWith('guest-') || g.video?.room !== body.roomName || !g.video?.roomJoin) {
+            return json({ error: 'Not a participant of this room' }, 403);
+          }
+          baseIdentity = g.sub;
+          const meta = g.metadata ? JSON.parse(g.metadata) : {};
+          shadowRole = meta.role === 'attendee' ? 'attendee' : 'viewer';
+        } catch {
+          return json({ error: 'Invalid room token' }, 401);
+        }
+      }
+      if (shadowRole === 'viewer') return json({ error: 'Viewers cannot share their screen' }, 403);
+      const shadowIdentity = `${baseIdentity}-screenshare`;
       const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
         identity: shadowIdentity,
         name: `${body.userName ?? user?.email ?? 'Guest'} (screen share)`,
-        metadata: JSON.stringify({ role, guest: isGuest, screenShareShadow: true }),
+        metadata: JSON.stringify({ role: shadowRole, guest: isGuest, screenShareShadow: true }),
         ttl: '2h',
       });
       at.addGrant({ room: body.roomName, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: false });
-      return json({ url: LIVEKIT_URL, token: await at.toJwt(), role });
+      return json({ url: LIVEKIT_URL, token: await at.toJwt(), role: shadowRole });
     }
 
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,

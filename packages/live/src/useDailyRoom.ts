@@ -2419,6 +2419,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             userName: options.userName,
             context: roleContext(),
             asScreenShareShadow: true,
+            // Lets the server name the shadow after our real identity (a
+            // guest's identity is random per token).
+            joinToken: wrapper.getAccessToken?.() ?? undefined,
           },
         });
         if (error || data?.error || !data?.url || !data?.token) {
