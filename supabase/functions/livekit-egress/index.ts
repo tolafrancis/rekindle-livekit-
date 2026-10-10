@@ -31,16 +31,18 @@
 //   { action:'list-participants', meetingId, context } → { participants: [...], totalCount }  (host only)
 //   6A broadcast: { action:'start-hls', roomName, channelId, context } → { egressId, playbackUrl }
 //                 { action:'stop-hls',  channelId, context }
-//   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, rtmpUrl, context }
+//   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, serverUrl, streamKey, context }
+//                   (saves the destination; starts it now only if already live, else on start-hls)
 //                 { action:'remove-simulcast', channelId, platform, context }
 //                 { action:'list-simulcast',   channelId }
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 import { AwsClient } from 'https://esm.sh/aws4fetch@1';
 import { bindRoomContext } from '../_shared/roomBinding.ts';
+import { simulcastTable, simulcastIdCol, isRoomNotFound, startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
 
 // The host's recording layout choices (packages/live/src/layout/meetingLayout.ts).
 // Every one but 'gallery' renders packages/live/src/components/RecordingTemplatePage.tsx.
@@ -522,7 +524,7 @@ serve(async (req) => {
       // Same shape as channel-simulcast (stream keys omitted; hasKey substitute).
       return json({
         success: true,
-        targets: (data ?? []).map(({ stream_key: _k, ...t }: any) => ({ ...t, hasKey: !!t.egress_id, mux_target_id: t.mux_target_id ?? null })),
+        targets: (data ?? []).map(({ stream_key, ...t }: any) => ({ ...t, hasKey: !!stream_key, mux_target_id: t.mux_target_id ?? null })),
       });
     }
 
@@ -818,6 +820,8 @@ serve(async (req) => {
       } else {
         await admin.from(meetingTable).update({ hls_playback_url: livePlaybackUrl }).eq('id', meetingId);
       }
+      // Saved YouTube/Facebook destinations go live with the broadcast.
+      await startSimulcastEgresses(admin, egressClient, { isMeeting: !isChannel, targetId: isChannel ? channelId : meetingId }, body.roomName);
       return json({ egressId: info.egressId, playbackUrl: livePlaybackUrl });
     }
 
@@ -851,42 +855,83 @@ serve(async (req) => {
       } else if (meetingTable && meetingId) {
         // Leave hls_playback_url in place — it becomes the VOD link once Egress finalises.
       }
+      // The YouTube/Facebook restreams end with the broadcast.
+      if (isChannel && channelId) await stopSimulcastEgresses(admin, egressClient, { isMeeting: false, targetId: channelId });
+      else if (meetingTable && meetingId) await stopSimulcastEgresses(admin, egressClient, { isMeeting: true, targetId: meetingId });
       return json({ success: true });
     }
 
     // ── 6C · Simulcast-out → one RTMP Egress per destination ──────────────────
     if (action === 'add-simulcast') {
       const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
-      if (!body.roomName || !targetId || !body.rtmpUrl || !body.platform) {
-        return json({ error: 'roomName, targetId (channelId/meetingId), platform, rtmpUrl required' }, 400);
+      // serverUrl + streamKey separately; older clients send only the joined rtmpUrl.
+      let serverUrl = typeof body.serverUrl === 'string' ? body.serverUrl.trim() : '';
+      let streamKey = typeof body.streamKey === 'string' ? body.streamKey.trim() : '';
+      if ((!serverUrl || !streamKey) && typeof body.rtmpUrl === 'string') {
+        const cut = body.rtmpUrl.trim().lastIndexOf('/');
+        if (cut > 0) { serverUrl = body.rtmpUrl.trim().slice(0, cut); streamKey = body.rtmpUrl.trim().slice(cut + 1); }
       }
-      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
-      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
-      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
-      const stream = new StreamOutput({ protocol: StreamProtocol.RTMP, urls: [body.rtmpUrl] });
-      const info = await egressClient.startRoomCompositeEgress(body.roomName, { stream }, { layout: 'grid' });
-      await admin.from(table).upsert(
-        { [idCol]: targetId, platform: body.platform, enabled: true, egress_id: info.egressId },
+      serverUrl = serverUrl.replace(/\/+$/, '');
+      if (!body.roomName || !targetId || !serverUrl || !streamKey || !body.platform) {
+        return json({ error: 'roomName, targetId (channelId/meetingId), platform, serverUrl and streamKey required' }, 400);
+      }
+      if (!/^rtmps?:\/\//i.test(serverUrl)) {
+        return json({ error: 'invalid_server_url', message: 'The server URL should start with rtmp:// or rtmps://' }, 400);
+      }
+      const isMeeting = !!body.context?.kind && body.context.kind !== 'channel';
+      const table = simulcastTable(isMeeting);
+      const idCol = simulcastIdCol(isMeeting);
+
+      // Save the destination first. It used to start an egress straight away and
+      // upsert without server_url/stream_key (both NOT NULL), so before going
+      // live LiveKit failed with "room does not exist", and even a live save
+      // never stored a row (2026-10-10, "can't connect to YouTube").
+      const { error: saveErr } = await admin.from(table).upsert(
+        { [idCol]: targetId, platform: body.platform, server_url: serverUrl, stream_key: streamKey, enabled: true, status: 'idle', last_error: null, updated_at: new Date().toISOString() },
         { onConflict: `${idCol},platform` },
       );
-      return json({ success: true, egressId: info.egressId });
+      if (saveErr) {
+        console.error('[livekit-egress] add-simulcast save failed:', saveErr);
+        return json({ error: 'save_failed', message: saveErr.message }, 500);
+      }
+
+      // Already live: start this destination now. Otherwise the go-live path
+      // (start-hls, or the OBS ingress webhook) starts it.
+      let live = true;
+      if (!isMeeting) {
+        const { data: ch } = await admin.from('live_channels').select('is_live, is_hls_live').eq('id', targetId).maybeSingle();
+        const row = ch as { is_live?: boolean; is_hls_live?: boolean } | null;
+        live = !!row?.is_live || !!row?.is_hls_live;
+      }
+      if (!live) return json({ success: true, started: false });
+
+      const [result] = await startSimulcastEgresses(admin, egressClient, { isMeeting, targetId }, body.roomName, body.platform);
+      if (result && !result.ok) {
+        if (isRoomNotFound(result.error)) {
+          // Nobody is in the room yet; it starts when the broadcast does.
+          await admin.from(table).update({ status: 'idle', last_error: null }).eq(idCol, targetId).eq('platform', body.platform);
+          return json({ success: true, started: false });
+        }
+        return json({ success: false, error: 'start_failed', message: `Saved, but the restream could not start: ${result.error}` });
+      }
+      return json({ success: true, started: !!result?.ok });
     }
 
     if (action === 'remove-simulcast') {
       const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
       if (!targetId || !body.platform) return json({ error: 'targetId + platform required' }, 400);
-      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
-      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
-      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
+      const isMeeting = !!body.context?.kind && body.context.kind !== 'channel';
+      const table = simulcastTable(isMeeting);
+      const idCol = simulcastIdCol(isMeeting);
       const { data: tgt } = await admin
         .from(table)
         .select('egress_id')
         .eq(idCol, targetId).eq('platform', body.platform).maybeSingle();
       const egressId = (tgt as { egress_id?: string } | null)?.egress_id;
       if (egressId) await egressClient.stopEgress(egressId).catch(() => {});
-      await admin.from(table)
-        .update({ enabled: false, egress_id: null })
-        .eq(idCol, targetId).eq('platform', body.platform);
+      // Delete the row, stream key included (the client treats a removed
+      // destination as gone, and a kept key would show it as still connected).
+      await admin.from(table).delete().eq(idCol, targetId).eq('platform', body.platform);
       return json({ success: true });
     }
 
