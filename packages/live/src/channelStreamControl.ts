@@ -177,16 +177,18 @@ async function callSimulcast<T>(action: string, payload: Record<string, unknown>
   }
 }
 
-/** Attach (or replace) a simulcast target for a platform (RTMP Egress destination). */
+/** Save (or replace) a platform's restream destination. It starts right away
+ *  when the room is already live (`started: true`), otherwise when the broadcast does. */
 export const addSimulcastTarget = (ctxInput: string | StreamContext, platform: SimulcastPlatform, serverUrl: string, streamKey: string) => {
   const ctx = resolveStreamContext(ctxInput);
   const isMeeting = ctx.kind !== 'channel'; // meeting / ministry_meeting / channel_meeting / ministry_webinar
-  return callSimulcast<{ success: true; target: SimulcastTarget }>('add-simulcast', {
+  return callSimulcast<{ success: true; started: boolean }>('add-simulcast', {
     context: { kind: ctx.kind, [isMeeting ? 'meetingId' : 'channelId']: ctx.id },
     [isMeeting ? 'meetingId' : 'channelId']: ctx.id,
     platform,
     roomName: ctx.roomName,
-    rtmpUrl: `${serverUrl}/${streamKey}`,
+    serverUrl: serverUrl.trim().replace(/\/+$/, ''),
+    streamKey: streamKey.trim(),
   });
 };
 

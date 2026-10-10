@@ -76,7 +76,7 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; roomNa
       const en = blank(true);
       for (const row of res.data.targets) {
         byPlatform[row.platform] = row;
-        su[row.platform] = row.server_url;
+        su[row.platform] = row.server_url || SIMULCAST_DESTINATIONS[row.platform].defaultServerUrl;
         en[row.platform] = row.enabled;
       }
       setTargets(byPlatform);
@@ -100,7 +100,7 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; roomNa
         const en = { youtube: true, facebook: true };
         for (const row of res.data.targets) {
           byPlatform[row.platform] = row;
-          su[row.platform] = row.server_url;
+          su[row.platform] = row.server_url || SIMULCAST_DESTINATIONS[row.platform].defaultServerUrl;
           en[row.platform] = row.enabled;
         }
         setTargets(byPlatform);
@@ -141,7 +141,12 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; roomNa
       setReplacing((r) => ({ ...r, [platform]: false }));
       setShowKey((s) => ({ ...s, [platform]: false }));
       await load();
-      toast({ title: t('channelStreamConfig', 'restreamConnectedX', '{platform} restream connected').replace('{platform}', String(SIMULCAST_DESTINATIONS[platform].label)) });
+      toast({
+        title: t('channelStreamConfig', 'restreamConnectedX', '{platform} restream connected').replace('{platform}', String(SIMULCAST_DESTINATIONS[platform].label)),
+        description: res.data?.started
+          ? undefined
+          : t('channelStreamConfig', 'restreamStartsOnLive', 'It starts automatically when you go live.'),
+      });
     } finally {
       setBusy(null);
     }

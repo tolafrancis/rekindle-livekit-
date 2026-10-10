@@ -18,6 +18,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { WebhookReceiver, EgressStatus, EgressClient, RoomServiceClient, SegmentedFileOutput, S3Upload } from 'https://esm.sh/livekit-server-sdk@2';
+import { startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
 
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 
@@ -144,6 +145,9 @@ async function autoStartHlsBroadcast(
   }).eq('id', channelId);
 
   console.log(`[livekit-webhook] Successfully auto-started broadcast for channel ${channelId}, egressId=${info.egressId}`);
+
+  // Saved YouTube/Facebook destinations go live with the OBS broadcast.
+  await startSimulcastEgresses(admin, egressClient, { isMeeting: false, targetId: channelId }, roomName);
 }
 
 // Executes stop-hls logic server-side when OBS disconnects
@@ -174,6 +178,7 @@ async function autoStopHlsBroadcast(
   if (channelId) {
     await admin.from('channel_streams').update({ hls_egress_id: null, updated_at: new Date().toISOString() }).eq('channel_id', channelId);
     await admin.from('live_channels').update({ is_hls_live: false, is_live: false }).eq('id', channelId);
+    await stopSimulcastEgresses(admin, egressClient, { isMeeting: false, targetId: channelId });
   }
 
   console.log(`[livekit-webhook] Successfully auto-stopped broadcast for channel ${channelId}`);
@@ -278,6 +283,16 @@ serve(async (req) => {
 
         const ended = event.event === 'egress_ended';
         const failed = info.status === EgressStatus.EGRESS_FAILED || !!info.error;
+
+        // A YouTube/Facebook restream (RTMP egress) that ended on its own,
+        // e.g. the platform rejected the stream key: show why in Broadcast setup.
+        if (ended) {
+          for (const table of ['live_channel_simulcast_targets', 'meeting_simulcast_targets']) {
+            await admin.from(table)
+              .update({ egress_id: null, status: failed ? 'error' : 'idle', last_error: failed ? (info.error || 'Restream stopped') : null, updated_at: new Date().toISOString() })
+              .eq('egress_id', info.egressId);
+          }
+        }
 
         // Real bug found live (2026-09-23): the old unconditional
         // `status: ended ? ... : 'processing'` mislabeled a perfectly
