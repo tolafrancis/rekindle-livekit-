@@ -17,9 +17,13 @@ interface State {
 
 const CHUNK_RELOAD_KEY = 'rk-chunk-reload-at';
 
-/** Chrome / Firefox / Safari wording for a failed dynamic import. */
+/**
+ * Chrome / Firefox / Safari wording for a failed dynamic import. Safari
+ * reports "'text/html' is not a valid JavaScript MIME type." when the old
+ * chunk's URL falls through to the SPA fallback and gets index.html back.
+ */
 const isChunkLoadError = (error: Error) =>
-  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk .* failed/i
+  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk .* failed|is not a valid JavaScript MIME type/i
     .test(error?.message || '');
 
 export class ErrorBoundary extends Component<Props, State> {
