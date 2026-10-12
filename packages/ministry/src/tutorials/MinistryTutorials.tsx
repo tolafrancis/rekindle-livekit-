@@ -14,7 +14,7 @@ import { TutorialLibrary } from '@rekindle/features/tutorial/TutorialLibrary';
 import type { TutorialDefinition, TutorialNav } from '@rekindle/features/tutorial/types';
 import {
   MINISTRY_INTRO_TUTORIAL_ID, MINISTRY_TOUR_GROUP, MINISTRY_TUTORIALS, MINISTRY_TUTORIAL_CATEGORIES,
-} from './ministryTutorials';
+} from './ministryTourDefinitions';
 
 /** The ministry nav as this member sees it (MinistrySpace GROUPS). */
 export interface MinistryTourGroup {
