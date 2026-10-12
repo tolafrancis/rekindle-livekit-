@@ -14,6 +14,11 @@ import {
   type FeatureFlags,
   type FeatureGroup,
 } from '@rekindle/features/featureToggles';
+import {
+  MINISTRY_DISCOVER_SETTING_KEY,
+  isMinistryDiscoverEnabled,
+  setPlatformSetting,
+} from '@rekindle/features/platformSettings';
 
 // Platform admin switches for whole nav groups (migration 0394). Off hides
 // the group; see packages/features/src/featureToggles.ts for precedence.
@@ -96,8 +101,64 @@ export const GlobalFeatureToggles: React.FC = () => {
             onChange={(checked) => toggle(g.key, checked)}
           />
         ))}
+        <MinistryDiscoverToggle />
       </CardContent>
     </Card>
+  );
+};
+
+/**
+ * "Discover public ministries" on the Ministries page. Unlike the switches
+ * above, this one is off until an admin turns it on.
+ */
+const MinistryDiscoverToggle: React.FC = () => {
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    isMinistryDiscoverEnabled().then((on) => {
+      if (!active) return;
+      setEnabled(on);
+      setLoaded(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggle = async (checked: boolean) => {
+    setSaving(true);
+    setEnabled(checked);
+    const res = await setPlatformSetting(MINISTRY_DISCOVER_SETTING_KEY, checked);
+    if (res.error) {
+      setEnabled(!checked);
+      toast({ title: 'Could not save setting', description: res.error, variant: 'destructive' });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium">Discover public ministries</p>
+          <Badge variant="outline" className="text-xs font-normal">Ministries page</Badge>
+        </div>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Lets members show a list of public ministries on the Ministries page, using their own switch there (off
+          until they turn it on). Off by default; members can still join with an invite link or a ministry's join
+          page.
+        </p>
+      </div>
+      <Switch
+        checked={enabled}
+        disabled={!loaded || saving}
+        onCheckedChange={toggle}
+        aria-label="Discover public ministries"
+      />
+    </div>
   );
 };
 
