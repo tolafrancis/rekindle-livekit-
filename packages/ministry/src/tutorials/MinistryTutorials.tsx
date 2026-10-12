@@ -129,7 +129,7 @@ export const MinistryHelpMenu: React.FC<{ className?: string }> = ({ className }
 // The tour also offers itself in a pop-up on the ministry home: on the first
 // visit, then again on later days, up to MAX_TOUR_PROMPTS times in all, until
 // the member starts it or says not to. Counted per member on this device.
-const MAX_TOUR_PROMPTS = 4;
+const MAX_TOUR_PROMPTS = 3;
 const TOUR_PROMPT_GAP_MS = 20 * 60 * 60 * 1000;
 
 interface TourPromptState { shown: number; lastAt: number; never?: boolean }
