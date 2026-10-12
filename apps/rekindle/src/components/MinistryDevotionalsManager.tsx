@@ -22,6 +22,7 @@ import {
   Download, TrendingUp, Users, Heart, MessageSquare, Share2,
   FileText, List, Grid, Save, X, Copy, CheckCircle
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface MinistryDevotionalsManagerProps {
   ministryId: string;
@@ -431,7 +432,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryDevotionalsManager', 'confirmDeleteDevotional', 'Are you sure you want to delete this devotional?'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalsManager', 'confirmDeleteDevotionalTitle', 'Delete this devotional?'), confirmLabel: t('ministryDevotionalsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -558,7 +559,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   };
 
   const handleDeleteSeries = async (id: string) => {
-    if (!confirm(t('ministryDevotionalsManager', 'confirmDeleteSeries', 'Are you sure? This will remove the series association from all devotionals.'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalsManager', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('ministryDevotionalsManager', 'confirmDeleteSeriesDesc', 'This will remove the series association from all devotionals.'), confirmLabel: t('ministryDevotionalsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       await supabase

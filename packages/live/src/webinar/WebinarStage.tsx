@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';

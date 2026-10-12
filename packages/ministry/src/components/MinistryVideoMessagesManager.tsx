@@ -18,6 +18,7 @@ import {
   Clock, X, Send, CalendarClock, FileText,
 } from 'lucide-react';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface Props {
   ministryId: string;
@@ -296,7 +297,7 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryVideoMessagesManager', 'confirmDelete', 'Delete this video message? This cannot be undone.'))) return;
+    if (!await confirmAction({ title: t('ministryVideoMessagesManager', 'confirmDeleteTitle', 'Delete this video message?'), description: t('ministryVideoMessagesManager', 'cannotBeUndone', 'This cannot be undone.'), confirmLabel: t('ministryVideoMessagesManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('ministry_video_messages').delete().eq('id', id);
       if (error) throw error;

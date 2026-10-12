@@ -24,6 +24,7 @@ import {
   FileText
 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface PaymentReceipt {
   id: string;
@@ -142,7 +143,7 @@ export const PaymentHistory: React.FC<PaymentHistoryProps> = ({ onNavigateToSubs
       return;
     }
 
-    if (!confirm(t('paymentHistory', 'confirmCancelSubscription', 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your billing period.'))) {
+    if (!await confirmAction({ title: t('paymentHistory', 'confirmCancelSubscriptionTitle', 'Cancel your subscription?'), description: t('paymentHistory', 'confirmCancelSubscriptionDesc', 'You will lose access to premium features at the end of your billing period.'), confirmLabel: t('paymentHistory', 'cancelSubscription', 'Cancel subscription'), destructive: true })) {
       return;
     }
 

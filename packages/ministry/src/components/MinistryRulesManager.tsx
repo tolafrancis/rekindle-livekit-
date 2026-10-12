@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { ScrollText, Plus, Edit, Trash2, Loader2, ChevronUp, ChevronDown, Upload, History, CheckCircle2 } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryRulesManagerProps {
   ministryId: string;
@@ -145,7 +146,7 @@ export const MinistryRulesManager: React.FC<MinistryRulesManagerProps> = ({ mini
   };
 
   const deleteItem = async (item: RuleItem) => {
-    if (!window.confirm(`Remove "${item.title}" from the draft?`)) return;
+    if (!await confirmAction({ title: `Remove "${item.title}" from the draft?`, confirmLabel: 'Remove', destructive: true })) return;
     try {
       const { error } = await supabase.from('ministry_rule_items').delete().eq('id', item.id);
       if (error) throw error;

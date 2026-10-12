@@ -10,6 +10,7 @@ import { toast } from './ui/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Bell, Send, Loader2, ExternalLink } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Audience values must match the send-push-notification edge function's switch.
 const AUDIENCES = [
@@ -55,9 +56,7 @@ export const AdminNotificationComposer: React.FC = () => {
       return;
     }
 
-    if (!confirm(
-      t('adminNotificationComposer', 'confirmSend', 'Send this notification to: {a}?').replace('{a}', audienceLabel)
-    )) return;
+    if (!await confirmAction({ title: t('adminNotificationComposer', 'confirmSend', 'Send this notification to: {a}?').replace('{a}', audienceLabel), confirmLabel: t('adminNotificationComposer', 'send', 'Send') })) return;
 
     setSending(true);
     setLastResult(null);

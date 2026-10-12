@@ -15,6 +15,7 @@ import {
   HeartHandshake, Plus, Edit, Trash2, Search, Loader2, Users,
   UserPlus, X, Star,
 } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryVolunteerTeamsManagerProps {
   ministryId: string;
@@ -190,7 +191,7 @@ export const MinistryVolunteerTeamsManager: React.FC<MinistryVolunteerTeamsManag
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryVolunteerTeamsManager', 'confirmDelete', 'Delete this team and all its volunteer assignments?'))) return;
+    if (!await confirmAction({ title: t('ministryVolunteerTeamsManager', 'confirmDeleteTitle', 'Delete this team?'), description: t('ministryVolunteerTeamsManager', 'confirmDeleteDesc', 'All its volunteer assignments will be deleted too.'), confirmLabel: t('ministryVolunteerTeamsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase.from('ministry_volunteer_teams').delete().eq('id', id);

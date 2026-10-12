@@ -21,6 +21,7 @@ import {
   Star, Eye, EyeOff, Calendar, ChevronRight,
   CheckCircle, AlertCircle, BookMarked, X
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface DevotionalSeries {
   id: string;
@@ -226,7 +227,7 @@ const AdminSeriesManager: React.FC = () => {
   };
 
   const deleteSeries = async (id: string) => {
-    if (!confirm(t('adminSeriesManager', 'confirmDeleteSeries', 'Are you sure? This will delete all day content and user progress.'))) return;
+    if (!await confirmAction({ title: t('adminSeriesManager', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('adminSeriesManager', 'confirmDeleteSeriesDesc', 'This will delete all day content and user progress.'), confirmLabel: t('adminSeriesManager', 'delete', 'Delete'), destructive: true })) return;
     
     try {
       const { error } = await supabase.from('devotional_series').delete().eq('id', id);

@@ -41,7 +41,14 @@ export function confirmAction(options: ConfirmOptions | string): Promise<boolean
     const text = typeof opts.description === "string" ? `${opts.title}\n\n${opts.description}` : opts.title
     return Promise.resolve(typeof window !== "undefined" ? window.confirm(text) : false)
   }
-  return new Promise<boolean>((resolve) => enqueue!({ ...opts, resolve }))
+  // Open on the next tick so a menu or popover that triggered it can finish
+  // closing first (Radix otherwise leaves pointer-events locked on <body>).
+  return new Promise<boolean>((resolve) => {
+    setTimeout(() => {
+      if (enqueue) enqueue({ ...opts, resolve })
+      else resolve(window.confirm(opts.title))
+    }, 0)
+  })
 }
 
 export function ConfirmDialogHost() {

@@ -28,6 +28,7 @@ import {
   Calendar, CheckCircle, AlertCircle, X, Timer,
   Flame, BarChart3, Users, Link, Upload, Image as ImageIcon, Sparkles
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Inline cover-image field: paste a URL or upload a file
 const CoverImageField: React.FC<{
@@ -852,7 +853,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   };
 
   const deleteTopic = async (id: string) => {
-    if (!confirm(t('adminPrayerLibrary', 'confirmDeleteTopic', 'Are you sure you want to delete this prayer topic?'))) return;
+    if (!await confirmAction({ title: t('adminPrayerLibrary', 'confirmDeleteTopicTitle', 'Delete this prayer topic?'), confirmLabel: t('adminPrayerLibrary', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('prayer_topics').delete().eq('id', id);
       if (error) throw error;
@@ -1098,7 +1099,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   };
 
   const deleteSeries = async (id: string) => {
-    if (!confirm(t('adminPrayerLibrary', 'confirmDeleteSeries', 'Are you sure? This will delete all day content and user progress.'))) return;
+    if (!await confirmAction({ title: t('adminPrayerLibrary', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('adminPrayerLibrary', 'confirmDeleteSeriesDesc', 'This will delete all day content and user progress.'), confirmLabel: t('adminPrayerLibrary', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('prayer_series').delete().eq('id', id);
       if (error) throw error;
@@ -1320,7 +1321,7 @@ export const AdminPrayerLibrary: React.FC = () => {
   };
 
   const deletePrayerWatch = async (id: string) => {
-    if (!confirm(t('adminPrayerLibrary', 'confirmDeleteWatch', 'Are you sure you want to delete this prayer watch entry?'))) return;
+    if (!await confirmAction({ title: t('adminPrayerLibrary', 'confirmDeleteWatchTitle', 'Delete this prayer watch entry?'), confirmLabel: t('adminPrayerLibrary', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('prayer_library').delete().eq('id', id);
       if (error) throw error;

@@ -10,7 +10,7 @@ import {
 } from '@/lib/referralService';
 import { Button } from '@/components/ui/button';
 import { Copy, Share2, CheckCircle, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 
 export const ReferralGenerator: React.FC = () => {
   const { user } = useAuth();

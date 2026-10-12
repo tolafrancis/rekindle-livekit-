@@ -20,6 +20,7 @@ import {
   SCREEN_SHARE_LABELS, SCREEN_SHARE_MODES,
   type LayoutMode, type MeetingLayoutState, type RecordingLayout, type ScreenShareMode,
 } from '../layout/meetingLayout';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 /**
  * Controls for the host's shared meeting layout and multi-spotlight
@@ -133,8 +134,8 @@ export const ParticipantTileMenu: React.FC<ParticipantTileMenuProps> = ({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-red-600 focus:text-red-600"
-                  onClick={() => {
-                    if (window.confirm(`Remove ${participant.userName} from the meeting?`)) onRemove(id);
+                  onClick={async () => {
+                    if (await confirmAction({ title: `Remove ${participant.userName} from the meeting?`, confirmLabel: 'Remove', destructive: true })) onRemove(id);
                   }}
                 >
                   <UserMinus className="mr-2 h-4 w-4" /> Remove participant

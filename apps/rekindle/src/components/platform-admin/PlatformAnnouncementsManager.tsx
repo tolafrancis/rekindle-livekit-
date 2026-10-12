@@ -17,6 +17,7 @@ import {
   AlertTriangle, Info, CheckCircle, Bell, Calendar,
   Users, Building2, Eye, EyeOff
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface Announcement {
   id: string;
@@ -169,7 +170,7 @@ export const PlatformAnnouncementsManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('platformAnnouncementsManager', 'confirmDelete', 'Are you sure you want to delete this announcement?'))) return;
+    if (!await confirmAction({ title: t('platformAnnouncementsManager', 'confirmDeleteTitle', 'Delete this announcement?'), confirmLabel: t('platformAnnouncementsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { data, error } = await supabase.from('platform_announcements').delete().eq('id', id).select().maybeSingle();

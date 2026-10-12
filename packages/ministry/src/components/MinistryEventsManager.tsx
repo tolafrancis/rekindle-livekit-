@@ -20,6 +20,7 @@ import {
   PlayCircle, Radio, Film, User, Mail, Send, Link2, AlertCircle, Copy
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryEventsManagerProps {
   ministryId: string;
@@ -320,7 +321,7 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryEventsManager', 'confirmDelete', 'Are you sure you want to delete this event?'))) return;
+    if (!await confirmAction({ title: t('ministryEventsManager', 'confirmDeleteTitle', 'Delete this event?'), confirmLabel: t('ministryEventsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase

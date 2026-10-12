@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@rekindle/ui/dialog';
 import { Loader2, Plus, Radio, Calendar, Users, Play, Copy, BarChart3, Pencil, CopyPlus, Ban, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { supabase } from '@rekindle/supabase';
 import { Checkbox } from '@rekindle/ui/checkbox';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';

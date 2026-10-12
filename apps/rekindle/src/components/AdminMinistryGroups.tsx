@@ -18,6 +18,7 @@ import {
   Settings, Eye, EyeOff, Loader2
 } from 'lucide-react';
 import { buildJoinUrl } from '@rekindle/features/qrCode';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface MinistryGroup {
   id: string;
@@ -284,7 +285,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
 
 
   const handleDelete = async (groupId: string) => {
-    if (!confirm(t('adminMinistryGroups', 'confirmDeleteGroup', 'Are you sure you want to delete this ministry group? This will also remove all members and invites.'))) {
+    if (!await confirmAction({ title: t('adminMinistryGroups', 'confirmDeleteGroupTitle', 'Delete this ministry group?'), description: t('adminMinistryGroups', 'confirmDeleteGroupDesc', 'This will also remove all members and invites.'), confirmLabel: t('adminMinistryGroups', 'delete', 'Delete'), destructive: true })) {
       return;
     }
 
@@ -305,7 +306,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!confirm(t('adminMinistryGroups', 'confirmRemoveMember', 'Are you sure you want to remove this member?'))) return;
+    if (!await confirmAction({ title: t('adminMinistryGroups', 'confirmRemoveMemberTitle', 'Remove this member?'), confirmLabel: t('adminMinistryGroups', 'remove', 'Remove'), destructive: true })) return;
 
     try {
       const { error } = await supabase

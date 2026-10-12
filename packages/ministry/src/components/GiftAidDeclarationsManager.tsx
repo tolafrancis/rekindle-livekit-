@@ -15,6 +15,7 @@ import {
   listDeclarations, saveAdminDeclaration, withdrawDeclaration, isDeclarationComplete,
   type DeclarationRow, type AdminDeclarationInput,
 } from '../giftAid';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface Props {
   ministryId: string;
@@ -143,7 +144,7 @@ export const GiftAidDeclarationsManager: React.FC<Props> = ({ ministryId, themeC
   };
 
   const handleWithdraw = async (r: DeclarationRow) => {
-    if (!window.confirm(t('giftAidDeclarationsManager', 'withdrawConfirm', 'Withdraw {name}’s Gift Aid declaration? Their future donations won’t be claimable until a new declaration is made.').replace('{name}', `${r.firstName} ${r.lastName}`.trim()))) return;
+    if (!await confirmAction({ title: t('giftAidDeclarationsManager', 'withdrawConfirmTitle', 'Withdraw {name}’s Gift Aid declaration?').replace('{name}', `${r.firstName} ${r.lastName}`.trim()), description: t('giftAidDeclarationsManager', 'withdrawConfirmDesc', 'Their future donations won’t be claimable until a new declaration is made.'), confirmLabel: t('giftAidDeclarationsManager', 'withdraw', 'Withdraw'), destructive: true })) return;
     try {
       await withdrawDeclaration(r.id, ministryId, user?.id);
       toast({ title: t('giftAidDeclarationsManager', 'declarationWithdrawn', 'Declaration withdrawn') });

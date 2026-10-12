@@ -28,6 +28,7 @@ import {
   TrendingUp,
   Flag
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface PrayerPost {
   id: string;
@@ -189,7 +190,7 @@ export const CommunityPrayerManager: React.FC<CommunityPrayerManagerProps> = ({ 
   // Delete post
   // Delete post
 const handleDelete = async (postId: string) => {
-  if (!confirm(t('communityPrayerManager', 'confirmDelete', 'Are you sure you want to delete this prayer request? This action cannot be undone.'))) {
+  if (!await confirmAction({ title: t('communityPrayerManager', 'confirmDeleteTitle', 'Delete this prayer request?'), description: t('communityPrayerManager', 'cannotBeUndone', 'This action cannot be undone.'), confirmLabel: t('communityPrayerManager', 'delete', 'Delete'), destructive: true })) {
     return;
   }
   

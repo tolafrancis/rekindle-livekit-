@@ -48,7 +48,7 @@ import {
 } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
 import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import MeetingRecordingPanel from './MeetingRecordingPanel';
 import { MeetingRecordings } from '@/components/MeetingRecordings';
 import { MinistryRecordingsTab } from '@/components/MinistryRecordingsTab';
@@ -84,6 +84,7 @@ import {
 // should be gated by the ministry's own plan; the individual case keeps
 // using the subscriptionEnforcement path above unchanged.
 import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@/lib/ministryEntitlements';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Minutes -> a trimmed hours string for the free-tier notice (e.g. 90 -> "1.5", 600 -> "10").
 const formatHours = (minutes: number): string => {
@@ -1653,7 +1654,7 @@ export const LiveChannelInteractiveMeetings = ({ channelId }: { channelId: strin
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
-    if (!confirm(t('liveChannelInteractiveMeetings', 'confirmDeleteMeeting', 'Are you sure you want to delete this meeting?'))) return;
+    if (!await confirmAction({ title: t('liveChannelInteractiveMeetings', 'confirmDeleteMeetingTitle', 'Delete this meeting?'), confirmLabel: t('liveChannelInteractiveMeetings', 'delete', 'Delete'), destructive: true })) return;
     
     setDeletingMeetingId(meetingId);
     try {

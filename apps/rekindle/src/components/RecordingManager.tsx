@@ -34,8 +34,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { format } from 'date-fns';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 /* ======================================================
    TYPES
@@ -560,7 +561,7 @@ export const RecordingManager = ({ channelId }: { channelId: string }) => {
   };
 
   const handleDeleteRecording = async (meetingId: string) => {
-    if (!confirm('Are you sure you want to delete this recording? This action cannot be undone.')) {
+    if (!await confirmAction({ title: 'Delete this recording?', description: 'This action cannot be undone.', confirmLabel: 'Delete', destructive: true })) {
       return;
     }
 

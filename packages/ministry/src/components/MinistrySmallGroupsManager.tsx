@@ -22,6 +22,7 @@ import {
 } from 'recharts';
 import { SmallGroupDetailManager } from './SmallGroupDetailManager';
 import { SMALL_GROUP_CATEGORIES } from '../lib/smallGroupCategories';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistrySmallGroupsManagerProps {
   ministryId: string;
@@ -275,7 +276,7 @@ export const MinistrySmallGroupsManager: React.FC<MinistrySmallGroupsManagerProp
   };
 
   const handleDelete = async (g: SmallGroup) => {
-    if (!window.confirm(t('ministrySmallGroupsManager', 'confirmDelete', 'Delete "{name}"? This removes all its members, meetings, attendance, and posts. This cannot be undone.').replace('{name}', g.name))) return;
+    if (!await confirmAction({ title: t('ministrySmallGroupsManager', 'confirmDeleteTitle', 'Delete "{name}"?').replace('{name}', g.name), description: t('ministrySmallGroupsManager', 'confirmDeleteDesc', 'This removes all its members, meetings, attendance, and posts. This cannot be undone.'), confirmLabel: t('ministrySmallGroupsManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('small_groups').delete().eq('id', g.id);
       if (error) throw error;

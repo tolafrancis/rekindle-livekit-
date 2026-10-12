@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass, searchFilterSelectTriggerClass } from '@rekindle/features/components/SearchFilterPanel';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryAnnouncementsManagerProps {
   ministryId: string;
@@ -376,7 +377,7 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryAnnouncementsManager', 'confirmDelete', 'Are you sure you want to delete this announcement?'))) return;
+    if (!await confirmAction({ title: t('ministryAnnouncementsManager', 'confirmDeleteTitle', 'Delete this announcement?'), confirmLabel: t('ministryAnnouncementsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase

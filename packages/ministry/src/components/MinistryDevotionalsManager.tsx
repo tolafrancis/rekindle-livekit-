@@ -24,6 +24,7 @@ import {
   FileText, List, Grid, Save, X, Copy, CheckCircle
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryDevotionalsManagerProps {
   ministryId: string;
@@ -463,7 +464,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryDevotionalsManager2', 'confirmDeleteDevotional', 'Are you sure you want to delete this devotional?'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalsManager2', 'confirmDeleteDevotionalTitle', 'Delete this devotional?'), confirmLabel: t('ministryDevotionalsManager2', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -594,7 +595,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   };
 
   const handleDeleteSeries = async (id: string) => {
-    if (!confirm(t('ministryDevotionalsManager2', 'confirmDeleteSeries', 'Are you sure? This will remove the series association from all devotionals.'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalsManager2', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('ministryDevotionalsManager2', 'confirmDeleteSeriesDesc', 'This will remove the series association from all devotionals.'), confirmLabel: t('ministryDevotionalsManager2', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       await supabase

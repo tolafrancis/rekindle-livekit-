@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@rekindle/ui/select';
 import { Loader2, Plus, X, Radio } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { zonedWallTimeToUtcISO, utcISOToZonedInputValue, guessUserTimeZone, commonTimeZones } from '@rekindle/features/meetingTime';

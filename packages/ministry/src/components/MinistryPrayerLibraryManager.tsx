@@ -19,6 +19,7 @@ import {
   TrendingUp, Users, PlayCircle, List
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryPrayerLibraryManagerProps {
   ministryId: string;
@@ -327,7 +328,7 @@ export const MinistryPrayerLibraryManager: React.FC<MinistryPrayerLibraryManager
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryPrayerLibraryManager', 'confirmDeletePrayer', 'Are you sure you want to delete this prayer?'))) return;
+    if (!await confirmAction({ title: t('ministryPrayerLibraryManager', 'confirmDeletePrayerTitle', 'Delete this prayer?'), confirmLabel: t('ministryPrayerLibraryManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -414,7 +415,7 @@ export const MinistryPrayerLibraryManager: React.FC<MinistryPrayerLibraryManager
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!confirm(t('ministryPrayerLibraryManager', 'confirmDeleteCampaign', 'Are you sure? This will remove campaign association from all prayers.'))) return;
+    if (!await confirmAction({ title: t('ministryPrayerLibraryManager', 'confirmDeleteCampaignTitle', 'Delete this campaign?'), description: t('ministryPrayerLibraryManager', 'confirmDeleteCampaignDesc', 'This will remove campaign association from all prayers.'), confirmLabel: t('ministryPrayerLibraryManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       // First, update prayers to remove campaign association

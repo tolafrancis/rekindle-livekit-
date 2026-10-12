@@ -27,6 +27,7 @@ import {
 import { ModerationReportsPanel } from '@rekindle/features/components/ModerationReportsPanel';
 import { fetchScripture, BIBLE_VERSIONS } from '@/lib/bibleApi';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Each admin section is its own chunk, fetched when its tab is first opened —
 // the dashboard used to download all ~30 managers (~930 KB) up front.
@@ -548,7 +549,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
   // Delete handler
   const handleDelete = async (type: string, id: string) => {
-    if (!confirm(t('adminDashboard', 'confirmDelete', 'Are you sure you want to delete this item?'))) return;
+    if (!await confirmAction({ title: t('adminDashboard', 'confirmDeleteTitle', 'Delete this item?'), confirmLabel: t('adminDashboard', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const tableMap: Record<string, string> = {
@@ -574,7 +575,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
   const handleBulkDelete = async (type: string, ids: string[]) => {
     if (ids.length === 0) return;
-    if (!confirm(t('adminDashboard', 'confirmBulkDelete', 'Delete {n} selected items? This cannot be undone.').replace('{n}', String(ids.length)))) return;
+    if (!await confirmAction({ title: t('adminDashboard', 'confirmBulkDeleteTitle', 'Delete {n} selected items?').replace('{n}', String(ids.length)), description: t('adminDashboard', 'cannotBeUndone', 'This cannot be undone.'), confirmLabel: t('adminDashboard', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const tableMap: Record<string, string> = {
