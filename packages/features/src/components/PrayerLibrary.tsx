@@ -40,6 +40,33 @@ import {
 import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass } from './SearchFilterPanel';
 import { publicWebOrigin } from '../platform';
 
+// Remembers the last background-music choice so the picker preselects it next time.
+const LAST_MUSIC_STORAGE_KEY = 'rk_prayer_last_music_id';
+const DEFAULT_MUSIC_ID = '1';
+
+const readLastMusicId = (): string => {
+  try {
+    const stored = localStorage.getItem(LAST_MUSIC_STORAGE_KEY);
+    if (stored && instrumentalTracks.some(track => track.id === stored)) return stored;
+  } catch {
+    // Storage unavailable (private mode / blocked) — fall back to the default.
+  }
+  return DEFAULT_MUSIC_ID;
+};
+
+const saveLastMusicId = (id: string) => {
+  try {
+    localStorage.setItem(LAST_MUSIC_STORAGE_KEY, id);
+  } catch {
+    // Non-critical convenience; ignore storage failures.
+  }
+};
+
+// Long library lists are shown a few at a time on the browse view; search
+// still filters the full list before this limit is applied.
+const LIST_INITIAL_COUNT = 6;
+const LIST_PAGE_INCREMENT = 12;
+
 const buildShareLinks = (title: string, url: string) => {
   const encodedUrl = encodeURIComponent(url);
   const encodedTitle = encodeURIComponent(title);
@@ -410,7 +437,7 @@ export function PrayerLibrary() {
 
   // Music selection states
   const [showMusicSelector, setShowMusicSelector] = useState(false);
-  const [selectedMusicId, setSelectedMusicId] = useState<string>('1');
+  const [selectedMusicId, setSelectedMusicId] = useState<string>(readLastMusicId);
   const [pendingPrayerStart, setPendingPrayerStart] = useState<{
     type: 'topic' | 'watch';
     data: any;
@@ -418,6 +445,9 @@ export function PrayerLibrary() {
 
   // Series viewer
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
+
+  // How many cards each long list section currently shows (keyed by section).
+  const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
 
   // Prayer Watch states
   const [selectedPrayerWatchTopic, setSelectedPrayerWatchTopic] = useState<PrayerWatchTopic | null>(null);
@@ -782,9 +812,9 @@ export function PrayerLibrary() {
 
   const openTopicWithDuration = (topic: PrayerTopic) => {
     setSelectedTopic(topic);
-    // Show music selector before duration modal
+    // Show music selector, then the scripture preview
     setPendingPrayerStart({ type: 'topic', data: topic });
-    setSelectedMusicId('1'); // Default music
+    setSelectedMusicId(readLastMusicId()); // Preselect the last music choice
     setShowMusicSelector(true);
   };
 
@@ -866,7 +896,7 @@ export function PrayerLibrary() {
       type: 'watch', 
       data: { timeSlot, watchLabel, prayer } 
     });
-    setSelectedMusicId('1'); // Default music
+    setSelectedMusicId(readLastMusicId()); // Preselect the last music choice
     setShowMusicSelector(true);
   };
 
@@ -1227,6 +1257,54 @@ export function PrayerLibrary() {
 
   const userCurrentWatchTime = getUserCurrentPrayerWatch();
 
+  // Paged list helpers: show the first few cards per section with a
+  // "Show more" button that reveals the rest in increments.
+  const getVisibleCount = (key: string) => visibleCounts[key] ?? LIST_INITIAL_COUNT;
+  const limitList = <T,>(key: string, items: T[]): T[] => items.slice(0, getVisibleCount(key));
+  const renderShowMore = (key: string, total: number) => {
+    const shown = Math.min(getVisibleCount(key), total);
+    const remaining = total - shown;
+    if (remaining <= 0 && shown <= LIST_INITIAL_COUNT) return null;
+    return (
+      <div className="mt-4 flex flex-col items-center gap-2">
+        <p className="text-xs text-gray-500">
+          {t('prayers', 'showingXofY', 'Showing {shown} of {total}', { shown: String(shown), total: String(total) })}
+        </p>
+        <div className="flex gap-2">
+          {remaining > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setVisibleCounts(prev => ({ ...prev, [key]: getVisibleCount(key) + LIST_PAGE_INCREMENT }))}
+            >
+              {t('prayers', 'showMoreCount', 'Show more ({n} more)', { n: String(remaining) })}
+            </Button>
+          )}
+          {remaining > 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => setVisibleCounts(prev => ({ ...prev, [key]: total }))}
+            >
+              {t('prayers', 'seeAll', 'See all')}
+            </Button>
+          )}
+          {remaining <= 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => setVisibleCounts(prev => ({ ...prev, [key]: LIST_INITIAL_COUNT }))}
+            >
+              {t('prayers', 'showFewer', 'Show fewer')}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const featuredTopics = filteredTopics.filter(t => t.is_featured);
+  const otherTopics = filteredTopics.filter(t => !t.is_featured);
+  const featuredSeries = filteredSeries.filter(s => s.is_featured);
+  const otherSeries = filteredSeries.filter(s => !s.is_featured);
+
   const lzSelectedTopic = selectedTopic
     ? getLocalizedContent(selectedTopic, ['title', 'description', 'scripture_reference', 'scripture_text'])
     : null;
@@ -1265,21 +1343,21 @@ export function PrayerLibrary() {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-purple-900">Interactive Prayer Topics</h3>
-                  <p className="text-purple-700">Select a prayer topic and choose your duration</p>
+                  <p className="text-purple-700">{t('prayers', 'interactiveTopicsSubtitle', 'Choose a topic and pray through its guided prayer points at your own pace')}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Featured Topics */}
-          {filteredTopics.filter(t => t.is_featured).length > 0 && (
+          {featuredTopics.length > 0 && (
             <div>
               <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <Star className="h-5 w-5 text-amber-500" />
                 Featured Prayer Topics
               </h3>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredTopics.filter(t => t.is_featured).map(topic => {
+                {limitList('featured-topics', featuredTopics).map(topic => {
                   const shareUrl = `${publicWebOrigin()}/prayer-topics/${topic.id}`;
                   const lz = getLocalizedContent(topic, ['title', 'description', 'scripture_reference']);
 
@@ -1346,6 +1424,7 @@ export function PrayerLibrary() {
                   );
                 })}
               </div>
+              {renderShowMore('featured-topics', featuredTopics.length)}
             </div>
           )}
 
@@ -1353,7 +1432,7 @@ export function PrayerLibrary() {
           <div>
             <h3 className="text-xl font-semibold mb-4">All Prayer Topics</h3>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTopics.filter(t => !t.is_featured).map(topic => {
+              {limitList('all-topics', otherTopics).map(topic => {
                 const shareUrl = `${publicWebOrigin()}/prayer-topics/${topic.id}`;
                 const lz = getLocalizedContent(topic, ['title', 'description', 'scripture_reference']);
 
@@ -1417,6 +1496,7 @@ export function PrayerLibrary() {
                 );
               })}
             </div>
+            {renderShowMore('all-topics', otherTopics.length)}
           </div>
 
           {filteredTopics.length === 0 && (
@@ -1447,14 +1527,14 @@ export function PrayerLibrary() {
           </Card>
 
           {/* Featured Series */}
-          {filteredSeries.filter(s => s.is_featured).length > 0 && (
+          {featuredSeries.length > 0 && (
             <div>
               <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <Star className="h-5 w-5 text-amber-500" />
                 Featured Prayer Series
               </h3>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredSeries.filter(s => s.is_featured).map(s => {
+                {limitList('featured-series', featuredSeries).map(s => {
                   const shareUrl = `${publicWebOrigin()}/prayer-series/${s.id}`;
                   const lz = getLocalizedContent(s, ['title', 'subtitle', 'description']);
 
@@ -1537,6 +1617,7 @@ export function PrayerLibrary() {
                   );
                 })}
               </div>
+              {renderShowMore('featured-series', featuredSeries.length)}
             </div>
           )}
 
@@ -1544,7 +1625,7 @@ export function PrayerLibrary() {
           <div>
             <h3 className="text-xl font-semibold mb-4">All Prayer Series</h3>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredSeries.filter(s => !s.is_featured).map(s => {
+              {limitList('all-series', otherSeries).map(s => {
                 const shareUrl = `${publicWebOrigin()}/prayer-series/${s.id}`;
                 const lz = getLocalizedContent(s, ['title', 'subtitle', 'description']);
 
@@ -1623,6 +1704,7 @@ export function PrayerLibrary() {
                 );
               })}
             </div>
+            {renderShowMore('all-series', otherSeries.length)}
           </div>
 
           {filteredSeries.length === 0 && (
@@ -1969,6 +2051,7 @@ export function PrayerLibrary() {
             </Button>
             <Button 
               onClick={() => {
+                saveLastMusicId(selectedMusicId);
                 if (pendingPrayerStart?.type === 'topic') {
                   proceedWithTopicDuration();
                 } else if (pendingPrayerStart?.type === 'watch') {

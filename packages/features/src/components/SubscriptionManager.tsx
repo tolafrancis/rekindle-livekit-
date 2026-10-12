@@ -585,7 +585,7 @@ export const SubscriptionManager: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-serif font-bold">{t('subscriptionManager', 'subscription', 'Subscription')}</h1>
+          <h1 className="text-3xl font-serif font-bold">{t('subscriptionManager', 'plansTitle', 'Plans')}</h1>
           <p className="text-gray-600">{t('subscriptionManager', 'manageSubscriptionBilling', 'Manage your subscription and billing')}</p>
         </div>
         {currentTier !== 'free' && (

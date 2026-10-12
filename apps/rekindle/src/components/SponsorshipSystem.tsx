@@ -358,8 +358,8 @@ export const SponsorshipSystem: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-serif font-bold">{t('sponsorshipSystem', 'partnerWithRekindle', 'Partner with ReKindle BC')}</h1>
-          <p className="text-gray-600 mt-1">{t('sponsorshipSystem', 'supportMissionSubtitle', 'Support the mission and unlock powerful features')}</p>
+          <h1 className="text-3xl font-serif font-bold">{t('sponsorshipSystem', 'giveTitle', 'Give')}</h1>
+          <p className="text-gray-600 mt-1">{t('sponsorshipSystem', 'giveSubtitle', 'Support the mission and partner with us')}</p>
         </div>
         <Button variant="outline" onClick={() => setShowRedeemModal(true)}>
           <Ticket className="h-4 w-4 mr-2" />{t('sponsorshipSystem', 'redeemVoucher', 'Redeem Voucher')}
@@ -390,7 +390,7 @@ export const SponsorshipSystem: React.FC = () => {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="partners">{t('sponsorshipSystem', 'becomeAPartner', 'Become a Partner')}</TabsTrigger>
+          <TabsTrigger value="partners">{t('sponsorshipSystem', 'giveTab', 'Give')}</TabsTrigger>
           <TabsTrigger value="vouchers">{t('sponsorshipSystem', 'vouchers', 'Vouchers')}</TabsTrigger>
           <TabsTrigger value="history">{t('sponsorshipSystem', 'givingHistory', 'Giving History')}</TabsTrigger>
         </TabsList>

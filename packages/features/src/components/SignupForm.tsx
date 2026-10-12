@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
+import { useLanguage } from '../LanguageContext';
+import { supabase } from '@rekindle/supabase';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
@@ -7,9 +9,18 @@ import { Separator } from '@rekindle/ui/separator';
 import { Checkbox } from '@rekindle/ui/checkbox';
 import { Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 
+/** Passed to onSuccess. needsEmailConfirmation is true when Supabase created
+ *  the account but returned no session (email confirmation is switched on) —
+ *  the visitor can't use the app until they click the link in their inbox. */
+export interface SignupSuccessInfo {
+  email: string;
+  needsEmailConfirmation: boolean;
+}
+
 interface SignupFormProps {
   onSwitchToLogin: () => void;
-  onSuccess: () => void;
+  /** Existing callers pass `() => {}` and ignore the argument. */
+  onSuccess: (info?: SignupSuccessInfo) => void;
   /** See LoginForm.tsx's matching prop for the full explanation — same
    *  bug, same fix, same 4-standalone/2-embedded caller split. */
   compact?: boolean;
@@ -22,8 +33,111 @@ interface SignupFormProps {
 const isElectronApp = (): boolean =>
   typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
+const RESEND_COOLDOWN_SECONDS = 60;
+
+interface ConfirmEmailNoticeProps {
+  email: string;
+  /** "Back to sign in" — omitted hides the button. */
+  onBackToSignIn?: () => void;
+  compact?: boolean;
+}
+
+/** "Confirm your email" screen shown after a sign-up that returned no session.
+ *  Resend uses the standard supabase.auth.resend({ type: 'signup' }) client
+ *  call — no auth config is touched. */
+export const ConfirmEmailNotice: React.FC<ConfirmEmailNoticeProps> = ({ email, onBackToSignIn, compact = false }) => {
+  const { t } = useLanguage();
+  const [resending, setResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [cooldown]);
+
+  const handleResend = async () => {
+    if (resending || cooldown > 0) return;
+    setResending(true);
+    setMessage(null);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) {
+        setMessage({ kind: 'error', text: error.message });
+      } else {
+        setMessage({ kind: 'ok', text: t('auth', 'confirmEmailResent', 'We sent another confirmation email.') });
+        setCooldown(RESEND_COOLDOWN_SECONDS);
+      }
+    } catch (err: any) {
+      setMessage({ kind: 'error', text: err?.message || t('auth', 'confirmEmailResendFailed', "Couldn't resend the email. Please try again.") });
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const card = (
+    <div className={compact ? 'w-full space-y-5 text-center' : 'w-full max-w-md space-y-5 bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center'}>
+      <div className="mx-auto w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center">
+        <Mail className="h-7 w-7 text-purple-600" aria-hidden="true" />
+      </div>
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+          {t('auth', 'confirmEmailTitle', 'Confirm your email')}
+        </h1>
+        <p className="text-sm text-gray-600">
+          {t('auth', 'confirmEmailSentTo', 'We sent a confirmation link to')}
+        </p>
+        <p className="text-sm font-semibold text-gray-900 break-all">{email}</p>
+        <p className="text-sm text-gray-500">
+          {t('auth', 'confirmEmailInstructions', 'Open the link in that email to activate your account, then sign in. Check your spam folder if you can’t find it.')}
+        </p>
+      </div>
+      {message && (
+        <div
+          role="status"
+          className={message.kind === 'ok' ? 'bg-green-50 text-green-700 p-3 rounded-lg text-sm' : 'bg-red-50 text-red-600 p-3 rounded-lg text-sm'}
+        >
+          {message.text}
+        </div>
+      )}
+      <div className="space-y-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-11"
+          onClick={handleResend}
+          disabled={resending || cooldown > 0}
+        >
+          {resending ? (
+            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t('auth', 'confirmEmailResending', 'Sending...')}</>
+          ) : cooldown > 0 ? (
+            t('auth', 'confirmEmailResendIn', 'Resend email in {seconds}s').replace('{seconds}', String(cooldown))
+          ) : (
+            t('auth', 'confirmEmailResend', 'Resend email')
+          )}
+        </Button>
+        {onBackToSignIn && (
+          <Button type="button" className="w-full h-11 bg-purple-600 hover:bg-purple-700 text-white" onClick={onBackToSignIn}>
+            {t('auth', 'confirmEmailBackToSignIn', "I've confirmed — sign in")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  if (compact) return card;
+
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 p-6">
+      {card}
+    </div>
+  );
+};
+
 export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSuccess, compact = false }) => {
   const { signUp, signInWithGoogle, signInWithFacebook } = useAuth();
+  const { t } = useLanguage();
   const showSocialLogin = !isElectronApp();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -34,6 +148,10 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
   const [error, setError] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Set when sign-up succeeded without a session (email confirmation on).
+  // Only visible while this form stays mounted — callers that swap screens on
+  // auth state should render ConfirmEmailNotice themselves from onSuccess's info.
+  const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
 
   // Google Play UGC policy: every sign-up path must accept the Terms and
   // Community Guidelines (zero tolerance for objectionable content/abuse).
@@ -59,10 +177,23 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
     const result = await signUp(email, password, fullName);
     if (result.error) {
       setError(result.error);
-    } else {
-      onSuccess();
+      setLoading(false);
+      return;
+    }
+    // signUp() resolves {} both when a session was created and when Supabase
+    // is waiting for the email link — read the client's session to tell them
+    // apart (read-only; the auth flow itself is unchanged).
+    const normalizedEmail = email.toLowerCase().trim();
+    let hasSession = true;
+    try {
+      const { data } = await supabase.auth.getSession();
+      hasSession = !!data.session;
+    } catch {
+      hasSession = true; // can't tell — fall back to the previous behaviour
     }
     setLoading(false);
+    if (!hasSession) setConfirmEmail(normalizedEmail);
+    onSuccess({ email: normalizedEmail, needsEmailConfirmation: !hasSession });
   };
 
   const handleGoogleSignIn = async () => {
@@ -188,6 +319,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                   value={fullName} 
                   onChange={(e) => setFullName(e.target.value)} 
                   className="pl-10 h-10" 
+                  autoComplete="name"
                   required 
                 />
               </div>
@@ -203,6 +335,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                   value={email} 
                   onChange={(e) => setEmail(e.target.value)} 
                   className="pl-10 h-10" 
+                  autoComplete="email"
+                  inputMode="email"
                   required 
                 />
               </div>
@@ -218,16 +352,27 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                   value={password} 
                   onChange={(e) => setPassword(e.target.value)} 
                   className="pl-10 pr-10 h-10" 
+                  autoComplete="new-password"
+                  minLength={6}
+                  aria-describedby="passwordRule"
                   required 
                 />
+                {/* Controls both password fields so the visitor can check the
+                    confirmation matches without retyping. */}
                 <button 
                   type="button" 
                   onClick={() => setShowPassword(!showPassword)} 
                   className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? t('auth', 'hidePasswords', 'Hide passwords') : t('auth', 'showPasswords', 'Show passwords')}
+                  aria-pressed={showPassword}
+                  aria-controls="password confirmPassword"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <p id="passwordRule" className="text-xs text-gray-500">
+                {t('auth', 'passwordRule', 'At least 6 characters.')}
+              </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
@@ -235,11 +380,12 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                 <Input 
                   id="confirmPassword" 
-                  type="password" 
+                  type={showPassword ? 'text' : 'password'} 
                   placeholder="Confirm password" 
                   value={confirmPassword} 
                   onChange={(e) => setConfirmPassword(e.target.value)} 
                   className="pl-10 h-10" 
+                  autoComplete="new-password"
                   required 
                 />
               </div>
@@ -256,6 +402,10 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
           </form>
         </div>
   );
+
+  if (confirmEmail) {
+    return <ConfirmEmailNotice email={confirmEmail} onBackToSignIn={onSwitchToLogin} compact={compact} />;
+  }
 
   if (compact) return card;
 

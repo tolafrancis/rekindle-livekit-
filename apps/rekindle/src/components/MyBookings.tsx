@@ -39,6 +39,24 @@ interface CounsellingSession {
   has_review?: boolean;
 }
 
+// Join window — the session can be joined from 5 minutes before the start
+// until 2 hours after it (unchanged; canJoinSession below uses these).
+const JOIN_OPENS_BEFORE_MS = 5 * 60 * 1000;
+const JOIN_CLOSES_AFTER_MS = 2 * 60 * 60 * 1000;
+
+const formatCountdown = (ms: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`;
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+  return `${seconds}s`;
+};
+
 export const MyBookings: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -50,6 +68,9 @@ export const MyBookings: React.FC = () => {
   const [selectedSession, setSelectedSession] = useState<CounsellingSession | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [sessionToRate, setSessionToRate] = useState<CounsellingSession | null>(null);
+  // Re-render clock so the join state and the "Join opens at" countdown update
+  // by themselves (the join window itself is still decided by canJoinSession).
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const loadBookings = useCallback(async () => {
     if (!user?.id) return;
@@ -145,8 +166,8 @@ export const MyBookings: React.FC = () => {
     if (booking.status !== 'confirmed' && booking.status !== 'in_progress') return false;
     const scheduledTime = new Date(booking.scheduled_at).getTime();
     const now = Date.now();
-    const fiveMinutesBefore = scheduledTime - 5 * 60 * 1000;
-    const twoHoursAfter = scheduledTime + 2 * 60 * 60 * 1000;
+    const fiveMinutesBefore = scheduledTime - JOIN_OPENS_BEFORE_MS;
+    const twoHoursAfter = scheduledTime + JOIN_CLOSES_AFTER_MS;
     return now >= fiveMinutesBefore && now <= twoHoursAfter;
   };
 
@@ -178,6 +199,24 @@ export const MyBookings: React.FC = () => {
   
   const cancelledBookings = bookings.filter(b => b.status === 'cancelled');
 
+  // Tick every second while a session's join window opens within the next
+  // hour (live countdown), otherwise every 30s; no timer without upcoming
+  // sessions. Only re-renders — booking data/status are not re-fetched.
+  const nextJoinOpensInMs = upcomingBookings.reduce<number | null>((soonest, b) => {
+    const opensIn = new Date(b.scheduled_at).getTime() - JOIN_OPENS_BEFORE_MS - nowMs;
+    if (opensIn <= 0) return soonest;
+    return soonest === null || opensIn < soonest ? opensIn : soonest;
+  }, null);
+  const tickMs = upcomingBookings.length === 0
+    ? null
+    : nextJoinOpensInMs !== null && nextJoinOpensInMs <= 60 * 60 * 1000 ? 1000 : 30000;
+
+  useEffect(() => {
+    if (tickMs === null) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), tickMs);
+    return () => window.clearInterval(id);
+  }, [tickMs]);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
@@ -195,7 +234,9 @@ export const MyBookings: React.FC = () => {
     }
   };
 
-  const BookingCard: React.FC<{ booking: CounsellingSession }> = ({ booking }) => {
+  // Plain render function (not a nested component) so the per-second tick
+  // above doesn't unmount/remount every card.
+  const renderBookingCard = (booking: CounsellingSession) => {
     const counsellor = booking.counsellor;
     const imageUrl = counsellor?.profile_image_url || 
       `https://ui-avatars.com/api/?name=${encodeURIComponent(counsellor?.full_name || 'Counsellor')}&background=7c3aed&color=fff`;
@@ -204,9 +245,15 @@ export const MyBookings: React.FC = () => {
     const canCancel = ['pending', 'confirmed'].includes(booking.status) && !isPast;
     const canJoin = canJoinSession(booking);
     const showRateButton = booking.status === 'completed' && !booking.has_review;
+    // "Join opens at hh:mm" for upcoming sessions whose window hasn't opened.
+    const joinOpensAtMs = scheduledDate.getTime() - JOIN_OPENS_BEFORE_MS;
+    const showJoinOpens = !canJoin && !isPast
+      && ['pending', 'confirmed'].includes(booking.status)
+      && joinOpensAtMs > nowMs;
+    const joinOpensAtLabel = new Date(joinOpensAtMs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
     return (
-      <Card className={`hover:shadow-md transition-shadow ${booking.status === 'in_progress' ? 'border-green-500 bg-green-50' : ''}`}>
+      <Card key={booking.id} className={`hover:shadow-md transition-shadow ${booking.status === 'in_progress' ? 'border-green-500 bg-green-50' : ''}`}>
         <CardContent className="p-4">
           <div className="flex items-start gap-4">
             <img 
@@ -258,6 +305,23 @@ export const MyBookings: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {showJoinOpens && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-blue-700 bg-blue-50 px-2 py-1.5 rounded">
+                  <Video className="h-4 w-4" />
+                  <span>
+                    {t('myBookings', 'joinOpensAt', 'Join opens at {time}').replace('{time}', joinOpensAtLabel)}
+                  </span>
+                  <span className="font-medium tabular-nums">
+                    {t('myBookings', 'joinOpensIn', '(in {time})').replace('{time}', formatCountdown(joinOpensAtMs - nowMs))}
+                  </span>
+                  {booking.status === 'pending' && (
+                    <span className="text-xs text-gray-500 w-full">
+                      {t('myBookings', 'joinNeedsConfirmation', 'You can join once the counsellor confirms the booking.')}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {booking.notes && (
                 <p className="mt-2 text-sm text-gray-500 bg-gray-50 p-2 rounded">
@@ -375,7 +439,7 @@ export const MyBookings: React.FC = () => {
           ) : (
             <div className="space-y-4">
               {upcomingBookings.map(booking => (
-                <BookingCard key={booking.id} booking={booking} />
+                renderBookingCard(booking)
               ))}
             </div>
           )}
@@ -395,7 +459,7 @@ export const MyBookings: React.FC = () => {
           ) : (
             <div className="space-y-4">
               {pastBookings.map(booking => (
-                <BookingCard key={booking.id} booking={booking} />
+                renderBookingCard(booking)
               ))}
             </div>
           )}
@@ -415,7 +479,7 @@ export const MyBookings: React.FC = () => {
           ) : (
             <div className="space-y-4">
               {cancelledBookings.map(booking => (
-                <BookingCard key={booking.id} booking={booking} />
+                renderBookingCard(booking)
               ))}
             </div>
           )}

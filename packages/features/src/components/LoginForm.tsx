@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
+import { useLanguage } from '../LanguageContext';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Separator } from '@rekindle/ui/separator';
-import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, HelpCircle } from 'lucide-react';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
@@ -39,6 +40,7 @@ const isElectronApp = (): boolean =>
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitchToReset, onSuccess, compact = false }) => {
   const { signIn, signInWithGoogle, signInWithFacebook } = useAuth();
+  const { t } = useLanguage();
   const showSocialLogin = !isElectronApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -164,6 +166,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
                   value={email} 
                   onChange={e => setEmail(e.target.value)} 
                   className="pl-10 h-11" 
+                  autoComplete="email"
+                  inputMode="email"
                   required 
                 />
               </div>
@@ -190,12 +194,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
                   value={password} 
                   onChange={e => setPassword(e.target.value)} 
                   className="pl-10 pr-10 h-11" 
+                  autoComplete="current-password"
                   required 
                 />
                 <button 
                   type="button" 
                   onClick={() => setShowPassword(!showPassword)} 
                   className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? t('auth', 'hidePassword', 'Hide password') : t('auth', 'showPassword', 'Show password')}
+                  aria-pressed={showPassword}
+                  aria-controls="password"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -209,6 +217,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
               <button type="button" onClick={onSwitchToSignup} className="text-purple-600 hover:underline font-semibold">
                 Sign up
               </button>
+            </p>
+            {/* Plain <a>, not a router <Link>: this form is also embedded on
+                pages where a router context isn't guaranteed. /faq is a real
+                route in both apps. */}
+            <p className="text-center text-xs text-gray-500">
+              <a href="/faq" className="inline-flex items-center gap-1 text-purple-600 hover:underline">
+                <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                {t('auth', 'needHelpSigningIn', 'Need help signing in?')}
+              </a>
             </p>
           </form>
         </div>

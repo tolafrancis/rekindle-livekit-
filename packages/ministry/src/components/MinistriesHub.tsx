@@ -19,7 +19,7 @@ import {
   Plus, Users, Crown, Shield,
   Loader2, ChevronRight, Building2,
   Heart, Upload, Image as ImageIcon,
-  Sparkles, ScrollText, HelpCircle
+  Sparkles, ScrollText, HelpCircle, Compass, Link2, Search, MapPin
 } from 'lucide-react';
 // The ministry workspace (meetings, live, recordings, management …) is only
 // needed once a ministry is entered, so it's its own chunk rather than being
@@ -83,6 +83,60 @@ const RESERVED_HANDLES = new Set([
 
 type ViewMode = 'my-ministries' | 'ministry-space';
 
+// Public discovery rows come from the ministry_directory view (migration 0154):
+// a public-safe projection of public + active ministries. Only columns that
+// view already exposes for discovery are read here.
+interface DirectoryMinistry {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  location: string | null;
+  logo_url: string | null;
+  banner_url: string | null;
+  theme_color: string | null;
+  member_count: number | null;
+  slug: string | null;
+  join_method: string | null;
+}
+
+/**
+ * Turn what a member pastes (a shared join link, the in-app deep link, a
+ * ministry's {slug}.domain web address, or just its join-link address) into
+ * the existing /join/:slug route that MinistryJoinLanding handles. Query
+ * params on a shared link (code, v, group, devotional) are carried through
+ * unchanged so the join flow validates them exactly as it would for a QR scan.
+ */
+const parseInviteToJoinPath = (raw: string): string | null => {
+  const input = raw.trim();
+  if (!input) return null;
+  if (/^[a-z0-9-]{3,40}$/i.test(input)) {
+    return `/join/${encodeURIComponent(input.toLowerCase())}`;
+  }
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `https://${input}`);
+  } catch {
+    return null;
+  }
+  const joinMatch = url.pathname.match(/\/join\/([^/?#]+)/);
+  if (joinMatch) {
+    let slug = joinMatch[1];
+    try { slug = decodeURIComponent(slug); } catch { /* keep raw */ }
+    if (!slug) return null;
+    return `/join/${encodeURIComponent(slug)}${url.search}`;
+  }
+  const host = url.hostname.toLowerCase();
+  const suffix = `.${String(MINISTRY_DOMAIN).toLowerCase()}`;
+  if (host.endsWith(suffix)) {
+    const sub = host.slice(0, -suffix.length);
+    if (sub && !sub.includes('.') && !RESERVED_HANDLES.has(sub)) {
+      return `/join/${encodeURIComponent(sub)}${url.search}`;
+    }
+  }
+  return null;
+};
+
 interface MinistriesHubProps {
   activeView?: string;
   onActiveViewChange?: (view: string) => void;
@@ -108,7 +162,10 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
   const [creating, setCreating] = useState(false);
-
+  const [directory, setDirectory] = useState<DirectoryMinistry[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directorySearch, setDirectorySearch] = useState('');
+  const [inviteInput, setInviteInput] = useState('');
 
 
   const [formData, setFormData] = useState({
@@ -287,6 +344,45 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     };
     loadData();
   }, [loadMyMinistries, authInitialized]);
+
+  // Public ministries for the "Discover" list. Independent of the member's own
+  // list, so it never delays that from rendering; failure just hides Discover.
+  useEffect(() => {
+    if (!authInitialized || !user?.id) return;
+    let active = true;
+    (async () => {
+      setDirectoryLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('ministry_directory')
+          .select('id, name, description, category, location, logo_url, banner_url, theme_color, member_count, slug, join_method')
+          .order('member_count', { ascending: false })
+          .limit(50);
+        if (error) throw error;
+        if (active) setDirectory((data || []) as DirectoryMinistry[]);
+      } catch (err) {
+        console.warn('Unable to load ministry directory:', err);
+        if (active) setDirectory([]);
+      } finally {
+        if (active) setDirectoryLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [authInitialized, user?.id]);
+
+  const handleInviteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const path = parseInviteToJoinPath(inviteInput);
+    if (!path) {
+      toast({
+        title: t('ministriesHub', 'inviteNotRecognisedTitle', "We couldn't read that invite"),
+        description: t('ministriesHub', 'inviteNotRecognisedDesc', 'Paste the full join link your ministry shared, or its web address. Your ministry leader can find it under Registration settings.'),
+        variant: 'destructive',
+      });
+      return;
+    }
+    navigate(path);
+  };
 
   // Deep links handler
   useEffect(() => {
@@ -547,6 +643,18 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
       : t('ministriesHub', 'goodEvening', 'Good evening');
   const welcomeVerse = WELCOME_VERSES[Math.floor(Date.now() / 86_400_000) % WELCOME_VERSES.length];
 
+  // Discover: public ministries the member isn't already in. Invite-only
+  // ministries need a code from their leader, so they're left out here.
+  const myMinistryIds = new Set(myMinistries.map(m => m.id));
+  const searchTerm = directorySearch.trim().toLowerCase();
+  const discoverList = directory.filter(m =>
+    !!m.slug &&
+    !myMinistryIds.has(m.id) &&
+    m.join_method !== 'invite' &&
+    (!searchTerm || [m.name, m.category, m.location].some(v => (v || '').toLowerCase().includes(searchTerm)))
+  );
+  const hasDiscoverable = directory.some(m => !!m.slug && !myMinistryIds.has(m.id) && m.join_method !== 'invite');
+
   return (
     <div className="space-y-6">
       {/* Welcome hero — compact */}
@@ -614,6 +722,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'noMinistriesYet', 'No Ministries Yet')}</h3>
             <p className="text-gray-500 mb-4">{t('ministriesHub', 'joinToConnect', 'Join a ministry to connect with a faith community')}</p>
+            <p className="text-sm text-gray-500">{t('ministriesHub', 'findBelowHint', 'Have an invite link? Paste it below, or discover a public ministry.')}</p>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -684,7 +793,119 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         )}
       </div>
 
+      {/* Find a ministry: invite link + public directory */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Compass className="h-5 w-5 text-purple-600" />
+          <h2 className="text-lg font-semibold">{t('ministriesHub', 'findAMinistry', 'Find a ministry')}</h2>
+        </div>
 
+        <Card>
+          <CardContent className="p-4">
+            <form onSubmit={handleInviteSubmit} className="space-y-2">
+              <Label htmlFor="ministry-invite-link">{t('ministriesHub', 'inviteLinkLabel', 'Have an invite link?')}</Label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="ministry-invite-link"
+                    value={inviteInput}
+                    onChange={(e) => setInviteInput(e.target.value)}
+                    placeholder={t('ministriesHub', 'inviteLinkPlaceholder', 'Paste the join link or web address')}
+                    className="pl-9"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
+                </div>
+                <Button type="submit" disabled={!inviteInput.trim()}>
+                  {t('ministriesHub', 'continueToJoin', 'Continue')}
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                {t('ministriesHub', 'inviteLinkHelper', 'Use the link or QR code your ministry shared with you.')}
+              </p>
+            </form>
+          </CardContent>
+        </Card>
+
+        {(directoryLoading || hasDiscoverable) && (
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <h3 className="font-semibold text-gray-800">{t('ministriesHub', 'discoverTitle', 'Discover public ministries')}</h3>
+              {hasDiscoverable && (
+                <div className="relative sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    value={directorySearch}
+                    onChange={(e) => setDirectorySearch(e.target.value)}
+                    placeholder={t('ministriesHub', 'discoverSearchPlaceholder', 'Search by name, category or place')}
+                    className="pl-9"
+                    aria-label={t('ministriesHub', 'discoverSearchPlaceholder', 'Search by name, category or place')}
+                  />
+                </div>
+              )}
+            </div>
+
+            {directoryLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
+              </div>
+            ) : discoverList.length === 0 ? (
+              <p className="text-sm text-gray-500">{t('ministriesHub', 'discoverNoMatches', 'No ministries match your search.')}</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {discoverList.map(m => {
+                  const color = m.theme_color || '#7c3aed';
+                  return (
+                    <Card
+                      key={m.id}
+                      className="group overflow-hidden border-gray-200/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg cursor-pointer"
+                      onClick={() => navigate(`/join/${encodeURIComponent(m.slug as string)}`)}
+                    >
+                      <div
+                        className="h-10"
+                        style={m.banner_url
+                          ? { backgroundImage: `url(${m.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                          : { background: `linear-gradient(135deg, ${color} 0%, ${color}99 100%)` }
+                        }
+                      />
+                      <CardContent className="p-4 -mt-4 relative">
+                        <div className="w-10 h-10 rounded-lg bg-white shadow flex items-center justify-center border">
+                          {m.logo_url ? (
+                            <img src={m.logo_url} alt={m.name} className="w-8 h-8 rounded object-cover" />
+                          ) : (
+                            <Building2 className="h-5 w-5 text-purple-600" />
+                          )}
+                        </div>
+                        <h4 className="font-semibold mt-2">{m.name}</h4>
+                        {m.description && (
+                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{m.description}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-gray-500">
+                          {m.category && <Badge variant="secondary">{m.category}</Badge>}
+                          {m.location && (
+                            <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{m.location}</span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Users className="h-3.5 w-3.5" />
+                            {t('ministriesHub', 'membersCount', '{count} members').replace('{count}', String(m.member_count || 0))}
+                          </span>
+                        </div>
+                        <Button variant="outline" size="sm" className="w-full mt-3">
+                          {t('ministriesHub', 'viewAndJoin', 'View & join')}
+                          <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Create Ministry Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>

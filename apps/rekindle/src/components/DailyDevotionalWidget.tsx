@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
-import { BookOpen, Play, ChevronRight, Clock, Calendar, Loader2, Volume2, X, Building2, Share2 } from 'lucide-react';
+import { BookOpen, Play, ChevronRight, Clock, Calendar, Loader2, Volume2, X, Building2, Share2, RefreshCw, Library } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +18,7 @@ import { useLocalizedScriptures, ScriptureInput } from '@/hooks/useLocalizedScri
 import { publicWebOrigin } from '@rekindle/features/platform';
 import { consumeDeepLink } from '@rekindle/features/deepLink';
 import { recordSharedDevotionalOpen } from '@rekindle/features/sharedDevotionalFollowup';
+import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 
 // Scripture block for the widget. Isolated into its own component so the
 // useLocalizedScriptures hook runs unconditionally (the main widget body sits
@@ -108,6 +109,8 @@ interface Props {
   ministryId?: string | null;
   /** Which daily-devotional stream to show (0149). Null → the default stream. */
   streamId?: string | null;
+  /** Opens the Devotional Library (offered when there is no devotional today). */
+  onOpenLibrary?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -193,17 +196,26 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   source = 'platform',
   ministryId = null,
   streamId = null,
+  onOpenLibrary,
 }) => {
   const { user } = useAuth();
   const { t, getLocalizedContent } = useLanguage();
   const [todayDevotional, setTodayDevotional]       = useState<PlatformDevotional | null>(null);
   const [ministryDevotional, setMinistryDevotional] = useState<MinistryDevotional | null>(null);
   const [loading, setLoading]                       = useState(true);
-  const [showModule, setShowModule]                 = useState(false);
+  // Set when today's devotional couldn't be loaded (network/server) — shown as
+  // an error with Retry, distinct from "nothing scheduled today".
+  const [loadError, setLoadError]                   = useState(false);
+  // Which reader is open, synced with browser history (same helper the series
+  // viewer uses) so the phone's Back button closes the reader instead of
+  // leaving the app.
+  const [readerView, setReaderView] = useViewHistory<'card' | 'daily' | 'ministry'>('daily-devotional-widget', 'card');
+  const showModule = readerView === 'daily';
+  const showMinistryModule = readerView === 'ministry';
+  const setShowMinistryModule = (open: boolean) => (open ? setReaderView('ministry') : closeReader());
   const [progress, setProgress]                     = useState({ completed: 0, total: 1 });
   const [showAudioPreview, setShowAudioPreview]     = useState(false);
   const [ministryProgress, setMinistryProgress]     = useState({ completed: 0, total: 1 });
-  const [showMinistryModule, setShowMinistryModule] = useState(false);
   // Ministry name for branded share text — resolved via the name-only RPC.
   const [ministryName, setMinistryName]             = useState<string | null>(null);
   // Share branding for a platform devotional: its stream's name (e.g. "Open
@@ -254,6 +266,19 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
     })();
     return () => { active = false; };
   }, []);
+
+  // Close the reader by stepping back over the history entry that opened it, so
+  // Back after closing doesn't reopen it. Falls back to replacing the entry when
+  // the reader wasn't opened through history (e.g. restored on reload).
+  function closeReader() {
+    const key = 'vh:daily-devotional-widget';
+    const st = typeof window !== 'undefined' ? window.history.state : null;
+    if (st && typeof st === 'object' && (st as Record<string, unknown>)[key] && (st as Record<string, unknown>)[key] !== 'card') {
+      window.history.back();
+    } else {
+      setReaderView('card', { replace: true });
+    }
+  }
 
   const loadMinistryDevotional = useCallback(async () => {
     if (!ministryId) return;
@@ -318,6 +343,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
     }
     try {
       setLoading(true);
+      setLoadError(false);
       const now        = new Date();
       const today      = getLocalDateString(now); // YYYY-MM-DD in local timezone
 
@@ -336,7 +362,10 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
         .order('schedule_date', { ascending: false })
         .limit(10);
       if (effectiveStreamId) query = query.eq('stream_id', effectiveStreamId);
-      let { data } = await query;
+      // supabase-js reports failures in `error` rather than throwing.
+      const first = await query;
+      if (first.error) throw first.error;
+      let data = first.data;
 
       // Pick today's if it exists, otherwise most recent past one
       if (data && data.length > 0) {
@@ -358,6 +387,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
           .limit(1);
         if (effectiveStreamId) fb = fb.eq('stream_id', effectiveStreamId);
         const res = await fb;
+        if (res.error) throw res.error;
         data = res.data;
       }
 
@@ -377,6 +407,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
       }
     } catch (err) {
       console.error('Error loading devotional:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -408,7 +439,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
 
   const handleStartDevotional = async () => {
     if (!todayDevotional) return;
-    setShowModule(true);
+    setReaderView('daily');
     if (user?.id) {
       try {
         const { data: existingProfile } = await supabase
@@ -456,7 +487,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
   };
 
   const handleCloseModule = () => {
-    setShowModule(false);
+    closeReader();
     loadTodayDevotional();
   };
 
@@ -692,6 +723,30 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
     );
   }
 
+  // ── Render: couldn't load (distinct from "nothing today") ──
+  if (!todayDevotional && loadError) {
+    return (
+      <Card className="bg-gradient-to-br from-purple-600 to-indigo-700 text-white">
+        <CardHeader>
+          <CardTitle className="text-2xl font-serif flex items-center gap-2">
+            <BookOpen className="h-6 w-6" />{t('devotionals', 'todaysDevotional', "Today's Devotional")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-purple-100 mb-4" role="alert">
+            {t('devotionals', 'loadTodayError', "We couldn't load today's devotional. Check your connection and try again.")}
+          </p>
+          <Button
+            onClick={() => { loadTodayDevotional(); }}
+            className="bg-white text-purple-700 hover:bg-purple-50 font-semibold"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />{t('common', 'retry', 'Retry')}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // ── Render: no devotional available ───────────────────────
   if (!todayDevotional) {
     return (
@@ -703,6 +758,15 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
         </CardHeader>
         <CardContent>
           <p className="text-purple-200 mb-4">{t('devotionals', 'noDevotionalToday', 'No devotional scheduled for today. Check back tomorrow!')}</p>
+          {onOpenLibrary && (
+            <Button
+              onClick={onOpenLibrary}
+              variant="outline"
+              className="bg-white/10 border-white/30 text-white hover:bg-white/20"
+            >
+              <Library className="h-4 w-4 mr-2" />{t('devotionals', 'browseDevotionalLibrary', 'Browse the Devotional Library')}
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

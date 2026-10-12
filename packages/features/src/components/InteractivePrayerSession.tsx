@@ -3,9 +3,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PlayerBackdrop } from './PlayerBackdrop';
 import { Button } from '@rekindle/ui/button';
 import { Progress } from '@rekindle/ui/progress';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@rekindle/ui/alert-dialog';
 import { PrayerPoint, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
 import { 
-  X, ChevronRight, Volume2, VolumeX, BookOpen, CheckCircle, 
+  X, ChevronLeft, ChevronRight, Volume2, VolumeX, BookOpen, CheckCircle, 
   Pause, Play, Flame, Clock, Timer, Volume1 
 } from 'lucide-react';
 import { instrumentalTracks } from '../data/instrumentals';
@@ -71,10 +75,13 @@ export const InteractivePrayerSession: React.FC<Props> = ({
   const { reportPlayback, registerControls } = useGlobalAudio();
   const [currentSlide, setCurrentSlide] = useState(0);
   const hasStartedRef = useRef(false);
+  // Confirm before leaving a session that is already under way (past the intro slide).
+  const [confirmExitOpen, setConfirmExitOpen] = useState(false);
+  const lastSlideIndex = prayerPoints.length + 1;
 
   // Swipe to navigate prayer slides
   const swipeHandlers = useSwipe({
-    onSwipeLeft:  () => setCurrentSlide(p => p + 1),
+    onSwipeLeft:  () => setCurrentSlide(p => Math.min(lastSlideIndex, p + 1)),
     onSwipeRight: () => setCurrentSlide(p => Math.max(0, p - 1)),
   });
   const [isPlaying, setIsPlaying] = useState(true);
@@ -169,6 +176,20 @@ export const InteractivePrayerSession: React.FC<Props> = ({
       
       // Pass duration and points completed for Prayer Watch tracking
       onComplete(totalDuration, pointsCompleted);
+    }
+  };
+
+  const handlePrevious = () => {
+    setCurrentSlide(prev => Math.max(0, prev - 1));
+  };
+
+  // Exiting from the intro slide closes immediately; once the user has moved into
+  // the prayer points, ask first so an accidental tap doesn't lose their place.
+  const handleRequestClose = () => {
+    if (currentSlide > 0) {
+      setConfirmExitOpen(true);
+    } else {
+      onClose();
     }
   };
 
@@ -267,6 +288,7 @@ export const InteractivePrayerSession: React.FC<Props> = ({
   }
 
   return (
+    <>
     <div
       {...swipeHandlers} onClick={handleViewerTap} className="fixed inset-0 z-50 flex flex-col bg-slate-950"
     >
@@ -288,7 +310,13 @@ export const InteractivePrayerSession: React.FC<Props> = ({
       {/* Header */}
       <div className="relative flex items-center justify-between p-4 text-white">
         <div className="flex items-center">
-          <Button variant="ghost" size="icon" onClick={onClose} className="text-white hover:bg-white/20 mr-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRequestClose}
+            className="text-white hover:bg-white/20 mr-2"
+            aria-label={t('prayerSession', 'exitSession', 'Exit prayer session')}
+          >
             <X className="h-6 w-6" />
           </Button>
           {showPrayerWatchIndicator && (
@@ -478,18 +506,48 @@ export const InteractivePrayerSession: React.FC<Props> = ({
           </Button>
         )}
 
-        <Button
-          onClick={handleNext}
-          className="w-full py-6 text-lg bg-white text-purple-900 hover:bg-gray-100"
-        >
-          {currentSlide === totalSlides - 1 ? t('prayerSession', 'completePrayer', 'Complete Prayer') : t('prayerSession', 'continue', 'Continue')}
-          <ChevronRight className="ml-2 h-5 w-5" />
-        </Button>
+        <div className="flex gap-3">
+          {currentSlide > 0 && (
+            <Button
+              onClick={handlePrevious}
+              variant="outline"
+              className="py-6 px-5 text-lg bg-white/10 border-white/40 text-white hover:bg-white/20 hover:text-white"
+            >
+              <ChevronLeft className="mr-1 h-5 w-5" />
+              {t('prayerSession', 'previous', 'Previous')}
+            </Button>
+          )}
+          <Button
+            onClick={handleNext}
+            className="flex-1 py-6 text-lg bg-white text-purple-900 hover:bg-gray-100"
+          >
+            {currentSlide === totalSlides - 1 ? t('prayerSession', 'completePrayer', 'Complete Prayer') : t('prayerSession', 'continue', 'Continue')}
+            <ChevronRight className="ml-2 h-5 w-5" />
+          </Button>
+        </div>
 
         {isPaused && (
           <p className="text-center text-white/70 text-sm">{t('prayerSession', 'sessionPausedResume', 'Session paused - tap play to resume')}</p>
         )}
       </div>
     </div>
+
+    {/* Rendered outside the tap-to-pause container so taps on the dialog
+        overlay don't toggle pause. */}
+    <AlertDialog open={confirmExitOpen} onOpenChange={setConfirmExitOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('prayerSession', 'exitConfirmTitle', 'End this prayer session?')}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('prayerSession', 'exitConfirmBody', "You're partway through this prayer. If you leave now, this session won't be marked as complete.")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('prayerSession', 'keepPraying', 'Keep praying')}</AlertDialogCancel>
+          <AlertDialogAction onClick={onClose}>{t('prayerSession', 'exitSession', 'Exit prayer session')}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 };

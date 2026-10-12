@@ -98,8 +98,10 @@ export const PartnerDonationPage: React.FC = () => {
     ? new Date(profile.partner_expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : null;
 
-  const USD_AMOUNTS = [5, 10, 25, 50, 100];
-  const NGN_AMOUNTS = [1000, 2500, 5000, 10000, 25000];
+  // Same individual-gift presets as the Give screen (SponsorshipSystem) so
+  // the two never show different amounts. Custom amounts are still accepted.
+  const USD_AMOUNTS = [5, 10, 25, 50];
+  const NGN_AMOUNTS = [1000, 5000, 10000, 25000];
   const amounts = currency === 'NGN' ? NGN_AMOUNTS : USD_AMOUNTS;
   const symbol  = currency === 'NGN' ? '₦' : '$';
 
@@ -215,7 +217,7 @@ export const PartnerDonationPage: React.FC = () => {
       <div className="text-center pt-4">
         <div className="flex items-center justify-center gap-2 mb-2">
           <Heart className="h-6 w-6 text-rose-500 fill-rose-500" />
-          <h1 className="text-2xl font-bold">{t('partnerDonationPage', 'partnerWithRekindle', 'Partner with ReKindle BC')}</h1>
+          <h1 className="text-2xl font-bold">{t('partnerDonationPage', 'giveTitle', 'Give')}</h1>
         </div>
         <p className="text-sm text-gray-500">{t('partnerDonationPage', 'reachSoulsGlobally', 'Help us reach souls globally through digital ministry')}</p>
       </div>
@@ -404,7 +406,7 @@ export const PartnerDonationPage: React.FC = () => {
               </div>
 
               {/* Amount buttons */}
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 {amounts.map(a => (
                   <button
                     key={a}
