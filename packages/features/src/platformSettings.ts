@@ -44,3 +44,13 @@ export async function setPlatformSetting(key: string, value: unknown): Promise<{
   if (error) return { error: error.message };
   return {};
 }
+
+// "Discover public ministries" on the Ministries page. Off unless a platform
+// admin switches it on: the list stays hidden until then, even for ministries
+// marked public. Members still join through invite links and join pages.
+export const MINISTRY_DISCOVER_SETTING_KEY = 'ministry_discover_enabled';
+
+export async function isMinistryDiscoverEnabled(): Promise<boolean> {
+  const raw = await getPlatformSetting<unknown>(MINISTRY_DISCOVER_SETTING_KEY, false);
+  return raw === true || (typeof raw === 'string' && raw.trim().toLowerCase() === 'true');
+}

@@ -15,6 +15,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { isMinistryDiscoverEnabled } from '@rekindle/features/platformSettings';
 import {
   Plus, Users, Crown, Shield,
   Loader2, ChevronRight, Building2,
@@ -165,6 +166,8 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const [directory, setDirectory] = useState<DirectoryMinistry[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directorySearch, setDirectorySearch] = useState('');
+  // Platform admins switch Discover on in Platform Settings; off by default.
+  const [discoverEnabled, setDiscoverEnabled] = useState(false);
   const [inviteInput, setInviteInput] = useState('');
 
 
@@ -353,6 +356,13 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
     (async () => {
       setDirectoryLoading(true);
       try {
+        const enabled = await isMinistryDiscoverEnabled();
+        if (!active) return;
+        setDiscoverEnabled(enabled);
+        if (!enabled) {
+          setDirectory([]);
+          return;
+        }
         const { data, error } = await supabase
           .from('ministry_directory')
           .select('id, name, description, category, location, logo_url, banner_url, theme_color, member_count, slug, join_method')
@@ -722,7 +732,11 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
             <Heart className="h-12 w-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-700 mb-2">{t('ministriesHub', 'noMinistriesYet', 'No Ministries Yet')}</h3>
             <p className="text-gray-500 mb-4">{t('ministriesHub', 'joinToConnect', 'Join a ministry to connect with a faith community')}</p>
-            <p className="text-sm text-gray-500">{t('ministriesHub', 'findBelowHint', 'Have an invite link? Paste it below, or discover a public ministry.')}</p>
+            <p className="text-sm text-gray-500">
+              {discoverEnabled
+                ? t('ministriesHub', 'findBelowHint', 'Have an invite link? Paste it below, or discover a public ministry.')
+                : t('ministriesHub', 'findBelowHintInviteOnly', 'Have an invite link? Paste it below.')}
+            </p>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
