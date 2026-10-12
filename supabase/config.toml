@@ -189,6 +189,19 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.whatsapp-config-update]
+enabled = true
+verify_jwt = true
+
+[functions.create-wallet-topup]
+enabled = true
+# Was deployed from supabase/create-wallet-topup/index.sql with verify_jwt
+# off, no caller check, and the price and credit count taken from the
+# request body (any amount of credits for any price, for any wallet), plus a
+# "dev mode" that added credits for free when STRIPE_SECRET_KEY was unset.
+# Mirrored here with server-side package prices and the caller's own wallet.
+verify_jwt = true
+
 [functions.send-small-group-whatsapp-notify]
 enabled = true
 # Requires a real signed-in small-group leader/ministry admin — checked via

@@ -15,8 +15,9 @@
 // Continue" click 404'd.
 //
 // Request:  POST { ministryId, plan:'basic'|'growth'|'premium', monthlyUsd,
-//                   setupUsd, setupAlreadyPaid, successUrl, cancelUrl }
-// Response: { checkoutUrl }
+//                   successUrl, cancelUrl }
+// Response: { checkoutUrl }, or { updated: true, plan } when an existing
+//           Stripe subscription was switched to the new plan in place.
 //
 // Secrets: STRIPE_SECRET_KEY. If it isn't set, this function returns a
 // clear 500 ("Stripe is not configured") rather than silently marking the
@@ -43,7 +44,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { ministryId, plan, monthlyUsd, setupUsd, setupAlreadyPaid, successUrl, cancelUrl } = await req.json();
+    const { ministryId, plan, monthlyUsd, successUrl, cancelUrl } = await req.json();
 
     if (!ministryId || !plan || !VALID_PLANS.has(plan)) {
       return json({ error: 'ministryId and a valid plan (basic|growth|premium) are required' }, 400);
@@ -87,6 +88,63 @@ serve(async (req) => {
     const finalSetup = known.setupUsd;
     if (monthlyUsd !== undefined && Number(monthlyUsd) !== finalMonthly) {
       console.warn(`[create-whatsapp-subscription] client sent monthlyUsd=${monthlyUsd} for plan=${plan}, using server price ${finalMonthly}`);
+    }
+
+    // Server-side facts, never the client's say-so: whether the one-time
+    // setup fee was already paid, and whether a plan is already running.
+    const { data: existing } = await admin
+      .from('ministry_whatsapp_configs')
+      .select('whatsapp_plan, plan_status, setup_fee_paid, stripe_subscription_id')
+      .eq('ministry_id', ministryId)
+      .maybeSingle();
+    const setupAlreadyPaid = existing?.setup_fee_paid === true;
+    const hasRunningPlan = !!existing
+      && existing.whatsapp_plan !== 'none'
+      && ['active', 'trialing', 'past_due'].includes(existing.plan_status);
+
+    if (hasRunningPlan && existing!.whatsapp_plan === plan) {
+      return json({ error: `You're already on the ${plan} plan.` }, 400);
+    }
+
+    // Changing plan on a Stripe subscription that already exists: swap its
+    // price in place (prorated) instead of opening a second subscription,
+    // which used to leave the ministry paying for both.
+    if (hasRunningPlan && existing!.stripe_subscription_id) {
+      const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${existing!.stripe_subscription_id}`, {
+        headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
+      });
+      const sub = await subRes.json();
+      const item = sub?.items?.data?.find((i: any) => i?.price?.recurring) ?? sub?.items?.data?.[0];
+      if (subRes.ok && item?.id && sub.status !== 'canceled') {
+        const productId = typeof item.price.product === 'string' ? item.price.product : item.price.product?.id;
+        const updateParams = new URLSearchParams([
+          ['items[0][id]', item.id],
+          ['items[0][price_data][currency]', 'usd'],
+          ['items[0][price_data][unit_amount]', String(Math.round(finalMonthly * 100))],
+          ['items[0][price_data][recurring][interval]', 'month'],
+          ['items[0][price_data][product]', productId],
+          ['proration_behavior', 'create_prorations'],
+          ['metadata[plan]', plan],
+          ['metadata[ministryId]', ministryId],
+        ]);
+        const updRes = await fetch(`https://api.stripe.com/v1/subscriptions/${existing!.stripe_subscription_id}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: updateParams.toString(),
+        });
+        const updated = await updRes.json();
+        if (!updRes.ok) return json({ error: updated?.error?.message ?? 'Stripe error' }, 400);
+
+        await admin
+          .from('ministry_whatsapp_configs')
+          .update({ whatsapp_plan: plan, updated_at: new Date().toISOString() })
+          .eq('ministry_id', ministryId);
+
+        return json({ updated: true, plan });
+      }
     }
 
     const lineItems: [string, string][] = [];
@@ -136,16 +194,24 @@ serve(async (req) => {
     const session = await stripeRes.json();
     if (!stripeRes.ok) return json({ error: session?.error?.message ?? 'Stripe error' }, 400);
 
-    await admin
-      .from('ministry_whatsapp_configs')
-      .upsert({
-        ministry_id: ministryId,
-        whatsapp_plan: plan,
-        plan_status: 'pending',
-        setup_fee_paid: !!setupAlreadyPaid,
-        stripe_session_id: session.id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'ministry_id' });
+    // A ministry whose plan is already running keeps it untouched until
+    // Stripe confirms the new one (whatsapp-subscription-webhook switches the
+    // plan then). Writing 'pending' here used to drop a paying ministry back
+    // to the plan picker the moment it opened checkout, even if it then
+    // cancelled. (Not storing this session id matters too: the webhook skips
+    // a session it already sees stored against an active plan.)
+    if (!hasRunningPlan) {
+      await admin
+        .from('ministry_whatsapp_configs')
+        .upsert({
+          ministry_id: ministryId,
+          whatsapp_plan: plan,
+          plan_status: 'pending',
+          setup_fee_paid: setupAlreadyPaid,
+          stripe_session_id: session.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'ministry_id' });
+    }
 
     return json({ checkoutUrl: session.url, sessionId: session.id });
   } catch (err: any) {

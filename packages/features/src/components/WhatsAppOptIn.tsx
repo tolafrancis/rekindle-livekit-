@@ -306,19 +306,16 @@ export const MinistryWhatsAppOptIn: React.FC<MinistryWhatsAppOptInProps> = ({
   }, [user, ministryId]);
 
   const loadState = async () => {
-    const { data: waba } = await supabase
-      .from('ministry_whatsapp_configs')
-      .select('connection_status, phone_number_display, twilio_from_number, provider')
-      .eq('ministry_id', ministryId)
+    // Members can't read ministry_whatsapp_configs (leaders only), so this
+    // asks a narrow RPC whether the ministry sends WhatsApp at all — from its
+    // own number, or via Rekindle's (0410_ministry_whatsapp_shared_sender.sql).
+    const { data: info } = await supabase
+      .rpc('ministry_whatsapp_optin_info', { p_ministry_id: ministryId })
       .maybeSingle();
 
-    if (waba?.connection_status === 'connected') {
+    if ((info as any)?.available) {
       setHasWABA(true);
-      setWabaPhone(
-        waba.provider === 'twilio'
-          ? (waba.twilio_from_number ?? '').replace('whatsapp:', '')
-          : (waba.phone_number_display ?? '')
-      );
+      setWabaPhone((info as any).sender_phone ?? '');
     }
 
     const { data: userProfile } = await supabase
