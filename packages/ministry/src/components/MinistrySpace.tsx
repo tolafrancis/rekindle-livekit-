@@ -86,7 +86,7 @@ const MINISTRY_NAV = [
   { id: 'webinars', label: 'Webinars', icon: Radio },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
-import type { SettingsSectionId } from './MinistrySettingsHub';
+import { normalizeSettingsSection, type SettingsSectionId } from './ministrySettingsSections';
 import { AcceptRulesModal } from './AcceptRulesModal';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
@@ -298,13 +298,25 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
   const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
-  const [settingsSection, setSettingsSection] = useViewHistory<SettingsSectionId>(
+  const [rawSettingsSection, setSettingsSection] = useViewHistory<SettingsSectionId>(
     `ministry-settings-section-${ministry.id}`,
     'overview'
   );
+  // A remembered view may still hold a pre-split id ('people', 'general', …).
+  const settingsSection = normalizeSettingsSection(rawSettingsSection);
+  // The open tool inside a Settings section (MinistrySettingsHub SECTION_TOOLS).
+  const [settingsTool, setSettingsTool] = useViewHistory<string>(
+    `ministry-settings-tool-${ministry.id}`,
+    ''
+  );
+  const openSettingsTool = (section: SettingsSectionId, tool: string) => {
+    setActiveTab('settings');
+    setSettingsSection(section);
+    setSettingsTool(tool, { replace: true });
+  };
   const navigate = useNavigate();
 
-  // Restore Settings > Finance & Billing after a full external redirect
+  // Restore Settings > Finance > Payment gateways after a full external redirect
   // round-trip (Stripe Connect onboarding) — activeTab/settingsSection live
   // only in browser history.state via useViewHistory, which a real
   // navigation away and back (not an in-app view change) does not preserve,
@@ -314,7 +326,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     const params = new URLSearchParams(window.location.search);
     if (params.get('connect') === 'return' || params.get('connect') === 'refresh') {
       setActiveTab('settings', { replace: true });
-      setSettingsSection('finance-billing', { replace: true });
+      setSettingsSection('finance', { replace: true });
+      setSettingsTool('payment-gateways', { replace: true });
       params.delete('connect');
       const query = params.toString();
       window.history.replaceState(
@@ -1111,11 +1124,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       gradient: 'from-gray-500 to-gray-600',
       children: [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        { id: 'general', label: 'General', icon: Settings },
-        { id: 'people', label: 'People', icon: Users },
+        { id: 'members', label: 'Members', icon: Users },
+        { id: 'events', label: 'Events', icon: Calendar },
         { id: 'content', label: 'Content', icon: BookOpen },
-        { id: 'engagement', label: 'Engagement', icon: MessageSquare },
-        { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard },
+        { id: 'messages', label: 'Messages', icon: MessageSquare },
+        { id: 'finance', label: 'Finance', icon: CreditCard },
+        { id: 'profile', label: 'Ministry profile', icon: Settings },
       ]
     }] : []),
   ];
@@ -1730,7 +1744,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             ministryName={ministry.name}
             themeColor={themeColor}
             countryCode={ministry.country_code}
-            onGoToSettings={() => { setActiveTab('settings'); setSettingsSection('finance-billing'); }}
+            onGoToSettings={() => openSettingsTool('finance', 'gift-aid-settings')}
           />
         )}
 
@@ -1740,7 +1754,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             ministry={ministry}
             onUpdate={loadMinistryData}
             activeSection={settingsSection}
-            onNavigateSection={(sec) => setSettingsSection(sec)}
+            onNavigateSection={(sec, opts) => setSettingsSection(sec, opts)}
+            activeTool={settingsTool}
+            onNavigateTool={(tool, opts) => setSettingsTool(tool, opts)}
           />
         )}
 
@@ -2030,10 +2046,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <Button
                         size="sm"
                         style={{ backgroundColor: themeColor }}
-                        onClick={() => {
-                          setActiveTab('settings');
-                          setSettingsSection('content');
-                        }}
+                        onClick={() => openSettingsTool('content', 'video-messages')}
                       >
                         <Plus className="h-4 w-4 mr-1.5" />
                         {t('ministrySpace', 'addVideoMessage', 'Add Video Message')}
@@ -2129,8 +2142,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         <button
                           onClick={() => {
                             if (canManageMinistry) {
-                              setActiveTab('settings');
-                              setSettingsSection('content');
+                              openSettingsTool('content', 'video-messages');
                             } else {
                               setActiveTab('content');
                             }

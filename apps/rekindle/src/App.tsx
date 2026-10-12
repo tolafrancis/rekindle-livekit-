@@ -121,7 +121,7 @@ const App = () => {
                   <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />
-                  <Route path="/admin" element={<AdminPage />} />
+                  <Route path="/admin/*" element={<AdminPage />} />
 
                   {/* Shared content deep links — render the app shell; the target
                       screen opens the specific item via the deep-link bridge. */}
