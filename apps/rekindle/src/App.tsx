@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
@@ -114,6 +115,7 @@ const App = () => {
                 <ActiveCallProvider>
                 <Toaster />
                 <Sonner />
+                <ConfirmDialogHost />
                 <BrowserTranslationTip />
                 <BrowserRouter>
                   <PushNotificationNavHandler />

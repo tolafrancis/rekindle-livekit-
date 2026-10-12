@@ -32,6 +32,7 @@ import { User, CreditCard, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { Toaster as Sonner } from '@rekindle/ui/sonner';
+import { ConfirmDialogHost } from '@rekindle/ui/confirm-dialog';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
 import { WebinarJoinPage } from '@rekindle/live/webinar/WebinarJoinPage';
@@ -400,6 +401,7 @@ export default function App() {
                   Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
               <Toaster />
               <Sonner />
+              <ConfirmDialogHost />
               <BrowserTranslationTip />
               <BrowserRouter>
                 <PushNotificationNavHandler />
