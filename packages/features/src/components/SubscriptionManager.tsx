@@ -17,6 +17,7 @@ import {
   Star, Zap, Shield, Gift, Users, BookOpen, 
   MessageSquare, Video, Download, Clock, Loader2, Globe
 } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 // Charges land directly on the platform's own Stripe account — no Connect
 // account here, unlike a marketplace routing payments to a third party.
@@ -393,7 +394,7 @@ export const SubscriptionManager: React.FC = () => {
   const handleDowngrade = async () => {
     if (!user) return;
     
-    const confirmed = window.confirm(t('subscriptionManager', 'confirmDowngrade', 'Are you sure you want to downgrade to the free plan? You will lose access to premium features.'));
+    const confirmed = await confirmAction({ title: t('subscriptionManager', 'confirmDowngradeTitle', 'Downgrade to the free plan?'), description: t('subscriptionManager', 'confirmDowngradeDesc', 'You will lose access to premium features.'), confirmLabel: t('subscriptionManager', 'downgrade', 'Downgrade'), destructive: true });
     if (!confirmed) return;
 
     setLoading(true);
@@ -446,9 +447,7 @@ export const SubscriptionManager: React.FC = () => {
   const handleCancelSubscription = async () => {
     if (!user || !profile) return;
 
-    const confirmed = window.confirm(
-      t('subscriptionManager', 'confirmCancel', 'Are you sure you want to cancel your subscription? You will continue to have access until the end of your billing period.')
-    );
+    const confirmed = await confirmAction({ title: t('subscriptionManager', 'confirmCancelTitle', 'Cancel your subscription?'), description: t('subscriptionManager', 'confirmCancelDesc', 'You will continue to have access until the end of your billing period.'), confirmLabel: t('subscriptionManager', 'cancelSubscription', 'Cancel subscription'), destructive: true });
     if (!confirmed) return;
 
     setLoading(true);

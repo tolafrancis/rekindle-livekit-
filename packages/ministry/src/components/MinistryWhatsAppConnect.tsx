@@ -18,6 +18,7 @@ import {
   ExternalLink, RefreshCw, Shield, Copy,
   Info, Zap, Clock, ChevronRight, Settings, FileText,
 } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 declare global {
   interface Window {
@@ -918,7 +919,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                 size="sm"
                 className="border-red-200 text-red-600 hover:bg-red-50 gap-2"
                 onClick={async () => {
-                  if (!confirm(t('ministryWhatsAppConnect', 'disconnectConfirm', 'Disconnect your WhatsApp Business Account? You can reconnect later.'))) return;
+                  if (!await confirmAction({ title: t('ministryWhatsAppConnect', 'disconnectConfirmTitle', 'Disconnect your WhatsApp Business Account?'), description: t('ministryWhatsAppConnect', 'disconnectConfirmDesc', 'You can reconnect later.'), confirmLabel: t('ministryWhatsAppConnect', 'disconnect', 'Disconnect'), destructive: true })) return;
                   await supabase
                     .from('ministry_whatsapp_configs')
                     .update({ connection_status: 'pending', phone_number_id: '', waba_id: '' })

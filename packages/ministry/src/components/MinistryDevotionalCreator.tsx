@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { fetchScripture, BIBLE_VERSIONS } from '@rekindle/features/bibleApi';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryDevotional {
   id: string;
@@ -257,7 +258,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
 
   // Delete devotional
   const handleDeleteDevotional = async (id: string) => {
-    if (!confirm(t('ministryDevotionalCreator', 'confirmDelete', 'Are you sure you want to delete this devotional?'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalCreator', 'confirmDeleteTitle', 'Delete this devotional?'), confirmLabel: t('ministryDevotionalCreator', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase

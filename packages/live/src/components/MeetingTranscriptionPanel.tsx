@@ -20,7 +20,7 @@ import {
   Copy, Download, FileText, Sparkles, ChevronDown,
   CheckCircle2, Globe, X
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import {
   TranscriptLine,
   RawTranscript,

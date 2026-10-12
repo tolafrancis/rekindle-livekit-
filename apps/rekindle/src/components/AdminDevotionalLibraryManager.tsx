@@ -24,6 +24,7 @@ import {
   generateDevotionalOutline, regenerateSeriesField, generateDevotionalDay, rewriteDevotionalDay,
   type DevotionalOutlineDay,
 } from '@/lib/generateDevotionalContent';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Inline cover-image field: paste a URL or upload a file
 const CoverImageField: React.FC<{
@@ -293,7 +294,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
   };
 
   const handleDeleteCategory = async (cat: Category) => {
-    if (!window.confirm(t('adminDevotionalLibraryManager', 'confirmDeleteCategory', 'Delete category "{name}"? Series in this category will become uncategorized.').replace('{name}', String(cat.name)))) {
+    if (!await confirmAction({ title: t('adminDevotionalLibraryManager', 'confirmDeleteCategoryTitle', 'Delete category "{name}"?').replace('{name}', String(cat.name)), description: t('adminDevotionalLibraryManager', 'confirmDeleteCategoryDesc', 'Series in this category will become uncategorized.'), confirmLabel: t('adminDevotionalLibraryManager', 'delete', 'Delete'), destructive: true })) {
       return;
     }
     try {
@@ -381,7 +382,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
   };
 
   const handleDeleteSeries = async (seriesId: string) => {
-    if (!confirm(t('adminDevotionalLibraryManager', 'confirmDeleteSeries', 'Are you sure you want to delete this series? This will also delete all entries.'))) {
+    if (!await confirmAction({ title: t('adminDevotionalLibraryManager', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('adminDevotionalLibraryManager', 'confirmDeleteSeriesDesc', 'This will also delete all entries.'), confirmLabel: t('adminDevotionalLibraryManager', 'delete', 'Delete'), destructive: true })) {
       return;
     }
 

@@ -19,6 +19,7 @@ import {
   searchFilterIconClass,
   searchFilterInputClass
 } from './SearchFilterPanel';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface BookmarkedDevotional {
   id: string;
@@ -144,7 +145,7 @@ export const DevotionalBookmarks: React.FC<{
   };
 
   const handleDeleteBookmark = async (id: string) => {
-    if (!confirm(t('devotionalBookmarks', 'confirmRemove', 'Remove this bookmark?'))) return;
+    if (!await confirmAction({ title: t('devotionalBookmarks', 'confirmRemove', 'Remove this bookmark?'), confirmLabel: t('devotionalBookmarks', 'remove', 'Remove'), destructive: true })) return;
 
     try {
       const { error } = await supabase

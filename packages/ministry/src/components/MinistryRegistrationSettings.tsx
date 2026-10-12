@@ -16,6 +16,7 @@ import {
   downloadUrl, downloadTextFile, generateInviteCode, sha256Hex,
 } from '@rekindle/features/qrCode';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface Props {
   ministry: any;          // ministry_groups row (select '*')
@@ -173,9 +174,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
   };
 
   const handleRegenerate = async () => {
-    const ok = window.confirm(
-      t('ministryRegistrationSettings', 'regenerateConfirm', 'Regenerate the join code?\n\nPreviously printed QR codes and shared links will STOP working. Members will need the new code from you.'),
-    );
+    const ok = await confirmAction({ title: t('ministryRegistrationSettings', 'regenerateConfirmTitle', 'Regenerate the join code?'), description: t('ministryRegistrationSettings', 'regenerateConfirmDesc', 'Previously printed QR codes and shared links will STOP working. Members will need the new code from you.'), confirmLabel: t('ministryRegistrationSettings', 'regenerate', 'Regenerate'), destructive: true });
     if (!ok) return;
     setSaving(true);
     try {

@@ -48,7 +48,7 @@ import {
   commonTimeZones,
   REMINDER_OFFSET_OPTIONS,
 } from '@rekindle/features/meetingTime';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
 import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
@@ -91,6 +91,7 @@ import {
 // canHostInteractiveMeeting used to gate this off the wrong (legacy,
 // individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
 import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@rekindle/auth/ministryEntitlements';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 // Flat, platform-wide ceiling on real participants a single Interactive
 // Meeting may ever have (2026-09-21) — same value livekit-token/index.ts
@@ -2015,7 +2016,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
-    if (!confirm(t('ministryInteractiveMeetings', 'confirmDeleteMeeting', 'Are you sure you want to delete this meeting?'))) return;
+    if (!await confirmAction({ title: t('ministryInteractiveMeetings', 'confirmDeleteMeetingTitle', 'Delete this meeting?'), confirmLabel: t('ministryInteractiveMeetings', 'delete', 'Delete'), destructive: true })) return;
     
     setDeletingMeetingId(meetingId);
     try {

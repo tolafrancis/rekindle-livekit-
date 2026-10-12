@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { BroadcastWallet } from './BroadcastWallet';
 import type { MinistryWABAConfig } from './MinistryWhatsAppConnect';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -267,7 +268,7 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
 
   // ── Remove subscriber (manual opt-out) ────────────────────────────────
   const removeSubscriber = async (id: string, phone: string) => {
-    if (!confirm(t('ministryWhatsAppUsage', 'confirmRemoveSubscriber', 'Remove {phone} from your subscriber list?').replace('{phone}', String(phone)))) return;
+    if (!await confirmAction({ title: t('ministryWhatsAppUsage', 'confirmRemoveSubscriber', 'Remove {phone} from your subscriber list?').replace('{phone}', String(phone)), confirmLabel: t('ministryWhatsAppUsage', 'remove', 'Remove'), destructive: true })) return;
     await supabase
       .from('ministry_whatsapp_subscribers')
       .update({ opted_in: false, opted_out_at: new Date().toISOString() })

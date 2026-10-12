@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface DayReading {
   day: number;
@@ -170,7 +171,7 @@ export const ReadingPlanManager: React.FC = () => {
   };
 
   const handleDelete = async (planId: string) => {
-    if (!confirm(t('readingPlanManager', 'confirmDelete', 'Are you sure you want to delete this reading plan?'))) return;
+    if (!await confirmAction({ title: t('readingPlanManager', 'confirmDeleteTitle', 'Delete this reading plan?'), confirmLabel: t('readingPlanManager', 'delete', 'Delete'), destructive: true })) return;
 
     const updatedPlans = readingPlans.filter(p => p.id !== planId);
     setReadingPlans(updatedPlans);

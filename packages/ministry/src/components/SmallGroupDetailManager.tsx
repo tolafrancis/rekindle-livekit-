@@ -23,6 +23,7 @@ import {
   resolveSmallGroupRole, smallGroupRoleCan, ASSIGNABLE_SMALL_GROUP_ROLES,
   SMALL_GROUP_ROLE_LABELS, type SmallGroupRole,
 } from '../lib/smallGroupPermissions';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface SmallGroupDetailManagerProps {
   ministryId: string;
@@ -236,7 +237,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   };
 
   const removeMember = async (m: any) => {
-    if (!window.confirm(t('smallGroupDetailManager', 'confirmRemoveMember', 'Remove this member from the group?'))) return;
+    if (!await confirmAction({ title: t('smallGroupDetailManager', 'confirmRemoveMember', 'Remove this member from the group?'), confirmLabel: t('smallGroupDetailManager', 'remove', 'Remove'), destructive: true })) return;
     try {
       const { error } = await supabase.from('small_group_members').delete().eq('id', m.id);
       if (error) throw error;
@@ -457,7 +458,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   };
 
   const deleteGroup = async () => {
-    if (!window.confirm(t('smallGroupDetailManager', 'confirmDeleteGroup', 'Permanently delete this group and all its members, meetings, attendance, and posts?'))) return;
+    if (!await confirmAction({ title: t('smallGroupDetailManager', 'confirmDeleteGroupTitle', 'Permanently delete this group?'), description: t('smallGroupDetailManager', 'confirmDeleteGroupDesc', 'All its members, meetings, attendance, and posts will be deleted.'), confirmLabel: t('smallGroupDetailManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('small_groups').delete().eq('id', groupId);
       if (error) throw error;

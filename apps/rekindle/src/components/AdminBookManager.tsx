@@ -26,6 +26,7 @@ import {
   FileText,
   X
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface BookSummary {
   id: string;
@@ -253,7 +254,7 @@ export const AdminBookManager: React.FC = () => {
   };
 
   const handleDelete = async (bookId: string) => {
-    if (!confirm(t('adminBookManager', 'confirmDelete', 'Are you sure you want to delete this book summary?'))) return;
+    if (!await confirmAction({ title: t('adminBookManager', 'confirmDeleteTitle', 'Delete this book summary?'), confirmLabel: t('adminBookManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase

@@ -15,6 +15,7 @@ import {
   Calendar, Clock, User, MessageSquare, XCircle, CheckCircle, 
   Loader2, RefreshCw, Video, Star, AlertCircle 
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface CounsellingSession {
   id: string;
@@ -131,7 +132,7 @@ export const MyBookings: React.FC = () => {
   }, [loadBookings]);
 
   const handleCancelBooking = async (bookingId: string) => {
-    if (!confirm(t('myBookings', 'confirmCancel', 'Are you sure you want to cancel this booking?'))) return;
+    if (!await confirmAction({ title: t('myBookings', 'confirmCancelTitle', 'Cancel this booking?'), confirmLabel: t('myBookings', 'cancelBooking', 'Cancel booking'), cancelLabel: t('myBookings', 'keepBooking', 'Keep booking'), destructive: true })) return;
 
     try {
       const { error } = await supabase

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,8 @@ import {
 import { ModerationReportsPanel } from '@rekindle/features/components/ModerationReportsPanel';
 import { fetchScripture, BIBLE_VERSIONS } from '@/lib/bibleApi';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { confirmAction } from '@/components/ui/confirm-dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 // Each admin section is its own chunk, fetched when its tab is first opened —
 // the dashboard used to download all ~30 managers (~930 KB) up front.
@@ -203,69 +205,104 @@ const AdminErrorFallback: React.FC<{ onRetry: () => void }> = ({ onRetry }) => {
   );
 };
 
-// Mobile Menu Component
-const MobileMenu: React.FC<{
-  activeTab: string;
-  onTabChange: (tab: string) => void;
-  tabs: Array<{ value: string; label: string; icon?: React.ElementType }>;
-}> = ({ activeTab, onTabChange, tabs }) => {
+// Admin section navigation: one list of grouped screens, shown as a left
+// sidebar on desktop and inside a sheet on phones. Each item opens one
+// screen; an item with several `tabs` shows them as inner tabs.
+export interface AdminNavItem {
+  id: string;
+  label: string;
+  icon?: React.ElementType;
+  /** Admin tab values this item covers; the first one opens by default. */
+  tabs: string[];
+  /** Set on Platform items: the platform-admin tab this item opens. */
+  platformTab?: string;
+}
+export interface AdminNavGroup {
+  id: string;
+  label: string;
+  items: AdminNavItem[];
+}
+
+const AdminSectionNav: React.FC<{
+  groups: AdminNavGroup[];
+  isActive: (item: AdminNavItem) => boolean;
+  onSelect: (item: AdminNavItem) => void;
+}> = ({ groups, isActive, onSelect }) => {
   const { t } = useLanguage();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const handleTabSelect = (value: string) => {
-    onTabChange(value);
-    setIsOpen(false);
-  };
-
-  const activeTabLabel = tabs.find(tab => tab.value === activeTab)?.label || t('adminDashboard', 'menu', 'Menu');
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? groups
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((it) => it.label.toLowerCase().includes(q) || g.label.toLowerCase().includes(q)),
+        }))
+        .filter((g) => g.items.length > 0)
+    : groups;
 
   return (
-    <div className="relative lg:hidden">
-      <Button
-        variant="outline"
-        className="w-full justify-between"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <span className="flex items-center gap-2">
-          <Menu className="h-4 w-4" />
-          {activeTabLabel}
-        </span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </Button>
-
-      {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black bg-opacity-25"
-            onClick={() => setIsOpen(false)}
-          />
-          <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border z-50 max-h-96 overflow-y-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
+    <nav aria-label={t('adminDashboard', 'sectionsNav', 'Admin sections')} className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" aria-hidden="true" />
+        <Input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('adminDashboard', 'findSection', 'Find a section')}
+          aria-label={t('adminDashboard', 'findSection', 'Find a section')}
+          className="pl-9 h-10"
+        />
+      </div>
+      {shown.length === 0 && (
+        <p className="text-sm text-gray-500 px-2">{t('adminDashboard', 'noSectionMatch', 'No section matches')}</p>
+      )}
+      {shown.map((group) => (
+        <div key={group.id}>
+          {group.label && (
+            <p className="px-2 mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</p>
+          )}
+          <ul className="space-y-0.5">
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item);
               return (
-                <button
-                  key={tab.value}
-                  onClick={() => handleTabSelect(tab.value)}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b last:border-b-0 ${
-                    activeTab === tab.value ? 'bg-purple-50 text-purple-700 font-medium' : ''
-                  }`}
-                >
-                  {Icon && <Icon className="h-4 w-4" />}
-                  {tab.label}
-                </button>
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(item)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`w-full min-h-[40px] flex items-center gap-2 px-2 py-2 rounded-lg text-sm text-left transition-colors ${
+                      active ? 'bg-purple-100 text-purple-800 font-semibold' : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                </li>
               );
             })}
-          </div>
-        </>
-      )}
-    </div>
+          </ul>
+        </div>
+      ))}
+    </nav>
   );
 };
 
 // Main Admin Dashboard Component
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false }) => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useViewHistory<string>("admin-dashboard", 'dashboard');
+  // The open screen lives in the URL: /admin/<tab>, and /admin/platform/<tab>
+  // for the super-admin platform screens, so reload, Back and bookmarks work.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [navOpen, setNavOpen] = useState(false);
+  const pathParts = location.pathname.replace(/^\/admin\/?/, '').split('/').filter(Boolean);
+  const routeTab = pathParts[0] === 'platform' ? 'platform-admin' : (pathParts[0] || 'dashboard');
+  const platformTab = pathParts[0] === 'platform' ? (pathParts[1] || 'overview') : 'overview';
+  const setActiveTab = useCallback((tab: string) => {
+    navigate(tab === 'dashboard' ? '/admin' : tab === 'platform-admin' ? '/admin/platform' : `/admin/${tab}`);
+  }, [navigate]);
+  const setPlatformTab = useCallback((tab: string) => navigate(`/admin/platform/${tab}`), [navigate]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -377,32 +414,69 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
     ...(isSuperAdmin ? [{ value: 'platform-admin', label: t('adminDashboard', 'tabPlatformAdmin', 'Platform Admin'), icon: Shield }] : [])
   ];
 
-  // 2-Level Navigation Categories definition
-  const categories = React.useMemo(() => [
-    { id: 'content', label: 'Content', icon: BookOpen, tabValues: ['devotionals', 'devotional-library', 'devotional-streams', 'prayer-library', 'prayer-wall', 'prayer-challenges', 'affirmations', 'declarations', 'books', 'reading-plans', 'music', 'submissions'] },
-    { id: 'users', label: 'Users', icon: Users, tabValues: ['users', 'subscriptions', 'mentors', 'referrals'] },
-    { id: 'community', label: 'Community', icon: Church, tabValues: ['reports', 'community-revelations', 'leaderboard', 'ministry-groups'] },
-    { id: 'live', label: 'Live', icon: Radio, tabValues: ['live-channels', 'translations', 'content-translation', 'bulk-tts'] },
-    { id: 'finance', label: 'Finance', icon: DollarSign, tabValues: ['donations-manage', 'whatsapp-admin'] },
-    { id: 'system', label: 'System', icon: Settings, tabValues: ['analytics', 'notifications', 'broadcast', 'broadcast-history', 'languages', 'ai-companion', 'platform-admin'] },
-  ], []);
+  // Unknown or not-allowed screens in the URL fall back to the overview.
+  const activeTab = routeTab === 'dashboard' || adminTabs.some((tab) => tab.value === routeTab) ? routeTab : 'dashboard';
 
-  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
-    return categories.find(cat => cat.tabValues.includes(activeTab))?.id || 'content';
-  });
+  const tabLabel = (value: string) => adminTabs.find((tab) => tab.value === value)?.label ?? value;
+  const tabIcon = (value: string) => adminTabs.find((tab) => tab.value === value)?.icon;
+  const single = (value: string): AdminNavItem => ({ id: value, label: tabLabel(value), icon: tabIcon(value), tabs: [value] });
 
-  useEffect(() => {
-    if (activeTab !== 'dashboard') {
-      const cat = categories.find(c => c.tabValues.includes(activeTab));
-      if (cat) setSelectedCategory(cat.id);
-    }
-  }, [activeTab, categories]);
+  const PLATFORM_TABS: Array<{ value: string; label: string; icon: React.ElementType }> = [
+    { value: 'overview', label: t('platformAdminDashboard', 'tabOverview', 'Overview'), icon: BarChart3 },
+    { value: 'ministries', label: t('platformAdminDashboard', 'tabMinistries', 'Ministries'), icon: Building2 },
+    { value: 'subscriptions', label: t('platformAdminDashboard', 'tabPlans', 'Plans'), icon: Crown },
+    { value: 'billing', label: t('platformAdminDashboard', 'tabBilling', 'Billing'), icon: DollarSign },
+    { value: 'partner-plans', label: t('platformAdminDashboard', 'tabPartnerPlans', 'Partner Plans'), icon: Crown },
+    { value: 'analytics', label: t('platformAdminDashboard', 'tabAnalytics', 'Analytics'), icon: TrendingUp },
+    { value: 'system', label: t('platformAdminDashboard', 'tabSystem', 'System'), icon: Settings },
+    { value: 'support', label: t('platformAdminDashboard', 'tabSupport', 'Support'), icon: MessageSquare },
+    { value: 'flagged', label: t('platformAdminDashboard', 'tabFlagged', 'Flagged'), icon: Flag },
+    { value: 'audit', label: t('platformAdminDashboard', 'tabAudit', 'Audit'), icon: FileText },
+    { value: 'announcements', label: t('platformAdminDashboard', 'tabAnnounce', 'Announce'), icon: Globe },
+    { value: 'faq', label: t('platformAdminDashboard', 'tabFaq', 'FAQ'), icon: Inbox },
+    { value: 'settings', label: t('platformAdminDashboard', 'tabSettings', 'Settings'), icon: Settings },
+  ];
 
-  const currentCategoryTabs = React.useMemo(() => {
-    const cat = categories.find(c => c.id === selectedCategory);
-    if (!cat) return [];
-    return adminTabs.filter(tab => cat.tabValues.includes(tab.value));
-  }, [selectedCategory, categories, adminTabs]);
+  const navGroups: AdminNavGroup[] = [
+    { id: 'overview', label: '', items: [{ id: 'dashboard', label: t('adminDashboard', 'navOverview', 'Overview'), icon: BarChart3, tabs: ['dashboard'] }] },
+    { id: 'content', label: t('adminDashboard', 'groupContent', 'Content'), items: [
+      { id: 'devotionals', label: t('adminDashboard', 'devotionals', 'Devotionals'), icon: BookOpen, tabs: ['devotionals', 'devotional-library', 'devotional-streams'] },
+      single('prayer-library'), single('prayer-challenges'), single('music'), single('affirmations'),
+      single('declarations'), single('books'), single('reading-plans'), single('submissions'),
+    ] },
+    { id: 'people', label: t('adminDashboard', 'groupPeople', 'People'), items: [
+      single('users'), single('subscriptions'), single('mentors'), single('referrals'),
+    ] },
+    { id: 'community', label: t('adminDashboard', 'groupCommunity', 'Community'), items: [
+      single('reports'), single('prayer-wall'), single('community-revelations'), single('ministry-groups'), single('leaderboard'),
+    ] },
+    { id: 'messaging', label: t('adminDashboard', 'groupMessaging', 'Messaging'), items: [
+      single('notifications'), single('broadcast'), single('broadcast-history'), single('whatsapp-admin'),
+    ] },
+    { id: 'live', label: t('adminDashboard', 'groupLiveLanguages', 'Live & languages'), items: [
+      single('live-channels'),
+      { id: 'languages', label: tabLabel('languages'), icon: Globe, tabs: ['languages', 'translations', 'content-translation'] },
+      single('bulk-tts'),
+    ] },
+    { id: 'finance', label: t('adminDashboard', 'groupFinance', 'Finance'), items: [single('donations-manage')] },
+    { id: 'system', label: t('adminDashboard', 'groupSystem', 'System'), items: [single('analytics'), single('ai-companion')] },
+    ...(isSuperAdmin ? [{
+      id: 'platform',
+      label: t('adminDashboard', 'groupPlatform', 'Platform'),
+      items: PLATFORM_TABS.map((pt) => ({ id: `platform-${pt.value}`, label: pt.label, icon: pt.icon, tabs: ['platform-admin'], platformTab: pt.value })),
+    }] : []),
+  ];
+
+  const isNavItemActive = (item: AdminNavItem) =>
+    item.platformTab ? activeTab === 'platform-admin' && platformTab === item.platformTab : item.tabs.includes(activeTab);
+  const selectNavItem = (item: AdminNavItem) => {
+    if (item.platformTab) setPlatformTab(item.platformTab);
+    else if (!item.tabs.includes(activeTab)) setActiveTab(item.tabs[0]);
+    setNavOpen(false);
+  };
+  const activeNavItem = navGroups.flatMap((g) => g.items).find(isNavItemActive);
+  const activeNavLabel = activeNavItem?.label ?? t('adminDashboard', 'navOverview', 'Overview');
+  const innerTabs = activeNavItem && activeNavItem.tabs.length > 1 ? activeNavItem.tabs : null;
 
   // Load all data
   const loadAllData = useCallback(async () => {
@@ -548,7 +622,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
   // Delete handler
   const handleDelete = async (type: string, id: string) => {
-    if (!confirm(t('adminDashboard', 'confirmDelete', 'Are you sure you want to delete this item?'))) return;
+    if (!await confirmAction({ title: t('adminDashboard', 'confirmDeleteTitle', 'Delete this item?'), confirmLabel: t('adminDashboard', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const tableMap: Record<string, string> = {
@@ -574,7 +648,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
   const handleBulkDelete = async (type: string, ids: string[]) => {
     if (ids.length === 0) return;
-    if (!confirm(t('adminDashboard', 'confirmBulkDelete', 'Delete {n} selected items? This cannot be undone.').replace('{n}', String(ids.length)))) return;
+    if (!await confirmAction({ title: t('adminDashboard', 'confirmBulkDeleteTitle', 'Delete {n} selected items?').replace('{n}', String(ids.length)), description: t('adminDashboard', 'cannotBeUndone', 'This cannot be undone.'), confirmLabel: t('adminDashboard', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const tableMap: Record<string, string> = {
@@ -1530,107 +1604,66 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Super Admin Banner */}
-      {isSuperAdmin && (
-        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2 px-4 text-center">
-          <div className="flex items-center justify-center gap-2">
-            <Shield className="h-4 w-4" />
-            <span className="text-sm font-medium">{t('adminDashboard', 'superAdminMode', 'Super Admin Mode')}</span>
-          </div>
-        </div>
-      )}
+    <div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-6 lg:items-start">
+          {/* Desktop sidebar */}
+          <aside className="hidden lg:block sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto bg-white border rounded-xl p-3">
+            <AdminSectionNav groups={navGroups} isActive={isNavItemActive} onSelect={selectNavItem} />
+          </aside>
 
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{t('adminDashboard', 'adminDashboardTitle', 'Admin Dashboard')}</h1>
-              <p className="text-sm text-gray-500 mt-1">{t('adminDashboard', 'adminDashboardSubtitle', 'Manage your platform content and users')}</p>
-            </div>
-            <Button onClick={loadAllData} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {t('adminDashboard', 'refreshData', 'Refresh Data')}
+          <div className="min-w-0 space-y-4">
+            {/* Phone: the same sections in a sheet */}
+            <Button
+              variant="outline"
+              className="lg:hidden w-full justify-between h-11"
+              onClick={() => setNavOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <span className="flex items-center gap-2">
+                <Menu className="h-4 w-4" aria-hidden="true" />
+                {t('adminDashboard', 'sections', 'Sections')}
+              </span>
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
             </Button>
-          </div>
-        </div>
-      </header>
+            <Sheet open={navOpen} onOpenChange={setNavOpen}>
+              <SheetContent side="left" className="w-80 max-w-[85vw] overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>{t('adminDashboard', 'sectionsNav', 'Admin sections')}</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4">
+                  <AdminSectionNav groups={navGroups} isActive={isNavItemActive} onSelect={selectNavItem} />
+                </div>
+              </SheetContent>
+            </Sheet>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          {/* Mobile Menu */}
-          <div className="lg:hidden mb-4">
-            <MobileMenu 
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              tabs={adminTabs}
-            />
-          </div>
-
-          {/* Desktop 2-Level Nav */}
-          <div className="hidden lg:block space-y-3 mb-6">
-            {/* Level 1: Category Selector + Dashboard */}
-            <div className="flex items-center gap-2 bg-white border rounded-xl p-2 shadow-xs">
-              <Button
-                variant={activeTab === 'dashboard' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setActiveTab('dashboard')}
-                className={`flex items-center gap-2 font-medium ${
-                  activeTab === 'dashboard'
-                    ? 'bg-purple-600 text-white hover:bg-purple-700'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <BarChart3 className="h-4 w-4" />
-                Dashboard
+            {/* Section title */}
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900 truncate">{activeNavLabel}</h2>
+              <Button onClick={loadAllData} variant="outline" size="sm" className="shrink-0">
+                <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
+                {t('adminDashboard', 'refreshData', 'Refresh Data')}
               </Button>
-              <div className="h-5 w-px bg-gray-200 mx-1" />
-              {categories.map((cat) => {
-                const Icon = cat.icon;
-                const isSelected = activeTab !== 'dashboard' && selectedCategory === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setSelectedCategory(cat.id);
-                      if (!cat.tabValues.includes(activeTab)) {
-                        setActiveTab(cat.tabValues[0]);
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs font-semibold'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {cat.label}
-                  </button>
-                );
-              })}
             </div>
 
-            {/* Level 2: Sub-tabs for selected category */}
-            {activeTab !== 'dashboard' && (
-              <TabsList className="flex flex-wrap h-auto bg-gray-50/80 border rounded-xl p-1.5 gap-1">
-                {currentCategoryTabs.map((tab) => {
-                  const Icon = tab.icon;
+            {/* Screens grouped under one item (Devotionals, Languages) */}
+            {innerTabs && (
+              <TabsList className="flex flex-wrap h-auto justify-start bg-gray-50/80 border rounded-xl p-1.5 gap-1">
+                {innerTabs.map((value) => {
+                  const Icon = tabIcon(value);
                   return (
                     <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-2xs"
+                      key={value}
+                      value={value}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-2xs"
                     >
-                      {Icon && <Icon className="h-3.5 w-3.5" />}
-                      {tab.label}
+                      {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
+                      {tabLabel(value)}
                     </TabsTrigger>
                   );
                 })}
               </TabsList>
             )}
-          </div>
 
           {/* Dashboard Overview */}
           <Suspense
@@ -1957,11 +1990,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
           )}
 
           {isSuperAdmin && activeTab === 'platform-admin' && (
-            <PlatformAdminDashboard />
+            <PlatformAdminDashboard activeTab={platformTab} onTabChange={setPlatformTab} />
           )}
           </Suspense>
-          
-        </Tabs>
+          </div>
+        </div>
+      </Tabs>
 
         {/* Modal */}
         <Dialog open={showModal} onOpenChange={setShowModal}>
@@ -1989,7 +2023,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
     </div>
   );
 };

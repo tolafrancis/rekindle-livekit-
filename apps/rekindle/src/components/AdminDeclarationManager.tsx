@@ -14,6 +14,7 @@ import { TranslateNowButton } from '@/components/TranslateNowButton';
 import { HighQualityAudioPlayer } from '@/components/HighQualityAudioPlayer';
 import { Plus, Edit, Trash2, Save, X, Shield, Volume2, Sparkles, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface Declaration {
   id: string;
@@ -147,7 +148,7 @@ export const AdminDeclarationManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('adminDeclarationManager', 'areYouSure', 'Are you sure?'))) return;
+    if (!await confirmAction({ title: t('adminDeclarationManager', 'confirmDeleteTitle', 'Delete this declaration?'), confirmLabel: t('adminDeclarationManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('declarations').delete().eq('id', id);
       if (error) throw error;

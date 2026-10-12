@@ -19,6 +19,7 @@ import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
 import { LiveScriptureOperatorCard, type ScriptureSessionOption } from './LiveScriptureOperatorCard';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryTranslationServiceManagerProps {
   ministryId: string;
@@ -416,7 +417,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       toast({ title: 'Cannot delete', description: 'This service still has an active session — end it first.', variant: 'destructive' });
       return;
     }
-    if (!confirm(`Delete "${service.name}"? Past sessions stay, just no longer grouped under this name. This cannot be undone.`)) return;
+    if (!await confirmAction({ title: `Delete "${service.name}"?`, description: 'Past sessions stay, just no longer grouped under this name. This cannot be undone.', confirmLabel: 'Delete', destructive: true })) return;
     setDeletingServiceId(service.id);
     try {
       const { error } = await supabase.from('translation_services').delete().eq('id', service.id);

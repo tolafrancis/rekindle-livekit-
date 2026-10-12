@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Hand, MicOff, Sparkles, ShieldCheck, ShieldOff, ArrowDownToLine, UserPlus } from 'lucide-react';
