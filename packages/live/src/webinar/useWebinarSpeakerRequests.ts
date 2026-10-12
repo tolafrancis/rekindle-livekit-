@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@rekindle/supabase';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 
 export type SpeakerRequestStatus = 'requested' | 'invited' | 'accepted' | 'declined' | 'withdrawn' | 'revoked';
 

@@ -144,7 +144,7 @@ export const CounsellingChatSidebar: React.FC<CounsellingChatSidebarProps> = ({
       <CardHeader className="border-b border-gray-700 flex-shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle className="text-white text-lg">{t('counsellingChatSidebar', 'sessionChat', 'Session Chat')}</CardTitle>
-          <Button
+          <Button aria-label={t('a11y', 'closeChat', 'Close chat')}
             variant="ghost"
             size="icon"
             onClick={onClose}
@@ -228,7 +228,7 @@ export const CounsellingChatSidebar: React.FC<CounsellingChatSidebarProps> = ({
               className="flex-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
               maxLength={500}
             />
-            <Button
+            <Button aria-label={t('a11y', 'sendMessage', 'Send message')}
               type="submit"
               disabled={!newMessage.trim() || sending}
               className="bg-purple-600 hover:bg-purple-700"

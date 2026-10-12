@@ -255,7 +255,7 @@ export const RealTimeChat: React.FC = () => {
       {/* Chat Header */}
       <CardHeader className="border-b py-3">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setSelectedRoom(null)}>
+          <Button aria-label={t('a11y', 'backToRooms', 'Back to rooms')} variant="ghost" size="icon" onClick={() => setSelectedRoom(null)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <Avatar className="h-10 w-10">
@@ -269,13 +269,13 @@ export const RealTimeChat: React.FC = () => {
             <p className="text-xs text-gray-500 capitalize">{t('realTimeChat', 'typeChat', '{type} chat').replace('{type}', String(selectedRoom.type))}</p>
           </div>
           <div className="flex gap-1">
-            <Button variant="ghost" size="icon">
+            <Button aria-label={t('a11y', 'voiceCall', 'Voice call')} variant="ghost" size="icon">
               <Phone className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon">
+            <Button aria-label={t('a11y', 'videoCall', 'Video call')} variant="ghost" size="icon">
               <Video className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon">
+            <Button aria-label={t('a11y', 'moreOptions', 'More options')} variant="ghost" size="icon">
               <MoreVertical className="h-4 w-4" />
             </Button>
           </div>
@@ -346,10 +346,10 @@ export const RealTimeChat: React.FC = () => {
       {/* Message Input */}
       <div className="border-t p-4">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="text-gray-500">
+          <Button aria-label={t('a11y', 'addAttachment', 'Add attachment')} variant="ghost" size="icon" className="text-gray-500">
             <Plus className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="text-gray-500">
+          <Button aria-label={t('a11y', 'sendImage', 'Send image')} variant="ghost" size="icon" className="text-gray-500">
             <Image className="h-5 w-5" />
           </Button>
           <Input
@@ -359,10 +359,10 @@ export const RealTimeChat: React.FC = () => {
             onKeyPress={handleKeyPress}
             className="flex-1"
           />
-          <Button variant="ghost" size="icon" className="text-gray-500">
+          <Button aria-label={t('a11y', 'emoji', 'Emoji')} variant="ghost" size="icon" className="text-gray-500">
             <Smile className="h-5 w-5" />
           </Button>
-          <Button 
+          <Button aria-label={t('a11y', 'sendMessage', 'Send message')} 
             onClick={sendMessage} 
             disabled={!newMessage.trim() || sending}
             className="bg-purple-600 hover:bg-purple-700"

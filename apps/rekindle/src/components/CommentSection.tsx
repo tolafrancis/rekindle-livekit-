@@ -64,7 +64,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500">{comment.timestamp}</span>
                   {isMine(comment) ? (
-                    <button onClick={() => onDeleteComment(comment.id)} className="text-gray-400 hover:text-red-500">
+                    <button aria-label="Delete comment" onClick={() => onDeleteComment(comment.id)} className="text-gray-400 hover:text-red-500">
                       <Trash2 className="h-3 w-3" />
                     </button>
                   ) : (
@@ -86,7 +86,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({ comments, onAddC
       </div>
       <div className="flex gap-2">
         <Input placeholder="Write a comment..." value={newComment} onChange={e => setNewComment(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSubmit()} className="flex-1" />
-        <Button size="sm" onClick={handleSubmit} disabled={!newComment.trim()}><Send className="h-4 w-4" /></Button>
+        <Button aria-label="Post comment" size="sm" onClick={handleSubmit} disabled={!newComment.trim()}><Send className="h-4 w-4" /></Button>
       </div>
     </div>
   );

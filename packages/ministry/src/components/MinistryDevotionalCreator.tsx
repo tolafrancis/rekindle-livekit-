@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { fetchScripture, BIBLE_VERSIONS } from '@rekindle/features/bibleApi';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryDevotional {
   id: string;
@@ -257,7 +258,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
 
   // Delete devotional
   const handleDeleteDevotional = async (id: string) => {
-    if (!confirm(t('ministryDevotionalCreator', 'confirmDelete', 'Are you sure you want to delete this devotional?'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalCreator', 'confirmDeleteTitle', 'Delete this devotional?'), confirmLabel: t('ministryDevotionalCreator', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -794,7 +795,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
                             {t('ministryDevotionalCreator', 'broadcast', 'Broadcast')}
                           </Button>
                         )}
-                        <Button 
+                        <Button aria-label={t('ministryDevotionalCreator', 'deleteDevotional', 'Delete devotional')} 
                           size="sm" 
                           variant="ghost"
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -926,7 +927,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
                   <code className="text-xs flex-1 truncate">
                     {generateDeepLink(selectedDevotional.id, selectedDevotional.consumption_location)}
                   </code>
-                  <Button 
+                  <Button aria-label={t('ministryDevotionalCreator', 'copyLink', 'Copy link')} 
                     size="sm" 
                     variant="ghost"
                     onClick={() => copyDeepLink(selectedDevotional.id, selectedDevotional.consumption_location)}

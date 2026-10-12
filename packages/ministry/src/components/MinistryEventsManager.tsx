@@ -20,6 +20,7 @@ import {
   PlayCircle, Radio, Film, User, Mail, Send, Link2, AlertCircle, Copy
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryEventsManagerProps {
   ministryId: string;
@@ -320,7 +321,7 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryEventsManager', 'confirmDelete', 'Are you sure you want to delete this event?'))) return;
+    if (!await confirmAction({ title: t('ministryEventsManager', 'confirmDeleteTitle', 'Delete this event?'), confirmLabel: t('ministryEventsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -739,7 +740,7 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
                         </Button>
                       )}
                       {event.send_reminders && (
-                        <Button 
+                        <Button aria-label={t('ministryEventsManager', 'sendReminder', 'Send reminder')} 
                           variant="outline" 
                           size="sm"
                           onClick={() => {
@@ -751,13 +752,13 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
                           <Bell className="h-4 w-4" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(event)}>
+                      <Button aria-label={t('ministryEventsManager', 'editEvent', 'Edit event')} variant="ghost" size="icon" onClick={() => handleEdit(event)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDuplicate(event)}>
+                      <Button aria-label={t('ministryEventsManager', 'duplicateEvent', 'Duplicate event')} variant="ghost" size="icon" onClick={() => handleDuplicate(event)}>
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(event.id)}>
+                      <Button aria-label={t('ministryEventsManager', 'deleteEvent', 'Delete event')} variant="ghost" size="icon" onClick={() => handleDelete(event.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

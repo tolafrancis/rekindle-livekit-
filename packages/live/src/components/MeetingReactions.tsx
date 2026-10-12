@@ -123,7 +123,7 @@ export const ReactionButton: React.FC<{
         aria-label="Reactions"
         aria-expanded={open}
         title="Reactions"
-        className={`flex h-10 w-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
+        className={`flex h-11 w-11 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
           open ? 'bg-purple-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
         }`}
       >

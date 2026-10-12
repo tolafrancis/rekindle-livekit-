@@ -353,7 +353,7 @@ export const DonationsManagement: React.FC<DonationsManagementProps> = ({ donati
               </CardTitle>
               <CardDescription>{t('donationsManagement', 'activePartnersDesc', 'Users with active Partner status')}</CardDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={loadPartners} disabled={loadingPartners}>
+            <Button aria-label={t('a11y', 'refresh', 'Refresh')} variant="outline" size="sm" onClick={loadPartners} disabled={loadingPartners}>
               <RefreshCw className={`h-3.5 w-3.5 ${loadingPartners ? 'animate-spin' : ''}`} />
             </Button>
           </div>

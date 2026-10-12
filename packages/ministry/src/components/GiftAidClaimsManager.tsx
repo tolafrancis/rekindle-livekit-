@@ -20,6 +20,7 @@ import {
 import { validateClaim } from '../giftAid/r68Validation';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { GiftAidAutoSubmitGuide } from './GiftAidAutoSubmitGuide';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface Props {
   ministryId: string;
@@ -136,7 +137,7 @@ export const GiftAidClaimsManager: React.FC<Props> = ({ ministryId, themeColor =
 
   const handleDelete = async () => {
     if (!selected) return;
-    if (!window.confirm(t('giftAidClaimsManager', 'deleteDraftConfirm', 'Delete this draft claim? Its donations return to the eligible pool.'))) return;
+    if (!await confirmAction({ title: t('giftAidClaimsManager', 'deleteDraftConfirmTitle', 'Delete this draft claim?'), description: t('giftAidClaimsManager', 'deleteDraftConfirmDesc', 'Its donations return to the eligible pool.'), confirmLabel: t('giftAidClaimsManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       await deleteClaim(selected.id);
       toast({ title: t('giftAidClaimsManager', 'draftClaimDeleted', 'Draft claim deleted') });

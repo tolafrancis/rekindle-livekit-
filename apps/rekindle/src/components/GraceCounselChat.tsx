@@ -261,7 +261,7 @@ export const GraceCounselChat: React.FC = () => {
   if (!spiritualCompanion) {
     return (
       <div className={`bg-white rounded-xl shadow-lg flex items-center justify-center ${
-        isNative ? 'h-[calc(100vh-130px)]' : isCompact ? 'h-[calc(100dvh-180px)] min-h-[420px]' : 'h-[600px]'
+        isNative ? 'h-[calc(100vh-200px)]' : isCompact ? 'h-[calc(100dvh-230px)] min-h-[380px]' : 'h-[600px]'
       }`}>
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
@@ -307,7 +307,7 @@ export const GraceCounselChat: React.FC = () => {
         <div className="p-3 border-b space-y-2">
           <button
             onClick={startNewSession}
-            className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-purple-700 transition-colors"
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 bg-purple-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-purple-700 transition-colors"
           >
             <Plus className="w-4 h-4" /> {t('grace', 'newSession', "New Session")}
           </button>
@@ -317,13 +317,14 @@ export const GraceCounselChat: React.FC = () => {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t('grace', 'searchConversations', "Search conversations…")}
-              className="w-full pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+              aria-label={t('grace', 'searchConversations', "Search conversations…")}
+              className="w-full min-h-[44px] sm:min-h-0 pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
             />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {filteredSessions.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center mt-6">
+            <p className="text-xs text-gray-500 text-center mt-6">
               {search ? t('grace', 'noMatch', "No conversations match your search.") : t('grace', 'noConversations', "No conversations yet.")}
             </p>
           ) : (
@@ -331,13 +332,14 @@ export const GraceCounselChat: React.FC = () => {
               <button
                 key={s.id}
                 onClick={() => { selectSession(s); if (isCompact) setSidebarOpen(false); }}
+                aria-current={s.id === sessionId ? 'true' : undefined}
                 className={`w-full text-left p-2 rounded-lg transition-colors ${
                   s.id === sessionId ? 'bg-purple-100 border border-purple-200' : 'hover:bg-gray-100'
                 }`}
               >
                 <p className="text-xs font-medium text-gray-800 truncate">{s.title || t('grace', 'conversation', "Conversation")}</p>
                 {s.last_message && (
-                  <p className="text-[11px] text-gray-500 truncate">{s.last_message}</p>
+                  <p className="text-xs text-gray-500 truncate">{s.last_message}</p>
                 )}
                 {(() => {
                   const d = new Date(s.updated_at || s.created_at);
@@ -357,7 +359,7 @@ export const GraceCounselChat: React.FC = () => {
           {isCompact && (
             <button
               onClick={() => setSidebarOpen(prev => !prev)}
-              className="p-2 -m-1 rounded hover:bg-white/10 shrink-0"
+              className="inline-flex items-center justify-center h-11 w-11 -m-1 rounded hover:bg-white/10 shrink-0"
               aria-label={t('grace', 'toggleHistory', 'Show conversations')}
               aria-expanded={sidebarOpen}
             >
@@ -422,13 +424,13 @@ export const GraceCounselChat: React.FC = () => {
               onKeyPress={handleKeyPress}
               placeholder={t('grace', 'inputPlaceholder', "Share what's on your heart...")}
               disabled={isLoading}
-              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex-1 min-w-0 min-h-[44px] border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}
               aria-label={t('common', 'send', 'Send')}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
+              className="min-h-[44px] bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

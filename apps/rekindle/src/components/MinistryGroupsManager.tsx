@@ -21,6 +21,7 @@ import {
   BarChart3, History
 } from 'lucide-react';
 import { buildJoinUrl } from '@rekindle/features/qrCode';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface MinistryGroup {
   id: string;
@@ -764,7 +765,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
   };
 
   const handleDelete = async (groupId: string) => {
-    if (!confirm(t('ministryGroupsManager', 'confirmDeleteGroup', 'Are you sure you want to delete this ministry group? This will also remove all members and invites.'))) {
+    if (!await confirmAction({ title: t('ministryGroupsManager', 'confirmDeleteGroupTitle', 'Delete this ministry group?'), description: t('ministryGroupsManager', 'confirmDeleteGroupDesc', 'This will also remove all members and invites.'), confirmLabel: t('ministryGroupsManager', 'delete', 'Delete'), destructive: true })) {
       return;
     }
 
@@ -785,7 +786,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!confirm(t('ministryGroupsManager', 'confirmRemoveMember', 'Are you sure you want to remove this member?'))) return;
+    if (!await confirmAction({ title: t('ministryGroupsManager', 'confirmRemoveMemberTitle', 'Remove this member?'), confirmLabel: t('ministryGroupsManager', 'remove', 'Remove'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -982,7 +983,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                               <code className="bg-gray-100 px-2 py-1 rounded text-sm">
                                 {group.invite_code}
                               </code>
-                              <Button
+                              <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
@@ -1194,7 +1195,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                         <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
                           {member.role || t('ministryGroupsManager', 'roleMember', 'member')}
                         </Badge>
-                        <Button
+                        <Button aria-label={t('a11y', 'removeMember', 'Remove member')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleRemoveMember(member.id)}
@@ -1253,7 +1254,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                     placeholder={selectedGroup.slug ? undefined : t('ministryGroupsManager', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first.")}
                     className="bg-white"
                   />
-                  <Button
+                  <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                     variant="outline"
                     onClick={() => copyInviteLink(selectedGroup)}
                   >
@@ -1357,7 +1358,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                             >
                               {t('ministryGroupsManager', 'load', 'Load')}
                             </Button>
-                            <Button
+                            <Button aria-label={t('a11y', 'deleteTemplate', 'Delete template')}
                               size="sm"
                               variant="ghost"
                               onClick={() => handleDeleteTemplate(template)}

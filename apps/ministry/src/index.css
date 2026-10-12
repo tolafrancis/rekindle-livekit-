@@ -17,8 +17,9 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
+    /* Brand purple (Tailwind purple-600), so buttons, switches and focus rings match the app. */
+    --primary: 271 81% 56%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -34,18 +35,18 @@
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221 83% 53%;
+    --ring: 271 81% 56%;
 
     --radius: 0.5rem;
 
     --sidebar-background: 220 23% 95%;
     --sidebar-foreground: 215 25% 27%;
-    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary: 271 81% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 14% 90%;
     --sidebar-accent-foreground: 215 25% 27%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 221 83% 53%;
+    --sidebar-ring: 271 81% 56%;
   }
 
   .dark {
@@ -58,7 +59,7 @@
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 217.2 91.2% 59.8%;
+    --primary: 270 95% 75%;
     --primary-foreground: 222.2 47.4% 11.2%;
 
     --secondary: 217.2 32.6% 17.5%;
@@ -75,16 +76,16 @@
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 270 95% 75%;
 
     --sidebar-background: 215 28% 17%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217.2 91.2% 59.8%;
+    --sidebar-primary: 270 95% 75%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 215 25% 27%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 215 25% 27%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-ring: 270 95% 75%;
   }
 }
 

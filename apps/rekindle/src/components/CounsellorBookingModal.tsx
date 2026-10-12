@@ -125,8 +125,9 @@ export const CounsellorBookingModal: React.FC<Props> = ({ counsellor, open, onCl
           
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>{t('counsellorBookingModal', 'date', 'Date')}</Label>
+              <Label htmlFor="booking-date">{t('counsellorBookingModal', 'date', 'Date')}</Label>
               <Input 
+                id="booking-date"
                 type="date" 
                 min={minDate} 
                 value={date} 
@@ -135,9 +136,9 @@ export const CounsellorBookingModal: React.FC<Props> = ({ counsellor, open, onCl
               />
             </div>
             <div>
-              <Label>{t('counsellorBookingModal', 'time', 'Time')}</Label>
+              <Label htmlFor="booking-time">{t('counsellorBookingModal', 'time', 'Time')}</Label>
               <Select value={time} onValueChange={setTime} disabled={!canBookCounsellor}>
-                <SelectTrigger>
+                <SelectTrigger id="booking-time">
                   <SelectValue placeholder={t('counsellorBookingModal', 'select', 'Select')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -150,9 +151,9 @@ export const CounsellorBookingModal: React.FC<Props> = ({ counsellor, open, onCl
           </div>
           
           <div>
-            <Label>{t('counsellorBookingModal', 'topic', 'Topic')}</Label>
+            <Label htmlFor="booking-topic">{t('counsellorBookingModal', 'topic', 'Topic')}</Label>
             <Select value={topic} onValueChange={setTopic} disabled={!canBookCounsellor}>
-              <SelectTrigger>
+              <SelectTrigger id="booking-topic">
                 <SelectValue placeholder={t('counsellorBookingModal', 'selectTopic', 'Select topic')} />
               </SelectTrigger>
               <SelectContent>
@@ -164,8 +165,9 @@ export const CounsellorBookingModal: React.FC<Props> = ({ counsellor, open, onCl
           </div>
           
           <div>
-            <Label>{t('counsellorBookingModal', 'notesOptional', 'Notes (optional)')}</Label>
+            <Label htmlFor="booking-notes">{t('counsellorBookingModal', 'notesOptional', 'Notes (optional)')}</Label>
             <Textarea
+              id="booking-notes"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder={t('counsellorBookingModal', 'notesPlaceholder', "Any specific questions or topics you'd like to discuss...")}

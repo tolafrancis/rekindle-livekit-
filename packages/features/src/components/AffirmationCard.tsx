@@ -202,7 +202,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
               {showDaily ? t('cards', 'dailyAffirmation', 'Daily Affirmation') : (affirmation.category?.replace('_', ' ') || t('cards', 'affirmation', 'Affirmation'))}
             </span>
           </div>
-          <Button variant="ghost" size="icon" onClick={refreshAffirmation} className="text-white hover:bg-white/20 h-8 w-8">
+          <Button variant="ghost" size="icon" onClick={refreshAffirmation} aria-label={t('cards', 'newAffirmation', 'Show another affirmation')} className="text-white hover:bg-white/20 h-11 w-11 sm:h-8 sm:w-8">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -258,7 +258,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
           <div className="bg-white rounded-lg p-3 mt-2 border border-gray-200">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-gray-700">{t('cards', 'listenToAffirmation', 'Listen to Affirmation')}</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} className="h-6 w-6 p-0">
+              <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} aria-label={t('cards', 'closeAudio', 'Close audio')} className="h-11 w-11 sm:h-6 sm:w-6 p-0">
                 <X className="h-4 w-4" />
               </Button>
             </div>

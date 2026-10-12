@@ -67,7 +67,7 @@ export const GetTheAppCard: React.FC = () => {
       <button
         onClick={snooze}
         aria-label="Not now"
-        className="absolute right-2 top-2 rounded-full p-1 text-white/60 hover:bg-white/10 hover:text-white"
+        className="absolute right-0 top-0 inline-flex h-11 w-11 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
       >
         <X className="h-4 w-4" />
       </button>

@@ -14,6 +14,8 @@ import { FEATURES, searchFeatures, type FeatureAction, type FeatureEntry } from 
 
 /** AppLayout listens for this and does the navigation. */
 export const FEATURE_NAVIGATE_EVENT = 'rk:feature-navigate';
+/** Dispatch to open the finder from a menu item (the app shell hides the floating button). */
+export const OPEN_FEATURE_FINDER_EVENT = 'rk:open-feature-finder';
 /** MinistrySpace listens for this while it's open and sets `handled`. */
 export const MINISTRY_GO_EVENT = 'rk:ministry-go';
 
@@ -27,9 +29,11 @@ interface FeatureFinderProps {
   isAdmin: boolean;
   /** Lift the button above the mobile bottom controls when they're showing. */
   className?: string;
+  /** Don't render the floating button; open via OPEN_FEATURE_FINDER_EVENT or Ctrl+K. */
+  hideTrigger?: boolean;
 }
 
-const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => {
+const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className, hideTrigger }) => {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -57,6 +61,12 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_FEATURE_FINDER_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_FEATURE_FINDER_EVENT, onOpen);
   }, []);
 
   useEffect(() => {
@@ -98,7 +108,7 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => 
 
   return (
     <>
-      <button
+      {!hideTrigger && <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label={label}
@@ -107,7 +117,7 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => 
       >
         <Compass className="h-5 w-5" />
         <span className="hidden sm:inline text-sm font-semibold">{label}</span>
-      </button>
+      </button>}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
@@ -165,11 +175,11 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => 
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-sm font-medium text-gray-900">{f.title}</span>
                           {f.audience && AUDIENCE_LABEL[f.audience] && (
-                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-gray-500">{AUDIENCE_LABEL[f.audience]}</Badge>
+                            <Badge variant="outline" className="h-5 px-1.5 text-xs text-gray-500">{AUDIENCE_LABEL[f.audience]}</Badge>
                           )}
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">{f.answer ?? f.description}</p>
-                        <p className="text-[11px] text-purple-600 mt-1 flex flex-wrap items-center gap-0.5">
+                        <p className="text-xs text-purple-600 mt-1 flex flex-wrap items-center gap-0.5">
                           {f.path.map((step, idx) => (
                             <React.Fragment key={idx}>
                               {idx > 0 && <ChevronRight className="h-3 w-3 text-purple-300" />}

@@ -121,7 +121,7 @@ export const CounsellorCard: React.FC<Props> = ({ counsellor, onConnect, onBook 
               {rating > 0 ? rating.toFixed(1) : t('counsellorCard', 'new', 'New')}
             </span>
             {sessions > 0 && (
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-gray-500">
                 {t('counsellorCard', 'sessionsCount', '({count} sessions)').replace('{count}', String(sessions))}
               </span>
             )}
@@ -187,7 +187,7 @@ export const CounsellorCard: React.FC<Props> = ({ counsellor, onConnect, onBook 
             }
             onBook();
           }}
-          className="flex-1 bg-purple-600 hover:bg-purple-700"
+          className="flex-1 min-h-[44px] bg-purple-600 hover:bg-purple-700"
           disabled={!isAvailable || !canBookCounsellor}
         >
           {!canBookCounsellor && <Lock className="h-4 w-4 mr-2" />}
@@ -198,7 +198,7 @@ export const CounsellorCard: React.FC<Props> = ({ counsellor, onConnect, onBook 
           <Button
             onClick={onConnect}
             variant="outline"
-            className="flex-1"
+            className="flex-1 min-h-[44px]"
           >
             {t('counsellorCard', 'message', 'Message')}
           </Button>

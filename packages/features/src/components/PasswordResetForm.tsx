@@ -253,6 +253,7 @@ export const PasswordResetForm: React.FC<PasswordResetFormProps> = ({ onSwitchTo
                 <Input 
                   id="email" 
                   type="email" 
+                  autoComplete="email"
                   placeholder="your@email.com" 
                   value={email} 
                   onChange={e => setEmail(e.target.value)} 
@@ -299,6 +300,7 @@ export const PasswordResetForm: React.FC<PasswordResetFormProps> = ({ onSwitchTo
                   id="newPassword" 
                   type={showPassword ? 'text' : 'password'} 
                   placeholder="Enter new password" 
+                  autoComplete="new-password"
                   value={newPassword} 
                   onChange={e => setNewPassword(e.target.value)} 
                   className="pl-10 pr-10" 
@@ -308,7 +310,10 @@ export const PasswordResetForm: React.FC<PasswordResetFormProps> = ({ onSwitchTo
                 <button 
                   type="button" 
                   onClick={() => setShowPassword(!showPassword)} 
-                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                  className="absolute right-0 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center text-gray-500 hover:text-gray-700"
+                  aria-label={showPassword ? 'Hide passwords' : 'Show passwords'}
+                  aria-pressed={showPassword}
+                  aria-controls="newPassword confirmPassword"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -323,6 +328,7 @@ export const PasswordResetForm: React.FC<PasswordResetFormProps> = ({ onSwitchTo
                   id="confirmPassword" 
                   type={showPassword ? 'text' : 'password'} 
                   placeholder="Confirm new password" 
+                  autoComplete="new-password"
                   value={confirmPassword} 
                   onChange={e => setConfirmPassword(e.target.value)} 
                   className="pl-10" 

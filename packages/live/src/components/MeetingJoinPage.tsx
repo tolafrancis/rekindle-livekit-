@@ -80,7 +80,7 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
@@ -141,6 +141,25 @@ interface MeetingData {
   ended_at?: string | null;
 }
 
+// While a meeting is still 'scheduled', re-run the same meeting query on this
+// cadence so the page flips to "Join" by itself when the host starts early or
+// the start time arrives — no manual refresh.
+const WAITING_POLL_MS = 20000;
+
+// "1d 3h", "2h 05m", "4m 09s", "45s" — compact countdown to the start time.
+const formatCountdown = (ms: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`;
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+  return `${seconds}s`;
+};
+
 const MeetingJoinPage: React.FC = () => {
   const { channelId, ministryId, meetingId } = useParams<{ 
     channelId?: string; 
@@ -166,6 +185,14 @@ const MeetingJoinPage: React.FC = () => {
   const [authLoading2, setAuthLoading2] = useState(false);
   // Guest join state
   const [guestName, setGuestName] = useState('');
+  // Set when the visitor signs in (or signs up and gets a session) from this
+  // page — they asked to "Sign In & Join", so join as soon as the meeting is
+  // live instead of making them press Join again.
+  const [autoJoinPending, setAutoJoinPending] = useState(false);
+  // Ticks once a second while waiting, to drive the countdown.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const mountedRef = useRef(true);
+  const zeroRefetchDoneRef = useRef(false);
 
   const meetingType = channelId ? 'channel' : 'ministry';
 
@@ -224,124 +251,187 @@ const MeetingJoinPage: React.FC = () => {
     };
   }, []);
 
-  // Fetch meeting data
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Fetch meeting data. `silent` is the background re-check while waiting for
+  // a scheduled meeting: no skeleton, no error screen on a transient failure,
+  // and the already-resolved host name is kept.
+  const fetchMeetingData = useCallback(async (silent = false) => {
+    if (!meetingId) return;
+
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+
+    try {
+      // Use the correct table based on meeting type
+      const tableName = channelId ? 'live_channel_video_meetings' : 'ministry_video_meetings';
+      
+      if (!silent) console.log('[Skeleton] Querying table:', tableName);
+
+      // First, fetch the meeting by ID only
+      const { data: meeting, error: meetingError } = await supabase
+        .from(tableName)
+        .select('*')
+        .eq('id', meetingId)
+        .maybeSingle();
+
+      if (!silent) console.log('[Skeleton] Meeting query result:', { meeting, meetingError });
+
+      if (meetingError) {
+        console.error('Meeting fetch error:', meetingError);
+        throw meetingError;
+      }
+
+      if (silent && !mountedRef.current) return;
+
+      if (!meeting) {
+        if (silent) return; // keep showing what we have; next poll retries
+        setError(t('skeleton', 'meetingNotFoundOrInvalid', 'Meeting not found or link is invalid'));
+        setLoading(false);
+        return;
+      }
+
+      // Validate that meeting belongs to the specified channel/ministry
+      if (channelId && meeting.channel_id !== channelId) {
+        if (silent) return;
+        setError(t('skeleton', 'meetingNotInChannel', 'Meeting does not belong to this channel'));
+        setLoading(false);
+        return;
+      }
+
+      if (ministryId && meeting.ministry_id !== ministryId) {
+        if (silent) return;
+        setError(t('skeleton', 'meetingNotInMinistry', 'Meeting does not belong to this ministry'));
+        setLoading(false);
+        return;
+      }
+
+      // Check if meeting exists and is valid
+      const now = new Date();
+      const startTime = meeting.scheduled_time ? new Date(meeting.scheduled_time) : new Date();
+      const endTime = new Date(startTime.getTime() + (meeting.duration_minutes || 60) * 60000);
+
+      let status: 'scheduled' | 'live' | 'ended' = 'scheduled';
+      
+      // If meeting is currently active in database, it's live
+      if (meeting.is_active) {
+        status = 'live';
+      } else if (now >= startTime && now <= endTime) {
+        status = 'live';
+      } else if (now > endTime || meeting.ended_at) {
+        status = 'ended';
+      }
+
+      if (silent) {
+        setMeetingData(prev => prev ? { ...meeting, status, host_name: prev.host_name } : prev);
+        return;
+      }
+
+      // Fetch host name
+      let hostName = t('skeleton', 'unknownHost', 'Unknown Host');
+      if (channelId || meeting.channel_id) {
+        const { data: channel } = await supabase
+          .from('live_channels')
+          .select('owner_name')
+          .eq('id', channelId || meeting.channel_id)
+          .maybeSingle();
+        hostName = channel?.owner_name || t('skeleton', 'unknownHost', 'Unknown Host');
+      } else if (ministryId || meeting.ministry_id) {
+        // Resolve the canonical ministry name (ministry_groups) via a
+        // security-definer RPC — ministry_groups itself is not anon-readable,
+        // and the old direct read of the stale `ministries` mirror produced
+        // "Unknown Host" for guests. See migration 0160.
+        const { data: name } = await supabase
+          .rpc('public_ministry_name', { p_id: ministryId || meeting.ministry_id });
+        hostName = (typeof name === 'string' && name) ? name : t('skeleton', 'unknownHost', 'Unknown Host');
+      }
+
+      setMeetingData({
+        ...meeting,
+        status,
+        host_name: hostName
+      });
+
+    } catch (err: any) {
+      if (silent) {
+        console.warn('[Skeleton] Background meeting re-check failed:', err?.message || err);
+        return;
+      }
+      console.error('[Skeleton] Error fetching meeting:', err);
+      console.error('[Skeleton] Error details:', {
+        message: err.message,
+        code: err.code,
+        details: err.details,
+        hint: err.hint
+      });
+      setError(
+        t('skeleton', 'failedToLoadMeeting', 'Failed to load meeting: {error}').replace(
+          '{error}',
+          String(err.message || t('skeleton', 'unknownError', 'Unknown error'))
+        )
+      );
+    } finally {
+      if (!silent) setLoading(false);
+    }
+    // t is intentionally left out, as before — re-running the fetch on a
+    // language switch isn't wanted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId, channelId, ministryId]);
+
   useEffect(() => {
     if (!meetingId) {
       setError(t('skeleton', 'invalidMeetingLink', 'Invalid meeting link'));
       setLoading(false);
       return;
     }
-
     console.log('[Skeleton] Fetching meeting:', { meetingId, channelId, ministryId });
+    void fetchMeetingData(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchMeetingData]);
 
-    const fetchMeetingData = async () => {
-      setLoading(true);
-      setError(null);
+  const isWaitingToStart = meetingData?.status === 'scheduled';
+  const scheduledStartMs = meetingData?.scheduled_time ? new Date(meetingData.scheduled_time).getTime() : null;
 
-      try {
-        // Use the correct table based on meeting type
-        const tableName = channelId ? 'live_channel_video_meetings' : 'ministry_video_meetings';
-        
-        console.log('[Skeleton] Querying table:', tableName);
-
-        // First, fetch the meeting by ID only
-        const { data: meeting, error: meetingError } = await supabase
-          .from(tableName)
-          .select('*')
-          .eq('id', meetingId)
-          .maybeSingle();
-
-        console.log('[Skeleton] Meeting query result:', { meeting, meetingError });
-
-        if (meetingError) {
-          console.error('Meeting fetch error:', meetingError);
-          throw meetingError;
-        }
-
-        if (!meeting) {
-          setError(t('skeleton', 'meetingNotFoundOrInvalid', 'Meeting not found or link is invalid'));
-          setLoading(false);
-          return;
-        }
-
-        // Validate that meeting belongs to the specified channel/ministry
-        if (channelId && meeting.channel_id !== channelId) {
-          setError(t('skeleton', 'meetingNotInChannel', 'Meeting does not belong to this channel'));
-          setLoading(false);
-          return;
-        }
-
-        if (ministryId && meeting.ministry_id !== ministryId) {
-          setError(t('skeleton', 'meetingNotInMinistry', 'Meeting does not belong to this ministry'));
-          setLoading(false);
-          return;
-        }
-
-        // Check if meeting exists and is valid
-        const now = new Date();
-        const startTime = meeting.scheduled_time ? new Date(meeting.scheduled_time) : new Date();
-        const endTime = new Date(startTime.getTime() + (meeting.duration_minutes || 60) * 60000);
-
-        let status: 'scheduled' | 'live' | 'ended' = 'scheduled';
-        
-        // If meeting is currently active in database, it's live
-        if (meeting.is_active) {
-          status = 'live';
-        } else if (now >= startTime && now <= endTime) {
-          status = 'live';
-        } else if (now > endTime || meeting.ended_at) {
-          status = 'ended';
-        }
-
-        // Fetch host name
-        let hostName = t('skeleton', 'unknownHost', 'Unknown Host');
-        if (channelId || meeting.channel_id) {
-          const { data: channel } = await supabase
-            .from('live_channels')
-            .select('owner_name')
-            .eq('id', channelId || meeting.channel_id)
-            .maybeSingle();
-          hostName = channel?.owner_name || t('skeleton', 'unknownHost', 'Unknown Host');
-        } else if (ministryId || meeting.ministry_id) {
-          // Resolve the canonical ministry name (ministry_groups) via a
-          // security-definer RPC — ministry_groups itself is not anon-readable,
-          // and the old direct read of the stale `ministries` mirror produced
-          // "Unknown Host" for guests. See migration 0160.
-          const { data: name } = await supabase
-            .rpc('public_ministry_name', { p_id: ministryId || meeting.ministry_id });
-          hostName = (typeof name === 'string' && name) ? name : t('skeleton', 'unknownHost', 'Unknown Host');
-        }
-
-        setMeetingData({
-          ...meeting,
-          status,
-          host_name: hostName
-        });
-
-      } catch (err: any) {
-        console.error('[Skeleton] Error fetching meeting:', err);
-        console.error('[Skeleton] Error details:', {
-          message: err.message,
-          code: err.code,
-          details: err.details,
-          hint: err.hint
-        });
-        setError(
-          t('skeleton', 'failedToLoadMeeting', 'Failed to load meeting: {error}').replace(
-            '{error}',
-            String(err.message || t('skeleton', 'unknownError', 'Unknown error'))
-          )
-        );
-      } finally {
-        setLoading(false);
-      }
+  // Re-run the same meeting query while it hasn't started (skipped while the
+  // tab is hidden; an immediate re-check runs when it becomes visible again).
+  useEffect(() => {
+    if (!isWaitingToStart) return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) void fetchMeetingData(true);
+    }, WAITING_POLL_MS);
+    const onVisible = () => {
+      if (!document.hidden) void fetchMeetingData(true);
     };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [isWaitingToStart, fetchMeetingData]);
 
-    fetchMeetingData();
-  }, [meetingId, channelId, ministryId]);
+  // Countdown tick, only while waiting on a known start time.
+  useEffect(() => {
+    if (!isWaitingToStart || scheduledStartMs === null) return;
+    zeroRefetchDoneRef.current = false;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [isWaitingToStart, scheduledStartMs]);
 
-  // Auto-join removed - let users click the button to join
-  // This prevents unexpected redirects and gives users time to see meeting details
+  const msUntilStart = isWaitingToStart && scheduledStartMs !== null ? scheduledStartMs - nowMs : null;
+
+  // When the countdown reaches zero, re-check right away instead of waiting
+  // for the next poll (status is recomputed from the same start-time rule).
+  useEffect(() => {
+    if (msUntilStart === null || msUntilStart > 0 || zeroRefetchDoneRef.current) return;
+    zeroRefetchDoneRef.current = true;
+    void fetchMeetingData(true);
+  }, [msUntilStart, fetchMeetingData]);
 
   // Handle login
   const handleLogin = async (e: React.FormEvent) => {
@@ -359,6 +449,7 @@ const MeetingJoinPage: React.FC = () => {
     try {
       const { error } = await signIn(email, password);
       if (error) throw error;
+      setAutoJoinPending(true);
 
       toast({
         title: t('skeleton', 'welcomeBack', 'Welcome back!'),
@@ -400,6 +491,12 @@ const MeetingJoinPage: React.FC = () => {
     try {
       const { error } = await signUp(email, password, fullName);
       if (error) throw error;
+      // Only auto-join when sign-up actually produced a session (with email
+      // confirmation on there is none until the link is clicked).
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) setAutoJoinPending(true);
+      } catch { /* no auto-join; the Join button still works */ }
 
       toast({
         title: t('skeleton', 'accountCreated', 'Account Created!'),
@@ -477,6 +574,18 @@ const MeetingJoinPage: React.FC = () => {
       setJoining(false);
     }
   };
+
+  // Join automatically after signing in here, as soon as the meeting is live
+  // (immediately if it already is; otherwise when the waiting poll sees it go
+  // live). handleJoinMeeting keeps all its existing checks.
+  useEffect(() => {
+    if (!autoJoinPending || !user || !meetingData) return;
+    if (meetingData.status === 'ended') { setAutoJoinPending(false); return; }
+    if (meetingData.status !== 'live') return;
+    setAutoJoinPending(false);
+    void handleJoinMeeting();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoJoinPending, user, meetingData?.status]);
 
   // Loading state
   if (authLoading || loading) {
@@ -587,6 +696,28 @@ const MeetingJoinPage: React.FC = () => {
     </div>
   );
 
+  // Countdown + "this page updates itself" note for a scheduled meeting.
+  const waitingStatus = meetingData.status === 'scheduled' && (
+    <div className="space-y-1" aria-live="polite">
+      {msUntilStart !== null && msUntilStart > 0 && (
+        <p className="text-2xl font-semibold tabular-nums text-blue-700 dark:text-blue-300">
+          {t('skeleton', 'startsIn', 'Starts in {time}').replace('{time}', formatCountdown(msUntilStart))}
+        </p>
+      )}
+      {msUntilStart !== null && msUntilStart <= 0 && (
+        <p className="text-sm font-medium text-blue-700 dark:text-blue-300 inline-flex items-center gap-1.5">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('skeleton', 'waitingForHost', 'Waiting for the host to start the meeting…')}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {user && autoJoinPending
+          ? t('skeleton', 'autoJoinWhenLive', "You're signed in — we'll join you automatically when it starts.")
+          : t('skeleton', 'pageUpdatesItself', 'Keep this page open — it updates by itself when the meeting starts.')}
+      </p>
+    </div>
+  );
+
   // Not authenticated - show guest join + optional sign-in
   if (!user) {
     return (
@@ -669,6 +800,7 @@ const MeetingJoinPage: React.FC = () => {
                       ? t('skeleton', 'startsAt', 'Starts at {time}').replace('{time}', formatMeetingTime(meetingData.scheduled_time, meetingData.timezone))
                       : t('skeleton', 'timeToBeAnnounced', 'Meeting time to be announced')}
                   </p>
+                  {waitingStatus}
                   {meetingData.registration_enabled && (
                     <>
                       <div className="flex justify-center">
@@ -886,6 +1018,7 @@ const MeetingJoinPage: React.FC = () => {
                     ? t('skeleton', 'willStartAt', 'This meeting will start at {time}').replace('{time}', formatMeetingTime(meetingData.scheduled_time, meetingData.timezone))
                     : t('skeleton', 'timeToBeAnnounced', 'Meeting time to be announced')}
                 </p>
+                {waitingStatus}
                 {meetingData.registration_enabled && (
                   <>
                     <div className="flex justify-center">
