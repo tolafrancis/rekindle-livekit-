@@ -122,16 +122,27 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
   const saveDeclaration = async () => {
     if (!declaration) return;
     try {
+      // supabase-js reports failures in `error` rather than throwing, so check
+      // it before telling the user the change was saved.
       if (liked) {
-        await supabase.from('bookmarks').delete().eq('content_id', declaration.id).eq('content_type', 'declaration');
+        const { error } = await supabase.from('bookmarks').delete().eq('content_id', declaration.id).eq('content_type', 'declaration');
+        if (error) throw error;
         setLiked(false);
         toast({ title: t('cards', 'removedFromSaved', 'Removed from saved') });
       } else {
-        await supabase.from('bookmarks').insert({ content_id: declaration.id, content_type: 'declaration', created_at: new Date().toISOString() });
+        const { error } = await supabase.from('bookmarks').insert({ content_id: declaration.id, content_type: 'declaration', created_at: new Date().toISOString() });
+        if (error) throw error;
         setLiked(true);
         toast({ title: t('cards', 'saved', 'Saved!') });
       }
-    } catch (err) { console.error('Error saving:', err); }
+    } catch (err) {
+      console.error('Error saving:', err);
+      toast({
+        title: t('cards', 'saveFailed', "Couldn't save"),
+        description: t('cards', 'saveFailedDesc', 'Please check your connection and try again.'),
+        variant: 'destructive',
+      });
+    }
   };
 
   const categoryGradients: Record<string, string> = {

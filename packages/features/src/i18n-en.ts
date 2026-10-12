@@ -5424,7 +5424,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "error": "Error",
     "fillRequiredFields": "Please fill all required fields",
     "bookingRequested": "Booking Requested",
-    "bookingRequestedDesc": "Session with {name} requested for {date} at {time}",
+    "bookingRequestedDesc": "Session with {name} requested for {date} at {time}. You'll be notified when the counsellor confirms.",
     "failedToBook": "Failed to book session",
     "newSessionBooking": "New Session Booking",
     "sessionRequestedBody": "{name} has requested a session on {date} at {time}",
@@ -8874,6 +8874,13 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     gestureTipReadAloud: 'Double-tap to hear it read aloud · single tap to pause/resume',
     pausedTapResume: 'Paused — tap to resume',
     gotIt: 'Got it',
+  },
+  // Strings owned by the signed-in app shell (AppLayout). Kept in their own
+  // namespace so shell labels never borrow a key that means something else.
+  appShell: {
+    noCounsellorsTitle: 'No counsellors available',
+    noCounsellorsDesc: 'Check back later for available counsellors.',
+    nowPlaying: 'Now playing',
   },
   // @i18n-ns-default (merge anchor — do not remove)
 };

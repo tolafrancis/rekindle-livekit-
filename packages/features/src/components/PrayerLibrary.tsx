@@ -1167,8 +1167,8 @@ export function PrayerLibrary() {
       } else {
         handlePrayerSessionComplete(sessionData);
       }
-      setShowPrayerSession(false);
-      setSessionData(null);
+      // Keep the session mounted so its "Prayer Complete" screen shows;
+      // its Close button (handleClose) returns to the library.
     };
 
     const handleClose = () => {

@@ -306,6 +306,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showDayShareModal, setShowDayShareModal] = useState(false);
+  // The day the share prompt is about; kept separately because currentDay is cleared after completion.
+  const [shareDay, setShareDay] = useState<SeriesDay | null>(null);
   const [unlockMessage, setUnlockMessage] = useState<string | null>(null);
   const [hasPostedSeriesStart, setHasPostedSeriesStart] = useState(false);
   
@@ -1436,6 +1438,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         });
         
         // Show share prompt before navigating away
+        setShareDay(currentDay);
         setShowDayShareModal(true);
         setTimeout(() => {
           setView('series');
@@ -1552,6 +1555,157 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       }
     };
   }, []);
+
+  // Completion dialogs render in every view: completing a day switches the
+  // viewer back to the series view, so they must not live in the list view only.
+  const completionDialogs = (
+    <>
+      {/* Day Share Modal */}
+      {showDayShareModal && shareDay && selectedSeries && (() => {
+        const localizedDay = getLocalizedDay(shareDay);
+        const localizedSeries = getLocalizedSeries(selectedSeries);
+        const rawScripture = localizedDay.scripture_reference;
+        const scripture = rawScripture
+          ? (getCachedLocalizedScripture(rawScripture, language)?.reference || rawScripture)
+          : rawScripture;
+        const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
+        // Compose a rich share message: title + scripture ref + series context + link
+        const shareMessage = scripture
+          ? `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(shareDay.day_number))}: "${localizedDay.title || ''}" — ${scripture}\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`
+          : `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(shareDay.day_number))}: "${localizedDay.title || ''}"\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
+        const encodedMsg = encodeURIComponent(shareMessage);
+        const encodedUrl = encodeURIComponent(shareUrl);
+
+        return (
+          <Dialog open={showDayShareModal} onOpenChange={setShowDayShareModal}>
+            <DialogContent className="sm:max-w-md text-center">
+              <DialogHeader>
+                <DialogTitle className="text-xl flex items-center justify-center gap-2">
+                  <CheckCircle className="h-6 w-6 text-green-500" />
+                  {t('devotionalSeriesViewer', 'dayXComplete', 'Day {n} Complete!').replace('{n}', String(shareDay.day_number))}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <p className="text-gray-600 text-sm">
+                  {t('devotionalSeriesViewer', 'greatWorkFinishing', 'Great work finishing')} <span className="font-medium">"{localizedDay.title || t('devotionalSeriesViewer', 'dayN', 'Day {n}').replace('{n}', String(shareDay.day_number))}"</span>.
+                  {scripture && (
+                    <span className="block mt-1 text-purple-600 italic text-xs">{scripture}</span>
+                  )}
+                </p>
+                <p className="text-sm font-medium text-gray-700">{t('devotionalSeriesViewer', 'shareYourProgress', 'Share your progress:')}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <a
+                    href={`https://wa.me/?text=${encodedMsg}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => setShowDayShareModal(false)}
+                  >
+                    <Send className="h-4 w-4" />
+                    WhatsApp
+                  </a>
+                  <a
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodeURIComponent(shareMessage)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => setShowDayShareModal(false)}
+                  >
+                    <span className="font-bold">f</span>
+                    Facebook
+                  </a>
+                  <a
+                    href={`https://twitter.com/intent/tweet?text=${encodedMsg}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-black hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => setShowDayShareModal(false)}
+                  >
+                    <span className="font-bold">𝕏</span>
+                    Twitter / X
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(shareMessage);
+                      toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') });
+                      setShowDayShareModal(false);
+                    }}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors text-sm font-medium"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {t('devotionalSeriesViewer', 'copyMessage', 'Copy Message')}
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowDayShareModal(false)}
+                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors mt-2"
+                >
+                  {t('devotionalSeriesViewer', 'skipForNow', 'Skip for now')}
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {/* Completion Modal */}
+      <Dialog open={showCompletionModal} onOpenChange={setShowCompletionModal}>
+        <DialogContent className="text-center">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">{t('devotionals', 'congratulations', 'Congratulations')}!</DialogTitle>
+          </DialogHeader>
+          <div className="py-6">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Award className="h-10 w-10 text-green-600" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">{t('devotionals', 'seriesComplete', 'Series Complete')}!</h3>
+            <p className="text-gray-600 mb-4">
+              {t('devotionals', 'completedAll', 'You have completed all')} {selectedSeries?.total_days} {t('devotionals', 'daysOf', 'days of')} "{selectedSeries ? getLocalizedSeries(selectedSeries).title : ''}"
+            </p>
+            {/* Share series completion */}
+            {selectedSeries && (() => {
+              const localizedSeries = getLocalizedSeries(selectedSeries);
+              const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
+              const completionMsg = `🎉 ${t('devotionalSeriesViewer', 'iJustCompletedSeriesX', 'I just completed the "{title}" devotional series on ReKindle BC!').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
+              const encodedMsg = encodeURIComponent(completionMsg);
+              const encodedUrl = encodeURIComponent(shareUrl);
+              return (
+                <div className="mb-4 space-y-2">
+                  <p className="text-sm font-medium text-gray-600">{t('devotionalSeriesViewer', 'shareYourAchievement', 'Share your achievement:')}</p>
+                  <div className="flex justify-center gap-2">
+                    <a href={`https://wa.me/?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
+                      className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-colors"
+                      title={t('devotionalSeriesViewer', 'shareOnWhatsApp', 'Share on WhatsApp')}>
+                      <Send className="h-4 w-4" />
+                    </a>
+                    <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
+                      className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
+                      title={t('devotionalSeriesViewer', 'shareOnFacebook', 'Share on Facebook')}>
+                      f
+                    </a>
+                    <a href={`https://twitter.com/intent/tweet?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
+                      className="w-10 h-10 bg-black hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
+                      title={t('devotionalSeriesViewer', 'shareOnX', 'Share on X')}>
+                      𝕏
+                    </a>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(completionMsg); toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') }); }}
+                      className="w-10 h-10 bg-purple-500 hover:bg-purple-600 text-white rounded-full flex items-center justify-center transition-colors"
+                      title={t('devotionalSeriesViewer', 'copyToClipboard', 'Copy to clipboard')}>
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+            <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
+              {t('devotionals', 'viewSeries', 'View Series')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 
   if (loading) {
     return (
@@ -2037,6 +2191,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             url={window.location.href}
           />
         )}
+        {completionDialogs}
       </div>
     );
   }
@@ -2223,6 +2378,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             );
           })}
         </div>
+        {completionDialogs}
       </div>
     );
   }
@@ -2403,150 +2559,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         </Card>
       )}
 
-      {/* Day Share Modal */}
-      {showDayShareModal && currentDay && selectedSeries && (() => {
-        const localizedDay = getLocalizedDay(currentDay);
-        const localizedSeries = getLocalizedSeries(selectedSeries);
-        const rawScripture = localizedDay.scripture_reference;
-        const scripture = rawScripture
-          ? (getCachedLocalizedScripture(rawScripture, language)?.reference || rawScripture)
-          : rawScripture;
-        const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
-        // Compose a rich share message: title + scripture ref + series context + link
-        const shareMessage = scripture
-          ? `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(currentDay.day_number))}: "${localizedDay.title || ''}" — ${scripture}\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`
-          : `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(currentDay.day_number))}: "${localizedDay.title || ''}"\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
-        const encodedMsg = encodeURIComponent(shareMessage);
-        const encodedUrl = encodeURIComponent(shareUrl);
-
-        return (
-          <Dialog open={showDayShareModal} onOpenChange={setShowDayShareModal}>
-            <DialogContent className="sm:max-w-md text-center">
-              <DialogHeader>
-                <DialogTitle className="text-xl flex items-center justify-center gap-2">
-                  <CheckCircle className="h-6 w-6 text-green-500" />
-                  {t('devotionalSeriesViewer', 'dayXComplete', 'Day {n} Complete!').replace('{n}', String(currentDay.day_number))}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="py-4 space-y-4">
-                <p className="text-gray-600 text-sm">
-                  {t('devotionalSeriesViewer', 'greatWorkFinishing', 'Great work finishing')} <span className="font-medium">"{localizedDay.title || t('devotionalSeriesViewer', 'dayN', 'Day {n}').replace('{n}', String(currentDay.day_number))}"</span>.
-                  {scripture && (
-                    <span className="block mt-1 text-purple-600 italic text-xs">{scripture}</span>
-                  )}
-                </p>
-                <p className="text-sm font-medium text-gray-700">{t('devotionalSeriesViewer', 'shareYourProgress', 'Share your progress:')}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <a
-                    href={`https://wa.me/?text=${encodedMsg}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-sm font-medium"
-                    onClick={() => setShowDayShareModal(false)}
-                  >
-                    <Send className="h-4 w-4" />
-                    WhatsApp
-                  </a>
-                  <a
-                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodeURIComponent(shareMessage)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
-                    onClick={() => setShowDayShareModal(false)}
-                  >
-                    <span className="font-bold">f</span>
-                    Facebook
-                  </a>
-                  <a
-                    href={`https://twitter.com/intent/tweet?text=${encodedMsg}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-black hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium"
-                    onClick={() => setShowDayShareModal(false)}
-                  >
-                    <span className="font-bold">𝕏</span>
-                    Twitter / X
-                  </a>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(shareMessage);
-                      toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') });
-                      setShowDayShareModal(false);
-                    }}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors text-sm font-medium"
-                  >
-                    <Copy className="h-4 w-4" />
-                    {t('devotionalSeriesViewer', 'copyMessage', 'Copy Message')}
-                  </button>
-                </div>
-                <button
-                  onClick={() => setShowDayShareModal(false)}
-                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors mt-2"
-                >
-                  {t('devotionalSeriesViewer', 'skipForNow', 'Skip for now')}
-                </button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        );
-      })()}
-
-      {/* Completion Modal */}
-      <Dialog open={showCompletionModal} onOpenChange={setShowCompletionModal}>
-        <DialogContent className="text-center">
-          <DialogHeader>
-            <DialogTitle className="text-2xl">{t('devotionals', 'congratulations', 'Congratulations')}!</DialogTitle>
-          </DialogHeader>
-          <div className="py-6">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Award className="h-10 w-10 text-green-600" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{t('devotionals', 'seriesComplete', 'Series Complete')}!</h3>
-            <p className="text-gray-600 mb-4">
-              {t('devotionals', 'completedAll', 'You have completed all')} {selectedSeries?.total_days} {t('devotionals', 'daysOf', 'days of')} "{selectedSeries ? getLocalizedSeries(selectedSeries).title : ''}"
-            </p>
-            {/* Share series completion */}
-            {selectedSeries && (() => {
-              const localizedSeries = getLocalizedSeries(selectedSeries);
-              const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
-              const completionMsg = `🎉 ${t('devotionalSeriesViewer', 'iJustCompletedSeriesX', 'I just completed the "{title}" devotional series on ReKindle BC!').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
-              const encodedMsg = encodeURIComponent(completionMsg);
-              const encodedUrl = encodeURIComponent(shareUrl);
-              return (
-                <div className="mb-4 space-y-2">
-                  <p className="text-sm font-medium text-gray-600">{t('devotionalSeriesViewer', 'shareYourAchievement', 'Share your achievement:')}</p>
-                  <div className="flex justify-center gap-2">
-                    <a href={`https://wa.me/?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-colors"
-                      title={t('devotionalSeriesViewer', 'shareOnWhatsApp', 'Share on WhatsApp')}>
-                      <Send className="h-4 w-4" />
-                    </a>
-                    <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
-                      title={t('devotionalSeriesViewer', 'shareOnFacebook', 'Share on Facebook')}>
-                      f
-                    </a>
-                    <a href={`https://twitter.com/intent/tweet?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 bg-black hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
-                      title={t('devotionalSeriesViewer', 'shareOnX', 'Share on X')}>
-                      𝕏
-                    </a>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(completionMsg); toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') }); }}
-                      className="w-10 h-10 bg-purple-500 hover:bg-purple-600 text-white rounded-full flex items-center justify-center transition-colors"
-                      title={t('devotionalSeriesViewer', 'copyToClipboard', 'Copy to clipboard')}>
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-            <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
-              {t('devotionals', 'viewSeries', 'View Series')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {completionDialogs}
     </div>
   );
 };

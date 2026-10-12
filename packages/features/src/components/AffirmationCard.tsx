@@ -131,16 +131,27 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
   const saveAffirmation = async () => {
     if (!affirmation) return;
     try {
+      // supabase-js reports failures in `error` rather than throwing, so check
+      // it before telling the user the change was saved.
       if (liked) {
-        await supabase.from('bookmarks').delete().eq('content_id', affirmation.id).eq('content_type', 'affirmation');
+        const { error } = await supabase.from('bookmarks').delete().eq('content_id', affirmation.id).eq('content_type', 'affirmation');
+        if (error) throw error;
         setLiked(false);
         toast({ title: t('cards', 'removedFromSaved', 'Removed from saved') });
       } else {
-        await supabase.from('bookmarks').insert({ content_id: affirmation.id, content_type: 'affirmation', created_at: new Date().toISOString() });
+        const { error } = await supabase.from('bookmarks').insert({ content_id: affirmation.id, content_type: 'affirmation', created_at: new Date().toISOString() });
+        if (error) throw error;
         setLiked(true);
         toast({ title: t('cards', 'saved', 'Saved!') });
       }
-    } catch (err) { console.error('Error saving:', err); }
+    } catch (err) {
+      console.error('Error saving:', err);
+      toast({
+        title: t('cards', 'saveFailed', "Couldn't save"),
+        description: t('cards', 'saveFailedDesc', 'Please check your connection and try again.'),
+        variant: 'destructive',
+      });
+    }
   };
 
   const categoryColors: Record<string, string> = {

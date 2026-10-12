@@ -78,14 +78,6 @@ export const UpgradePromptModal: React.FC<Props> = ({ prompt, onClose, onUpgrade
             </div>
           )}
 
-          {/* Partner pricing note */}
-          {!isMinistry && (
-            <div className="flex items-center justify-between text-sm bg-green-50 border border-green-100 rounded-lg p-3">
-              <span className="text-green-700 font-medium">Any donation amount</span>
-              <span className="text-green-700 font-bold">→ Partner access</span>
-            </div>
-          )}
-
           {/* CTAs */}
           <div className="space-y-2">
             {isMinistry ? (

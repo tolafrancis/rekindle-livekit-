@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { toast } from './ui/use-toast';
-import { LiveChannel, ChannelFollower, CHANNEL_CATEGORIES, ChannelCategory } from '@rekindle/types/liveChannelTypes';
+import { LiveChannel, ChannelFollower, CHANNEL_CATEGORIES, ChannelCategory, ChannelEvent } from '@rekindle/types/liveChannelTypes';
 import {
   SearchFilterPanel,
   searchFilterIconClass,
@@ -57,17 +57,6 @@ import {
   searchFilterSelectTriggerClass
 } from './SearchFilterPanel';
 
-interface ChannelEvent {
-  id: string;
-  channel_id: string;
-  title: string;
-  description: string;
-  scheduled_start: string;
-  status: 'upcoming' | 'live' | 'ended' | 'cancelled';
-  is_video_enabled: boolean;
-  total_registered: number;
-  channel?: LiveChannel;
-}
 
 type LiveChannelsTab = 'discover' | 'events' | 'following' | 'my-channels' | 'meetings' | 'analytics';
 
@@ -628,6 +617,11 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   };
 
   // Watch channel
+  const openEventDetails = (event: ChannelEvent) => {
+    setSelectedEvent(event);
+    setShowEventDetails(true);
+  };
+
   const watchChannel = (channel: LiveChannel) => {
     setSelectedChannel(channel);
     setViewMode('watch');
@@ -908,8 +902,12 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                       <p className="text-sm text-gray-500 mb-3">{event.channel?.name}</p>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <span className="text-sm text-gray-500">{event.total_registered} registered</span>
-                        <Button variant="outline" size="sm">
-                          Register
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEventDetails(event)}
+                        >
+                          Details &amp; register
                         </Button>
                       </div>
                     </CardContent>
@@ -960,6 +958,29 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
               </div>
             )}
           </div>
+        </TabsContent>
+
+        {/* Events Tab — calendar of live and upcoming events; tapping one
+            opens its details, where members register or watch. */}
+        <TabsContent value="events" className="mt-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            </div>
+          ) : liveEvents.length + upcomingEvents.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Calendar className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No upcoming events</h3>
+              <p className="text-gray-500">
+                Scheduled broadcasts from all channels appear here. Follow channels to hear when they go live.
+              </p>
+            </Card>
+          ) : (
+            <LiveChannelEventsCalendar
+              events={[...liveEvents, ...upcomingEvents]}
+              onEventClick={openEventDetails}
+            />
+          )}
         </TabsContent>
 
         {/* Following Tab */}
@@ -1229,6 +1250,18 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
           )}
         </TabsContent>
       </Tabs>
+
+      <LiveChannelEventDetails
+        event={selectedEvent}
+        open={showEventDetails}
+        onOpenChange={setShowEventDetails}
+        onWatchLive={() => {
+          if (selectedEvent?.channel) {
+            setShowEventDetails(false);
+            watchChannel(selectedEvent.channel);
+          }
+        }}
+      />
 
       {/* Create Channel Modal */}
       {editChannel && (

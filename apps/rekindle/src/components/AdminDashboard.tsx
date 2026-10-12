@@ -379,7 +379,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
 
   // 2-Level Navigation Categories definition
   const categories = React.useMemo(() => [
-    { id: 'content', label: 'Content', icon: BookOpen, tabValues: ['devotionals', 'devotional-library', 'devotional-streams', 'prayer-library', 'prayer-wall', 'prayer-challenges', 'affirmations', 'declarations', 'books', 'reading-plans', 'music'] },
+    { id: 'content', label: 'Content', icon: BookOpen, tabValues: ['devotionals', 'devotional-library', 'devotional-streams', 'prayer-library', 'prayer-wall', 'prayer-challenges', 'affirmations', 'declarations', 'books', 'reading-plans', 'music', 'submissions'] },
     { id: 'users', label: 'Users', icon: Users, tabValues: ['users', 'subscriptions', 'mentors', 'referrals'] },
     { id: 'community', label: 'Community', icon: Church, tabValues: ['reports', 'community-revelations', 'leaderboard', 'ministry-groups'] },
     { id: 'live', label: 'Live', icon: Radio, tabValues: ['live-channels', 'translations', 'content-translation', 'bulk-tts'] },

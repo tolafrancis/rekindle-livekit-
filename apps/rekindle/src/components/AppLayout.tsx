@@ -28,7 +28,6 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useGroupChatInbox } from '@rekindle/ministry/lib/useGroupChatInbox';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { AppFooter } from './AppFooter';
-import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { registerPush } from '@rekindle/features/usePushNotifications';
 import { UpgradePromptModal } from './UpgradePromptModal';
 import { OfflineIndicator } from './OfflineIndicator';
@@ -304,10 +303,8 @@ const SECONDARY_NAV: Record<string, SecondaryNavItem[]> = {
     { id: 'journal', label: 'Prayer Journal', labelKey: 'prayerJournal', icon: FileText, tab: 'journal' },
     { id: 'wall', label: 'Prayer Wall', labelKey: 'prayerWall', icon: LayoutGrid, tab: 'wall' },
   ],
-  ministries: [
-    { id: 'my-ministries', label: 'My Ministries', labelKey: 'myMinistries', icon: Heart, ministryView: 'my-ministries' },
-    { id: 'manage', label: 'Manage', labelKey: 'manage', icon: Settings, ministryView: 'manage' },
-  ],
+  // Ministries has a single view (the hub opens My Ministries, where leaders
+  // also create and enter the ministries they run), so it needs no sub-menu.
   'live-channels': [
     { id: 'discover', label: 'Discover', labelKey: 'discover', icon: Tv, liveTab: 'discover' },
     { id: 'events', label: 'Events', labelKey: 'events', icon: Calendar, liveTab: 'events' },
@@ -529,6 +526,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const [loadingCounsellors, setLoadingCounsellors] = useState(false);
   const [isCounsellor, setIsCounsellor] = useState(false);
   const [counsellorAvailability, setCounsellorAvailability] = useState(false);
+  // Set once the counsellor lookup has finished, so My Dashboard can tell
+  // "not a counsellor" apart from "still checking".
+  const [counsellorChecked, setCounsellorChecked] = useState(false);
 
   // Refs
   const loadingProgressRef = useRef(false);
@@ -830,6 +830,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       console.error('[AppLayout] Failed to check counsellor status:', err);
       setIsCounsellor(false);
       setCounsellorAvailability(false);
+    } finally {
+      setCounsellorChecked(true);
     }
   }, [user?.id]);
 
@@ -869,6 +871,28 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     if (activeTab === 'counsellors') loadCounsellors();
     if (activeTab === 'my-dashboard') checkCounsellorStatus();
   }, [activeTab, loadDevotionalProgress, loadCounsellors, checkCounsellorStatus]);
+
+  // Some tab names are valid URLs but have no screen of their own (old links,
+  // search results, bookmarks). Send them somewhere real instead of an empty
+  // page: Rewards lives in My Activity, Notifications is the bell panel, and
+  // My Dashboard only exists for verified counsellors.
+  // Replace (not push) the history entry so Back doesn't land on the
+  // redirecting URL again.
+  useEffect(() => {
+    const redirect = (tab: string) => {
+      setActiveTab(tab);
+      navigate('/' + tab, { replace: true });
+    };
+    if (activeTab === 'rewards') {
+      redirect('analytics');
+    } else if (activeTab === 'notifications') {
+      redirect('home');
+      setShowNotifications(true);
+    } else if (activeTab === 'my-dashboard' && counsellorChecked && !isCounsellor) {
+      redirect('home');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, counsellorChecked, isCounsellor]);
 
   // Initial data loading. Only the counsellor check is needed up front (it
   // decides whether the My Dashboard tab exists), and it runs in the background
@@ -996,12 +1020,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   );
   const verifiedCounsellorsTitle = t('counselling', 'counsellors', 'Verified Counsellors');
   const refreshText = t('common', 'refresh', 'Refresh');
-  const noCounsellorsTitle = t('counselling', 'counsellors', 'No Counsellors Available');
-  const noCounsellorsDesc = t('common', 'later', 'Check back later for available counsellors.');
-  const messageSentTitle = t('common', 'sent', 'Message Sent');
-  const bookingConfirmedTitle = t('common', 'success', 'Booking Confirmed');
-  const bookingConfirmedDesc = t('counselling', 'bookSession', 'Your counselling session has been scheduled');
-  const nowPlayingTitle = t('common', 'start', 'Now Playing');
+  const noCounsellorsTitle = t('appShell', 'noCounsellorsTitle', 'No counsellors available');
+  const noCounsellorsDesc = t('appShell', 'noCounsellorsDesc', 'Check back later for available counsellors.');
+  const nowPlayingTitle = t('appShell', 'nowPlaying', 'Now playing');
 
   const renderPrimaryNavigation = (className: string) => (
     <nav className={className} aria-label="Primary navigation">
@@ -1604,10 +1625,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     <CounsellorCard
                       key={c.id}
                       counsellor={c}
-                      onConnect={() => toast({ 
-                        title: messageSentTitle, 
-                        description: `${t('common', 'sent', 'Connection request sent to')} ${c.name}` 
-                      })}
                       onBook={() => handleBookCounsellor(c)}
                     />
                   ))}
@@ -1678,8 +1695,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         </ErrorBoundary>
         </div>
       </main>
-
-      <ScrollToTopButton />
 
       {!ministryWorkspaceActive && !Capacitor.isNativePlatform() && <AppFooter onNavigate={navigateTab} />}
 
@@ -1779,12 +1794,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             counsellor={selectedCounsellor}
             open={showBookingModal}
             onClose={() => setShowBookingModal(false)}
-            onBooked={() => {
-              toast({
-                title: bookingConfirmedTitle,
-                description: bookingConfirmedDesc
-              });
-            }}
+            // The modal shows its own "Booking requested" message; the booking
+            // stays pending until the counsellor confirms, so nothing more here.
+            onBooked={() => {}}
           />
         </Suspense>
       )}

@@ -35,7 +35,9 @@ export interface Counsellor {
 
 interface Props {
   counsellor: Counsellor;
-  onConnect: () => void;
+  // Optional: the Message button is shown only when a real messaging handler
+  // exists. Until counsellor messaging is built, callers leave it out.
+  onConnect?: () => void;
   onBook: () => void;
 }
 
@@ -192,13 +194,15 @@ export const CounsellorCard: React.FC<Props> = ({ counsellor, onConnect, onBook 
           <Calendar className="h-4 w-4 mr-2" />
           {!canBookCounsellor ? t('counsellorCard', 'premiumRequired', 'Premium Required') : t('counsellorCard', 'bookSession', 'Book Session')}
         </Button>
-        <Button
-          onClick={onConnect}
-          variant="outline"
-          className="flex-1"
-        >
-          {t('counsellorCard', 'message', 'Message')}
-        </Button>
+        {onConnect && (
+          <Button
+            onClick={onConnect}
+            variant="outline"
+            className="flex-1"
+          >
+            {t('counsellorCard', 'message', 'Message')}
+          </Button>
+        )}
       </div>
     </div>
   );

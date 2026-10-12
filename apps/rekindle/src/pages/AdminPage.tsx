@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Shield, AlertCircle, CheckCircle, Settings, Lock, Loader2, RefreshCw, Crown, UserCog } from 'lucide-react';
+import { ArrowLeft, Shield, Lock, Loader2, RefreshCw, Crown, UserCog } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -24,18 +24,11 @@ const LOADING_TIMEOUT = 5000;
 const AdminPage: React.FC = () => {
   const navigate = useNavigate();
 
-  const [oauthStatus, setOauthStatus] = useState<{
-    google: boolean;
-    facebook: boolean;
-    checking: boolean;
-  }>({ google: false, facebook: false, checking: true });
-  
   const [forceShowContent, setForceShowContent] = useState(false);
   
   // Refs to prevent duplicate operations
   const isMounted = useRef(true);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const oauthCheckDone = useRef(false);
   
   // Safe auth hook usage with fallback
   let user = null;
@@ -83,31 +76,6 @@ const AdminPage: React.FC = () => {
       }
     };
   }, [loading, forceShowContent]);
-
-  // Check OAuth providers (only once)
-  useEffect(() => {
-    if (!oauthCheckDone.current) {
-      oauthCheckDone.current = true;
-      checkOAuthProviders();
-    }
-  }, []);
-
-  const checkOAuthProviders = useCallback(async () => {
-    try {
-      const providers = {
-        google: false,
-        facebook: false
-      };
-      if (isMounted.current) {
-        setOauthStatus({ ...providers, checking: false });
-      }
-    } catch (error) {
-      console.error('[AdminPage] Error checking OAuth providers:', error);
-      if (isMounted.current) {
-        setOauthStatus({ google: false, facebook: false, checking: false });
-      }
-    }
-  }, []);
 
   // Check if user is a superadmin (owner - can assign roles)
   const isSuperAdmin = useCallback(() => {
@@ -227,50 +195,6 @@ const AdminPage: React.FC = () => {
             </div>
           </header>
           
-          {/* OAuth Status Banner */}
-          <div className="max-w-7xl mx-auto px-4 py-2">
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="py-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <Settings className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">OAuth Provider Status</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5">
-                      {oauthStatus.checking ? (
-                        <div className="h-3 w-3 rounded-full bg-gray-300 animate-pulse" />
-                      ) : oauthStatus.google ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-amber-500" />
-                      )}
-                      <span className="text-sm text-gray-700">Google</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {oauthStatus.checking ? (
-                        <div className="h-3 w-3 rounded-full bg-gray-300 animate-pulse" />
-                      ) : oauthStatus.facebook ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-amber-500" />
-                      )}
-                      <span className="text-sm text-gray-700">Facebook</span>
-                    </div>
-                    <a 
-                      href="https://supabase.com/dashboard" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline"
-                    >
-                      Configure in Supabase
-                    </a>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
           {/* Current User Info */}
           {user && (
             <div className="max-w-7xl mx-auto px-4 py-2">

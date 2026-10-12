@@ -608,7 +608,7 @@ export const ProfileSettings: React.FC = () => {
             />
           </CardTitle>
           <CardDescription>
-            {t('profileSettings', 'partnerDesc', 'Support the mission and unlock Partner features')}
+            {t('profileSettings', 'partnerGiveDesc', 'Support the mission with a gift')}
           </CardDescription>
         </CardHeader>
         {partnerOpen && (

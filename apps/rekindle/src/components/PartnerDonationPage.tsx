@@ -249,7 +249,7 @@ export const PartnerDonationPage: React.FC = () => {
                 <p className="text-xs text-gray-500">
                   {isPartner
                     ? t('partnerDonationPage', 'active', 'Active')
-                    : t('partnerDonationPage', 'giveAnyAmount', 'Give any amount to become a Partner')}
+                    : t('partnerDonationPage', 'partnerViaPlan', 'Partner access comes with a Partner plan')}
                 </p>
               </div>
             </div>
@@ -267,7 +267,7 @@ export const PartnerDonationPage: React.FC = () => {
             <Sparkles className="h-4 w-4 text-amber-500" />
             {t('partnerDonationPage', 'partnerBenefits', 'Partner Benefits')}
           </CardTitle>
-          <CardDescription>{t('partnerDonationPage', 'unlockedByDonation', 'Unlocked by any donation')}</CardDescription>
+          <CardDescription>{t('partnerDonationPage', 'includedWithPlan', 'Included with a Partner plan')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {PARTNER_BENEFITS.map(b => (

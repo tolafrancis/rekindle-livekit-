@@ -322,7 +322,10 @@ export const SponsorshipSystem: React.FC = () => {
     setAmount('');
     setCustomAmount('');
     loadDonations();
-    toast({ title: t('sponsorshipSystem', 'thankYou', 'Thank You! 🙏'), description: t('sponsorshipSystem', 'youAreNowPartner', 'You are now {tier} Partner.').replace('{tier}', selectedTier === 'ministry' ? t('sponsorshipSystem', 'aMinistry', 'a Ministry') : t('sponsorshipSystem', 'anIndividual', 'an Individual')) });
+    toast({ title: t('sponsorshipSystem', 'thankYou', 'Thank You! 🙏'), description: selectedTier === 'ministry'
+      // Only Ministry giving grants partner access (see calcPartnerDays); individual giving is a donation.
+      ? t('sponsorshipSystem', 'youAreNowPartner', 'You are now {tier} Partner.').replace('{tier}', t('sponsorshipSystem', 'aMinistry', 'a Ministry'))
+      : t('sponsorshipSystem', 'thankYouForGift', 'Thank you for your gift to the mission.') });
   };
 
   const redeemVoucher = async () => {
