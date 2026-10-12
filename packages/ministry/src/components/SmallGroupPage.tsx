@@ -11,8 +11,11 @@ import { buildJoinUrl } from '@rekindle/features/qrCode';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
 import { useModeration } from '@rekindle/features/ModerationContext';
 import {
-  ArrowLeft, Users, MapPin, Clock, Video, Loader2, Pin, Crown, Shield, Send, Share2,
+  ArrowLeft, Users, MapPin, Clock, Video, Loader2, Pin, Crown, Shield, Send, Share2, MessageSquare, ChevronRight,
 } from 'lucide-react';
+import { groupChatApi, chatErrorText, type ChatMember } from '../lib/groupChatApi';
+import { useIsWide } from '../lib/useIsWide';
+import { GroupChatView } from './chat/GroupChatView';
 
 interface SmallGroupPageProps {
   groupId: string;
@@ -31,7 +34,10 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
   const [whatsappNotifyAvailable, setWhatsappNotifyAvailable] = useState(false);
   const [savingNotifyPref, setSavingNotifyPref] = useState(false);
   const [myMembership, setMyMembership] = useState<any>(null);
-  const [members, setMembers] = useState<any[]>([]);
+  const [members, setMembers] = useState<ChatMember[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [responding, setResponding] = useState(false);
+  const wide = useIsWide();
   const [meetings, setMeetings] = useState<any[]>([]);
   const [posts, setPosts] = useState<any[]>([]);
   // The group feed is fetched POSTS_PAGE rows at a time; reloads (e.g. after
@@ -90,7 +96,9 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
         if (isMember) {
           const postsLimit = Math.max(POSTS_PAGE, postsCountRef.current);
           const [membersRes, meetingsRes, postsRes] = await Promise.all([
-            supabase.from('small_group_members').select('*').eq('group_id', groupId).eq('status', 'active'),
+            // Names and photos come from group_chat_members (members can't
+            // read each other's profiles directly).
+            groupChatApi.members(groupId).then((data) => ({ data })).catch(() => ({ data: [] as ChatMember[] })),
             supabase.from('small_group_meetings').select('*').eq('group_id', groupId).order('meeting_date', { ascending: true }),
             supabase.from('small_group_posts').select('*').eq('group_id', groupId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false })
               .limit(postsLimit),
@@ -158,13 +166,26 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
     setSavingNotifyPref(true);
     const next = !myMembership.whatsapp_notify;
     try {
-      const { error } = await supabase.from('small_group_members').update({ whatsapp_notify: next }).eq('id', myMembership.id);
-      if (error) throw error;
+      // Members can't update their own row directly; this function changes
+      // only their own notification settings.
+      await groupChatApi.updateMySettings(groupId, { whatsappNotify: next });
       setMyMembership({ ...myMembership, whatsapp_notify: next });
     } catch (e: any) {
-      toast({ title: t('smallGroupsMember', 'error', 'Error'), description: e.message, variant: 'destructive' });
+      toast({ title: t('smallGroupsMember', 'error', 'Error'), description: chatErrorText(e), variant: 'destructive' });
     } finally {
       setSavingNotifyPref(false);
+    }
+  };
+
+  const respondInvite = async (accept: boolean) => {
+    setResponding(true);
+    try {
+      await groupChatApi.respondInvite(groupId, accept);
+      if (accept) await load(); else onBack();
+    } catch (e) {
+      toast({ title: chatErrorText(e), variant: 'destructive' });
+    } finally {
+      setResponding(false);
     }
   };
 
@@ -224,6 +245,21 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
   }
 
   const isMember = myMembership?.status === 'active';
+  const isInvited = myMembership?.status === 'invited';
+
+  if (chatOpen && isMember) {
+    const closeChat = () => setChatOpen(false);
+    const leftGroup = () => { setChatOpen(false); load(); };
+    return wide ? (
+      <div className="space-y-3">
+        <Button variant="ghost" size="sm" onClick={closeChat}><ArrowLeft className="h-4 w-4 mr-1" />{group.name}</Button>
+        <GroupChatView groupId={groupId} layout="none" onLeft={leftGroup} onOpenGroupPage={closeChat}
+          className="h-[calc(100dvh-12rem)] min-h-[480px] rounded-xl border" />
+      </div>
+    ) : (
+      <GroupChatView groupId={groupId} layout="fullscreen" onBack={closeChat} onLeft={leftGroup} onOpenGroupPage={closeChat} />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -258,17 +294,33 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
         </div>
       </div>
 
-      {!isMember && (
+      {isInvited && (
+        <Card>
+          <CardContent className="pt-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm">{t('groupChat', 'invitedTo', "You've been invited to {name}", { name: group.name })}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" disabled={responding} onClick={() => respondInvite(false)}>{t('groupChat', 'decline', 'Decline')}</Button>
+              <Button disabled={responding} onClick={() => respondInvite(true)}>
+                {responding && <Loader2 className="h-4 w-4 animate-spin mr-2" />}{t('groupChat', 'accept', 'Join group')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isMember && !isInvited && (
         <Card>
           <CardContent className="pt-6 flex items-center justify-between">
             <div>
               {myMembership?.status === 'pending' ? (
                 <Badge variant="secondary">{t('smallGroupsMember', 'requestPending', 'Request pending')}</Badge>
+              ) : group.privacy === 'invite_only' ? (
+                <p className="text-sm text-muted-foreground">{t('smallGroupsMember', 'inviteOnly', 'This group is by invitation. Ask the leader to invite you.')}</p>
               ) : (
                 <p className="text-sm text-muted-foreground">{t('smallGroupsMember', 'joinToSeeMore', 'Join this group to see meetings, posts, and members.')}</p>
               )}
             </div>
-            {!myMembership && (
+            {!myMembership && group.privacy !== 'invite_only' && (
               <Button onClick={handleJoin} disabled={joining}>
                 {joining ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 {group.privacy === 'public' ? t('smallGroupsMember', 'join', 'Join') : t('smallGroupsMember', 'requestToJoin', 'Request to Join')}
@@ -276,6 +328,23 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
             )}
           </CardContent>
         </Card>
+      )}
+
+      {isMember && group.chat_enabled !== false && (
+        <button
+          type="button"
+          onClick={() => setChatOpen(true)}
+          className="flex w-full items-center gap-3 rounded-xl border bg-primary/5 px-4 py-3 text-left transition-colors hover:bg-primary/10"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <MessageSquare className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">{t('groupChat', 'openChat', 'Group chat')}</span>
+            <span className="block text-sm text-muted-foreground">{t('groupChat', 'openChatDesc', 'Talk, share Scripture and pray together')}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-muted-foreground" />
+        </button>
       )}
 
       {isMember && whatsappNotifyAvailable && (
@@ -369,10 +438,10 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
             <h3 className="font-semibold mb-2">{t('smallGroupsMember', 'membersHeading', 'Members')} ({members.length})</h3>
             <div className="flex flex-wrap gap-2">
               {members.map((m) => (
-                <Badge key={m.id} variant="secondary" className="flex items-center gap-1">
+                <Badge key={m.user_id} variant="secondary" className="flex items-center gap-1">
                   {m.role === 'leader' && <Crown className="h-3 w-3 text-amber-500" />}
                   {m.role === 'assistant_leader' && <Shield className="h-3 w-3 text-blue-500" />}
-                  {m.user_id === user?.id ? t('smallGroupsMember', 'you', 'You') : m.user_id}
+                  {m.user_id === user?.id ? t('smallGroupsMember', 'you', 'You') : m.name}
                 </Badge>
               ))}
             </div>

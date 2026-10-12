@@ -315,6 +315,7 @@ function AppRoutes() {
         <Route path="/ministry-prayer/:id" element={<MinistriesHub />} />
         <Route path="/ministry-videos/:id" element={<MinistriesHub />} />
         <Route path="/small-group/:id" element={<MinistriesHub />} />
+        <Route path="/messages/:id" element={<MinistriesHub />} />
         <Route path="/books/:id" element={<MinistriesHub />} />
         <Route path="/guide" element={<RekindleTutorialPage />} />
         <Route path="/faq" element={<FaqPage />} />

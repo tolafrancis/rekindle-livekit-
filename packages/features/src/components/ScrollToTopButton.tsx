@@ -22,7 +22,7 @@ export function ScrollToTopButton({ threshold = 400 }: { threshold?: number }) {
       type="button"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       aria-label="Scroll to top"
-      className="fixed bottom-20 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg ring-1 ring-black/5 transition hover:scale-105 md:bottom-6"
+      className="fixed bottom-20 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg ring-1 ring-black/5 transition hover:scale-105 md:bottom-6 [body[data-fullscreen-chat]_&]:hidden"
     >
       <ArrowUp className="h-5 w-5" />
     </button>

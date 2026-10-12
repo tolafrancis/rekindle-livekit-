@@ -14,8 +14,6 @@ export type ReportableContentType =
   | 'room_chat_messages'
   | 'channel_chat_messages'
   | 'meeting_chat_messages'
-  | 'group_messages'
-  | 'prayer_group_messages'
   | 'prayer_wall_posts'
   | 'prayer_wall_responses'
   | 'community_activities'
@@ -25,6 +23,7 @@ export type ReportableContentType =
   | 'voice_notes'
   | 'meeting_chat'
   | 'small_group_posts'
+  | 'small_group_messages'
   | 'community_revelations'
   | 'app_testimonies'
   | 'ministry_prayer_requests'
@@ -211,8 +210,6 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   room_chat_messages: 'Room chat message',
   channel_chat_messages: 'Live channel chat',
   meeting_chat_messages: 'Meeting chat message',
-  group_messages: 'Group message',
-  prayer_group_messages: 'Prayer group message',
   prayer_wall_posts: 'Prayer wall post',
   prayer_wall_responses: 'Prayer wall response',
   community_activities: 'Community post',
@@ -222,6 +219,7 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   voice_notes: 'Voice note',
   meeting_chat: 'Meeting chat message',
   small_group_posts: 'Small group post',
+  small_group_messages: 'Small group chat message',
   community_revelations: 'Revelation',
   app_testimonies: 'Testimony',
   ministry_prayer_requests: 'Prayer request',
