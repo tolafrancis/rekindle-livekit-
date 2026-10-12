@@ -11,8 +11,9 @@
 //   3. For each enabled reminder whose local time has just passed (within a
 //      grace window), atomically "claims" it for today via daily_reminder_sends
 //      and inserts an in-app notification. The claim is what prevents duplicates.
-//   4. Also sends a web-push (best-effort). Push is ON by default; set the
-//      secret SEND_PUSH_WITH_REMINDERS='false' to turn it off.
+//   4. Also sends a push to the member's devices (best-effort, awaited before
+//      responding). Push is ON by default; set the secret
+//      SEND_PUSH_WITH_REMINDERS='false' to turn it off.
 //
 // Deploy: paste into Supabase Dashboard → Edge Functions → new function
 //         named "process-daily-reminders". Requires migration 0141.
@@ -112,6 +113,9 @@ serve(async (req) => {
     let created = 0;
     let skipped = 0;
     let scanned = 0;
+    // Pushes run alongside the loop but are awaited before we respond: the
+    // runtime may stop this function once the response is sent.
+    const pushes: Promise<void>[] = [];
 
     for (const profile of profiles ?? []) {
       if (profile.consent_reminders === false) continue;
@@ -166,23 +170,32 @@ serve(async (req) => {
         }
         created++;
 
-        // 4. Optional best-effort push (does not block; never fails the run).
+        // 4. Best-effort push (never fails the run). The project's service key
+        // is an sb_secret_ key, not a JWT, so send-push-notification can't
+        // recognise it as a server call; the cron secret is what marks it as
+        // trusted. Without it every reminder push was rejected with 401.
         if (sendPush) {
-          supabase.functions.invoke('send-push-notification', {
-            body: {
-              title: def.title,
-              body: def.body,
-              link: def.link,
-              userId: profile.user_id,
-              targetAudience: 'specific_user',
-              notificationType: def.type,
-            },
-          }).catch((e) => console.error('[daily-reminders] push failed:', e?.message));
+          pushes.push(
+            supabase.functions.invoke('send-push-notification', {
+              headers: { 'x-cron-secret': cronSecret },
+              body: {
+                title: def.title,
+                body: def.body,
+                link: def.link,
+                userId: profile.user_id,
+                targetAudience: 'specific_user',
+                notificationType: def.type,
+              },
+            }).then(({ error }) => {
+              if (error) console.error(`[daily-reminders] push failed for ${profile.user_id}/${saved.id}:`, error.message);
+            }).catch((e) => console.error('[daily-reminders] push failed:', e?.message)),
+          );
         }
       }
     }
 
-    console.log(`[daily-reminders] scanned=${scanned} created=${created} skipped=${skipped}`);
+    await Promise.allSettled(pushes);
+    console.log(`[daily-reminders] scanned=${scanned} created=${created} skipped=${skipped} pushes=${pushes.length}`);
     return new Response(
       JSON.stringify({ success: true, scanned, created, skipped, timestamp: new Date().toISOString() }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
