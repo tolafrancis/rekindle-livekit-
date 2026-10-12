@@ -131,16 +131,27 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
   const saveAffirmation = async () => {
     if (!affirmation) return;
     try {
+      // supabase-js reports failures in `error` rather than throwing, so check
+      // it before telling the user the change was saved.
       if (liked) {
-        await supabase.from('bookmarks').delete().eq('content_id', affirmation.id).eq('content_type', 'affirmation');
+        const { error } = await supabase.from('bookmarks').delete().eq('content_id', affirmation.id).eq('content_type', 'affirmation');
+        if (error) throw error;
         setLiked(false);
         toast({ title: t('cards', 'removedFromSaved', 'Removed from saved') });
       } else {
-        await supabase.from('bookmarks').insert({ content_id: affirmation.id, content_type: 'affirmation', created_at: new Date().toISOString() });
+        const { error } = await supabase.from('bookmarks').insert({ content_id: affirmation.id, content_type: 'affirmation', created_at: new Date().toISOString() });
+        if (error) throw error;
         setLiked(true);
         toast({ title: t('cards', 'saved', 'Saved!') });
       }
-    } catch (err) { console.error('Error saving:', err); }
+    } catch (err) {
+      console.error('Error saving:', err);
+      toast({
+        title: t('cards', 'saveFailed', "Couldn't save"),
+        description: t('cards', 'saveFailedDesc', 'Please check your connection and try again.'),
+        variant: 'destructive',
+      });
+    }
   };
 
   const categoryColors: Record<string, string> = {
@@ -191,7 +202,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
               {showDaily ? t('cards', 'dailyAffirmation', 'Daily Affirmation') : (affirmation.category?.replace('_', ' ') || t('cards', 'affirmation', 'Affirmation'))}
             </span>
           </div>
-          <Button variant="ghost" size="icon" onClick={refreshAffirmation} className="text-white hover:bg-white/20 h-8 w-8">
+          <Button variant="ghost" size="icon" onClick={refreshAffirmation} aria-label={t('cards', 'newAffirmation', 'Show another affirmation')} className="text-white hover:bg-white/20 h-11 w-11 sm:h-8 sm:w-8">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -247,7 +258,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
           <div className="bg-white rounded-lg p-3 mt-2 border border-gray-200">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-gray-700">{t('cards', 'listenToAffirmation', 'Listen to Affirmation')}</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} className="h-6 w-6 p-0">
+              <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} aria-label={t('cards', 'closeAudio', 'Close audio')} className="h-11 w-11 sm:h-6 sm:w-6 p-0">
                 <X className="h-4 w-4" />
               </Button>
             </div>

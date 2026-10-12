@@ -738,7 +738,7 @@ export const AdminWhatsAppManager: React.FC = () => {
                       <td className="px-4 py-3 font-medium">{w.ministry_name}</td>
                       <td className="px-4 py-3 text-muted-foreground">
                         <p>{w.business_display_name || '—'}</p>
-                        {w.waba_id && <p className="text-[10px] text-muted-foreground/60">{w.waba_id}</p>}
+                        {w.waba_id && <p className="text-xs text-muted-foreground/60">{w.waba_id}</p>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{w.phone_number_display || '—'}</td>
                       <td className="px-4 py-3 text-center">

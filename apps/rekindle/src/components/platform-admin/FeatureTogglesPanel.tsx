@@ -42,7 +42,7 @@ function ToggleRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium">{group.label}</p>
-          <Badge variant="outline" className="text-[10px] font-normal">{whereItShows(group)}</Badge>
+          <Badge variant="outline" className="text-xs font-normal">{whereItShows(group)}</Badge>
         </div>
         <p className="text-xs text-gray-500 mt-0.5">{group.description}</p>
         {note && <p className="text-xs text-amber-600 mt-1">{note}</p>}

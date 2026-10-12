@@ -113,7 +113,7 @@ export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated
               <div key={i} className="border rounded-lg p-3 space-y-2 bg-gray-50">
                 <div className="flex gap-2">
                   <Input placeholder={t('createChallengeModal', 'pointTitlePlaceholder', 'Point Title *')} value={point.title} onChange={e => updatePrayerPoint(i, 'title', e.target.value)} />
-                  {prayerPoints.length > 1 && <Button variant="ghost" size="icon" onClick={() => removePrayerPoint(i)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
+                  {prayerPoints.length > 1 && <Button aria-label={t('a11y', 'removePrayerPoint', 'Remove prayer point')} variant="ghost" size="icon" onClick={() => removePrayerPoint(i)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}
                 </div>
                 <Textarea placeholder={t('createChallengeModal', 'prayerContentPlaceholder', 'Prayer content *')} value={point.content} onChange={e => updatePrayerPoint(i, 'content', e.target.value)} />
                 

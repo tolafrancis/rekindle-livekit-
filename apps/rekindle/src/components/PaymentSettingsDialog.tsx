@@ -276,7 +276,7 @@ export const PaymentSettingsDialog: React.FC<PaymentSettingsDialogProps> = ({
           className="pr-20 font-mono text-sm"
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-          <Button
+          <Button aria-label={showSecrets[field] ? t('a11y', 'hideValue', 'Hide value') : t('a11y', 'showValue', 'Show value')}
             type="button"
             variant="ghost"
             size="sm"
@@ -290,7 +290,7 @@ export const PaymentSettingsDialog: React.FC<PaymentSettingsDialogProps> = ({
             )}
           </Button>
           {settings[field] && (
-            <Button
+            <Button aria-label={t('a11y', 'copyValue', 'Copy value')}
               type="button"
               variant="ghost"
               size="sm"

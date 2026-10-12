@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@reki
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Loader2, Radio, Users, Calendar, Play } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { formatMeetingTime } from '@rekindle/features/meetingTime';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
 import { openWebinarBackstage, type MinistryWebinar } from './webinarControl';

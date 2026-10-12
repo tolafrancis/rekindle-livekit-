@@ -69,7 +69,7 @@ export const ShareChallengeModal: React.FC<Props> = ({ open, onClose, title, des
 
           <div className="flex items-center gap-2">
             <Input value={shareUrl} readOnly className="flex-1 text-sm" />
-            <Button variant="outline" size="icon" onClick={copyLink}>
+            <Button aria-label={t('a11y', 'copyLink', 'Copy link')} variant="outline" size="icon" onClick={copyLink}>
               {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
             </Button>
           </div>

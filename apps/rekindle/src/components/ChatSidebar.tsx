@@ -232,7 +232,7 @@ export const ChatSidebar: React.FC<Props> = ({ roomId }) => {
               className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:opacity-50"
               maxLength={500}
             />
-            <Button 
+            <Button aria-label={t('a11y', 'sendMessage', 'Send message')} 
               onClick={sendMessage} 
               size="sm" 
               disabled={!newMessage.trim() || sending}

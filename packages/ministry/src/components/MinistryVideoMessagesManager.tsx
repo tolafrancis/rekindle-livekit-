@@ -18,6 +18,7 @@ import {
   Clock, X, Send, CalendarClock, FileText,
 } from 'lucide-react';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface Props {
   ministryId: string;
@@ -296,7 +297,7 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryVideoMessagesManager', 'confirmDelete', 'Delete this video message? This cannot be undone.'))) return;
+    if (!await confirmAction({ title: t('ministryVideoMessagesManager', 'confirmDeleteTitle', 'Delete this video message?'), description: t('ministryVideoMessagesManager', 'cannotBeUndone', 'This cannot be undone.'), confirmLabel: t('ministryVideoMessagesManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('ministry_video_messages').delete().eq('id', id);
       if (error) throw error;
@@ -566,21 +567,21 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
                     <div className="flex gap-1">
                       {video.is_pinned && (
                         <>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={pinnedIdx <= 0} onClick={() => handleReorder(video, 'up')}><ChevronUp className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={pinnedIdx >= pinnedList.length - 1} onClick={() => handleReorder(video, 'down')}><ChevronDown className="h-4 w-4" /></Button>
+                          <Button aria-label={t('ministryVideoMessagesManager', 'moveUp', 'Move up')} variant="ghost" size="icon" className="h-7 w-7" disabled={pinnedIdx <= 0} onClick={() => handleReorder(video, 'up')}><ChevronUp className="h-4 w-4" /></Button>
+                          <Button aria-label={t('ministryVideoMessagesManager', 'moveDown', 'Move down')} variant="ghost" size="icon" className="h-7 w-7" disabled={pinnedIdx >= pinnedList.length - 1} onClick={() => handleReorder(video, 'down')}><ChevronDown className="h-4 w-4" /></Button>
                         </>
                       )}
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleTogglePin(video)} title={t('ministryVideoMessagesManager', 'togglePin', 'Pin/unpin')}>
+                      <Button aria-label={t('ministryVideoMessagesManager', 'togglePin', 'Pin/unpin')} variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleTogglePin(video)} title={t('ministryVideoMessagesManager', 'togglePin', 'Pin/unpin')}>
                         <Star className={`h-4 w-4 ${video.is_pinned ? 'fill-amber-500 text-amber-500' : 'text-gray-400'}`} />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openAnalytics(video)} title={t('ministryVideoMessagesManager', 'analytics', 'Analytics')}>
+                      <Button aria-label={t('ministryVideoMessagesManager', 'analytics', 'Analytics')} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openAnalytics(video)} title={t('ministryVideoMessagesManager', 'analytics', 'Analytics')}>
                         <BarChart3 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(video)}><Edit className="h-4 w-4" /></Button>
+                      <Button aria-label={t('ministryVideoMessagesManager', 'editVideo', 'Edit video')} variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(video)}><Edit className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleArchiveToggle(video)} title={video.status === 'archived' ? t('ministryVideoMessagesManager', 'unarchive', 'Unarchive') : t('ministryVideoMessagesManager', 'archive', 'Archive')}>
                         {video.status === 'archived' ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(video.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                      <Button aria-label={t('ministryVideoMessagesManager', 'deleteVideo', 'Delete video')} variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(video.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                     </div>
 
                     {(video.status === 'ready' || video.status === 'draft') && video.playback_url && (
@@ -655,7 +656,7 @@ export const MinistryVideoMessagesManager: React.FC<Props> = ({ ministryId, mini
                         <Button type="button" size="sm" variant="outline" onClick={reRecord}>{t('ministryVideoMessagesManager', 'reRecord', 'Re-record')}</Button>
                       )}
                     </div>
-                    <p className="text-[11px] text-gray-400">{t('ministryVideoMessagesManager', 'recordHint', 'Recording works best in Chrome/Edge on desktop and Android. On iPhone/iPad, use Upload with a video recorded in your camera app.')}</p>
+                    <p className="text-xs text-gray-500">{t('ministryVideoMessagesManager', 'recordHint', 'Recording works best in Chrome/Edge on desktop and Android. On iPhone/iPad, use Upload with a video recorded in your camera app.')}</p>
                   </div>
                 )}
 

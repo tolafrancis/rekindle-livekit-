@@ -27,6 +27,7 @@ import {
   RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles, Code2, UserX
 } from 'lucide-react';
 import { BlockedUsersList } from '@rekindle/features/components/BlockedUsersList';
+import { clickableProps } from '@rekindle/features/clickableProps';
 
 const spiritualLevels = [
   { id: 'seeker', name: 'Seeker' },
@@ -135,8 +136,8 @@ const SettingsSidebar: React.FC<{ section: string; onSelect: (key: string) => vo
       {SETTINGS_GROUPS.map((g) => (
         <div key={g.group} className={Capacitor.isNativePlatform() ? "flex flex-col gap-1 mb-2" : "contents md:block md:mb-3"}>
           <p className={Capacitor.isNativePlatform() 
-            ? "block text-xs font-semibold uppercase tracking-wide text-gray-400 px-3 mb-1"
-            : "hidden md:block text-xs font-semibold uppercase tracking-wide text-gray-400 px-3 mb-1"
+            ? "block text-xs font-semibold uppercase tracking-wide text-gray-500 px-3 mb-1"
+            : "hidden md:block text-xs font-semibold uppercase tracking-wide text-gray-500 px-3 mb-1"
           }>{t('profileSettings', `navGroup_${g.group}`, g.group)}</p>
           <div className={Capacitor.isNativePlatform() ? "flex flex-col gap-1" : "contents md:flex md:flex-col md:gap-1"}>
             {g.items.map((it) => {
@@ -147,7 +148,8 @@ const SettingsSidebar: React.FC<{ section: string; onSelect: (key: string) => vo
                   key={it.key}
                   data-tour={`settings-${it.key}`}
                   onClick={() => onSelect(it.key)}
-                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 min-h-[44px] md:min-h-0 text-sm font-medium whitespace-nowrap transition-colors ${
                     active ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-purple-50 hover:text-purple-700'
                   }`}
                 >
@@ -325,6 +327,7 @@ export const ProfileSettings: React.FC = () => {
             <Label htmlFor="fullName">{t('profileSettings', 'fullNameLabel', 'Full Name')}</Label>
             <Input
               id="fullName"
+              autoComplete="name"
               value={formData.full_name}
               onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               placeholder={t('profileSettings', 'yourNamePlaceholder', 'Your name')}
@@ -337,6 +340,7 @@ export const ProfileSettings: React.FC = () => {
               <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <Input
                 id="email"
+                autoComplete="email"
                 value={user?.email || profile?.email || ''}
                 disabled
                 className="pl-10 bg-gray-50"
@@ -360,7 +364,7 @@ export const ProfileSettings: React.FC = () => {
 
 
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
+            <Label htmlFor="timezone" className="flex items-center gap-2">
               <Globe className="h-4 w-4 text-gray-500" />
               {t('profileSettings', 'timezoneLabel', 'Timezone')}
             </Label>
@@ -368,7 +372,7 @@ export const ProfileSettings: React.FC = () => {
               value={formData.timezone}
               onValueChange={(v) => setFormData({ ...formData, timezone: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="timezone">
                 <SelectValue placeholder={t('profileSettings', 'timezonePlaceholder', 'Select your timezone')} />
               </SelectTrigger>
               <SelectContent className="max-h-64">
@@ -385,12 +389,12 @@ export const ProfileSettings: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <Label>{t('profileSettings', 'spiritualLevelLabel', 'Spiritual Level')}</Label>
+            <Label htmlFor="spiritualLevel">{t('profileSettings', 'spiritualLevelLabel', 'Spiritual Level')}</Label>
             <Select
               value={formData.spiritual_level}
               onValueChange={(v) => setFormData({ ...formData, spiritual_level: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="spiritualLevel">
                 <BookOpen className="h-4 w-4 mr-2" />
                 <SelectValue />
               </SelectTrigger>
@@ -521,10 +525,11 @@ export const ProfileSettings: React.FC = () => {
           ].map((item) => (
             <div key={item.key} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
               <div>
-                <Label className="font-medium">{item.label}</Label>
+                <Label htmlFor={`consent-${item.key}`} className="font-medium">{item.label}</Label>
                 <p className="text-sm text-gray-500">{item.desc}</p>
               </div>
               <Switch
+                id={`consent-${item.key}`}
                 checked={(formData as any)[item.key]}
                 onCheckedChange={(v) => setFormData({ ...formData, [item.key]: v })}
               />
@@ -552,6 +557,7 @@ export const ProfileSettings: React.FC = () => {
               </p>
             </div>
             <Switch
+              aria-label={t('profileSettings', 'platformNewsLabel', 'Platform news & announcements')}
               checked={formData.email_opt_in}
               onCheckedChange={v => setFormData({ ...formData, email_opt_in: v })}
             />
@@ -598,6 +604,8 @@ export const ProfileSettings: React.FC = () => {
         <CardHeader
           className="cursor-pointer select-none"
           onClick={() => setPartnerOpen(prev => !prev)}
+          {...clickableProps(() => setPartnerOpen(prev => !prev))}
+          aria-expanded={partnerOpen}
         >
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -609,7 +617,7 @@ export const ProfileSettings: React.FC = () => {
             />
           </CardTitle>
           <CardDescription>
-            {t('profileSettings', 'partnerDesc', 'Support the mission and unlock Partner features')}
+            {t('profileSettings', 'partnerGiveDesc', 'Support the mission with a gift')}
           </CardDescription>
         </CardHeader>
         {partnerOpen && (
@@ -631,6 +639,8 @@ export const ProfileSettings: React.FC = () => {
         <CardHeader
           className="cursor-pointer select-none"
           onClick={() => setAffirmCatsOpen(prev => !prev)}
+          {...clickableProps(() => setAffirmCatsOpen(prev => !prev))}
+          aria-expanded={affirmCatsOpen}
         >
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -652,6 +662,7 @@ export const ProfileSettings: React.FC = () => {
                   <button
                     key={cat.value}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() => {
                       const current: string[] = formData.affirmation_categories || [];
                       const updated = selected
@@ -659,7 +670,7 @@ export const ProfileSettings: React.FC = () => {
                         : [...current, cat.value];
                       setFormData({ ...formData, affirmation_categories: updated });
                     }}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+                    className={`flex items-center gap-2 px-3 py-2 min-h-[44px] rounded-lg border text-sm font-medium transition-all ${
                       selected
                         ? 'bg-purple-600 text-white border-purple-600'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-purple-300'
@@ -671,7 +682,7 @@ export const ProfileSettings: React.FC = () => {
                 );
               })}
             </div>
-            <p className="text-xs text-gray-400 mt-3">
+            <p className="text-xs text-gray-500 mt-3">
               {(formData.affirmation_categories || []).length === 0
                 ? t('profileSettings', 'noCatsSelected', 'No categories selected — all declarations will be shown')
                 : t('profileSettings', 'catsSelectedCount', '{count} categories selected').replace('{count}', String((formData.affirmation_categories || []).length))}
@@ -688,6 +699,8 @@ export const ProfileSettings: React.FC = () => {
         <CardHeader
           className="cursor-pointer select-none"
           onClick={() => setRemindersOpen(prev => !prev)}
+          {...clickableProps(() => setRemindersOpen(prev => !prev))}
+          aria-expanded={remindersOpen}
         >
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -744,6 +757,7 @@ export const ProfileSettings: React.FC = () => {
               <Input
                 id="newPassword"
                 type="password"
+                autoComplete="new-password"
                 value={passwordData.newPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                 placeholder={t('profileSettings', 'enterNewPasswordPlaceholder', 'Enter new password')}
@@ -754,6 +768,7 @@ export const ProfileSettings: React.FC = () => {
               <Input
                 id="confirmPassword"
                 type="password"
+                autoComplete="new-password"
                 value={passwordData.confirmPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                 placeholder={t('profileSettings', 'confirmNewPasswordPlaceholder', 'Confirm new password')}
@@ -803,6 +818,7 @@ export const ProfileSettings: React.FC = () => {
               <Input
                 id="syncEmail"
                 type="email"
+                autoComplete="email"
                 value={syncEmail}
                 onChange={(e) => setSyncEmail(e.target.value)}
                 placeholder={t('profileSettings', 'emailPlaceholder', 'your@email.com')}

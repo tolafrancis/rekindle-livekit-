@@ -91,7 +91,7 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
         setCurrentTrack(matchingTrack);
         if (autoPlay) {
           setTimeout(() => {
-            audioRef.current?.play();
+            safePlay();
             setIsPlaying(true);
           }, 100);
         }
@@ -113,12 +113,33 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
     setLoading(false);
   };
 
+  // play() returns a promise that rejects when the browser blocks playback
+  // (autoplay policy, unsupported source). Surface that instead of leaving
+  // the UI stuck in a "playing" state with no sound.
+  const safePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const result = audio.play();
+    if (result && typeof result.catch === 'function') {
+      result.catch((err: unknown) => {
+        // AbortError just means a newer load/pause interrupted this play.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setIsPlaying(false);
+        toast({
+          title: t('instrumentalPlayer', 'playbackBlockedTitle', 'Playback blocked'),
+          description: t('instrumentalPlayer', 'playbackBlockedDesc', 'Your browser stopped the music from playing. Tap play to try again.'),
+          variant: 'destructive',
+        });
+      });
+    }
+  };
+
   const togglePlay = () => {
     if (!audioRef.current || !currentTrack) return;
     if (isPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play();
+      safePlay();
     }
     setIsPlaying(!isPlaying);
   };
@@ -127,7 +148,7 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
     setCurrentTrack(track);
     setIsPlaying(true);
     onTrackChange?.(track);
-    setTimeout(() => audioRef.current?.play(), 100);
+    setTimeout(() => safePlay(), 100);
   };
 
   const nextTrack = () => {
@@ -346,7 +367,8 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
               variant="ghost"
               size="icon"
               onClick={prevTrack}
-              className="text-white hover:bg-white/20"
+              aria-label={t('instrumentalPlayer', 'previousTrack', 'Previous track')}
+              className="h-11 w-11 text-white hover:bg-white/20"
               disabled={filteredTracks.length === 0}
             >
               <SkipBack className="h-5 w-5" />
@@ -354,6 +376,7 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
             <Button
               size="icon"
               onClick={togglePlay}
+              aria-label={isPlaying ? t('instrumentalPlayer', 'pause', 'Pause') : t('instrumentalPlayer', 'play', 'Play')}
               className="h-14 w-14 rounded-full bg-white text-purple-700 hover:bg-white/90"
               disabled={!currentTrack}
             >
@@ -363,7 +386,8 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
               variant="ghost"
               size="icon"
               onClick={nextTrack}
-              className="text-white hover:bg-white/20"
+              aria-label={t('instrumentalPlayer', 'nextTrack', 'Next track')}
+              className="h-11 w-11 text-white hover:bg-white/20"
               disabled={filteredTracks.length === 0}
             >
               <SkipForward className="h-5 w-5" />
@@ -377,7 +401,9 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsLooping(!isLooping)}
-                className={`text-white ${isLooping ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                aria-label={isLooping ? t('instrumentalPlayer', 'loopOn', 'Loop on') : t('instrumentalPlayer', 'loopOff', 'Loop off')}
+                aria-pressed={isLooping}
+                className={`min-h-[44px] min-w-[44px] text-white ${isLooping ? 'bg-white/20' : 'hover:bg-white/10'}`}
                 title={isLooping ? t('instrumentalPlayer', 'loopOn', 'Loop on') : t('instrumentalPlayer', 'loopOff', 'Loop off')}
               >
                 <Repeat className="h-4 w-4" />
@@ -386,7 +412,9 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsShuffle(!isShuffle)}
-                className={`text-white ${isShuffle ? 'bg-white/20' : 'hover:bg-white/10'}`}
+                aria-label={isShuffle ? t('instrumentalPlayer', 'shuffleOn', 'Shuffle on') : t('instrumentalPlayer', 'shuffleOff', 'Shuffle off')}
+                aria-pressed={isShuffle}
+                className={`min-h-[44px] min-w-[44px] text-white ${isShuffle ? 'bg-white/20' : 'hover:bg-white/10'}`}
                 title={isShuffle ? t('instrumentalPlayer', 'shuffleOn', 'Shuffle on') : t('instrumentalPlayer', 'shuffleOff', 'Shuffle off')}
               >
                 <Shuffle className="h-4 w-4" />
@@ -397,7 +425,8 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsMuted(!isMuted)}
-                className="text-white hover:bg-white/10"
+                aria-label={isMuted ? t('instrumentalPlayer', 'unmute', 'Unmute') : t('instrumentalPlayer', 'mute', 'Mute')}
+                className="h-11 w-11 text-white hover:bg-white/10"
               >
                 {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
               </Button>
@@ -456,7 +485,7 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
             <div className="text-center py-8">
               <Music className="h-12 w-12 mx-auto text-gray-300 mb-3" />
               <p className="text-gray-500 font-medium">{t('instrumentalPlayer', 'noTracksFound', 'No tracks found')}</p>
-              <p className="text-sm text-gray-400 mt-1">
+              <p className="text-sm text-gray-500 mt-1">
                 {tracks.length === 0
                   ? t('instrumentalPlayer', 'uploadToGetStarted', 'Upload some music to get started')
                   : t('instrumentalPlayer', 'trySelectingDifferentCategory', 'Try selecting a different category')}
@@ -477,6 +506,16 @@ export const InstrumentalPlayer: React.FC<InstrumentalPlayerProps> = ({
               <div
                 key={track.id}
                 onClick={() => playTrack(track)}
+                role="button"
+                tabIndex={0}
+                aria-label={`${t('instrumentalPlayer', 'play', 'Play')}: ${track.title}`}
+                aria-current={currentTrack?.id === track.id ? 'true' : undefined}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    playTrack(track);
+                  }
+                }}
                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
                   currentTrack?.id === track.id
                     ? 'bg-purple-100 border border-purple-200'

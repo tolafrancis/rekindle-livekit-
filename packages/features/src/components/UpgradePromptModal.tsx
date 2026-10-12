@@ -38,7 +38,7 @@ export const UpgradePromptModal: React.FC<Props> = ({ prompt, onClose, onUpgrade
                 : <Heart className="h-5 w-5 text-white" />
               }
             </div>
-            <button onClick={onClose} className="text-white/70 hover:text-white p-1">
+            <button aria-label="Close" onClick={onClose} className="text-white/70 hover:text-white p-1">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -75,14 +75,6 @@ export const UpgradePromptModal: React.FC<Props> = ({ prompt, onClose, onUpgrade
                   {b}
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Partner pricing note */}
-          {!isMinistry && (
-            <div className="flex items-center justify-between text-sm bg-green-50 border border-green-100 rounded-lg p-3">
-              <span className="text-green-700 font-medium">Any donation amount</span>
-              <span className="text-green-700 font-bold">→ Partner access</span>
             </div>
           )}
 

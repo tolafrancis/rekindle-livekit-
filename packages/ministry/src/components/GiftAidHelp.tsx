@@ -69,7 +69,7 @@ export const GiftAidShareLink: React.FC<{ ministryId: string; ministryName?: str
             <div className="flex-1 space-y-2">
               <div className="flex gap-2">
                 <Input readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
-                <Button variant="outline" size="sm" className="h-10" onClick={() => void copy()}><Copy className="h-4 w-4" /></Button>
+                <Button aria-label="Copy" variant="outline" size="sm" className="h-10" onClick={() => void copy()}><Copy className="h-4 w-4" /></Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={downloadQr} disabled={!qr}><QrCode className="mr-1 h-4 w-4" /> Download QR code</Button>
@@ -106,7 +106,7 @@ export const GiftAidHelp: React.FC<HelpProps> = ({ ministryId, ministryName, the
       <div className="space-y-1">
         <p className="font-semibold">Gift Aid in four steps</p>
         <p>
-          <strong>1.</strong> Set up Gift Aid in Settings &gt; Finance &amp; Billing.{' '}
+          <strong>1.</strong> Set up Gift Aid in Settings &gt; Finance &gt; Gift Aid.{' '}
           <strong>2.</strong> Collect declarations: donation form, the link below, registration, or paper forms + Import CSV.{' '}
           <strong>3.</strong> Make sure every gift is recorded: online gifts are automatic; add cash and transfers with Import CSV.{' '}
           <strong>4.</strong> Build a claim in Claims, check it, then submit to HMRC or download the CSV and file it yourself.
@@ -125,7 +125,7 @@ export const GiftAidHelp: React.FC<HelpProps> = ({ ministryId, ministryName, the
       <CardContent>
         <Accordion type="multiple" className="w-full">
           <Section value="setup" title="1. Setting up (one time)">
-            <p>Gift Aid appears for ministries whose country is the United Kingdom. In <strong>Settings &gt; Finance &amp; Billing</strong>, switch on Gift Aid and fill in:</p>
+            <p>Gift Aid appears for ministries whose country is the United Kingdom. In <strong>Settings &gt; Finance &gt; Gift Aid</strong>, switch on Gift Aid and fill in:</p>
             <ul className="list-disc space-y-1 pl-5">
               <li><strong>Charity name</strong> as registered.</li>
               <li><strong>HMRC charity reference</strong>, the reference HMRC gave you when it recognised the charity for tax (letters then numbers, e.g. AB12345). Without HMRC recognition you can't claim Gift Aid.</li>
@@ -230,7 +230,7 @@ export const GiftAidHelp: React.FC<HelpProps> = ({ ministryId, ministryName, the
               <li><strong>Postcode not valid:</strong> HMRC needs a full UK postcode with the space, e.g. SW1A 1AA. Correct the declaration.</li>
               <li><strong>House number or name missing:</strong> required by HMRC. Correct the declaration.</li>
               <li><strong>No active declaration:</strong> the donor hasn't declared, or used another email. Send them the link.</li>
-              <li><strong>Charity details incomplete:</strong> finish Settings &gt; Finance &amp; Billing &gt; Gift Aid.</li>
+              <li><strong>Charity details incomplete:</strong> finish Settings &gt; Finance &gt; Gift Aid.</li>
             </ul>
           </Section>
           <Section value="records" title="What records should we keep?">

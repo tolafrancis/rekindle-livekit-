@@ -13,6 +13,7 @@ import {
   SearchFilterPanel, searchFilterInputClass, searchFilterSelectTriggerClass,
 } from '@rekindle/features/components/SearchFilterPanel';
 import { SmallGroupPage } from './SmallGroupPage';
+import { SMALL_GROUP_CATEGORIES } from '../lib/smallGroupCategories';
 
 interface DiscoverSmallGroupsProps {
   ministryId: string;
@@ -22,10 +23,7 @@ interface DiscoverSmallGroupsProps {
   autoOpenGroupId?: string | null;
 }
 
-const CATEGORY_OPTIONS = [
-  'Bible Study', 'Prayer Group', 'Youth', 'Men', 'Women', 'Couples',
-  'Discipleship', 'Outreach', 'Worship', 'Other',
-];
+const CATEGORY_OPTIONS = SMALL_GROUP_CATEGORIES;
 
 export const DiscoverSmallGroups: React.FC<DiscoverSmallGroupsProps> = ({ ministryId, autoOpenGroupId }) => {
   const { user } = useAuth();

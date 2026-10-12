@@ -443,7 +443,7 @@ export function MusicLibrary({
 
           {/* Controls */}
           <div className="flex items-center justify-between">
-            <Button 
+            <Button aria-label={isMuted ? t('a11y', 'unmute', 'Unmute') : t('a11y', 'mute', 'Mute')} 
               variant="ghost" 
               size="icon" 
               onClick={() => setIsMuted(!isMuted)} 
@@ -453,7 +453,7 @@ export function MusicLibrary({
             </Button>
             
             <div className="flex items-center gap-2">
-              <Button 
+              <Button aria-label={t('a11y', 'previousTrack', 'Previous track')} 
                 variant="ghost" 
                 size="icon" 
                 onClick={() => skipTrack('prev')} 
@@ -461,14 +461,14 @@ export function MusicLibrary({
               >
                 <SkipBack className="h-5 w-5" />
               </Button>
-              <Button 
+              <Button aria-label={playing ? t('a11y', 'pause', 'Pause') : t('a11y', 'play', 'Play')} 
                 size="icon" 
                 className="h-12 w-12 rounded-full bg-white text-purple-600 hover:bg-white/90"
                 onClick={() => playTrack(activeTrack)}
               >
                 {playing ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-1" />}
               </Button>
-              <Button 
+              <Button aria-label={t('a11y', 'nextTrack', 'Next track')} 
                 variant="ghost" 
                 size="icon" 
                 onClick={() => skipTrack('next')} 

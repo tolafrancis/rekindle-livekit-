@@ -18,6 +18,7 @@ import {
   Video, Image, Tag, X, Filter, Send, Mail, Award, Heart, Calendar
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryTestimoniesManagerProps {
   ministryId: string;
@@ -206,7 +207,7 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
   };
 
   const handleReject = async (id: string) => {
-    if (!confirm(t('ministryTestimoniesManager', 'confirmRejectTestimony', 'Are you sure you want to reject this testimony?'))) return;
+    if (!await confirmAction({ title: t('ministryTestimoniesManager', 'confirmRejectTestimonyTitle', 'Reject this testimony?'), confirmLabel: t('ministryTestimoniesManager', 'reject', 'Reject'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -225,7 +226,7 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
 
   const handleBulkReject = async () => {
     if (selectedTestimonies.length === 0) return;
-    if (!confirm(t('ministryTestimoniesManager', 'confirmRejectCountTestimonies', 'Are you sure you want to reject {count} testimonies?').replace('{count}', String(selectedTestimonies.length)))) return;
+    if (!await confirmAction({ title: t('ministryTestimoniesManager', 'confirmRejectCountTitle', 'Reject {count} testimonies?').replace('{count}', String(selectedTestimonies.length)), confirmLabel: t('ministryTestimoniesManager', 'reject', 'Reject'), destructive: true })) return;
 
     setSaving(true);
     try {
@@ -591,7 +592,7 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
                               <CheckCircle className="h-4 w-4 mr-1" />
                               {t('ministryTestimoniesManager', 'approve', 'Approve')}
                             </Button>
-                            <Button 
+                            <Button aria-label={t('ministryTestimoniesManager', 'rejectTestimony', 'Reject testimony')} 
                               size="sm" 
                               variant="destructive"
                               onClick={() => handleReject(testimony.id)}
@@ -601,10 +602,10 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
                           </>
                         ) : (
                           <>
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(testimony)}>
+                            <Button aria-label={t('ministryTestimoniesManager', 'editTestimony', 'Edit testimony')} variant="outline" size="sm" onClick={() => handleEdit(testimony)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button
+                            <Button aria-label={t('ministryTestimoniesManager', 'toggleFeatured', 'Feature / unfeature')}
                               variant="outline"
                               size="sm"
                               onClick={() => handleToggleFeatured(testimony)}

@@ -95,7 +95,7 @@ export const PrayerPointsEditor: React.FC<PrayerPointsEditorProps> = ({ points, 
                 placeholder={t('adminPrayerLibrary', 'prayerPointPlaceholder', 'Prayer point…')}
                 rows={2}
               />
-              <Button type="button" variant="ghost" size="icon" onClick={() => removePoint(idx)}>
+              <Button aria-label={t('a11y', 'removePrayerPoint', 'Remove prayer point')} type="button" variant="ghost" size="icon" onClick={() => removePoint(idx)}>
                 <X className="h-4 w-4 text-red-500" />
               </Button>
             </div>
@@ -107,7 +107,7 @@ export const PrayerPointsEditor: React.FC<PrayerPointsEditorProps> = ({ points, 
                 onChange={(e) => updatePoint(idx, 'scripture', e.target.value)}
                 placeholder={t('adminPrayerLibrary', 'scriptureRefPlaceholder', 'Scripture reference (e.g., John 3:16)')}
               />
-              <Button
+              <Button aria-label={t('a11y', 'loadScriptureText', 'Load scripture text')}
                 type="button"
                 variant="outline"
                 size="icon"

@@ -19,6 +19,7 @@ import type { BadgeProps } from '@rekindle/ui/badge';
 import { COMMON_LANGUAGES, languageLabel } from './MinistryTranslationSettings';
 import { LiveScriptureOperatorCard, type ScriptureSessionOption } from './LiveScriptureOperatorCard';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryTranslationServiceManagerProps {
   ministryId: string;
@@ -416,7 +417,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
       toast({ title: 'Cannot delete', description: 'This service still has an active session — end it first.', variant: 'destructive' });
       return;
     }
-    if (!confirm(`Delete "${service.name}"? Past sessions stay, just no longer grouped under this name. This cannot be undone.`)) return;
+    if (!await confirmAction({ title: `Delete "${service.name}"?`, description: 'Past sessions stay, just no longer grouped under this name. This cannot be undone.', confirmLabel: 'Delete', destructive: true })) return;
     setDeletingServiceId(service.id);
     try {
       const { error } = await supabase.from('translation_services').delete().eq('id', service.id);
@@ -622,16 +623,16 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                   >
                     {copyingSpeakerLinkFor === session.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session.status === 'ended' ? <Play className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy listener link">
+                  <Button aria-label="Copy listener link" variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy listener link">
                     <Copy className="h-4 w-4" />
                   </Button>
                   {session.status !== 'ended' && (
-                    <Button variant="ghost" size="sm" onClick={() => setObsCaptionSessionId(session.id)} title="Captions in OBS">
+                    <Button aria-label="Captions in OBS" variant="ghost" size="sm" onClick={() => setObsCaptionSessionId(session.id)} title="Captions in OBS">
                       <Captions className="h-4 w-4" />
                     </Button>
                   )}
                   {session.status !== 'ended' && (
-                    <Button variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this speaker link">
+                    <Button aria-label="Stop this speaker link" variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this speaker link">
                       <Square className="h-4 w-4" />
                     </Button>
                   )}
@@ -703,7 +704,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                   <div className="flex-1 space-y-1.5 min-w-0">
                     <p className="text-xs text-muted-foreground">
                       For YouTube/OBS broadcasts, which can't offer a language picker like the meeting can. Viewers
-                      scan this QR to open <code className="text-[11px]">/display</code> on their own phone and pick
+                      scan this QR to open <code className="text-xs">/display</code> on their own phone and pick
                       their language — audio there runs ~2–8s behind the room, and a broadcast platform typically
                       adds another 5–40s on top of that; both are normal for a live stream with captions, not a bug.
                     </p>
@@ -747,17 +748,17 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                         {copyingSpeakerLinkFor === session.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session.status === 'ended' ? <Play className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     ) : (
-                      <Button variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy display link">
+                      <Button aria-label="Copy display link" variant="ghost" size="sm" onClick={() => copyDisplayLink(session.id)} title="Copy display link">
                         <Copy className="h-4 w-4" />
                       </Button>
                     )}
                     {session.status !== 'ended' && (
-                      <Button variant="ghost" size="sm" onClick={() => setObsCaptionSessionId(session.id)} title="Captions in OBS">
+                      <Button aria-label="Captions in OBS" variant="ghost" size="sm" onClick={() => setObsCaptionSessionId(session.id)} title="Captions in OBS">
                         <Captions className="h-4 w-4" />
                       </Button>
                     )}
                     {session.status !== 'ended' && (
-                      <Button variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this language">
+                      <Button aria-label="Stop this language" variant="ghost" size="sm" onClick={() => stopSession(session.id)} title="Stop this language">
                         <Square className="h-4 w-4" />
                       </Button>
                     )}
@@ -775,7 +776,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     <div key={q.id} className="flex items-start gap-2 rounded-md bg-muted/40 px-2.5 py-2">
                       <User className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] text-muted-foreground">{q.asker_name || 'Anonymous'}</p>
+                        <p className="text-xs text-muted-foreground">{q.asker_name || 'Anonymous'}</p>
                         <p className="text-sm break-words">{q.speaker_text || q.original_text}</p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -842,7 +843,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                     </SelectContent>
                   </Select>
                   {pairs.length > 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => removePairRow(idx)}>
+                    <Button aria-label="Remove language pair" type="button" variant="ghost" size="sm" onClick={() => removePairRow(idx)}>
                       <X className="h-4 w-4" />
                     </Button>
                   )}
@@ -955,7 +956,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                 <Label className="text-xs text-muted-foreground">Speaker link — send to whoever's speaking</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all">{newSpeakerLink.speakerLink}</code>
-                  <Button variant="outline" size="sm" onClick={() => copyToClipboard('Speaker link', newSpeakerLink.speakerLink)}>
+                  <Button aria-label="Copy speaker link" variant="outline" size="sm" onClick={() => copyToClipboard('Speaker link', newSpeakerLink.speakerLink)}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
@@ -964,7 +965,7 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                 <Label className="text-xs text-muted-foreground">Listener link — send to anyone following along</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all">{newSpeakerLink.listenerLink}</code>
-                  <Button variant="outline" size="sm" onClick={() => copyToClipboard('Listener link', newSpeakerLink.listenerLink)}>
+                  <Button aria-label="Copy listener link" variant="outline" size="sm" onClick={() => copyToClipboard('Listener link', newSpeakerLink.listenerLink)}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>

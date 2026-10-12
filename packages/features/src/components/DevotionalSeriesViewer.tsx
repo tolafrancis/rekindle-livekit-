@@ -45,9 +45,10 @@ import {
   Volume2, Image as ImageIcon, ArrowLeft, Heart,
   Search, Filter, Crown, X, VolumeX, Volume1,
   Pause, Mic, MicOff, FastForward, Timer, Flame,
-  Sparkles, Link, Copy, Check, Send, Headphones
+  Sparkles, Link, Copy, Check, Send, Headphones, MoreVertical
 } from 'lucide-react';
 import { publicWebOrigin } from '../platform';
+import { clickableProps } from '../clickableProps';
 
 // Day-list scripture citation: localizes just the reference name (e.g.
 // "Thi-thiên 130:6") to the reader's language when a published version exists.
@@ -150,6 +151,7 @@ const ShareButton: React.FC<ShareButtonProps> = ({ title, url, variant = 'icon' 
             variant="outline"
             size="icon"
             title={t('devotionalSeriesViewer', 'share', 'Share')}
+            aria-label={t('devotionalSeriesViewer', 'share', 'Share')}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             className="hover:bg-purple-50 hover:border-purple-300 transition-colors"
@@ -306,8 +308,14 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showDayShareModal, setShowDayShareModal] = useState(false);
+  // The day the share prompt is about; kept separately because currentDay is cleared after completion.
+  const [shareDay, setShareDay] = useState<SeriesDay | null>(null);
   const [unlockMessage, setUnlockMessage] = useState<string | null>(null);
   const [hasPostedSeriesStart, setHasPostedSeriesStart] = useState(false);
+  // The reader's started-but-unfinished series, for the "Continue" row on the list.
+  const [inProgressSeries, setInProgressSeries] = useState<
+    { series_id: string; completed_days: number[]; current_day: number; last_read_at?: string | null; started_at?: string | null }[]
+  >([]);
   
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -317,9 +325,15 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   const [currentSlide, setCurrentSlide] = useState(0);
   const [slides, setSlides] = useState<DevotionalSlide[]>([]);
   const [isPlaying, setIsPlaying] = useState(true);
-  // Background music auto-plays when the viewer opens. Single tap pauses, double
-  // tap resumes — a plain tap never *resumes* audio, only the explicit gestures do.
-  const [audioStarted, setAudioStarted] = useState(true);
+  // Background music stays OFF until the reader turns it on from the "more" menu;
+  // that choice is remembered on this device. Single tap pauses, double tap
+  // resumes — a plain tap never *resumes* audio, only the explicit gestures do.
+  const [audioStarted, setAudioStarted] = useState<boolean>(() => {
+    try { return localStorage.getItem('devotional-bg-music') === 'on'; } catch { return false; }
+  });
+  // Inline narration controls (voice volume, loop, speed) are tucked away until
+  // the reader asks for them from the "more" menu.
+  const [showNarrationControls, setShowNarrationControls] = useState(false);
   const gestureTip = useOneTimeTip();
   const [isMuted, setIsMuted] = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
@@ -332,7 +346,10 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   // Start fetching the reading-view photo while the series list is open, so the
   // player opens with its background already in cache.
   useEffect(() => { void preloadImage(peacefulBackgrounds[backgroundIndex]); }, [backgroundIndex]);
-  const [autoAdvance, setAutoAdvance] = useState(true);
+  // Auto-advance is OFF unless the reader turned it on (remembered on this device).
+  const [autoAdvance, setAutoAdvance] = useState<boolean>(() => {
+    try { return localStorage.getItem('devotional-auto-advance') === 'on'; } catch { return false; }
+  });
   const [autoScroll, setAutoScroll] = useState(true);
   const [scrollSpeed, setScrollSpeed] = useState<'slow' | 'medium'>('medium');
   const [volume, setVolume] = useState(() => {
@@ -674,6 +691,21 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     setIsMuted(!isMuted);
   };
 
+  // Background music is opt-in. Start it inside the tap itself so mobile
+  // browsers allow playback; the audio effect keeps it in sync afterwards.
+  const toggleBackgroundMusic = () => {
+    const next = !audioStarted;
+    setAudioStarted(next);
+    const el = audioRef.current;
+    if (!el) return;
+    if (next && !isPaused) {
+      el.volume = isMuted ? 0 : volume;
+      el.play().catch(() => {});
+    } else if (!next) {
+      el.pause();
+    }
+  };
+
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
     if (newVolume > 0 && isMuted) {
@@ -817,6 +849,34 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     return () => window.removeEventListener('online', onReconnect);
   }, []);
 
+  // Load the reader's unfinished series whenever the list view is showing, so the
+  // "Continue" row reflects progress just made in a series. Read-only, own rows.
+  const isListView = view === 'list';
+  useEffect(() => {
+    if (!user || !isListView) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('devotional_user_progress')
+          .select('series_id, completed_days, current_day, last_read_at, started_at')
+          .eq('user_id', user.id)
+          .eq('is_completed', false);
+        if (cancelled || error) return;
+        setInProgressSeries((data || []).map((r: any) => ({
+          series_id: r.series_id,
+          completed_days: Array.isArray(r.completed_days) ? r.completed_days : [],
+          current_day: r.current_day || 1,
+          last_read_at: r.last_read_at,
+          started_at: r.started_at,
+        })));
+      } catch {
+        /* offline — the Continue row is a convenience; skip it */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id, isListView]);
+
   // Tell the app shell when the immersive reading view is active so it can hide
   // floating UI (e.g. the Stats button) while a devotional is playing.
   useEffect(() => {
@@ -872,6 +932,14 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       }
     }
   }, [audioStarted, isPaused, isMuted, volume, view]);
+
+  // Remember the reader's background-music and auto-advance choices.
+  useEffect(() => {
+    try { localStorage.setItem('devotional-bg-music', audioStarted ? 'on' : 'off'); } catch { /* ignore */ }
+  }, [audioStarted]);
+  useEffect(() => {
+    try { localStorage.setItem('devotional-auto-advance', autoAdvance ? 'on' : 'off'); } catch { /* ignore */ }
+  }, [autoAdvance]);
 
   // Save volume to localStorage
   useEffect(() => {
@@ -1214,12 +1282,21 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   };
 
   const openDay = (dayNumber: number) => {
+    // Locked days are a normal part of the reading plan, not an error — so these
+    // are neutral (non-destructive) notices that say when the day opens.
     if (!progress && dayNumber > 1) {
-      toast({ 
-        title: t('devotionals', 'startFirst', 'Start the Series First'), 
-        description: t('devotionals', 'startFirstDesc', 'Begin the series to unlock this day'), 
-        variant: 'destructive' 
+      toast({
+        title: t('devotionalSeriesViewer', 'dayNNotOpenYet', 'Day {n} isn\'t open yet').replace('{n}', String(dayNumber)),
+        description: t('devotionalSeriesViewer', 'startWithDay1', 'Start with Day 1 — each day opens after you finish the one before.'),
       });
+      return;
+    }
+
+    // Opening Day 1 of a series the reader hasn't started starts it for them
+    // (startSeries records progress and then opens Day 1), so completing Day 1
+    // is saved instead of silently dropped. Offline, Day 1 still opens directly.
+    if (dayNumber === 1 && !progress && user && navigator.onLine) {
+      void startSeries();
       return;
     }
 
@@ -1230,20 +1307,20 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       const isPreviousDayCompleted = progress?.completed_days.includes(previousDayNumber);
       
       if (!isPreviousDayCompleted) {
-        toast({ 
-          title: t('devotionals', 'dayLocked', 'Day Locked'), 
-          description: `${t('devotionals', 'completeDay', 'Complete Day')} ${previousDayNumber} ${t('devotionals', 'toUnlock', 'to unlock this day')}`, 
-          variant: 'destructive' 
+        toast({
+          title: t('devotionalSeriesViewer', 'dayNNotOpenYet', 'Day {n} isn\'t open yet').replace('{n}', String(dayNumber)),
+          description: t('devotionalSeriesViewer', 'finishDayPrevFirst', 'Finish Day {prev} first, then Day {n} opens the next day.')
+            .replace('{prev}', String(previousDayNumber))
+            .replace('{n}', String(dayNumber)),
         });
       } else {
         const previousDayData = progress?.completed_days_data?.find(d => d.day === previousDayNumber);
         if (previousDayData) {
           const daysSince = getDaysSinceCompletion(previousDayData.completed_at);
           if (daysSince === 0) {
-            toast({ 
-              title: t('devotionals', 'dayLocked', 'Day Locked'), 
-              description: t('devotionals', 'unlocksTomorrowDesc', 'This day will unlock tomorrow. Take time to reflect on today\'s devotional.'), 
-              variant: 'destructive',
+            toast({
+              title: t('devotionalSeriesViewer', 'dayNOpensTomorrow', 'Day {n} opens tomorrow').replace('{n}', String(dayNumber)),
+              description: t('devotionals', 'unlocksTomorrowDesc', 'This day will unlock tomorrow. Take time to reflect on today\'s devotional.'),
               duration: 5000
             });
           }
@@ -1436,6 +1513,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         });
         
         // Show share prompt before navigating away
+        setShareDay(currentDay);
         setShowDayShareModal(true);
         setTimeout(() => {
           setView('series');
@@ -1553,6 +1631,157 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     };
   }, []);
 
+  // Completion dialogs render in every view: completing a day switches the
+  // viewer back to the series view, so they must not live in the list view only.
+  const completionDialogs = (
+    <>
+      {/* Day Share Modal */}
+      {showDayShareModal && shareDay && selectedSeries && (() => {
+        const localizedDay = getLocalizedDay(shareDay);
+        const localizedSeries = getLocalizedSeries(selectedSeries);
+        const rawScripture = localizedDay.scripture_reference;
+        const scripture = rawScripture
+          ? (getCachedLocalizedScripture(rawScripture, language)?.reference || rawScripture)
+          : rawScripture;
+        const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
+        // Compose a rich share message: title + scripture ref + series context + link
+        const shareMessage = scripture
+          ? `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(shareDay.day_number))}: "${localizedDay.title || ''}" — ${scripture}\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`
+          : `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(shareDay.day_number))}: "${localizedDay.title || ''}"\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
+        const encodedMsg = encodeURIComponent(shareMessage);
+        const encodedUrl = encodeURIComponent(shareUrl);
+
+        return (
+          <Dialog open={showDayShareModal} onOpenChange={setShowDayShareModal}>
+            <DialogContent className="sm:max-w-md text-center">
+              <DialogHeader>
+                <DialogTitle className="text-xl flex items-center justify-center gap-2">
+                  <CheckCircle className="h-6 w-6 text-green-500" />
+                  {t('devotionalSeriesViewer', 'dayXComplete', 'Day {n} Complete!').replace('{n}', String(shareDay.day_number))}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <p className="text-gray-600 text-sm">
+                  {t('devotionalSeriesViewer', 'greatWorkFinishing', 'Great work finishing')} <span className="font-medium">"{localizedDay.title || t('devotionalSeriesViewer', 'dayN', 'Day {n}').replace('{n}', String(shareDay.day_number))}"</span>.
+                  {scripture && (
+                    <span className="block mt-1 text-purple-600 italic text-xs">{scripture}</span>
+                  )}
+                </p>
+                <p className="text-sm font-medium text-gray-700">{t('devotionalSeriesViewer', 'shareYourProgress', 'Share your progress:')}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <a
+                    href={`https://wa.me/?text=${encodedMsg}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => setShowDayShareModal(false)}
+                  >
+                    <Send className="h-4 w-4" />
+                    WhatsApp
+                  </a>
+                  <a
+                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodeURIComponent(shareMessage)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => setShowDayShareModal(false)}
+                  >
+                    <span className="font-bold">f</span>
+                    Facebook
+                  </a>
+                  <a
+                    href={`https://twitter.com/intent/tweet?text=${encodedMsg}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-black hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium"
+                    onClick={() => setShowDayShareModal(false)}
+                  >
+                    <span className="font-bold">𝕏</span>
+                    Twitter / X
+                  </a>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(shareMessage);
+                      toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') });
+                      setShowDayShareModal(false);
+                    }}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors text-sm font-medium"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {t('devotionalSeriesViewer', 'copyMessage', 'Copy Message')}
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowDayShareModal(false)}
+                  className="text-sm text-gray-500 hover:text-gray-700 transition-colors mt-2"
+                >
+                  {t('devotionalSeriesViewer', 'skipForNow', 'Skip for now')}
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {/* Completion Modal */}
+      <Dialog open={showCompletionModal} onOpenChange={setShowCompletionModal}>
+        <DialogContent className="text-center">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">{t('devotionals', 'congratulations', 'Congratulations')}!</DialogTitle>
+          </DialogHeader>
+          <div className="py-6">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Award className="h-10 w-10 text-green-600" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">{t('devotionals', 'seriesComplete', 'Series Complete')}!</h3>
+            <p className="text-gray-600 mb-4">
+              {t('devotionals', 'completedAll', 'You have completed all')} {selectedSeries?.total_days} {t('devotionals', 'daysOf', 'days of')} "{selectedSeries ? getLocalizedSeries(selectedSeries).title : ''}"
+            </p>
+            {/* Share series completion */}
+            {selectedSeries && (() => {
+              const localizedSeries = getLocalizedSeries(selectedSeries);
+              const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
+              const completionMsg = `🎉 ${t('devotionalSeriesViewer', 'iJustCompletedSeriesX', 'I just completed the "{title}" devotional series on ReKindle BC!').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
+              const encodedMsg = encodeURIComponent(completionMsg);
+              const encodedUrl = encodeURIComponent(shareUrl);
+              return (
+                <div className="mb-4 space-y-2">
+                  <p className="text-sm font-medium text-gray-600">{t('devotionalSeriesViewer', 'shareYourAchievement', 'Share your achievement:')}</p>
+                  <div className="flex justify-center gap-2">
+                    <a href={`https://wa.me/?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
+                      className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-colors"
+                      title={t('devotionalSeriesViewer', 'shareOnWhatsApp', 'Share on WhatsApp')}>
+                      <Send className="h-4 w-4" />
+                    </a>
+                    <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
+                      className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
+                      title={t('devotionalSeriesViewer', 'shareOnFacebook', 'Share on Facebook')}>
+                      f
+                    </a>
+                    <a href={`https://twitter.com/intent/tweet?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
+                      className="w-10 h-10 bg-black hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
+                      title={t('devotionalSeriesViewer', 'shareOnX', 'Share on X')}>
+                      𝕏
+                    </a>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(completionMsg); toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') }); }}
+                      className="w-10 h-10 bg-purple-500 hover:bg-purple-600 text-white rounded-full flex items-center justify-center transition-colors"
+                      title={t('devotionalSeriesViewer', 'copyToClipboard', 'Copy to clipboard')}>
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+            <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
+              {t('devotionals', 'viewSeries', 'View Series')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -1609,7 +1838,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 if (audioRef.current) audioRef.current.pause();
                 stopSpeaking();
               }}
-              className="text-white hover:bg-white/20 shrink-0"
+              aria-label={t('devotionalSeriesViewer', 'closeReader', 'Close reader')}
+              className="h-11 w-11 text-white hover:bg-white/20 shrink-0"
             >
               <X className="h-5 w-5" />
             </Button>
@@ -1635,9 +1865,16 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 }
               }}
               className={`gap-1.5 rounded-full text-white hover:bg-white/20 ${(isSpeaking || isAudioActive) && !isPaused ? 'bg-white/20' : ''}`}
-              title={t('devotionals', 'readAloud', 'Read aloud')}
+              title={(isSpeaking || isAudioActive) && !isPaused
+                ? t('devotionalSeriesViewer', 'pauseNarration', 'Pause narration')
+                : t('devotionals', 'readAloud', 'Read aloud')}
+              aria-label={(isSpeaking || isAudioActive) && !isPaused
+                ? t('devotionalSeriesViewer', 'pauseNarration', 'Pause narration')
+                : t('devotionals', 'readAloud', 'Read aloud')}
             >
-              <Headphones className="h-5 w-5" />
+              {(isSpeaking || isAudioActive) && !isPaused
+                ? <Pause className="h-5 w-5" />
+                : <Headphones className="h-5 w-5" />}
               <span className="hidden sm:inline text-sm font-medium">
                 {(isSpeaking || isAudioActive) && !isPaused
                   ? t('devotionals', 'reading', 'Reading…')
@@ -1645,7 +1882,10 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               </span>
             </Button>
 
-            {/* High-Quality Audio Player — same inline controls as DevotionalModule */}
+            {/* High-Quality Audio Player — same inline controls as DevotionalModule.
+                Always mounted (it drives narration); its inline controls (voice
+                volume, loop, speed) are shown on demand from the "more" menu. */}
+            <div data-no-tap className={showNarrationControls ? 'rounded-full bg-white/90 px-1' : 'hidden'}>
             <HighQualityAudioPlayer
               text={getDevotionalAudioText()}
               contentId={`${selectedSeries.id}-d${currentDay.day_number}`}
@@ -1675,27 +1915,63 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 }, 1500);
               }}
             />
+            </div>
 
-            {/* Pause/Resume Timer */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={togglePause}
-              className="text-white hover:bg-white/20"
-              title={isPaused ? t('devotionalSeriesViewer', 'resume', 'Resume') : t('devotionalSeriesViewer', 'pauseTimer', 'Pause timer')}
-            >
-              {isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowShareModal(true)}
-              className="text-white hover:bg-white/20"
-              title={t('devotionalSeriesViewer', 'shareDevotional', 'Share devotional')}
-            >
-              <Share2 className="h-5 w-5" />
-            </Button>
+            {/* Everything else lives in one "more" menu so the header stays calm. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-no-tap
+                  className="text-white hover:bg-white/20"
+                  title={t('devotionalSeriesViewer', 'moreOptions', 'More options')}
+                  aria-label={t('devotionalSeriesViewer', 'moreOptions', 'More options')}
+                >
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56" data-no-tap>
+                <DropdownMenuItem onSelect={togglePause}>
+                  {isPaused ? <Play className="h-4 w-4 mr-2" /> : <Pause className="h-4 w-4 mr-2" />}
+                  {isPaused ? t('devotionalSeriesViewer', 'resume', 'Resume') : t('devotionalSeriesViewer', 'pauseTimer', 'Pause timer')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={toggleBackgroundMusic}>
+                  <Volume2 className="h-4 w-4 mr-2" />
+                  {audioStarted
+                    ? t('devotionalSeriesViewer', 'bgMusicOn', 'Background music: on')
+                    : t('devotionalSeriesViewer', 'bgMusicOff', 'Background music: off')}
+                </DropdownMenuItem>
+                {audioStarted && (
+                  <DropdownMenuItem onSelect={toggleMute}>
+                    {isMuted ? <Volume1 className="h-4 w-4 mr-2" /> : <VolumeX className="h-4 w-4 mr-2" />}
+                    {isMuted
+                      ? t('devotionalSeriesViewer', 'unmuteMusic', 'Unmute music')
+                      : t('devotionalSeriesViewer', 'muteMusic', 'Mute music')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => setShowNarrationControls(v => !v)}>
+                  <Headphones className="h-4 w-4 mr-2" />
+                  {showNarrationControls
+                    ? t('devotionalSeriesViewer', 'hideVoiceControls', 'Hide voice controls')
+                    : t('devotionalSeriesViewer', 'showVoiceControls', 'Voice controls (volume, speed, loop)')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setAutoAdvance(v => !v)}>
+                  <FastForward className="h-4 w-4 mr-2" />
+                  {t('devotionalSeriesViewer', 'autoAdvance', 'Auto-advance')} {autoAdvance ? t('devotionalSeriesViewer', 'on', 'ON') : t('devotionalSeriesViewer', 'off', 'OFF')}
+                </DropdownMenuItem>
+                {(currentSlideData.type === 'devotional' || currentSlideData.type === 'additional') && (
+                  <DropdownMenuItem onSelect={() => setAutoScroll(v => !v)}>
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    {t('devotionalSeriesViewer', 'autoScroll', 'Auto-scroll')} {autoScroll ? t('devotionalSeriesViewer', 'on', 'ON') : t('devotionalSeriesViewer', 'off', 'OFF')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => setShowShareModal(true)}>
+                  <Share2 className="h-4 w-4 mr-2" />
+                  {t('devotionalSeriesViewer', 'shareDevotional', 'Share devotional')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -1715,32 +1991,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             <span>{formatTime(timeElapsed)}</span>
           </div>
           
-          {/* Settings Bar */}
-          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 mt-3 text-xs">
-            <button
-              onClick={() => setAutoAdvance(!autoAdvance)}
-              className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                autoAdvance ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/70'
-              }`}
-              title={t('devotionalSeriesViewer', 'autoAdvanceSlides', 'Auto-advance slides')}
-            >
-              <FastForward className="h-3 w-3" />
-              {t('devotionalSeriesViewer', 'autoAdvance', 'Auto-advance')} {autoAdvance ? t('devotionalSeriesViewer', 'on', 'ON') : t('devotionalSeriesViewer', 'off', 'OFF')}
-            </button>
-            
-            {(currentSlideData.type === 'devotional' || currentSlideData.type === 'additional') && (
-              <button
-                onClick={() => setAutoScroll(!autoScroll)}
-                className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                  autoScroll ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/70'
-                }`}
-                title={t('devotionalSeriesViewer', 'autoScrollContent', 'Auto-scroll content')}
-              >
-                <BookOpen className="h-3 w-3" />
-                {t('devotionalSeriesViewer', 'autoScroll', 'Auto-scroll')} {autoScroll ? t('devotionalSeriesViewer', 'on', 'ON') : t('devotionalSeriesViewer', 'off', 'OFF')}
-              </button>
-            )}
-          </div>
+          {/* Auto-advance / auto-scroll toggles moved into the header's "more" menu. */}
         </div>
 
         {/* Main Content */}
@@ -1905,6 +2156,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               <button
                 key={idx}
                 onClick={() => setCurrentSlide(idx)}
+                aria-label={t('devotionalSeriesViewer', 'goToSlide', 'Go to slide {n}').replace('{n}', String(idx + 1))}
+                aria-current={idx === currentSlide ? 'step' : undefined}
                 className={`w-2 h-2 rounded-full transition-all ${
                   idx === currentSlide 
                     ? 'bg-white w-6' 
@@ -2037,6 +2290,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             url={window.location.href}
           />
         )}
+        {completionDialogs}
       </div>
     );
   }
@@ -2185,6 +2439,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                   unlocked ? 'hover:shadow-md' : 'opacity-60 cursor-not-allowed'
                 } ${isCurrent ? 'ring-2 ring-purple-500' : ''}`}
                 onClick={() => openDay(day.day_number)}
+                {...clickableProps(() => openDay(day.day_number))}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center gap-4">
@@ -2223,6 +2478,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
             );
           })}
         </div>
+        {completionDialogs}
       </div>
     );
   }
@@ -2238,6 +2494,61 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
           </Button>
         </div>
       )}
+
+      {/* Continue — series the reader has started but not finished */}
+      {(() => {
+        const continueItems = inProgressSeries
+          .map((p) => ({ p, series: allSeries.find((s) => s.id === p.series_id) }))
+          .filter((x): x is { p: typeof inProgressSeries[number]; series: Series } => !!x.series)
+          .sort((a, b) =>
+            new Date(b.p.last_read_at || b.p.started_at || 0).getTime() -
+            new Date(a.p.last_read_at || a.p.started_at || 0).getTime());
+        if (continueItems.length === 0) return null;
+        return (
+          <div>
+            <h3 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <Play className="h-5 w-5 text-purple-600" />
+              {t('devotionalSeriesViewer', 'continueReading', 'Continue')}
+            </h3>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+              {continueItems.map(({ p, series }) => {
+                const localized = getLocalizedSeries(series);
+                const total = series.total_days || 0;
+                const done = p.completed_days.length;
+                const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+                return (
+                  <Card
+                    key={series.id}
+                    className="min-w-[240px] max-w-[280px] shrink-0 snap-start cursor-pointer hover:shadow-md transition-shadow"
+                    onClick={() => loadSeries(series.id)}
+                    {...clickableProps(() => loadSeries(series.id))}
+                  >
+                    <CardContent className="p-3 flex items-center gap-3">
+                      {series.cover_image_url ? (
+                        <img src={series.cover_image_url} alt="" className="h-14 w-14 rounded-lg object-cover shrink-0" />
+                      ) : (
+                        <div className="h-14 w-14 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
+                          <BookOpen className="h-6 w-6 text-white/70" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate">{localized.title}</p>
+                        <p className="text-xs text-gray-500 mb-1.5">
+                          {t('devotionalSeriesViewer', 'dayXOfY', 'Day {day} of {total}')
+                            .replace('{day}', String(Math.min(p.current_day, total || p.current_day)))
+                            .replace('{total}', String(total))}
+                        </p>
+                        <Progress value={pct} className="h-1.5" />
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Search and Filter Controls */}
       <SearchFilterPanel icon={<BookOpen className="h-6 w-6 text-white/60" />}>
@@ -2291,6 +2602,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                   key={series.id} 
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => loadSeries(series.id)}
+                  {...clickableProps(() => loadSeries(series.id))}
                 >
                   {series.cover_image_url ? (
                     <div className="h-40 bg-gradient-to-br from-purple-500 to-pink-500">
@@ -2347,6 +2659,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 key={series.id} 
                 className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                 onClick={() => loadSeries(series.id)}
+                {...clickableProps(() => loadSeries(series.id))}
               >
                 {series.cover_image_url ? (
                   <div className="h-32 bg-gradient-to-br from-purple-500 to-pink-500">
@@ -2403,150 +2716,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         </Card>
       )}
 
-      {/* Day Share Modal */}
-      {showDayShareModal && currentDay && selectedSeries && (() => {
-        const localizedDay = getLocalizedDay(currentDay);
-        const localizedSeries = getLocalizedSeries(selectedSeries);
-        const rawScripture = localizedDay.scripture_reference;
-        const scripture = rawScripture
-          ? (getCachedLocalizedScripture(rawScripture, language)?.reference || rawScripture)
-          : rawScripture;
-        const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
-        // Compose a rich share message: title + scripture ref + series context + link
-        const shareMessage = scripture
-          ? `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(currentDay.day_number))}: "${localizedDay.title || ''}" — ${scripture}\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`
-          : `📖 ${t('devotionalSeriesViewer', 'justCompletedDayX', 'Just completed Day {n}').replace('{n}', String(currentDay.day_number))}: "${localizedDay.title || ''}"\n\n${t('devotionalSeriesViewer', 'fromSeriesX', 'From the "{title}" devotional series on ReKindle BC.').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
-        const encodedMsg = encodeURIComponent(shareMessage);
-        const encodedUrl = encodeURIComponent(shareUrl);
-
-        return (
-          <Dialog open={showDayShareModal} onOpenChange={setShowDayShareModal}>
-            <DialogContent className="sm:max-w-md text-center">
-              <DialogHeader>
-                <DialogTitle className="text-xl flex items-center justify-center gap-2">
-                  <CheckCircle className="h-6 w-6 text-green-500" />
-                  {t('devotionalSeriesViewer', 'dayXComplete', 'Day {n} Complete!').replace('{n}', String(currentDay.day_number))}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="py-4 space-y-4">
-                <p className="text-gray-600 text-sm">
-                  {t('devotionalSeriesViewer', 'greatWorkFinishing', 'Great work finishing')} <span className="font-medium">"{localizedDay.title || t('devotionalSeriesViewer', 'dayN', 'Day {n}').replace('{n}', String(currentDay.day_number))}"</span>.
-                  {scripture && (
-                    <span className="block mt-1 text-purple-600 italic text-xs">{scripture}</span>
-                  )}
-                </p>
-                <p className="text-sm font-medium text-gray-700">{t('devotionalSeriesViewer', 'shareYourProgress', 'Share your progress:')}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <a
-                    href={`https://wa.me/?text=${encodedMsg}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-sm font-medium"
-                    onClick={() => setShowDayShareModal(false)}
-                  >
-                    <Send className="h-4 w-4" />
-                    WhatsApp
-                  </a>
-                  <a
-                    href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodeURIComponent(shareMessage)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
-                    onClick={() => setShowDayShareModal(false)}
-                  >
-                    <span className="font-bold">f</span>
-                    Facebook
-                  </a>
-                  <a
-                    href={`https://twitter.com/intent/tweet?text=${encodedMsg}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-black hover:bg-gray-800 text-white rounded-lg transition-colors text-sm font-medium"
-                    onClick={() => setShowDayShareModal(false)}
-                  >
-                    <span className="font-bold">𝕏</span>
-                    Twitter / X
-                  </a>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(shareMessage);
-                      toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') });
-                      setShowDayShareModal(false);
-                    }}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors text-sm font-medium"
-                  >
-                    <Copy className="h-4 w-4" />
-                    {t('devotionalSeriesViewer', 'copyMessage', 'Copy Message')}
-                  </button>
-                </div>
-                <button
-                  onClick={() => setShowDayShareModal(false)}
-                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors mt-2"
-                >
-                  {t('devotionalSeriesViewer', 'skipForNow', 'Skip for now')}
-                </button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        );
-      })()}
-
-      {/* Completion Modal */}
-      <Dialog open={showCompletionModal} onOpenChange={setShowCompletionModal}>
-        <DialogContent className="text-center">
-          <DialogHeader>
-            <DialogTitle className="text-2xl">{t('devotionals', 'congratulations', 'Congratulations')}!</DialogTitle>
-          </DialogHeader>
-          <div className="py-6">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Award className="h-10 w-10 text-green-600" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{t('devotionals', 'seriesComplete', 'Series Complete')}!</h3>
-            <p className="text-gray-600 mb-4">
-              {t('devotionals', 'completedAll', 'You have completed all')} {selectedSeries?.total_days} {t('devotionals', 'daysOf', 'days of')} "{selectedSeries ? getLocalizedSeries(selectedSeries).title : ''}"
-            </p>
-            {/* Share series completion */}
-            {selectedSeries && (() => {
-              const localizedSeries = getLocalizedSeries(selectedSeries);
-              const shareUrl = `${publicWebOrigin()}/devotional-series/${selectedSeries.id}`;
-              const completionMsg = `🎉 ${t('devotionalSeriesViewer', 'iJustCompletedSeriesX', 'I just completed the "{title}" devotional series on ReKindle BC!').replace('{title}', String(localizedSeries.title))}\n\n${shareUrl}`;
-              const encodedMsg = encodeURIComponent(completionMsg);
-              const encodedUrl = encodeURIComponent(shareUrl);
-              return (
-                <div className="mb-4 space-y-2">
-                  <p className="text-sm font-medium text-gray-600">{t('devotionalSeriesViewer', 'shareYourAchievement', 'Share your achievement:')}</p>
-                  <div className="flex justify-center gap-2">
-                    <a href={`https://wa.me/?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center transition-colors"
-                      title={t('devotionalSeriesViewer', 'shareOnWhatsApp', 'Share on WhatsApp')}>
-                      <Send className="h-4 w-4" />
-                    </a>
-                    <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
-                      title={t('devotionalSeriesViewer', 'shareOnFacebook', 'Share on Facebook')}>
-                      f
-                    </a>
-                    <a href={`https://twitter.com/intent/tweet?text=${encodedMsg}`} target="_blank" rel="noopener noreferrer"
-                      className="w-10 h-10 bg-black hover:bg-gray-800 text-white rounded-full flex items-center justify-center transition-colors font-bold text-sm"
-                      title={t('devotionalSeriesViewer', 'shareOnX', 'Share on X')}>
-                      𝕏
-                    </a>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(completionMsg); toast({ title: t('devotionalSeriesViewer', 'copied', 'Copied!'), description: t('devotionalSeriesViewer', 'shareMessageCopiedDesc', 'Share message copied to clipboard') }); }}
-                      className="w-10 h-10 bg-purple-500 hover:bg-purple-600 text-white rounded-full flex items-center justify-center transition-colors"
-                      title={t('devotionalSeriesViewer', 'copyToClipboard', 'Copy to clipboard')}>
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-            <Button onClick={() => { setShowCompletionModal(false); setView('series'); }}>
-              {t('devotionals', 'viewSeries', 'View Series')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {completionDialogs}
     </div>
   );
 };

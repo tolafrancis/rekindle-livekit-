@@ -5,6 +5,7 @@ import { Badge } from '@rekindle/ui/badge';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { Loader2, Users2, GitMerge, ShieldCheck, RefreshCw } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface DupRow {
   match_type: string;
@@ -72,13 +73,15 @@ const MinistryDuplicates: React.FC<{ ministryId: string }> = ({ ministryId }) =>
     const others = c.rows.filter((r) => r.profile_id !== keep);
     if (others.length === 0) return;
     const keepName = c.rows.find(r => r.profile_id === keep)?.display_name || t('ministryDuplicates', 'selected', 'selected');
-    const confirmMsg =
-      t('ministryDuplicates', 'mergeConfirm', 'Merge {count} record(s) into "{name}"?')
+    const confirmed = await confirmAction({
+      title: t('ministryDuplicates', 'mergeConfirm', 'Merge {count} record(s) into "{name}"?')
         .replace('{count}', String(others.length))
-        .replace('{name}', String(keepName))
-      + '\n\n'
-      + t('ministryDuplicates', 'mergeConfirmWarning', 'This cannot be undone (a snapshot is kept in the merge log).');
-    if (!window.confirm(confirmMsg)) return;
+        .replace('{name}', String(keepName)),
+      description: t('ministryDuplicates', 'mergeConfirmWarning', 'This cannot be undone (a snapshot is kept in the merge log).'),
+      confirmLabel: t('ministryDuplicates', 'merge', 'Merge'),
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     setMerging(c.key);
     try {

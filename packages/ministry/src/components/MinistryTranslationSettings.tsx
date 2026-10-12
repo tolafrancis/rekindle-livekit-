@@ -119,7 +119,7 @@ const VoicePicker: React.FC<{
                   {playingId === v.voice_id ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                 </button>
                 <span className="flex-1 truncate">{v.name}</span>
-                {v.category && <span className="text-[10px] text-muted-foreground uppercase">{v.category}</span>}
+                {v.category && <span className="text-xs text-muted-foreground uppercase">{v.category}</span>}
                 {value === v.voice_id && <Check className="h-3.5 w-3.5 shrink-0" />}
               </div>
             ))}
@@ -1131,7 +1131,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
                             </button>
                             <div className="min-w-0">
                               <p className="text-sm truncate">{v.name}</p>
-                              <p className="text-[10px] text-muted-foreground uppercase truncate">
+                              <p className="text-xs text-muted-foreground uppercase truncate">
                                 {[v.language, v.accent, v.gender].filter(Boolean).join(' · ')}
                               </p>
                             </div>

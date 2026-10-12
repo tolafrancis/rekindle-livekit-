@@ -18,6 +18,7 @@ import {
 } from '../conversation/conversationApi';
 import { useBilingualConversation, type ConnectionStatus, type PendingTurn } from '../conversation/useBilingualConversation';
 import { ensureMicrophonePermission, useSpeechCapture, type SpeechCaptureError } from '../conversation/useSpeechCapture';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 /**
  * Live → Conversation: the two-person bilingual room, shared by the host
@@ -190,7 +191,7 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
     copyLink();
   };
   const makeNewInvite = async () => {
-    if (guestJoined && !window.confirm(`Create a new invite link? ${otherName || 'The current guest'} will be removed from this conversation.`)) return;
+    if (guestJoined && !await confirmAction({ title: 'Create a new invite link?', description: `${otherName || 'The current guest'} will be removed from this conversation.`, confirmLabel: 'Create new link', destructive: true })) return;
     setBusy('invite');
     try {
       setInviteToken(await convo.createInvite());
@@ -213,7 +214,7 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
   };
 
   const leave = async () => {
-    if (role === 'host' && !ended && !window.confirm('Leave and end this conversation for both of you? The transcript stays available.')) return;
+    if (role === 'host' && !ended && !await confirmAction({ title: 'Leave and end this conversation for both of you?', description: 'The transcript stays available.', confirmLabel: 'End conversation', destructive: true })) return;
     setBusy('leave');
     setMicOn(false);
     await convo.leave();

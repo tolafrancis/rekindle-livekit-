@@ -15,6 +15,7 @@ import {
   Users, CheckCircle, AlertCircle, Copy, Loader2
 } from 'lucide-react';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface EmailTemplate {
   id: string;
@@ -374,7 +375,7 @@ export const EmailNotificationManager: React.FC = () => {
   }, [formData, editingTemplate, loadTemplates]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!confirm(t('emailNotificationManager', 'confirmDelete', 'Delete this template?'))) return;
+    if (!await confirmAction({ title: t('emailNotificationManager', 'confirmDelete', 'Delete this template?'), confirmLabel: t('emailNotificationManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       await supabase.from('email_templates').delete().eq('id', id);
@@ -509,7 +510,7 @@ export const EmailNotificationManager: React.FC = () => {
                     <Edit className="h-4 w-4 mr-1" />
                     {t('emailNotificationManager', 'edit', 'Edit')}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDelete(template.id)}>
+                  <Button aria-label={t('a11y', 'deleteTemplate', 'Delete template')} variant="ghost" size="sm" onClick={() => handleDelete(template.id)}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>

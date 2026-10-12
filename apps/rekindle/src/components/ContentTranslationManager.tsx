@@ -235,7 +235,7 @@ export const ContentTranslationManager: React.FC = () => {
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" /> Translation coverage
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={loadCoverage} disabled={loadingCoverage}>
+          <Button aria-label="Refresh coverage" variant="outline" size="sm" onClick={loadCoverage} disabled={loadingCoverage}>
             {loadingCoverage ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
         </CardHeader>
@@ -299,7 +299,7 @@ export const ContentTranslationManager: React.FC = () => {
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" /> Content Translation Queue
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={loadStats} disabled={loadingStats}>
+          <Button aria-label="Refresh stats" variant="outline" size="sm" onClick={loadStats} disabled={loadingStats}>
             {loadingStats ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
         </CardHeader>

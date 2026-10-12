@@ -21,6 +21,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { SmallGroupDetailManager } from './SmallGroupDetailManager';
+import { SMALL_GROUP_CATEGORIES } from '../lib/smallGroupCategories';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistrySmallGroupsManagerProps {
   ministryId: string;
@@ -56,10 +58,7 @@ interface Coordinator {
   user_name?: string;
 }
 
-const CATEGORY_OPTIONS = [
-  'Bible Study', 'Prayer Group', 'Youth', 'Men', 'Women', 'Couples',
-  'Discipleship', 'Outreach', 'Worship', 'Other',
-];
+const CATEGORY_OPTIONS = SMALL_GROUP_CATEGORIES;
 
 const emptyForm = {
   name: '',
@@ -277,7 +276,7 @@ export const MinistrySmallGroupsManager: React.FC<MinistrySmallGroupsManagerProp
   };
 
   const handleDelete = async (g: SmallGroup) => {
-    if (!window.confirm(t('ministrySmallGroupsManager', 'confirmDelete', 'Delete "{name}"? This removes all its members, meetings, attendance, and posts. This cannot be undone.').replace('{name}', g.name))) return;
+    if (!await confirmAction({ title: t('ministrySmallGroupsManager', 'confirmDeleteTitle', 'Delete "{name}"?').replace('{name}', g.name), description: t('ministrySmallGroupsManager', 'confirmDeleteDesc', 'This removes all its members, meetings, attendance, and posts. This cannot be undone.'), confirmLabel: t('ministrySmallGroupsManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('small_groups').delete().eq('id', g.id);
       if (error) throw error;
@@ -484,13 +483,13 @@ export const MinistrySmallGroupsManager: React.FC<MinistrySmallGroupsManagerProp
                       </div>
                       {canManageGroups && (
                         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(g)} title={t('ministrySmallGroupsManager', 'edit', 'Edit')}><Edit className="h-4 w-4" /></Button>
+                          <Button aria-label={t('ministrySmallGroupsManager', 'edit', 'Edit')} size="sm" variant="ghost" onClick={() => openEdit(g)} title={t('ministrySmallGroupsManager', 'edit', 'Edit')}><Edit className="h-4 w-4" /></Button>
                           {g.status === 'active' ? (
-                            <Button size="sm" variant="ghost" onClick={() => handleArchive(g, 'inactive')} title={t('ministrySmallGroupsManager', 'archive', 'Archive')}><Archive className="h-4 w-4" /></Button>
+                            <Button aria-label={t('ministrySmallGroupsManager', 'archive', 'Archive')} size="sm" variant="ghost" onClick={() => handleArchive(g, 'inactive')} title={t('ministrySmallGroupsManager', 'archive', 'Archive')}><Archive className="h-4 w-4" /></Button>
                           ) : (
-                            <Button size="sm" variant="ghost" onClick={() => handleArchive(g, 'active')} title={t('ministrySmallGroupsManager', 'reactivate', 'Reactivate')}><Award className="h-4 w-4" /></Button>
+                            <Button aria-label={t('ministrySmallGroupsManager', 'reactivate', 'Reactivate')} size="sm" variant="ghost" onClick={() => handleArchive(g, 'active')} title={t('ministrySmallGroupsManager', 'reactivate', 'Reactivate')}><Award className="h-4 w-4" /></Button>
                           )}
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(g)} title={t('ministrySmallGroupsManager', 'deleteAction', 'Delete')}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                          <Button aria-label={t('ministrySmallGroupsManager', 'deleteAction', 'Delete')} size="sm" variant="ghost" onClick={() => handleDelete(g)} title={t('ministrySmallGroupsManager', 'deleteAction', 'Delete')}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                         </div>
                       )}
                     </div>
@@ -532,7 +531,7 @@ export const MinistrySmallGroupsManager: React.FC<MinistrySmallGroupsManagerProp
                 {coordinators.map((c) => (
                   <div key={c.id} className="flex items-center justify-between border rounded-md px-3 py-2">
                     <span className="flex items-center gap-2 text-sm"><Crown className="h-4 w-4 text-amber-500" />{c.user_id}</span>
-                    <Button size="sm" variant="ghost" onClick={() => handleRemoveCoordinator(c)}><X className="h-4 w-4" /></Button>
+                    <Button aria-label={t('ministrySmallGroupsManager', 'removeCoordinator', 'Remove coordinator')} size="sm" variant="ghost" onClick={() => handleRemoveCoordinator(c)}><X className="h-4 w-4" /></Button>
                   </div>
                 ))}
               </CardContent>

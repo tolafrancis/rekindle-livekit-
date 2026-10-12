@@ -10,6 +10,7 @@
     "./useSwipe": "./src/useSwipe.ts",
     "./modal-stack": "./src/modal-stack.ts",
     "./uuid": "./src/uuid.ts",
+    "./toast-compat": "./src/toast-compat.ts",
     "./*": "./src/*.tsx"
   },
   "dependencies": {

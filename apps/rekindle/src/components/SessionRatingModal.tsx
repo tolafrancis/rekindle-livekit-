@@ -132,7 +132,7 @@ export const SessionRatingModal: React.FC<SessionRatingModalProps> = ({
           <div className="text-center">
             <div className="flex justify-center gap-2 mb-2">
               {[1, 2, 3, 4, 5].map((star) => (
-                <button
+                <button aria-label={t('a11y', 'rateNStars', 'Rate {n} stars').replace('{n}', String(star))}
                   key={star}
                   type="button"
                   onClick={() => setRating(star)}

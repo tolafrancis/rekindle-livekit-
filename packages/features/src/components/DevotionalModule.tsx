@@ -852,7 +852,7 @@ export const DevotionalModule: React.FC<Props> = ({
       {/* Header */}
       <div className="relative z-10 flex items-center justify-between gap-2 p-4 text-white">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <Button
+          <Button aria-label={t('a11y', 'close', 'Close')}
             variant="ghost"
             size="icon"
             onClick={onClose}
@@ -1162,7 +1162,7 @@ export const DevotionalModule: React.FC<Props> = ({
         <div className="flex flex-col items-center gap-1">
           <div className="flex gap-1">
             {slides.map((_, idx) => (
-              <button
+              <button aria-label={t('a11y', 'goToSlide', 'Go to slide {n}').replace('{n}', String(idx + 1))}
                 key={idx}
                 onClick={() => setCurrentSlide(idx)}
                 className={`w-2 h-2 rounded-full transition-all ${

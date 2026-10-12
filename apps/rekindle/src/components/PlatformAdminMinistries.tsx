@@ -468,7 +468,7 @@ const PlatformAdminMinistries: React.FC = () => {
                           </td>
                           <td className="p-4">
                             <div className="flex gap-2">
-                              <Button
+                              <Button aria-label={t('a11y', 'viewDetails', 'View details')}
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleViewDetails(ministry)}
@@ -477,14 +477,14 @@ const PlatformAdminMinistries: React.FC = () => {
                               </Button>
                               {ministry.approval_status === 'pending' && (
                                 <>
-                                  <Button
+                                  <Button aria-label={t('a11y', 'approve', 'Approve')}
                                     size="sm"
                                     className="bg-green-600 hover:bg-green-700"
                                     onClick={() => handleOpenAction(ministry, 'approve')}
                                   >
                                     <CheckCircle className="h-4 w-4" />
                                   </Button>
-                                  <Button
+                                  <Button aria-label={t('a11y', 'reject', 'Reject')}
                                     size="sm"
                                     variant="destructive"
                                     onClick={() => handleOpenAction(ministry, 'reject')}
@@ -494,7 +494,7 @@ const PlatformAdminMinistries: React.FC = () => {
                                 </>
                               )}
                               {ministry.approval_status === 'approved' && ministry.is_active && (
-                                <Button
+                                <Button aria-label={t('a11y', 'suspend', 'Suspend')}
                                   size="sm"
                                   variant="outline"
                                   onClick={() => handleOpenAction(ministry, 'suspend')}
@@ -503,7 +503,7 @@ const PlatformAdminMinistries: React.FC = () => {
                                 </Button>
                               )}
                               {ministry.approval_status === 'suspended' && (
-                                <Button
+                                <Button aria-label={t('a11y', 'activate', 'Activate')}
                                   size="sm"
                                   className="bg-green-600 hover:bg-green-700"
                                   onClick={() => handleOpenAction(ministry, 'activate')}

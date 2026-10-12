@@ -52,7 +52,7 @@ export const ReminderSetupTip: React.FC<Props> = ({ onSetup }) => {
       <button
         onClick={dismiss}
         aria-label={t('reminderSetupTip', 'dismiss', 'Dismiss')}
-        className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+        className="absolute top-1 right-1 inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:text-gray-700"
       >
         <X className="h-4 w-4" />
       </button>

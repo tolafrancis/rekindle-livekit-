@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useActiveCall } from '../ActiveCallContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
@@ -6,6 +6,9 @@ import { Button } from '@rekindle/ui/button';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
+import { useLanguage } from '@rekindle/features/LanguageContext';
+import { LoginForm } from '@rekindle/features/components/LoginForm';
+import { SignupForm, ConfirmEmailNotice } from '@rekindle/features/components/SignupForm';
 import RegisterMeetingButton from '../components/RegisterMeetingButton';
 import { getWebinar, resolveWebinarRole, type MinistryWebinar } from './webinarControl';
 import { WebinarLobby, type WebinarViewerRole } from './WebinarLobby';
@@ -30,6 +33,13 @@ export function WebinarJoinPage() {
   const [error, setError] = useState<string | null>(null);
   const [promoted, setPromoted] = useState(false);
   const [isRegistered, setIsRegistered] = useState<boolean | null>(null);
+  const { t } = useLanguage();
+  // Signed-out visitors sign in right here (same compact forms
+  // WebinarSpeakerInvitePage embeds) instead of being sent to '/', which
+  // dropped the webinar URL — once auth state flips, the load() effect below
+  // picks up the new user on this same route.
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [pendingConfirmEmail, setPendingConfirmEmail] = useState<string | null>(null);
 
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Guest';
 
@@ -57,9 +67,15 @@ export function WebinarJoinPage() {
     setLoading(false);
   }, [webinarId, user?.id]);
 
+  // Set while the inline sign-in form is showing, so the first load after
+  // signing in shows the spinner (same as an initial visit) rather than a
+  // momentary "Can't open this webinar" before the webinar has loaded.
+  const signedOutRef = useRef(false);
+
   useEffect(() => {
     if (authLoading) return;
-    if (!user) { setLoading(false); return; }
+    if (!user) { signedOutRef.current = true; setLoading(false); return; }
+    if (signedOutRef.current) { signedOutRef.current = false; setLoading(true); }
     load();
   }, [authLoading, user, load]);
 
@@ -146,6 +162,21 @@ export function WebinarJoinPage() {
   // null here would paint nothing at all for a frame — a genuine blank/white
   // flash (reported live: "showed a white page"). Keep showing the spinner
   // until ActiveCallHost actually has something on screen.
+  // Sign-up succeeded without a session (email confirmation on): explain the
+  // next step instead of trying to load the webinar for a session-less user.
+  if (pendingConfirmEmail) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4">
+        <div className="max-w-sm w-full bg-white rounded-xl border shadow-sm p-5">
+          <ConfirmEmailNotice email={pendingConfirmEmail} compact />
+          <p className="text-xs text-gray-500 text-center mt-4">
+            {t('webinarJoin', 'confirmThenReopen', 'After confirming, open this webinar link again to join.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (isOnStage && !callIsThisWebinar) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950">
@@ -182,12 +213,27 @@ export function WebinarJoinPage() {
   if (!user) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4">
-        <Card className="max-w-sm w-full text-center">
-          <CardHeader><CardTitle>Sign in to join this webinar</CardTitle></CardHeader>
-          <CardContent>
-            <Button onClick={() => navigate('/')} className="w-full">Go to sign in</Button>
-          </CardContent>
-        </Card>
+        <div className="max-w-sm w-full">
+          <h1 className="text-center text-lg font-semibold text-white mb-4">
+            {t('webinarJoin', 'signInToJoin', 'Sign in to join this webinar')}
+          </h1>
+          <div className="bg-white rounded-xl border shadow-sm p-5">
+            {authMode === 'login' ? (
+              <LoginForm compact onSwitchToSignup={() => setAuthMode('signup')} onSuccess={() => {}} />
+            ) : (
+              <SignupForm
+                compact
+                onSwitchToLogin={() => setAuthMode('login')}
+                onSuccess={(info) => {
+                  if (info?.needsEmailConfirmation) setPendingConfirmEmail(info.email);
+                }}
+              />
+            )}
+          </div>
+          <Button onClick={handleHome} variant="ghost" className="w-full mt-3 text-gray-400 hover:text-white hover:bg-white/10">
+            {t('webinarJoin', 'backHome', 'Back home')}
+          </Button>
+        </div>
       </div>
     );
   }

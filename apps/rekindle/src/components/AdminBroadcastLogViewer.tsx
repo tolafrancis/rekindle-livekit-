@@ -204,7 +204,7 @@ function LogRow({ log, onClick }: { log: NormalisedLog; onClick: () => void }) {
             <span className="text-xs font-semibold text-green-700">
               {log.creditsUsed.toLocaleString()} cr
             </span>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               ${log.usdCost != null ? log.usdCost.toFixed(2) : (log.creditsUsed * 0.03).toFixed(2)}
             </span>
           </div>
@@ -251,7 +251,7 @@ function LogDetail({ log, onClose }: { log: NormalisedLog; onClose: () => void }
               <p className="text-xs text-purple-600 mt-0.5">From: {log.senderName}</p>
             )}
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground -mr-1">✕</Button>
+          <Button aria-label="Close" variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground -mr-1">✕</Button>
         </div>
 
         {log.message && (

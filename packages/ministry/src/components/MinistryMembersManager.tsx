@@ -1279,7 +1279,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                           <span>{[member.city, member.country].filter(Boolean).join(', ')}</span>
                         )}
                         {member.consent_gift_aid && (
-                          <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">
+                          <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">
                             {t('ministryMembersManager', 'giftAidCheck', 'Gift Aid ✓')}
                           </Badge>
                         )}
@@ -1289,7 +1289,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   {!member.is_leader && (
-                    <Button
+                    <Button aria-label={member.inbox_access ? t('ministryMembersManager', 'revokeInboxAccess', 'Revoke inbox access') : t('ministryMembersManager', 'grantInboxAccess', 'Grant inbox access')}
                       onClick={async () => {
                         const newVal = !member.inbox_access;
                         const { error } = await supabase
@@ -1321,7 +1321,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                     </Button>
                   )}
                   {canEditMemberRole(member) && (
-                    <Button
+                    <Button aria-label={t('ministryMembersManager', 'manageRoleTitle', 'Manage role')}
                       onClick={() => openRoleModal(member)}
                       variant="ghost"
                       size="sm"

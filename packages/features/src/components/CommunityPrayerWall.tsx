@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '../LanguageContext';
+import { useAuth } from '../AuthContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { Heart, MessageCircle, Plus, CheckCircle, User, AlertCircle, Lock, Crown, Loader2 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
@@ -33,6 +34,7 @@ const PAGE_SIZE = 20;
 
 export function CommunityPrayerWall() {
   const { t } = useLanguage();
+  const { profile } = useAuth();
   const entitlements = useUserEntitlements();
 
   const [posts, setPosts] = useState<PrayerPost[]>([]);
@@ -43,6 +45,11 @@ export function CommunityPrayerWall() {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [filter, setFilter] = useState('all');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // Posts this user is known to be praying for, learned this session from the
+  // pray action itself (a successful pray, or the "already praying" check).
+  const [prayedPostIds, setPrayedPostIds] = useState<Set<string>>(new Set());
+  const markPrayed = (postId: string) =>
+    setPrayedPostIds(prev => (prev.has(postId) ? prev : new Set(prev).add(postId)));
   const { filterBlocked } = useModeration();
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -264,6 +271,7 @@ export function CommunityPrayerWall() {
         .single();
       
       if (existingResponse) {
+        markPrayed(post.id);
         toast({
           title: t('communityPrayerWall', 'alreadyPraying', 'Already Praying'),
           description: t('communityPrayerWall', 'alreadyPrayingDesc', 'You are already praying for this request'),
@@ -296,7 +304,8 @@ export function CommunityPrayerWall() {
         });
       
       if (insertError) throw insertError;
-      
+
+      markPrayed(post.id);
       toast({
         title: t('communityPrayerWall', 'praying', 'Praying'),
         description: t('communityPrayerWall', 'nowPrayingDesc', 'You are now praying for this request')
@@ -385,7 +394,9 @@ export function CommunityPrayerWall() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
+                <label htmlFor="prayer-wall-title" className="sr-only">{t('communityPrayerWall', 'prayerTitlePlaceholder', 'Prayer title')}</label>
                 <Input
+                  id="prayer-wall-title"
                   placeholder={t('communityPrayerWall', 'prayerTitlePlaceholder', 'Prayer title')}
                   value={title} 
                   onChange={e => setTitle(e.target.value)}
@@ -393,7 +404,9 @@ export function CommunityPrayerWall() {
                 />
               </div>
               <div>
+                <label htmlFor="prayer-wall-content" className="sr-only">{t('communityPrayerWall', 'shareRequestPlaceholder', 'Share your prayer request...')}</label>
                 <Textarea
+                  id="prayer-wall-content"
                   placeholder={t('communityPrayerWall', 'shareRequestPlaceholder', 'Share your prayer request...')}
                   value={content} 
                   onChange={e => setContent(e.target.value)} 
@@ -402,10 +415,12 @@ export function CommunityPrayerWall() {
                 />
               </div>
               <div>
+                <label htmlFor="prayer-wall-category" className="sr-only">{t('communityPrayerWall', 'category', 'Category')}</label>
                 <select 
+                  id="prayer-wall-category"
                   value={category} 
                   onChange={e => setCategory(e.target.value)} 
-                  className="w-full p-2 border rounded"
+                  className="w-full min-h-[44px] p-2 border rounded"
                   disabled={loading}
                 >
                   <option value="general">{t('communityPrayerWall', 'catGeneral', 'General')}</option>
@@ -415,7 +430,7 @@ export function CommunityPrayerWall() {
                   <option value="gratitude">{t('communityPrayerWall', 'catGratitude', 'Gratitude')}</option>
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-sm" data-tour="prayer-wall-anonymous">
+              <label className="flex items-center gap-2 text-sm min-h-[44px]" data-tour="prayer-wall-anonymous">
                 <input 
                   type="checkbox" 
                   checked={isAnonymous} 
@@ -424,13 +439,22 @@ export function CommunityPrayerWall() {
                 />
                 {t('communityPrayerWall', 'postAnonymously', 'Post anonymously')}
               </label>
-              <Button 
-                onClick={submitPost} 
-                className="w-full"
-                disabled={loading || !title.trim() || !content.trim()}
-              >
-                {loading ? t('communityPrayerWall', 'posting', 'Posting...') : t('communityPrayerWall', 'submitPrayerRequest', 'Submit Prayer Request')}
-              </Button>
+              <div className="space-y-2">
+                <Button 
+                  onClick={submitPost} 
+                  className="w-full"
+                  disabled={loading || !title.trim() || !content.trim()}
+                >
+                  {loading ? t('communityPrayerWall', 'posting', 'Posting...') : t('communityPrayerWall', 'submitPrayerRequest', 'Submit Prayer Request')}
+                </Button>
+                {/* Mirrors the name submitPost stores in user_name. */}
+                <p className="text-xs text-center text-gray-500 flex items-center justify-center gap-1">
+                  <User className="h-3 w-3" />
+                  {isAnonymous
+                    ? t('communityPrayerWall', 'visibleToEveryoneAnonymous', 'Visible to everyone as Anonymous')
+                    : t('communityPrayerWall', 'visibleToEveryoneAs', 'Visible to everyone as {name}', { name: profile?.full_name || 'User' })}
+                </p>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -509,8 +533,10 @@ export function CommunityPrayerWall() {
                   variant="outline" 
                   onClick={() => prayForPost(post)}
                   disabled={loading}
+                  aria-pressed={prayedPostIds.has(post.id)}
+                  className={`min-h-[44px] sm:min-h-0 ${prayedPostIds.has(post.id) ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' : ''}`}
                 >
-                  <Heart className="h-4 w-4 mr-1 text-red-500" />
+                  <Heart className={`h-4 w-4 mr-1 text-red-500 ${prayedPostIds.has(post.id) ? 'fill-red-500' : ''}`} />
                   {t('communityPrayerWall', 'countPraying', '{count} Praying').replace('{count}', String(post.prayer_count))}
                 </Button>
                 {currentUserId === post.user_id && !post.is_answered && (
@@ -519,6 +545,7 @@ export function CommunityPrayerWall() {
                     variant="outline" 
                     onClick={() => markAnswered(post.id)}
                     disabled={loading}
+                    className="min-h-[44px] sm:min-h-0"
                   >
                     <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
                     {t('communityPrayerWall', 'markAnswered', 'Mark Answered')}

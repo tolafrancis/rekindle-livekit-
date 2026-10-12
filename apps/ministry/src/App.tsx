@@ -31,7 +31,7 @@ import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rek
 import { User, CreditCard, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
-import { Toaster as Sonner } from '@rekindle/ui/sonner';
+import { ConfirmDialogHost } from '@rekindle/ui/confirm-dialog';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
 import { WebinarJoinPage } from '@rekindle/live/webinar/WebinarJoinPage';
@@ -315,6 +315,7 @@ function AppRoutes() {
         <Route path="/ministry-prayer/:id" element={<MinistriesHub />} />
         <Route path="/ministry-videos/:id" element={<MinistriesHub />} />
         <Route path="/small-group/:id" element={<MinistriesHub />} />
+        <Route path="/messages/:id" element={<MinistriesHub />} />
         <Route path="/books/:id" element={<MinistriesHub />} />
         <Route path="/guide" element={<RekindleTutorialPage />} />
         <Route path="/faq" element={<FaqPage />} />
@@ -384,8 +385,8 @@ export default function App() {
     return () => window.removeEventListener('nativePushReceived', handler);
   }, []);
 
-  // ThemeProvider MUST wrap the tree: the Sonner toaster calls useTheme(),
-  // which throws (blanking the whole app) when no provider is present.
+  // ThemeProvider MUST wrap the tree: components that call useTheme() throw
+  // (blanking the whole app) when no provider is present.
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
@@ -396,9 +397,10 @@ export default function App() {
               <ActiveCallProvider>
               {/* Toast renderers — without these mounted, every toast() call in the
                   ministry app (channel/meeting copy confirmations, etc.) is silent.
-                  Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
+                  Toaster reads @rekindle/ui/use-toast; sonner-style calls go through
+                  @rekindle/ui/toast-compat, which renders here too. */}
               <Toaster />
-              <Sonner />
+              <ConfirmDialogHost />
               <BrowserTranslationTip />
               <BrowserRouter>
                 <PushNotificationNavHandler />

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
@@ -113,7 +113,7 @@ const App = () => {
               <GlobalAudioProvider>
                 <ActiveCallProvider>
                 <Toaster />
-                <Sonner />
+                <ConfirmDialogHost />
                 <BrowserTranslationTip />
                 <BrowserRouter>
                   <PushNotificationNavHandler />
@@ -121,7 +121,7 @@ const App = () => {
                   <Routes>
                   {/* Main routes */}
                   <Route path="/" element={<Index />} />
-                  <Route path="/admin" element={<AdminPage />} />
+                  <Route path="/admin/*" element={<AdminPage />} />
 
                   {/* Shared content deep links — render the app shell; the target
                       screen opens the specific item via the deep-link bridge. */}
@@ -135,6 +135,7 @@ const App = () => {
                   <Route path="/ministry-prayer/:id" element={<Index />} />
                   <Route path="/ministry-videos/:id" element={<Index />} />
                   <Route path="/small-group/:id" element={<Index />} />
+                  <Route path="/messages/:id" element={<Index />} />
                   <Route path="/books/:id" element={<Index />} />
                   
                   {/* Meeting join routes - Channel meetings */}
