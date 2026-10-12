@@ -707,13 +707,13 @@ export const MinistryPrayerLibraryManager: React.FC<MinistryPrayerLibraryManager
                       </div>
                     </div>
                     <div className="flex gap-2 ml-4">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(prayer)}>
+                      <Button aria-label={t('ministryPrayerLibraryManager', 'editPrayer', 'Edit prayer')} variant="ghost" size="icon" onClick={() => handleEdit(prayer)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDuplicate(prayer)}>
+                      <Button aria-label={t('ministryPrayerLibraryManager', 'duplicatePrayer', 'Duplicate prayer')} variant="ghost" size="icon" onClick={() => handleDuplicate(prayer)}>
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(prayer.id)}>
+                      <Button aria-label={t('ministryPrayerLibraryManager', 'deletePrayer', 'Delete prayer')} variant="ghost" size="icon" onClick={() => handleDelete(prayer.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

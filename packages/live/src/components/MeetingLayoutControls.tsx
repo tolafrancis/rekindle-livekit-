@@ -104,7 +104,7 @@ export const ParticipantTileMenu: React.FC<ParticipantTileMenuProps> = ({
             ) : (
               <DropdownMenuItem disabled={full} onClick={() => actions.addToSpotlight(id)}>
                 <Plus className="mr-2 h-4 w-4" /> Add to spotlight
-                {full && <span className="ml-auto text-[10px] opacity-70">Full</span>}
+                {full && <span className="ml-auto text-xs opacity-70">Full</span>}
               </DropdownMenuItem>
             )}
             {!participant.isLocal && (
@@ -231,7 +231,7 @@ export const SpotlightPanelButton: React.FC<{
       <PopoverContent side="top" className="w-72 p-0">
         <div className="max-h-[60vh] overflow-y-auto p-3 space-y-3">
           <div>
-            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground mb-1">
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground mb-1">
               SPOTLIGHTED ({spotlit.length}/{limit})
             </p>
             {spotlit.length === 0 ? (
@@ -257,7 +257,7 @@ export const SpotlightPanelButton: React.FC<{
             )}
           </div>
           <div>
-            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground mb-1">AVAILABLE</p>
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground mb-1">AVAILABLE</p>
             {available.length === 0 ? (
               <p className="text-sm text-muted-foreground">Everyone is spotlit.</p>
             ) : (

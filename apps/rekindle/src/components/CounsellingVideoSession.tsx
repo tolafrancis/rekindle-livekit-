@@ -123,7 +123,7 @@ const ParticipantVideo: React.FC<{
         <div className="absolute top-2 right-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="secondary" size="icon" className="h-8 w-8 bg-black/50 hover:bg-black/70">
+              <Button aria-label={t('a11y', 'moreOptions', 'More options')} variant="secondary" size="icon" className="h-8 w-8 bg-black/50 hover:bg-black/70">
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -443,7 +443,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
                   <Users className="h-4 w-4" />
                   <span>{participantCount}</span>
                 </div>
-                <Button
+                <Button aria-label={isFullscreen ? t('a11y', 'exitFullscreen', 'Exit fullscreen') : t('a11y', 'enterFullscreen', 'Enter fullscreen')}
                   variant="ghost"
                   size="icon"
                   onClick={toggleFullscreen}
@@ -464,7 +464,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {/* Mic toggle */}
-                <Button
+                <Button aria-label={isMicOn ? t('a11y', 'muteMicrophone', 'Mute microphone') : t('a11y', 'unmuteMicrophone', 'Unmute microphone')}
                   variant={isMicOn ? 'secondary' : 'destructive'}
                   size="lg"
                   onClick={toggleMic}
@@ -478,7 +478,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
                 </Button>
 
                 {/* Camera toggle */}
-                <Button
+                <Button aria-label={isCameraOn ? t('a11y', 'turnCameraOff', 'Turn camera off') : t('a11y', 'turnCameraOn', 'Turn camera on')}
                   variant={isCameraOn ? 'secondary' : 'destructive'}
                   size="lg"
                   onClick={toggleCamera}
@@ -492,7 +492,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
                 </Button>
 
                 {/* Screen share toggle */}
-                <Button
+                <Button aria-label={isScreenSharing ? t('a11y', 'stopSharingScreen', 'Stop sharing screen') : t('a11y', 'shareScreen', 'Share screen')}
                   variant={isScreenSharing ? 'default' : 'secondary'}
                   size="lg"
                   onClick={isScreenSharing ? stopScreenShare : startScreenShare}
@@ -508,7 +508,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
 
               <div className="flex items-center gap-3">
                 {/* Chat toggle */}
-                <Button
+                <Button aria-label={t('a11y', 'toggleChat', 'Toggle chat')}
                   variant={showChat ? 'default' : 'secondary'}
                   size="lg"
                   onClick={() => setShowChat(!showChat)}
@@ -519,7 +519,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
 
                 {/* Host controls (only for host) */}
                 {isHost && (
-                  <Button
+                  <Button aria-label={t('a11y', 'hostControls', 'Host controls')}
                     variant="secondary"
                     size="lg"
                     onClick={() => setShowHostControls(!showHostControls)}
@@ -530,7 +530,7 @@ export const CounsellingVideoSession: React.FC<CounsellingVideoSessionProps> = (
                 )}
 
                 {/* End call button */}
-                <Button
+                <Button aria-label={t('a11y', 'endCall', 'End call')}
                   variant="destructive"
                   size="lg"
                   onClick={handleEndCall}

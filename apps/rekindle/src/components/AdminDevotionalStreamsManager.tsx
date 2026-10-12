@@ -334,8 +334,8 @@ export const AdminDevotionalStreamsManager: React.FC<{
                     {runningId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 text-purple-600" />}
                   </Button>
                 )}
-                <Button size="icon" variant="ghost" onClick={() => openEdit(s)}><Edit className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" onClick={() => remove(s)} disabled={s.is_default}>
+                <Button aria-label={t('a11y', 'editStream', 'Edit stream')} size="icon" variant="ghost" onClick={() => openEdit(s)}><Edit className="h-4 w-4" /></Button>
+                <Button aria-label={t('a11y', 'deleteStream', 'Delete stream')} size="icon" variant="ghost" onClick={() => remove(s)} disabled={s.is_default}>
                   <Trash2 className={`h-4 w-4 ${s.is_default ? 'text-gray-300' : 'text-red-500'}`} />
                 </Button>
               </div>

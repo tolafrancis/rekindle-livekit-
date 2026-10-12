@@ -199,7 +199,7 @@ export const DevotionalBookmarks: React.FC<{
             className={`${searchFilterInputClass} pr-10`}
           />
           {searchTerm && (
-            <button
+            <button aria-label={t('a11y', 'clearSearch', 'Clear search')}
               onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2"
             >
@@ -323,7 +323,7 @@ export const DevotionalBookmarks: React.FC<{
                       {t('devotionalBookmarks', 'read', 'Read')}
                     </Button>
                   )}
-                  <Button
+                  <Button aria-label={t('a11y', 'deleteBookmark', 'Delete bookmark')}
                     variant="outline"
                     size="sm"
                     onClick={() => handleDeleteBookmark(bookmark.id)}

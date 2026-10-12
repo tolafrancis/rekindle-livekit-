@@ -291,7 +291,7 @@ export const GiftAidDeclarationsManager: React.FC<Props> = ({ ministryId, themeC
             <div>
               <Label className="text-xs">{t('giftAidDeclarationsManager', 'email', 'Donor email')} *</Label>
               <Input type="email" value={form.donorEmail} onChange={(e) => set({ donorEmail: e.target.value })} disabled={!!supersedeId} />
-              {supersedeId && <p className="text-[11px] text-gray-400 mt-0.5">{t('giftAidDeclarationsManager', 'emailLocked', 'Locked — corrections stay with the same donor.')}</p>}
+              {supersedeId && <p className="text-xs text-gray-500 mt-0.5">{t('giftAidDeclarationsManager', 'emailLocked', 'Locked — corrections stay with the same donor.')}</p>}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>

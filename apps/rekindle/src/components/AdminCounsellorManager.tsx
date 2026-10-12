@@ -1041,10 +1041,10 @@ export const AdminCounsellorManager: React.FC = () => {
                             >
                               <UserCheck className={`h-4 w-4 ${counsellor.is_verified ? 'text-blue-500' : 'text-gray-400'}`} />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleEdit(counsellor)}>
+                            <Button aria-label={t('a11y', 'editCounsellor', 'Edit counsellor')} variant="ghost" size="icon" onClick={() => handleEdit(counsellor)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDelete(counsellor.id)}>
+                            <Button aria-label={t('a11y', 'deleteCounsellor', 'Delete counsellor')} variant="ghost" size="icon" onClick={() => handleDelete(counsellor.id)}>
                               <Trash2 className="h-4 w-4 text-red-500" />
                             </Button>
                           </div>

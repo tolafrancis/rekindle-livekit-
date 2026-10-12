@@ -391,7 +391,7 @@ export const AdminDeclarationManager: React.FC = () => {
                     >
                       <Volume2 className="h-4 w-4 text-blue-500" />
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(d)}>
+                    <Button aria-label={t('a11y', 'editDeclaration', 'Edit declaration')} variant="outline" size="sm" onClick={() => handleEdit(d)}>
                       <Edit className="h-4 w-4" />
                     </Button>
                     <UniversalTTSExportButton
@@ -401,7 +401,7 @@ export const AdminDeclarationManager: React.FC = () => {
                       size="sm"
                     />
                     <TranslateNowButton contentType="declaration" contentId={d.id} />
-                    <Button variant="outline" size="sm" onClick={() => handleDelete(d.id)}>
+                    <Button aria-label={t('a11y', 'deleteDeclaration', 'Delete declaration')} variant="outline" size="sm" onClick={() => handleDelete(d.id)}>
                       <Trash2 className="h-4 w-4 text-red-600" />
                     </Button>
                   </div>
@@ -411,7 +411,7 @@ export const AdminDeclarationManager: React.FC = () => {
                   <div className="mt-4 bg-gray-50 rounded-lg p-4 border">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">{t('adminDeclarationManager', 'ttsAudioPreview', 'TTS Audio Preview')}</span>
-                      <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(null)} className="h-6 w-6 p-0">
+                      <Button aria-label={t('a11y', 'closeAudioPreview', 'Close audio preview')} variant="ghost" size="sm" onClick={() => setShowAudioPreview(null)} className="h-6 w-6 p-0">
                         <X className="h-4 w-4" />
                       </Button>
                     </div>

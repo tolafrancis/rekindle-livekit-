@@ -1005,7 +1005,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
             <div className="p-3 bg-gray-50 rounded-lg space-y-1 text-sm">
               <p className="font-medium">{formData.full_name || t('adminDashboard', 'noName', '(no name)')}</p>
               <p className="text-gray-500">{formData.email || '—'}</p>
-              <p className="text-xs text-gray-400">ID: {formData.user_id || formData.id}</p>
+              <p className="text-xs text-gray-500">ID: {formData.user_id || formData.id}</p>
             </div>
 
             <div>
@@ -1187,7 +1187,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                     ))}
                     <td className="px-4 py-3 text-sm text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
+                        <Button aria-label={t('a11y', 'edit', 'Edit')}
                           variant="ghost"
                           size="sm"
                           onClick={() => handleEdit(type, item)}
@@ -1215,7 +1215,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                           />
                         )}
                         
-                        <Button
+                        <Button aria-label={t('a11y', 'delete', 'Delete')}
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDelete(type, item.id)}
@@ -1406,7 +1406,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                           {tier.replace('_', ' ')}
                         </span>
                         {user.subscription_status && user.subscription_status !== 'active' && (
-                          <p className="text-[10px] text-amber-600 mt-0.5 capitalize">
+                          <p className="text-xs text-amber-600 mt-0.5 capitalize">
                             {user.subscription_status}
                           </p>
                         )}
@@ -1422,11 +1422,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                               <span className="ml-2 text-orange-500">🔥 {streak}d</span>
                             )}
                           </p>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-500">
                             {prayers.toLocaleString()} {prayers !== 1 ? t('adminDashboard', 'prayersLabel', 'prayers') : t('adminDashboard', 'prayerLabel', 'prayer')}
                           </p>
                           {user.onboarding_completed === false && (
-                            <p className="text-[10px] text-amber-500">{t('adminDashboard', 'onboardingIncomplete', 'Onboarding incomplete')}</p>
+                            <p className="text-xs text-amber-500">{t('adminDashboard', 'onboardingIncomplete', 'Onboarding incomplete')}</p>
                           )}
                         </div>
                       </td>
@@ -1435,7 +1435,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
                       <td className="px-4 py-3 hidden lg:table-cell">
                         <p className="text-xs text-gray-600">{fmtDate(user.created_at)}</p>
                         {user.updated_at && user.updated_at !== user.created_at && (
-                          <p className="text-[10px] text-gray-400">
+                          <p className="text-xs text-gray-500">
                             {t('adminDashboard', 'activeDate', 'Active {date}').replace('{date}', fmtDate(user.updated_at))}
                           </p>
                         )}

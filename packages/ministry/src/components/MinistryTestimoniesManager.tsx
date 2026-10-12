@@ -591,7 +591,7 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
                               <CheckCircle className="h-4 w-4 mr-1" />
                               {t('ministryTestimoniesManager', 'approve', 'Approve')}
                             </Button>
-                            <Button 
+                            <Button aria-label={t('ministryTestimoniesManager', 'rejectTestimony', 'Reject testimony')} 
                               size="sm" 
                               variant="destructive"
                               onClick={() => handleReject(testimony.id)}
@@ -601,10 +601,10 @@ export const MinistryTestimoniesManager: React.FC<MinistryTestimoniesManagerProp
                           </>
                         ) : (
                           <>
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(testimony)}>
+                            <Button aria-label={t('ministryTestimoniesManager', 'editTestimony', 'Edit testimony')} variant="outline" size="sm" onClick={() => handleEdit(testimony)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button
+                            <Button aria-label={t('ministryTestimoniesManager', 'toggleFeatured', 'Feature / unfeature')}
                               variant="outline"
                               size="sm"
                               onClick={() => handleToggleFeatured(testimony)}

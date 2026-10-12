@@ -314,7 +314,7 @@ export const InteractivePrayerSession: React.FC<Props> = ({
             variant="ghost"
             size="icon"
             onClick={handleRequestClose}
-            className="text-white hover:bg-white/20 mr-2"
+            className="h-11 w-11 text-white hover:bg-white/20 mr-2"
             aria-label={t('prayerSession', 'exitSession', 'Exit prayer session')}
           >
             <X className="h-6 w-6" />
@@ -380,7 +380,8 @@ export const InteractivePrayerSession: React.FC<Props> = ({
             variant="ghost" 
             size="icon" 
             onClick={togglePause} 
-            className="text-white hover:bg-white/20"
+            aria-label={isPaused ? t('prayerSession', 'resume', 'Resume') : t('prayerSession', 'pause', 'Pause')}
+            className="h-11 w-11 text-white hover:bg-white/20"
           >
             {isPaused ? <Play className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
           </Button>

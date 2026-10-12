@@ -548,7 +548,7 @@ export const AdminBookManager: React.FC = () => {
                     alt={t('adminBookManager', 'coverPreviewAlt', 'Cover preview')}
                     className="w-32 h-44 object-cover rounded border"
                   />
-                  <Button
+                  <Button aria-label={t('a11y', 'removeCoverImage', 'Remove cover image')}
                     variant="ghost"
                     size="icon"
                     className="absolute -top-2 -right-2 h-6 w-6 bg-white rounded-full shadow"

@@ -794,7 +794,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
                             {t('ministryDevotionalCreator', 'broadcast', 'Broadcast')}
                           </Button>
                         )}
-                        <Button 
+                        <Button aria-label={t('ministryDevotionalCreator', 'deleteDevotional', 'Delete devotional')} 
                           size="sm" 
                           variant="ghost"
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -926,7 +926,7 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
                   <code className="text-xs flex-1 truncate">
                     {generateDeepLink(selectedDevotional.id, selectedDevotional.consumption_location)}
                   </code>
-                  <Button 
+                  <Button aria-label={t('ministryDevotionalCreator', 'copyLink', 'Copy link')} 
                     size="sm" 
                     variant="ghost"
                     onClick={() => copyDeepLink(selectedDevotional.id, selectedDevotional.consumption_location)}

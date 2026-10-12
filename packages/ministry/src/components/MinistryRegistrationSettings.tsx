@@ -329,7 +329,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
                   {sessions.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-xs border rounded-md px-2 py-1.5">
                       <span className="truncate">{s.device_name || t('ministryRegistrationSettings', 'deviceFallback', 'Device')} {t('ministryRegistrationSettings', 'lastSeenX', '· last seen {time}').replace('{time}', s.last_ping_at ? new Date(s.last_ping_at).toLocaleString() : t('ministryRegistrationSettings', 'never', 'never'))}</span>
-                      <button onClick={() => deactivateSession(s.id)} className="text-red-500 hover:text-red-600 ml-2"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button aria-label={t('ministryRegistrationSettings', 'deactivateKiosk', 'Deactivate kiosk')} onClick={() => deactivateSession(s.id)} className="text-red-500 hover:text-red-600 ml-2"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   ))}
                 </div>

@@ -48,6 +48,7 @@ import {
   Sparkles, Link, Copy, Check, Send, Headphones, MoreVertical
 } from 'lucide-react';
 import { publicWebOrigin } from '../platform';
+import { clickableProps } from '../clickableProps';
 
 // Day-list scripture citation: localizes just the reference name (e.g.
 // "Thi-thiên 130:6") to the reader's language when a published version exists.
@@ -150,6 +151,7 @@ const ShareButton: React.FC<ShareButtonProps> = ({ title, url, variant = 'icon' 
             variant="outline"
             size="icon"
             title={t('devotionalSeriesViewer', 'share', 'Share')}
+            aria-label={t('devotionalSeriesViewer', 'share', 'Share')}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             className="hover:bg-purple-50 hover:border-purple-300 transition-colors"
@@ -1711,7 +1713,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 </div>
                 <button
                   onClick={() => setShowDayShareModal(false)}
-                  className="text-sm text-gray-400 hover:text-gray-600 transition-colors mt-2"
+                  className="text-sm text-gray-500 hover:text-gray-700 transition-colors mt-2"
                 >
                   {t('devotionalSeriesViewer', 'skipForNow', 'Skip for now')}
                 </button>
@@ -1836,7 +1838,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 if (audioRef.current) audioRef.current.pause();
                 stopSpeaking();
               }}
-              className="text-white hover:bg-white/20 shrink-0"
+              aria-label={t('devotionalSeriesViewer', 'closeReader', 'Close reader')}
+              className="h-11 w-11 text-white hover:bg-white/20 shrink-0"
             >
               <X className="h-5 w-5" />
             </Button>
@@ -2153,6 +2156,8 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               <button
                 key={idx}
                 onClick={() => setCurrentSlide(idx)}
+                aria-label={t('devotionalSeriesViewer', 'goToSlide', 'Go to slide {n}').replace('{n}', String(idx + 1))}
+                aria-current={idx === currentSlide ? 'step' : undefined}
                 className={`w-2 h-2 rounded-full transition-all ${
                   idx === currentSlide 
                     ? 'bg-white w-6' 
@@ -2434,6 +2439,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                   unlocked ? 'hover:shadow-md' : 'opacity-60 cursor-not-allowed'
                 } ${isCurrent ? 'ring-2 ring-purple-500' : ''}`}
                 onClick={() => openDay(day.day_number)}
+                {...clickableProps(() => openDay(day.day_number))}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center gap-4">
@@ -2515,6 +2521,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     key={series.id}
                     className="min-w-[240px] max-w-[280px] shrink-0 snap-start cursor-pointer hover:shadow-md transition-shadow"
                     onClick={() => loadSeries(series.id)}
+                    {...clickableProps(() => loadSeries(series.id))}
                   >
                     <CardContent className="p-3 flex items-center gap-3">
                       {series.cover_image_url ? (
@@ -2595,6 +2602,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                   key={series.id} 
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                   onClick={() => loadSeries(series.id)}
+                  {...clickableProps(() => loadSeries(series.id))}
                 >
                   {series.cover_image_url ? (
                     <div className="h-40 bg-gradient-to-br from-purple-500 to-pink-500">
@@ -2651,6 +2659,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                 key={series.id} 
                 className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                 onClick={() => loadSeries(series.id)}
+                {...clickableProps(() => loadSeries(series.id))}
               >
                 {series.cover_image_url ? (
                   <div className="h-32 bg-gradient-to-br from-purple-500 to-pink-500">

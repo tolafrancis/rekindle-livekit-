@@ -739,7 +739,7 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
                         </Button>
                       )}
                       {event.send_reminders && (
-                        <Button 
+                        <Button aria-label={t('ministryEventsManager', 'sendReminder', 'Send reminder')} 
                           variant="outline" 
                           size="sm"
                           onClick={() => {
@@ -751,13 +751,13 @@ export const MinistryEventsManager: React.FC<MinistryEventsManagerProps> = ({
                           <Bell className="h-4 w-4" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(event)}>
+                      <Button aria-label={t('ministryEventsManager', 'editEvent', 'Edit event')} variant="ghost" size="icon" onClick={() => handleEdit(event)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDuplicate(event)}>
+                      <Button aria-label={t('ministryEventsManager', 'duplicateEvent', 'Duplicate event')} variant="ghost" size="icon" onClick={() => handleDuplicate(event)}>
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(event.id)}>
+                      <Button aria-label={t('ministryEventsManager', 'deleteEvent', 'Delete event')} variant="ghost" size="icon" onClick={() => handleDelete(event.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

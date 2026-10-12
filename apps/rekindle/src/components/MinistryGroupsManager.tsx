@@ -982,7 +982,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                               <code className="bg-gray-100 px-2 py-1 rounded text-sm">
                                 {group.invite_code}
                               </code>
-                              <Button
+                              <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
@@ -1194,7 +1194,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                         <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
                           {member.role || t('ministryGroupsManager', 'roleMember', 'member')}
                         </Badge>
-                        <Button
+                        <Button aria-label={t('a11y', 'removeMember', 'Remove member')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleRemoveMember(member.id)}
@@ -1253,7 +1253,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                     placeholder={selectedGroup.slug ? undefined : t('ministryGroupsManager', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first.")}
                     className="bg-white"
                   />
-                  <Button
+                  <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                     variant="outline"
                     onClick={() => copyInviteLink(selectedGroup)}
                   >
@@ -1357,7 +1357,7 @@ export const MinistryGroupsManager: React.FC<MinistryGroupsManagerProps> = ({ on
                             >
                               {t('ministryGroupsManager', 'load', 'Load')}
                             </Button>
-                            <Button
+                            <Button aria-label={t('a11y', 'deleteTemplate', 'Delete template')}
                               size="sm"
                               variant="ghost"
                               onClick={() => handleDeleteTemplate(template)}

@@ -15,7 +15,7 @@ export const PrayerPointModal: React.FC<Props> = ({ prayerPoint, onClose, onPray
       <div className="bg-white rounded-2xl max-w-lg w-full p-8" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-4">
           <h2 className="text-2xl font-serif font-bold text-gray-900">{prayerPoint.title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+          <button aria-label="Close" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
         </div>
         
         <div className="mb-4">

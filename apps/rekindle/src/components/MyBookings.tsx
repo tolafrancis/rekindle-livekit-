@@ -333,7 +333,7 @@ export const MyBookings: React.FC = () => {
                 {canJoin && (
                   <Button 
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700"
+                    className="min-h-[44px] sm:min-h-0 bg-green-600 hover:bg-green-700"
                     onClick={() => handleJoinSession(booking)}
                     disabled={joiningSession === booking.id}
                   >
@@ -350,7 +350,7 @@ export const MyBookings: React.FC = () => {
                   <Button 
                     size="sm"
                     variant="outline"
-                    className="text-amber-600 hover:bg-amber-50"
+                    className="min-h-[44px] sm:min-h-0 text-amber-600 hover:bg-amber-50"
                     onClick={() => {
                       setSessionToRate(booking);
                       setShowRatingModal(true);
@@ -372,7 +372,7 @@ export const MyBookings: React.FC = () => {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="min-h-[44px] sm:min-h-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                     onClick={() => handleCancelBooking(booking.id)}
                   >
                     <XCircle className="h-4 w-4 mr-1" />
@@ -406,7 +406,7 @@ export const MyBookings: React.FC = () => {
             ).replace('{count}', String(upcomingBookings.length))}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadBookings}>
+        <Button variant="outline" size="sm" onClick={loadBookings} className="min-h-[44px] sm:min-h-0">
           <RefreshCw className="h-4 w-4 mr-2" />
           {t('myBookings', 'refresh', 'Refresh')}
         </Button>

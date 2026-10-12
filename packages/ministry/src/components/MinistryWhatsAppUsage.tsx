@@ -716,7 +716,7 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs font-medium truncate">{tx.description || tx.type}</p>
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {fmt(tx.created_at)}
                             {tx.recipients_count ? ` · ${tx.recipients_count.toLocaleString()} ${t('ministryWhatsAppUsage', 'msgs', 'msgs')}` : ''}
                           </p>
@@ -727,7 +727,7 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
                           {isCredit ? '+' : ''}{tx.credits.toLocaleString()}
                         </p>
                         {tx.usd_amount != null && (
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             ${Math.abs(tx.usd_amount).toFixed(2)}
                           </p>
                         )}

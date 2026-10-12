@@ -398,7 +398,7 @@ export const LanguageManager: React.FC = () => {
                     <Button size="sm" onClick={() => setPublished(lang, true)}><Check className="h-4 w-4 mr-1" /> Publish</Button>
                   )}
                   {lang.code !== 'en' && (
-                    <Button variant="ghost" size="icon" onClick={() => removeLanguage(lang)} className="text-red-600">
+                    <Button aria-label="Remove language" variant="ghost" size="icon" onClick={() => removeLanguage(lang)} className="text-red-600">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   )}

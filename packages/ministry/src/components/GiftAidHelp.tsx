@@ -69,7 +69,7 @@ export const GiftAidShareLink: React.FC<{ ministryId: string; ministryName?: str
             <div className="flex-1 space-y-2">
               <div className="flex gap-2">
                 <Input readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
-                <Button variant="outline" size="sm" className="h-10" onClick={() => void copy()}><Copy className="h-4 w-4" /></Button>
+                <Button aria-label="Copy" variant="outline" size="sm" className="h-10" onClick={() => void copy()}><Copy className="h-4 w-4" /></Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={downloadQr} disabled={!qr}><QrCode className="mr-1 h-4 w-4" /> Download QR code</Button>

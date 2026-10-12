@@ -123,10 +123,10 @@ export const DevotionalProgress: React.FC<Props> = ({ devotional, onClose }) => 
             <p className="text-purple-600 text-sm mt-1">{devotional.scripture}</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setShowShareModal(true)}>
+            <Button aria-label={t('a11y', 'share', 'Share')} variant="ghost" size="icon" onClick={() => setShowShareModal(true)}>
               <Share2 className="h-5 w-5 text-gray-400 hover:text-purple-600" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={toggleFavorite}>
+            <Button aria-label={t('a11y', 'toggleFavourite', 'Toggle favourite')} variant="ghost" size="icon" onClick={toggleFavorite}>
               <Star className={`h-5 w-5 ${progress?.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-gray-400'}`} />
             </Button>
           </div>

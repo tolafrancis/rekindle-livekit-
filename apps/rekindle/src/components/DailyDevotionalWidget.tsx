@@ -863,7 +863,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
             <div className="bg-white/95 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-700">{t('devotionals', 'audioPreview', 'Audio Preview')}</span>
-                <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} className="h-6 w-6 p-0">
+                <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} aria-label={t('devotionals', 'closeAudioPreview', 'Close audio preview')} className="h-11 w-11 sm:h-6 sm:w-6 p-0">
                   <X className="h-4 w-4" />
                 </Button>
               </div>

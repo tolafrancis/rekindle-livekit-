@@ -24,6 +24,10 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Video, Users, Clock, Plus, Play,
   Copy, AlertCircle, Loader2,
   PhoneOff, MessageSquare,
@@ -199,6 +203,8 @@ const EnhancedVideoCallWrapper = ({
   // True while a DailyVideoCall side panel (chat / host controls) is open — used to
   // hide the Copy Link / End chrome so it doesn't collide with the panel.
   const [panelOpen, setPanelOpen] = useState(false);
+  // Host's top-right "End for All" asks first — it ends the call for everyone.
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   // In-call raise-hand, reported by DailyVideoCall so the button can sit beside
   // ReactionButton instead of taking a slot in the control bar.
   const [callHandRaise, setCallHandRaise] = useState<{ handRaised: boolean; raiseHand: () => void } | null>(null);
@@ -492,6 +498,28 @@ const EnhancedVideoCallWrapper = ({
         onReact={sendReaction}
         onRaiseHandStateChange={setCallHandRaise}
         onBackgroundStateChange={setCallBackground}
+        secondaryControls={!isPiP ? (
+          <>
+            {/* Background moved into DailyVideoCall's own Meeting Controls menu
+                (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
+            {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
+            <ReactionButton onReact={sendReaction} />
+            {callHandRaise && (
+              <button
+                type="button"
+                onClick={callHandRaise.raiseHand}
+                disabled={callHandRaise.handRaised}
+                title={callHandRaise.handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
+                aria-label={callHandRaise.handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
+                className={`flex h-11 w-11 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
+                  callHandRaise.handRaised ? 'bg-amber-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
+                }`}
+              >
+                <Hand className="h-5 w-5" />
+              </button>
+            )}
+          </>
+        ) : undefined}
       />
 
       {/* Floating reactions + a single reaction button that opens a popover just
@@ -502,27 +530,11 @@ const EnhancedVideoCallWrapper = ({
           screen on mobile with too many buttons in one row). */}
       {!isPiP && <MeetingReactionsLayer reactions={reactions} />}
       {!isPiP && <div className="absolute top-3 left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
-      {!isPiP && (
-        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
-          {/* Background moved into DailyVideoCall's own Meeting Controls menu
-              (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
-          {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
-          <ReactionButton onReact={sendReaction} />
-          {callHandRaise && (
-            <button
-              type="button"
-              onClick={callHandRaise.raiseHand}
-              disabled={callHandRaise.handRaised}
-              title={callHandRaise.handRaised ? 'Hand Raised' : 'Raise Hand'}
-              className={`flex h-10 w-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
-                callHandRaise.handRaised ? 'bg-amber-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
-              }`}
-            >
-              <Hand className="h-5 w-5" />
-            </button>
-          )}
-        </div>
-      )}
+      {/* Secondary call controls (Speaker, Live Translation, Captions,
+          Reactions, Raise Hand) are passed to DailyVideoCall as
+          secondaryControls above: it floats them just over the control bar
+          from tablet width up and puts them in the bar's "More" tray on
+          phones. */}
 
       {/* Additional Features Overlay - UI only, no media control. Hidden in the
           mini-player, and while a side panel (chat / host controls) is open so the
@@ -537,7 +549,8 @@ const EnhancedVideoCallWrapper = ({
           }}
           variant="secondary"
           size="sm"
-          className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
+          aria-label={t('liveChannelInteractiveMeetings', 'copyLink', 'Copy Link')}
+          className="h-11 min-w-11 sm:h-9 sm:min-w-0 bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
         >
           <Copy className="h-4 w-4 sm:mr-2" />
           <span className="hidden sm:inline">{t('liveChannelInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
@@ -545,16 +558,42 @@ const EnhancedVideoCallWrapper = ({
 
         {isHost && onEndMeeting && (
           <Button
-            onClick={handleHostEndMeeting}
+            onClick={() => setConfirmEndOpen(true)}
             variant="destructive"
             size="sm"
-            className="bg-orange-600/90 backdrop-blur-sm hover:bg-orange-700"
+            aria-label={t('liveChannelInteractiveMeetings', 'endForAll', 'End for All')}
+            className="h-11 min-w-11 sm:h-9 sm:min-w-0 bg-orange-600/90 backdrop-blur-sm hover:bg-orange-700"
           >
             <PhoneOff className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">{t('liveChannelInteractiveMeetings', 'endForAll', 'End for All')}</span>
           </Button>
         )}
       </div>
+      )}
+
+      {/* Confirm before the host's top-right End for All ends the call for
+          everyone (the control bar's own Leave/End popover is already a
+          two-step choice). */}
+      {isHost && onEndMeeting && (
+        <AlertDialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('liveChannelInteractiveMeetings', 'confirmEndForAllTitle', 'End the meeting for everyone?')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('liveChannelInteractiveMeetings', 'confirmEndForAllBody', 'Everyone will be disconnected and the meeting will close. This can’t be undone.')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('liveChannelInteractiveMeetings', 'keepMeeting', 'Keep meeting')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => { void handleHostEndMeeting(); }}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {t('liveChannelInteractiveMeetings', 'endForAll', 'End for All')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
@@ -567,6 +606,7 @@ const EnhancedVideoCallWrapper = ({
                   onClick={() => setShowAiPanel(false)}
                   className="bg-gray-900/80 backdrop-blur-sm text-white/80 hover:text-white rounded-full p-1.5"
                   title={t('liveChannelInteractiveMeetings', 'hideAiFeatures', 'Hide AI features')}
+                  aria-label={t('liveChannelInteractiveMeetings', 'hideAiFeatures', 'Hide AI features')}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -681,7 +721,7 @@ const EnhancedVideoCallWrapper = ({
                             {m.userName}{m.isGuest ? t('liveChannelInteractiveMeetings', 'guestSuffix', ' (guest)') : ''}
                           </span>
                           {m.isGuest ? (
-                            <span className="text-[10px] text-gray-500">{t('liveChannelInteractiveMeetings', 'viewing', 'viewing')}</span>
+                            <span className="text-xs text-gray-500">{t('liveChannelInteractiveMeetings', 'viewing', 'viewing')}</span>
                           ) : (
                             <Button
                               size="sm"

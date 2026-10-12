@@ -353,10 +353,10 @@ export const MinistryVolunteerTeamsManager: React.FC<MinistryVolunteerTeamsManag
                     <UserPlus className="h-4 w-4 mr-1" />
                     {t('ministryVolunteerTeamsManager', 'manageVolunteers', 'Manage Volunteers')}
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleEdit(team)}>
+                  <Button aria-label={t('ministryVolunteerTeamsManager', 'editTeam', 'Edit team')} variant="ghost" size="icon" onClick={() => handleEdit(team)}>
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(team.id)}>
+                  <Button aria-label={t('ministryVolunteerTeamsManager', 'deleteTeam', 'Delete team')} variant="ghost" size="icon" onClick={() => handleDelete(team.id)}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
@@ -471,7 +471,7 @@ export const MinistryVolunteerTeamsManager: React.FC<MinistryVolunteerTeamsManag
                         {a.team_role === 'lead' && <Star className="h-3 w-3 mr-1" />}
                         {a.team_role === 'lead' ? t('ministryVolunteerTeamsManager', 'lead', 'Lead') : t('ministryVolunteerTeamsManager', 'member', 'Member')}
                       </Badge>
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveVolunteer(a.id)}>
+                      <Button aria-label={t('ministryVolunteerTeamsManager', 'removeVolunteer', 'Remove volunteer')} variant="ghost" size="icon" onClick={() => handleRemoveVolunteer(a.id)}>
                         <X className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

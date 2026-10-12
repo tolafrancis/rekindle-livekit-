@@ -190,7 +190,7 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
               {showDaily ? t('cards', 'dailyDeclaration', 'Daily Declaration') : (declaration.category?.replace('_', ' ') || t('cards', 'declaration', 'Declaration'))}
             </span>
           </div>
-          <Button variant="ghost" size="icon" onClick={refreshDeclaration} className="text-white hover:bg-white/20 h-8 w-8">
+          <Button variant="ghost" size="icon" onClick={refreshDeclaration} aria-label={t('cards', 'newDeclaration', 'Show another declaration')} className="text-white hover:bg-white/20 h-11 w-11 sm:h-8 sm:w-8">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -245,7 +245,7 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
           <div className="bg-white rounded-lg p-3 mt-2 border">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-gray-700">{t('cards', 'listenToDeclaration', 'Listen to Declaration')}</span>
-              <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} className="h-6 w-6 p-0">
+              <Button variant="ghost" size="sm" onClick={() => setShowAudioPreview(false)} aria-label={t('cards', 'closeAudio', 'Close audio')} className="h-11 w-11 sm:h-6 sm:w-6 p-0">
                 <X className="h-4 w-4" />
               </Button>
             </div>

@@ -509,7 +509,7 @@ export const EmailNotificationManager: React.FC = () => {
                     <Edit className="h-4 w-4 mr-1" />
                     {t('emailNotificationManager', 'edit', 'Edit')}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDelete(template.id)}>
+                  <Button aria-label={t('a11y', 'deleteTemplate', 'Delete template')} variant="ghost" size="sm" onClick={() => handleDelete(template.id)}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>

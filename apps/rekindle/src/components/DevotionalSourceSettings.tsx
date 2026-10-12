@@ -148,7 +148,7 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
                       <div className="flex items-center gap-1.5">
                         <p className={`text-sm font-medium ${isSel ? 'text-gray-900' : 'text-gray-600'}`}>{s.name}</p>
                         {s.is_default && (
-                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1 py-0">
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs px-1 py-0">
                             <Star className="h-2.5 w-2.5 mr-0.5" />{t('devotionalSourceSettings', 'defaultBadge', 'Default')}
                           </Badge>
                         )}

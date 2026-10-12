@@ -105,13 +105,18 @@ export function NotificationFeed({
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
-              className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 font-medium px-2 py-1 rounded-md hover:bg-purple-50 transition-colors"
+              className="flex items-center gap-1 min-h-[44px] text-xs text-purple-600 hover:text-purple-800 font-medium px-2 py-1 rounded-md hover:bg-purple-50 transition-colors"
             >
               <CheckCheck className="h-3.5 w-3.5" />
               Mark all read
             </button>
           )}
-          <button onClick={onClose} className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close notifications"
+            className="inline-flex items-center justify-center h-11 w-11 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -126,8 +131,8 @@ export function NotificationFeed({
         ) : notifications.length === 0 ? (
           <div className="text-center py-10 px-4">
             <Bell className="h-10 w-10 mx-auto mb-3 text-gray-200" />
-            <p className="text-gray-400 text-sm font-medium">You're all caught up!</p>
-            <p className="text-gray-300 text-xs mt-1">New notifications will appear here.</p>
+            <p className="text-gray-500 text-sm font-medium">You're all caught up!</p>
+            <p className="text-gray-500 text-xs mt-1">New notifications will appear here.</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
@@ -138,6 +143,15 @@ export function NotificationFeed({
                   key={n.id}
                   className={`group relative flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${!n.is_read ? 'bg-purple-50/40' : ''}`}
                   onClick={() => handleClick(n)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleClick(n);
+                    }
+                  }}
                 >
                   {/* Unread dot */}
                   <div className="mt-1.5 shrink-0">
@@ -150,23 +164,27 @@ export function NotificationFeed({
                       <span className={`text-xs font-semibold uppercase tracking-wide ${meta.color}`}>
                         {meta.label}
                       </span>
-                      <span className="text-xs text-gray-400">{timeAgo(n.created_at)}</span>
+                      <span className="text-xs text-gray-500">{timeAgo(n.created_at)}</span>
                     </div>
                     <p className="text-sm font-medium text-gray-800 break-words leading-snug">{n.title}</p>
                     <p className="text-xs text-gray-500 mt-0.5 break-words line-clamp-2">{n.message}</p>
                     {n.sender_name && (
-                      <p className="text-xs text-gray-400 mt-0.5 italic">— {n.sender_name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5 italic">— {n.sender_name}</p>
                     )}
                   </div>
 
                   {/* Actions */}
-                  <div className="flex flex-col items-end gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex flex-col items-end gap-1 shrink-0">
                     {n.link && <ExternalLink className="h-3.5 w-3.5 text-gray-400" />}
                     <button
+                      type="button"
                       onClick={e => { e.stopPropagation(); dismiss(n.id); }}
-                      className="p-0.5 rounded hover:bg-gray-200 text-gray-300 hover:text-gray-500 transition-colors"
+                      onKeyDown={e => e.stopPropagation()}
+                      aria-label="Dismiss notification"
+                      title="Dismiss notification"
+                      className="inline-flex items-center justify-center h-11 w-11 -mr-2 -mt-2 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
                 </div>

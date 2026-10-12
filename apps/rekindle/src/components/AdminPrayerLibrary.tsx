@@ -1487,7 +1487,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                       <Edit className="h-4 w-4 mr-1" />
                       {t('adminPrayerLibrary', 'edit', 'Edit')}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => deleteTopic(topic.id!)}>
+                    <Button aria-label={t('a11y', 'deleteTopic', 'Delete topic')} variant="outline" size="sm" onClick={() => deleteTopic(topic.id!)}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                     <TranslateNowButton contentType="prayer_topic" contentId={topic.id!} />
@@ -1589,10 +1589,10 @@ export const AdminPrayerLibrary: React.FC = () => {
                       <BookOpen className="h-4 w-4 mr-1" />
                       {t('adminPrayerLibrary', 'days', 'Days')}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => openEditSeries(series)}>
+                    <Button aria-label={t('a11y', 'editSeries', 'Edit series')} variant="outline" size="sm" onClick={() => openEditSeries(series)}>
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => deleteSeries(series.id!)}>
+                    <Button aria-label={t('a11y', 'deleteSeries', 'Delete series')} variant="outline" size="sm" onClick={() => deleteSeries(series.id!)}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                     <TranslateNowButton contentType="prayer_series" contentId={series.id!} />
@@ -1812,7 +1812,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                               <Edit className="h-4 w-4 mr-1" />
                               {t('adminPrayerLibrary', 'edit', 'Edit')}
                             </Button>
-                            <Button 
+                            <Button aria-label={t('a11y', 'deletePrayerWatch', 'Delete prayer watch')} 
                               variant="ghost" 
                               size="sm"
                               onClick={() => deletePrayerWatch(prayer.id!)}
@@ -1940,7 +1940,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                     onChange={(e) => setTopicForm({ ...topicForm, scripture_reference: e.target.value })}
                     placeholder={t('adminPrayerLibrary', 'scriptureRefPlaceholder1', 'e.g., James 5:14-16')}
                   />
-                  <Button 
+                  <Button aria-label={t('a11y', 'loadScriptureText', 'Load scripture text')} 
                     type="button"
                     variant="outline"
                     onClick={loadScriptureForTopic}
@@ -2013,7 +2013,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                             <BookOpen className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button 
+                        <Button aria-label={t('a11y', 'removeScripture', 'Remove scripture')} 
                           type="button"
                           variant="ghost" 
                           size="icon"
@@ -2369,7 +2369,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                                 onChange={(e) => updateDayField(day.day_number, 'scripture_reference', e.target.value)}
                                 placeholder={t('adminPrayerLibrary', 'scriptureRefPlaceholder2', 'e.g., Isaiah 40:31')}
                               />
-                              <Button 
+                              <Button aria-label={t('a11y', 'loadScriptureText', 'Load scripture text')} 
                                 type="button"
                                 variant="outline"
                                 size="sm"
@@ -2442,7 +2442,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                                         <BookOpen className="h-4 w-4" />
                                       )}
                                     </Button>
-                                    <Button 
+                                    <Button aria-label={t('a11y', 'removeScripture', 'Remove scripture')} 
                                       type="button"
                                       variant="ghost" 
                                       size="icon"
@@ -2651,7 +2651,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                     onChange={(e) => setPrayerWatchForm({ ...prayerWatchForm, scripture_reference: e.target.value })}
                     placeholder={t('adminPrayerLibrary', 'scriptureRefPlaceholder4', 'e.g., Psalm 63:1')}
                   />
-                  <Button 
+                  <Button aria-label={t('a11y', 'loadScriptureText', 'Load scripture text')} 
                     type="button"
                     variant="outline"
                     onClick={loadScriptureForPrayerWatch}
@@ -2725,7 +2725,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                             <BookOpen className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button 
+                        <Button aria-label={t('a11y', 'removeScripture', 'Remove scripture')} 
                           type="button"
                           variant="ghost" 
                           size="icon"
@@ -2797,7 +2797,7 @@ export const AdminPrayerLibrary: React.FC = () => {
                   <p className="text-xs text-gray-500 truncate">{topic.description}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <Button variant="outline" size="sm" onClick={() => openEditWatchTopic(topic)}>
+                  <Button aria-label={t('a11y', 'editTopic', 'Edit topic')} variant="outline" size="sm" onClick={() => openEditWatchTopic(topic)}>
                     <Edit className="h-3.5 w-3.5" />
                   </Button>
                   <Button

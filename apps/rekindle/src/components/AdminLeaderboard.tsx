@@ -263,14 +263,14 @@ export const AdminLeaderboard: React.FC = () => {
                     <td className="p-4">{stat.disciples_mentored}</td>
                     <td className="p-4">
                       <div className="flex gap-2">
-                        <Button
+                        <Button aria-label={t('a11y', 'edit', 'Edit')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleEdit(stat)}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
+                        <Button aria-label={t('a11y', 'resetStreak', 'Reset streak')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleResetStreak(stat.user_id)}

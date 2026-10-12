@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass } from './SearchFilterPanel';
 import { publicWebOrigin } from '../platform';
+import { clickableProps } from '../clickableProps';
 
 // Remembers the last background-music choice so the picker preselects it next time.
 const LAST_MUSIC_STORAGE_KEY = 'rk_prayer_last_music_id';
@@ -138,7 +139,8 @@ const ShareButton: React.FC<ShareButtonProps> = ({ title, url, variant = 'icon' 
           <Button
             variant="outline"
             size="icon"
-            title="Share"
+            title={t('common', 'share', 'Share')}
+            aria-label={t('common', 'share', 'Share')}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             className="hover:bg-purple-50 hover:border-purple-300 transition-colors"
@@ -1318,6 +1320,7 @@ export function PrayerLibrary() {
           <Search className={searchFilterIconClass} />
           <Input
             placeholder={t('prayers', 'searchPrayers', 'Search prayers...')}
+            aria-label={t('prayers', 'searchPrayers', 'Search prayers...')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className={searchFilterInputClass}
@@ -1603,6 +1606,8 @@ export function PrayerLibrary() {
                             variant="outline"
                             size="icon"
                             onClick={() => toggleBookmark(s.id)}
+                            aria-label={s.is_bookmarked ? t('prayers', 'removeBookmark', 'Remove bookmark') : t('prayers', 'bookmarkSeries', 'Bookmark series')}
+                            aria-pressed={!!s.is_bookmarked}
                           >
                             {s.is_bookmarked ? (
                               <BookmarkCheck className="h-4 w-4 text-green-600" />
@@ -1690,6 +1695,8 @@ export function PrayerLibrary() {
                           variant="outline"
                           size="icon"
                           onClick={() => toggleBookmark(s.id)}
+                          aria-label={s.is_bookmarked ? t('prayers', 'removeBookmark', 'Remove bookmark') : t('prayers', 'bookmarkSeries', 'Bookmark series')}
+                          aria-pressed={!!s.is_bookmarked}
                         >
                           {s.is_bookmarked ? (
                             <BookmarkCheck className="h-4 w-4 text-green-600" />
@@ -2015,6 +2022,8 @@ export function PrayerLibrary() {
               <div
                 key={track.id}
                 onClick={() => setSelectedMusicId(track.id)}
+                {...clickableProps(() => setSelectedMusicId(track.id))}
+                aria-pressed={selectedMusicId === track.id}
                 className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                   selectedMusicId === track.id
                     ? 'border-purple-600 bg-purple-50'
@@ -2077,6 +2086,8 @@ export function PrayerLibrary() {
             {DURATION_OPTIONS.map(option => (
               <button
                 key={option.value}
+                type="button"
+                aria-pressed={selectedDuration === option.value}
                 onClick={() => setSelectedDuration(option.value)}
                 className={`w-full p-4 rounded-lg border-2 transition-all ${
                   selectedDuration === option.value

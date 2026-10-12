@@ -160,7 +160,7 @@ export const MySmallGroups: React.FC<MySmallGroupsProps> = ({ ministryId, autoOp
                 <span>{r.small_groups?.name}</span>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary">{t('smallGroupsMember', 'requestPending', 'Request pending')}</Badge>
-                  <Button size="sm" variant="ghost" onClick={() => cancelRequest(r.id)}><X className="h-4 w-4" /></Button>
+                  <Button aria-label={t('smallGroupsMember', 'cancelRequest', 'Cancel request')} size="sm" variant="ghost" onClick={() => cancelRequest(r.id)}><X className="h-4 w-4" /></Button>
                 </div>
               </CardContent>
             </Card>

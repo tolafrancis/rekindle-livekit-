@@ -493,7 +493,7 @@ export const AdminAffirmationManager: React.FC<AdminAffirmationManagerProps> = (
                                     {t('adminAffirmationManager', 'ttsAudioPreview', 'TTS Audio Preview')}
                                   </span>
                                 </div>
-                                <Button
+                                <Button aria-label={t('a11y', 'closeAudioPreview', 'Close audio preview')}
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => setShowAudioPreview(null)}

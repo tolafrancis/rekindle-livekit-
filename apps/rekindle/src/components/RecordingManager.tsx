@@ -294,7 +294,7 @@ export const RecordingPlayer = ({
               {recording.channel_name} • {format(new Date(recording.recording_ended_at), 'MMM dd, yyyy')}
             </p>
           </div>
-          <Button variant="ghost" onClick={onClose} className="text-white">
+          <Button aria-label="Close" variant="ghost" onClick={onClose} className="text-white">
             <X className="h-5 w-5" />
           </Button>
         </div>
@@ -337,7 +337,7 @@ export const RecordingPlayer = ({
               {/* Controls */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <Button
+                  <Button aria-label={isPlaying ? 'Pause' : 'Play'}
                     variant="ghost"
                     size="lg"
                     onClick={togglePlay}
@@ -347,7 +347,7 @@ export const RecordingPlayer = ({
                   </Button>
 
                   <div className="flex items-center gap-2">
-                    <Button
+                    <Button aria-label={isMuted ? 'Unmute' : 'Mute'}
                       variant="ghost"
                       size="sm"
                       onClick={toggleMute}
@@ -367,7 +367,7 @@ export const RecordingPlayer = ({
                   </div>
                 </div>
 
-                <Button
+                <Button aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                   variant="ghost"
                   size="sm"
                   onClick={toggleFullscreen}
@@ -671,7 +671,7 @@ export const RecordingManager = ({ channelId }: { channelId: string }) => {
                       <div className="absolute bottom-2 right-2 bg-black bg-opacity-75 px-2 py-1 rounded text-white text-sm">
                         {formatDuration(recording.recording_duration_seconds)}
                       </div>
-                      <Button
+                      <Button aria-label="Play recording"
                         size="lg"
                         className="absolute inset-0 m-auto w-16 h-16 rounded-full opacity-0 hover:opacity-100 transition-opacity"
                         onClick={() => handlePlayRecording(recording)}
@@ -710,7 +710,7 @@ export const RecordingManager = ({ channelId }: { channelId: string }) => {
                           <Play className="h-4 w-4 mr-1" />
                           Play
                         </Button>
-                        <Button
+                        <Button aria-label="Recording settings"
                           variant="outline"
                           size="sm"
                           onClick={() => {
@@ -944,7 +944,7 @@ const RecordingAccessManager = ({
                             )}
                           </div>
                         </div>
-                        <Button
+                        <Button aria-label="Revoke access"
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRevokeAccess(grant.id)}

@@ -739,7 +739,7 @@ export const MinistryDonationsManager: React.FC<MinistryDonationsManagerProps> =
                           >
                             {campaign.is_active ? t('ministryDonationsManager', 'end', 'End') : t('ministryDonationsManager', 'activate', 'Activate')}
                           </Button>
-                          <Button 
+                          <Button aria-label={t('ministryDonationsManager', 'deleteCampaign', 'Delete campaign')} 
                             variant="ghost" 
                             size="sm"
                             onClick={() => handleDeleteCampaign(campaign.id)}

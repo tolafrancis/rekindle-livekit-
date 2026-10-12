@@ -455,7 +455,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                               <code className="bg-gray-100 px-2 py-1 rounded text-sm">
                                 {group.invite_code}
                               </code>
-                              <Button
+                              <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
@@ -658,7 +658,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                         <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
                           {member.role || 'member'}
                         </Badge>
-                        <Button
+                        <Button aria-label={t('a11y', 'removeMember', 'Remove member')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleRemoveMember(member.id)}
@@ -717,7 +717,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                     placeholder={selectedGroup.slug ? undefined : t('adminMinistryGroups', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first.")}
                     className="bg-white"
                   />
-                  <Button
+                  <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                     variant="outline"
                     onClick={() => copyInviteLink(selectedGroup)}
                   >

@@ -1443,7 +1443,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {/* Back to the ministries list — always visible, not buried in a menu. */}
             <button
               onClick={onExit}
-              className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white"
+              className="mb-2 flex min-h-[44px] sm:min-h-0 items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
               {t('ministrySpace', 'allMinistries', 'All Ministries')}
@@ -1478,7 +1478,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     disabled={!mySlug}
                     title={t('ministrySpace', 'myProfile', 'My Profile')}
                     aria-label={t('ministrySpace', 'myProfile', 'My Profile')}
-                    className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors disabled:opacity-50"
+                    className="h-11 w-11 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors disabled:opacity-50"
                   >
                     <User className="h-4 w-4" />
                   </button>
@@ -1535,7 +1535,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               {/* Full-width mobile dropdown list */}
               {navMenuOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setNavMenuOpen(false)} />
+                  <div className="fixed inset-0 z-40" aria-hidden="true" onClick={() => setNavMenuOpen(false)} />
                   <div className="absolute left-0 right-0 top-full mt-1 z-50 w-full max-h-[75vh] overflow-y-auto rounded-xl border bg-white shadow-xl py-1.5">
                     {GROUPS.map((g) => {
                       const GIcon = g.icon;
@@ -1544,7 +1544,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         <div key={g.id}>
                           <button
                             onClick={() => { goToGroup(g); if (!g.children) setNavMenuOpen(false); }}
-                            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                            className={`flex w-full min-h-[44px] items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
                             style={gActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
                           >
                             <GIcon className="h-4 w-4 shrink-0" />
@@ -1557,7 +1557,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               <button
                                 key={c.id}
                                 onClick={() => { goToChild(g, c.id); setNavMenuOpen(false); }}
-                                className={`flex w-full items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                                className={`flex w-full min-h-[44px] items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
                                 style={cActive ? { color: themeColor } : {}}
                               >
                                 <CIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1573,14 +1573,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <button
                       onClick={() => { setNavMenuOpen(false); if (mySlug) navigate(`/my-membership/${mySlug}`); }}
                       disabled={!mySlug}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="flex w-full min-h-[44px] items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
                       <User className="h-4 w-4 shrink-0" />
                       {t('ministrySpace', 'myProfile', 'My Profile')}
                     </button>
                     <button
                       onClick={() => { setNavMenuOpen(false); onExit(); }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      className="flex w-full min-h-[44px] items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
                     >
                       <ArrowLeft className="h-4 w-4 shrink-0" />
                       {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
@@ -1643,7 +1643,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     key={g.id}
                     onClick={() => goToGroup(g)}
                     aria-current={gActive ? 'page' : undefined}
-                    className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                    className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-xs font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
                   >
                     <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${g.gradient} text-white shadow-md transition-transform ${gActive ? 'scale-105 ring-2 ring-offset-2 ring-gray-300' : 'group-hover:scale-105'}`}>
                       <GIcon className="h-5 w-5" />
@@ -1656,6 +1656,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             <button
               onClick={onExit}
               title={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
+              aria-label={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
               className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1666,7 +1667,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           {activeGroup.children && (
             <aside className="flex w-52 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('ministrySpace', 'module', 'Module')}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('ministrySpace', 'module', 'Module')}</p>
                 <h2 className="text-base font-semibold text-gray-900 truncate">{navLabel(activeGroup)}</h2>
               </div>
               <nav className="flex flex-col gap-1 p-3" aria-label={`${navLabel(activeGroup)} navigation`}>
@@ -1960,7 +1961,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <div>
                         <BookOpen className="h-10 w-10 mx-auto text-gray-300 mb-3" />
                         <p className="font-medium text-gray-600">{t('ministrySpace', 'noDevotionalToday', 'No devotional today')}</p>
-                        <p className="text-sm text-gray-400 mt-1">{t('ministrySpace', 'checkBackTomorrow', 'Check back tomorrow')}</p>
+                        <p className="text-sm text-gray-500 mt-1">{t('ministrySpace', 'checkBackTomorrow', 'Check back tomorrow')}</p>
                       </div>
                     </Card>
                   );
@@ -1994,7 +1995,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               </div>
                               <p className="text-gray-600 mt-1 text-xs line-clamp-2">{ann.content}</p>
                             </div>
-                            <span className="text-[10px] text-gray-400 shrink-0">{new Date(ann.created_at).toLocaleDateString()}</span>
+                            <span className="text-xs text-gray-500 shrink-0">{new Date(ann.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                       ))}
@@ -2061,7 +2062,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         </div>
                       </div>
                       {latest.duration_seconds ? (
-                        <span className="absolute bottom-2 right-2 text-[11px] bg-black/70 text-white px-1.5 py-0.5 rounded">
+                        <span className="absolute bottom-2 right-2 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded">
                           {Math.floor(latest.duration_seconds / 60)}:{String(Math.round(latest.duration_seconds % 60)).padStart(2, '0')}
                         </span>
                       ) : null}
@@ -2121,7 +2122,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             </div>
                             <p className="text-xs font-medium mt-1 line-clamp-2">{video.title}</p>
                             {video.speaker_name && (
-                              <p className="text-[11px] text-gray-500 truncate mt-0.5">{video.speaker_name}</p>
+                              <p className="text-xs text-gray-500 truncate mt-0.5">{video.speaker_name}</p>
                             )}
                           </button>
                         ))}
@@ -2411,7 +2412,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                   </p>
                                 )}
                                 {dev.scheduled_date && (
-                                  <span className="text-xs text-gray-400 ml-auto shrink-0">
+                                  <span className="text-xs text-gray-500 ml-auto shrink-0">
                                     {new Date(dev.scheduled_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                   </span>
                                 )}
@@ -2530,7 +2531,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         />
                       </div>
                       <p className="text-gray-600 mt-3">{testimony.content}</p>
-                      <p className="text-xs text-gray-400 mt-4">
+                      <p className="text-xs text-gray-500 mt-4">
                         {new Date(testimony.created_at).toLocaleDateString()}
                       </p>
                     </CardContent>
@@ -2585,7 +2586,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             </div>
                             <p className="text-gray-600 mt-3">{ann.content}</p>
                           </div>
-                          <span className="text-sm text-gray-400 shrink-0 ml-4">
+                          <span className="text-sm text-gray-500 shrink-0 ml-4">
                             {new Date(ann.created_at).toLocaleDateString()}
                           </span>
                         </div>
@@ -2718,7 +2719,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <Input
                         value={mRevTitle}
                         onChange={e => setMRevTitle(e.target.value)}
-                        placeholder={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')}
+                        aria-label={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')} placeholder={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')}
                         className="bg-white"
                       />
                       {(() => {
@@ -2731,7 +2732,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               onChange={e => {
                                 if (e.target.value.trim().split(/\s+/).filter(Boolean).length <= 150) setMRevContent(e.target.value);
                               }}
-                              placeholder={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')}
+                              aria-label={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')} placeholder={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')}
                               rows={4}
                               className="bg-white"
                             />
@@ -2759,7 +2760,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <Loader2 className="h-7 w-7 animate-spin" style={{ color: themeColor }} />
                   </div>
                 ) : mRevelations.length === 0 ? (
-                  <div className="text-center py-12 text-gray-400">
+                  <div className="text-center py-12 text-gray-500">
                     <Book className="h-10 w-10 mx-auto mb-3 opacity-40" />
                     <p className="font-medium">{t('ministrySpace', 'noRevelationsYet', 'No revelations yet.')}</p>
                     <p className="text-sm mt-1">{t('ministrySpace', 'beFirstShareRevealed', 'Be the first to share what God has revealed.')}</p>
@@ -2772,7 +2773,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <h4 className="font-semibold text-gray-900 break-words">{rev.title}</h4>
-                              <p className="text-xs text-gray-400 mt-0.5">{rev.author} · {new Date(rev.created_at).toLocaleDateString()}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{rev.author} · {new Date(rev.created_at).toLocaleDateString()}</p>
                             </div>
                             <ContentSafetyMenu
                               contentType="community_revelations"
@@ -2825,9 +2826,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <Card className="border-blue-200 bg-blue-50/40">
                     <CardContent className="p-4 space-y-3">
                       <h4 className="font-semibold text-blue-800">{t('ministrySpace', 'yourQuestion', 'Your Question')}</h4>
-                      <Input value={mQTitle} onChange={e => setMQTitle(e.target.value)} placeholder={t('ministrySpace', 'questionTitlePlaceholder', 'Short title for your question…')} className="bg-white" />
-                      <Textarea value={mQContent} onChange={e => setMQContent(e.target.value)} placeholder={t('ministrySpace', 'questionDetailPlaceholder', 'Describe your question in detail…')} rows={4} className="bg-white" />
-                      <Input value={mQScripture} onChange={e => setMQScripture(e.target.value)} placeholder={t('ministrySpace', 'relatedScripturePlaceholder', 'Related scripture (optional) e.g. Romans 8:28')} className="bg-white" />
+                      <Input value={mQTitle} onChange={e => setMQTitle(e.target.value)} aria-label={t('ministrySpace', 'questionTitlePlaceholder', 'Short title for your question…')} placeholder={t('ministrySpace', 'questionTitlePlaceholder', 'Short title for your question…')} className="bg-white" />
+                      <Textarea value={mQContent} onChange={e => setMQContent(e.target.value)} aria-label={t('ministrySpace', 'questionDetailPlaceholder', 'Describe your question in detail…')} placeholder={t('ministrySpace', 'questionDetailPlaceholder', 'Describe your question in detail…')} rows={4} className="bg-white" />
+                      <Input value={mQScripture} onChange={e => setMQScripture(e.target.value)} aria-label={t('ministrySpace', 'relatedScripturePlaceholder', 'Related scripture (optional) e.g. Romans 8:28')} placeholder={t('ministrySpace', 'relatedScripturePlaceholder', 'Related scripture (optional) e.g. Romans 8:28')} className="bg-white" />
                       <div className="flex gap-2 justify-end">
                         <Button variant="outline" size="sm" onClick={() => setShowMQForm(false)}>{t('ministrySpace', 'cancel', 'Cancel')}</Button>
                         <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handlePostMQuestion}>
@@ -2873,7 +2874,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                       {t('ministrySpace', 'resolved', 'Resolved')}
                                     </Badge>
                                   )}
-                                  <span className="text-xs text-gray-400">{q.author} · {new Date(q.created_at).toLocaleDateString()}</span>
+                                  <span className="text-xs text-gray-500">{q.author} · {new Date(q.created_at).toLocaleDateString()}</span>
                                 </div>
                                 <h4 className="font-semibold text-gray-900 break-words">{q.title}</h4>
                                 <p className="text-sm text-gray-600 mt-1 break-words">{q.content}</p>
@@ -2894,6 +2895,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             <div className="flex items-center gap-3 text-sm">
                               <button
                                 onClick={() => handleMUpvoteQuestion(q.id)}
+                                aria-label={`${t('ministrySpace', 'markHelpful', 'Mark as helpful')} (${q.upvotes})`}
+                                aria-pressed={!!q.upvoted}
                                 className={`flex items-center gap-1 transition-colors ${q.upvoted ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-blue-500'}`}
                               >
                                 <ThumbsUp className={`h-4 w-4 ${q.upvoted ? 'fill-current' : ''}`} />
@@ -2913,7 +2916,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             {mExpandedQ === q.id && (
                               <div className="space-y-3 pt-2 border-t border-gray-100">
                                 {q.answers.length === 0 && (
-                                  <p className="text-sm text-gray-400 italic text-center py-2">{t('ministrySpace', 'noAnswersYet', 'No answers yet — be the first to share insight.')}</p>
+                                  <p className="text-sm text-gray-500 italic text-center py-2">{t('ministrySpace', 'noAnswersYet', 'No answers yet — be the first to share insight.')}</p>
                                 )}
                                 {filterBlocked(q.answers as any[], (a: any) => a.user_id)
                                   .slice()
@@ -2927,11 +2930,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                         </div>
                                       )}
                                       <p className="text-sm text-gray-800 break-words">{ans.content}</p>
-                                      <p className="text-xs text-gray-400">{ans.author} · {new Date(ans.created_at).toLocaleDateString()}</p>
+                                      <p className="text-xs text-gray-500">{ans.author} · {new Date(ans.created_at).toLocaleDateString()}</p>
                                       <div className="flex items-center gap-3">
                                         <button
                                           onClick={() => handleMUpvoteAnswer(q.id, ans.id)}
-                                          className={`flex items-center gap-1 text-xs transition-colors ${ans.upvoted ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-blue-500'}`}
+                                          className={`flex items-center gap-1 text-xs transition-colors ${ans.upvoted ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-blue-500'}`}
                                         >
                                           <ThumbsUp className={`h-3 w-3 ${ans.upvoted ? 'fill-current' : ''}`} />
                                           {ans.upvotes} {t('ministrySpace', 'helpful', 'helpful')}
@@ -2962,11 +2965,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                     <Textarea
                                       value={mAnswerDrafts[q.id] || ''}
                                       onChange={e => setMAnswerDrafts(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                      placeholder={t('ministrySpace', 'answerInsightPlaceholder', 'Share your insight or understanding…')}
+                                      aria-label={t('ministrySpace', 'answerInsightPlaceholder', 'Share your insight or understanding…')} placeholder={t('ministrySpace', 'answerInsightPlaceholder', 'Share your insight or understanding…')}
                                       rows={2}
                                       className="flex-1 text-sm"
                                     />
-                                    <Button
+                                    <Button aria-label={t('ministrySpace', 'postAnswer', 'Post answer')}
                                       size="sm"
                                       className="bg-blue-600 hover:bg-blue-700 text-white self-end"
                                       onClick={() => handleMPostAnswer(q.id)}
@@ -2977,7 +2980,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                   </div>
                                 )}
                                 {!user && (
-                                  <p className="text-xs text-gray-400 text-center py-1">{t('ministrySpace', 'signInToAnswer', 'Sign in to post an answer.')}</p>
+                                  <p className="text-xs text-gray-500 text-center py-1">{t('ministrySpace', 'signInToAnswer', 'Sign in to post an answer.')}</p>
                                 )}
                               </div>
                             )}
@@ -2986,7 +2989,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       ))
                     }
                     {mQuestions.filter(q => mQaFilter === 'all' ? true : mQaFilter === 'open' ? !q.is_resolved : q.is_resolved).length === 0 && (
-                      <div className="text-center py-12 text-gray-400">
+                      <div className="text-center py-12 text-gray-500">
                         <HelpCircle className="h-10 w-10 mx-auto mb-3 opacity-40" />
                         <p className="font-medium">{t('ministrySpace', 'noQuestionsYet', 'No questions yet.')}</p>
                         <p className="text-sm mt-1">{t('ministrySpace', 'beFirstSeekClarity', 'Be the first to seek clarity from this community.')}</p>
@@ -3056,7 +3059,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               <h2 className="text-2xl font-bold">{t('ministrySpace', 'ministryPrayerLibrary', 'Ministry Prayer Library')}</h2>
               <div className="flex items-center gap-2">
                 <Input
-                  placeholder={t('ministrySpace', 'searchPrayersPlaceholder', 'Search prayers...')}
+                  aria-label={t('ministrySpace', 'searchPrayersPlaceholder', 'Search prayers...')} placeholder={t('ministrySpace', 'searchPrayersPlaceholder', 'Search prayers...')}
                   value={prayerSearchTerm}
                   onChange={(e) => setPrayerSearchTerm(e.target.value)}
                   className="w-64"
@@ -3148,10 +3151,21 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 ).map(prayer => (
                   <Card 
                     key={prayer.id} 
-                    className="cursor-pointer hover:shadow-lg transition-shadow"
+                    className="cursor-pointer hover:shadow-lg transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={prayer.title}
                     onClick={() => {
                       setSelectedPrayer(prayer);
                       setShowPrayerReader(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedPrayer(prayer);
+                        setShowPrayerReader(true);
+                      }
                     }}
                   >
                     <CardHeader>
@@ -3246,16 +3260,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
+              <Label htmlFor="ms-announcement-title">{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
               <Input
+                id="ms-announcement-title"
                 value={announcementForm.title}
                 onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
                 placeholder={t('ministrySpace', 'announcementTitlePlaceholder', 'Announcement title')}
               />
             </div>
             <div>
-              <Label>{t('ministrySpace', 'contentLabel', 'Content')}</Label>
+              <Label htmlFor="ms-announcement-content">{t('ministrySpace', 'contentLabel', 'Content')}</Label>
               <Textarea
+                id="ms-announcement-content"
                 value={announcementForm.content}
                 onChange={(e) => setAnnouncementForm({ ...announcementForm, content: e.target.value })}
                 placeholder={t('ministrySpace', 'announcementDetailsPlaceholder', 'Announcement details...')}
@@ -3290,16 +3306,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
+              <Label htmlFor="ms-prayer-title">{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
               <Input
+                id="ms-prayer-title"
                 value={prayerForm.title}
                 onChange={(e) => setPrayerForm({ ...prayerForm, title: e.target.value })}
                 placeholder={t('ministrySpace', 'prayerRequestTitlePlaceholder', 'Prayer request title')}
               />
             </div>
             <div>
-              <Label>{t('ministrySpace', 'detailsOptionalLabel', 'Details (optional)')}</Label>
+              <Label htmlFor="ms-prayer-content">{t('ministrySpace', 'detailsOptionalLabel', 'Details (optional)')}</Label>
               <Textarea
+                id="ms-prayer-content"
                 value={prayerForm.content}
                 onChange={(e) => setPrayerForm({ ...prayerForm, content: e.target.value })}
                 placeholder={t('ministrySpace', 'prayerRequestDetailsPlaceholder', 'Share more details about your prayer request...')}
@@ -3334,16 +3352,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
+              <Label htmlFor="ms-testimony-title">{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
               <Input
+                id="ms-testimony-title"
                 value={testimonyForm.title}
                 onChange={(e) => setTestimonyForm({ ...testimonyForm, title: e.target.value })}
                 placeholder={t('ministrySpace', 'testimonyTitlePlaceholder', 'Give your testimony a title')}
               />
             </div>
             <div>
-              <Label>{t('ministrySpace', 'yourTestimonyRequiredLabel', 'Your Testimony *')}</Label>
+              <Label htmlFor="ms-testimony-content">{t('ministrySpace', 'yourTestimonyRequiredLabel', 'Your Testimony *')}</Label>
               <Textarea
+                id="ms-testimony-content"
                 value={testimonyForm.content}
                 onChange={(e) => setTestimonyForm({ ...testimonyForm, content: e.target.value })}
                 placeholder={t('ministrySpace', 'testimonyContentPlaceholder', 'Share what God has done in your life...')}

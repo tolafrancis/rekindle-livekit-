@@ -505,8 +505,8 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                   <div key={m.id} className="flex items-center justify-between border rounded-md px-3 py-2">
                     <span className="text-sm">{nameFor(m.user_id)}</span>
                     <div className="flex gap-1">
-                      <Button size="sm" onClick={() => approveMember(m)}><Check className="h-4 w-4" /></Button>
-                      <Button size="sm" variant="outline" onClick={() => declineMember(m)}><X className="h-4 w-4" /></Button>
+                      <Button aria-label={t('smallGroupDetailManager', 'approveMember', 'Approve member')} size="sm" onClick={() => approveMember(m)}><Check className="h-4 w-4" /></Button>
+                      <Button aria-label={t('smallGroupDetailManager', 'declineMember', 'Decline member')} size="sm" variant="outline" onClick={() => declineMember(m)}><X className="h-4 w-4" /></Button>
                     </div>
                   </div>
                 ))}
@@ -535,7 +535,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                   {canManageMembers && m.user_id !== user?.id && (
                     <div className="flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => openRoleModal(m)}>{t('smallGroupDetailManager', 'changeRole', 'Change Role')}</Button>
-                      <Button size="sm" variant="ghost" onClick={() => removeMember(m)}><UserMinus className="h-4 w-4 text-destructive" /></Button>
+                      <Button aria-label={t('smallGroupDetailManager', 'removeMember', 'Remove member')} size="sm" variant="ghost" onClick={() => removeMember(m)}><UserMinus className="h-4 w-4 text-destructive" /></Button>
                     </div>
                   )}
                 </div>
@@ -605,7 +605,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                     {(canManageMembers || p.author_id === user?.id) && (
                       <div className="flex gap-1">
                         {canPostAnnouncement && <Button size="sm" variant="ghost" onClick={() => togglePin(p)}>{p.is_pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
-                        <Button size="sm" variant="ghost" onClick={() => deletePost(p)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        <Button aria-label={t('smallGroupDetailManager', 'deletePost', 'Delete post')} size="sm" variant="ghost" onClick={() => deletePost(p)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
                     )}
                   </div>

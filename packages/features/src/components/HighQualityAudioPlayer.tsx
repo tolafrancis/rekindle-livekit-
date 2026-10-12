@@ -677,7 +677,7 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
                   className="flex-1 accent-purple-600 cursor-pointer"
                 />
               </div>
-              <p className="mt-2 text-center text-[10px] text-gray-500">
+              <p className="mt-2 text-center text-xs text-gray-500">
                 Volume {Math.round((isMuted ? 0 : volume) * 100)}%
               </p>
             </div>

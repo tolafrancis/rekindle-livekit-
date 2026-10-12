@@ -365,10 +365,10 @@ export const PlatformAnnouncementsManager: React.FC = () => {
                       >
                         {announcement.is_active ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(announcement)}>
+                      <Button aria-label={t('a11y', 'editAnnouncement', 'Edit announcement')} variant="ghost" size="icon" onClick={() => handleEdit(announcement)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(announcement.id)}>
+                      <Button aria-label={t('a11y', 'deleteAnnouncement', 'Delete announcement')} variant="ghost" size="icon" onClick={() => handleDelete(announcement.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

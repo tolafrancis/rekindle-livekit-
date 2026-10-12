@@ -346,7 +346,7 @@ For questions, contact support@rekindle.app
                   </div>
                   <div className="flex items-center gap-2">
                     {receipt.receipt_url && (
-                      <Button 
+                      <Button aria-label={t('a11y', 'openReceipt', 'Open receipt')} 
                         variant="ghost" 
                         size="sm"
                         onClick={() => window.open(receipt.receipt_url!, '_blank')}
