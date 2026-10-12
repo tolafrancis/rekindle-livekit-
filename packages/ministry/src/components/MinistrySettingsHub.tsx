@@ -13,12 +13,12 @@ import { COUNTRY_OPTIONS, detectUkFromText, isUkCountryCode } from '../giftAid';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { buildJoinUrl } from '@rekindle/features/qrCode';
 import {
-  LayoutDashboard, Settings, Users, BookOpen, MessageSquare, CreditCard,
-  Palette, Shield, Loader2, Save, Link as LinkIcon, Image, Upload
+  Settings, Palette, Shield, Loader2, Save, Link as LinkIcon, Image, Upload
 } from 'lucide-react';
 
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
+import { normalizeSettingsSection, SECTIONS, SECTION_TOOLS, type SettingsSectionId } from './ministrySettingsSections';
 
 // Each settings section's managers are their own chunks, fetched when that
 // section is opened. They used to all ship in one ~490 KB file that had to
@@ -75,36 +75,20 @@ interface Ministry {
   settings: any;
 }
 
-export type SettingsSectionId =
-  | 'overview'
-  | 'general'
-  | 'people'
-  | 'content'
-  | 'engagement'
-  | 'finance-billing';
-
-interface SectionDef {
-  id: SettingsSectionId;
-  label: string;
-  icon: any;
-  description: string;
-}
-
-const SECTIONS: SectionDef[] = [
-  { id: 'overview',        label: 'Overview',          icon: LayoutDashboard, description: 'Ministry stats & quick actions' },
-  { id: 'general',         label: 'General',           icon: Settings,        description: 'Profile, branding & domain' },
-  { id: 'people',          label: 'People',            icon: Users,           description: 'Members, small groups, teams & signups' },
-  { id: 'content',         label: 'Content',           icon: BookOpen,        description: 'Devotionals, library & rules' },
-  { id: 'engagement',      label: 'Engagement',       icon: MessageSquare,   description: 'Requests, donations & WhatsApp' },
-  { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard,      description: 'Gateways & subscription' },
-];
+// Section and tool ids live in their own small module so MinistrySpace can
+// use them without pulling this lazily loaded file into its own chunk.
+export { normalizeSettingsSection, SECTIONS, SECTION_TOOLS } from './ministrySettingsSections';
+export type { SettingsSectionId } from './ministrySettingsSections';
 
 interface MinistrySettingsHubProps {
   ministry: Ministry;
   onUpdate: () => void;
   initialSection?: SettingsSectionId;
   activeSection?: SettingsSectionId;
-  onNavigateSection?: (section: SettingsSectionId) => void;
+  onNavigateSection?: (section: SettingsSectionId, opts?: { replace?: boolean }) => void;
+  /** The open tool inside the section (see SECTION_TOOLS). */
+  activeTool?: string;
+  onNavigateTool?: (tool: string, opts?: { replace?: boolean }) => void;
 }
 
 export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
@@ -112,17 +96,39 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   onUpdate,
   initialSection = 'overview',
   activeSection: propActiveSection,
-  onNavigateSection
+  onNavigateSection,
+  activeTool: propActiveTool,
+  onNavigateTool,
 }) => {
   const { t } = useLanguage();
   const [activeSection, setActiveSection] = useViewHistory<SettingsSectionId>(
     `ministry-settings-section-${ministry.id}`,
     initialSection
   );
-  const currentSection = propActiveSection || activeSection;
-  const setCurrentSection = (sec: SettingsSectionId) => {
-    setActiveSection(sec);
-    onNavigateSection?.(sec);
+  const currentSection = normalizeSettingsSection(propActiveSection || activeSection);
+  // When the parent owns the view (MinistrySpace), only its history entry is
+  // pushed; pushing ours too made Back take two presses per change.
+  const setCurrentSection = (sec: SettingsSectionId, opts?: { replace?: boolean }) => {
+    if (onNavigateSection) onNavigateSection(sec, opts);
+    else setActiveSection(sec, opts);
+  };
+
+  const [ownTool, setOwnTool] = useViewHistory<string>(`ministry-settings-tool-${ministry.id}`, '');
+  const tools = SECTION_TOOLS[currentSection] ?? [];
+  const requestedTool = propActiveTool ?? ownTool;
+  const currentTool = tools.some((tool) => tool.id === requestedTool) ? requestedTool : (tools[0]?.id ?? '');
+  const setCurrentTool = (tool: string, opts?: { replace?: boolean }) => {
+    if (onNavigateTool) onNavigateTool(tool, opts);
+    else setOwnTool(tool, opts);
+  };
+  /** Open a section on a given tool, as one Back step. */
+  const openTool = (sec: SettingsSectionId, tool: string) => {
+    if (sec !== currentSection) {
+      setCurrentSection(sec);
+      setCurrentTool(tool, { replace: true });
+    } else {
+      setCurrentTool(tool);
+    }
   };
 
   // ── General Profile & Branding Form State ──
@@ -242,40 +248,65 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
     <div className="space-y-6">
       {/* Main Content Area */}
       <main className="space-y-6">
+        {tools.length > 1 && (
+          <div
+            role="group"
+            aria-label={t('ministrySettingsHub', 'toolsIn', 'Tools in {section}').replace('{section}', SECTIONS.find((sec) => sec.id === currentSection)?.label ?? '')}
+            className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1"
+          >
+            {tools.map((tool) => {
+              const selected = tool.id === currentTool;
+              return (
+                <button
+                  key={tool.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setCurrentTool(tool.id)}
+                  className={`shrink-0 min-h-[40px] px-4 rounded-full border text-sm font-medium transition-colors ${
+                    selected
+                      ? 'bg-purple-600 border-purple-600 text-white'
+                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('ministrySettingsHub', `tool_${tool.id}`, tool.label)}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <Suspense fallback={<SectionFallback />}>
         {/* Section 1: Overview */}
         {currentSection === 'overview' && (
           <MinistryOverviewDashboard
             ministryId={ministry.id}
             onNavigate={(navTarget) => {
-              const navMap: Record<string, SettingsSectionId> = {
-                devotionals: 'content',
-                'prayer-library': 'content',
-                events: 'engagement',
-                'prayer-requests': 'engagement',
-                announcements: 'content',
-                testimonies: 'content',
-                donations: 'engagement',
-                members: 'people',
-                'small-groups': 'people',
-                volunteers: 'people',
-                'video-messages': 'content',
-                registrations: 'people',
-                whatsapp: 'engagement',
-                inbox: 'engagement',
-                birthdays: 'general',
-                rules: 'content',
-                settings: 'general',
+              const navMap: Record<string, [SettingsSectionId, string]> = {
+                devotionals: ['content', 'devotionals'],
+                'prayer-library': ['content', 'prayer-library'],
+                events: ['events', 'events'],
+                'prayer-requests': ['messages', 'prayer-requests'],
+                announcements: ['content', 'announcements'],
+                testimonies: ['content', 'testimonies'],
+                donations: ['finance', 'donations'],
+                members: ['members', 'members'],
+                'small-groups': ['members', 'small-groups'],
+                volunteers: ['members', 'volunteer-teams'],
+                'video-messages': ['content', 'video-messages'],
+                registrations: ['members', 'registrations'],
+                whatsapp: ['messages', 'whatsapp'],
+                inbox: ['messages', 'evangelism-inbox'],
+                birthdays: ['profile', 'birthdays'],
+                rules: ['content', 'rules'],
+                settings: ['profile', 'profile'],
               };
-              if (navMap[navTarget]) {
-                setCurrentSection(navMap[navTarget]);
-              }
+              const target = navMap[navTarget];
+              if (target) openTool(target[0], target[1]);
             }}
           />
         )}
 
-        {/* Section 2: General */}
-        {currentSection === 'general' && (
+        {/* Ministry profile › Profile & branding */}
+        {currentSection === 'profile' && currentTool === 'profile' && (
           <div className="space-y-6">
             {/* Profile Settings */}
             <Card>
@@ -308,13 +339,13 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                   <Label>{t('ministrySettingsHub', 'ministrySlug', 'Ministry Slug')}</Label>
                   {/* Read-only here on purpose — the editable slug (with live-availability
                       checking, collision handling and its own Save button) lives in the
-                      Registration & Join Link section, under the People tab. A second
+                      Registration & Join Link tool, under Members. A second
                       independent editable copy here — each with its own local state and
                       its own Save button — previously let an edit made in one field get
                       silently discarded if the OTHER section's Save button was clicked
                       instead (real bug, hit in testing: edited here, saved down there,
                       this field reverted). One editable field, one Save button — this one
-                      just links to it (switching tabs first since it now lives under People). */}
+                      just links to it (Members › Join link & QR). */}
                   <div className="flex items-center gap-2">
                     <Input value={ministry.slug || ''} readOnly disabled className="bg-gray-50" />
                     <Button
@@ -322,16 +353,13 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                       variant="outline"
                       size="sm"
                       className="shrink-0"
-                      onClick={() => {
-                        setCurrentSection('people');
-                        setTimeout(() => document.getElementById('registration-join-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-                      }}
+                      onClick={() => openTool('members', 'join-link')}
                     >
                       {t('ministrySettingsHub', 'changeSlug', 'Change')}
                     </Button>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Registration & Join Link under the People tab — changing it updates the join link everywhere; old links using the previous address will stop working.')}
+                    {t('ministrySettingsHub', 'ministrySlugHelp', 'Used in your ministry\'s join link and QR code. Edit it in Members › Join link & QR. Changing it updates the join link everywhere; old links using the previous address will stop working.')}
                   </p>
                   {ministry.slug && (
                     <p className="text-xs text-gray-400 mt-1 break-all">
@@ -560,9 +588,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => document.getElementById('custom-domain-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    onClick={() => setCurrentTool('custom-domain')}
                   >
-                    {t('ministrySettingsHub', 'manageCustomDomain', 'Manage custom domain below')}
+                    {t('ministrySettingsHub', 'manageCustomDomainTool', 'Manage custom domain')}
                   </Button>
                 </div>
               </CardContent>
@@ -723,65 +751,63 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
               </Button>
             </div>
 
-            <div id="custom-domain-settings">
-              <CustomDomainSettings ministryId={ministry.id} />
-            </div>
-            <MinistryBirthdayWishes ministryId={ministry.id} ministryName={ministry.name} />
           </div>
+        )}
+        {currentSection === 'profile' && currentTool === 'custom-domain' && (
+          <CustomDomainSettings ministryId={ministry.id} />
+        )}
+        {currentSection === 'profile' && currentTool === 'birthdays' && (
+          <MinistryBirthdayWishes ministryId={ministry.id} ministryName={ministry.name} />
         )}
 
-        {/* Section 3: People */}
-        {currentSection === 'people' && (
-          <div className="space-y-6">
-            <MinistryMembersManager ministryId={ministry.id} />
-            <MinistrySmallGroupsManager ministryId={ministry.id} />
-            <MinistryVolunteerTeamsManager ministryId={ministry.id} />
-            <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
-            <div id="registration-join-link">
-              <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
-            </div>
-          </div>
+        {/* Members */}
+        {currentSection === 'members' && currentTool === 'members' && <MinistryMembersManager ministryId={ministry.id} />}
+        {currentSection === 'members' && currentTool === 'registrations' && (
+          <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
+        )}
+        {currentSection === 'members' && currentTool === 'join-link' && (
+          <MinistryRegistrationSettings ministry={ministry} onUpdate={onUpdate} />
+        )}
+        {currentSection === 'members' && currentTool === 'small-groups' && <MinistrySmallGroupsManager ministryId={ministry.id} />}
+        {currentSection === 'members' && currentTool === 'volunteer-teams' && <MinistryVolunteerTeamsManager ministryId={ministry.id} />}
+
+        {/* Events */}
+        {currentSection === 'events' && <MinistryEventsManager ministryId={ministry.id} />}
+
+        {/* Content */}
+        {currentSection === 'content' && currentTool === 'devotionals' && <MinistryDevotionalsManager ministryId={ministry.id} />}
+        {currentSection === 'content' && currentTool === 'prayer-library' && <MinistryPrayerLibraryManager ministryId={ministry.id} />}
+        {currentSection === 'content' && currentTool === 'video-messages' && (
+          <MinistryVideoMessagesManager ministryId={ministry.id} ministryName={ministry.name} />
+        )}
+        {currentSection === 'content' && currentTool === 'announcements' && <MinistryAnnouncementsManager ministryId={ministry.id} />}
+        {currentSection === 'content' && currentTool === 'testimonies' && <MinistryTestimoniesManager ministryId={ministry.id} />}
+        {currentSection === 'content' && currentTool === 'rules' && <MinistryRulesManager ministryId={ministry.id} />}
+
+        {/* Messages */}
+        {currentSection === 'messages' && currentTool === 'prayer-requests' && <MinistryPrayerRequestsManager ministryId={ministry.id} />}
+        {currentSection === 'messages' && currentTool === 'evangelism-inbox' && (
+          <EvangelismInbox
+            ministryId={ministry.id}
+            ministryName={ministry.name}
+            isLeader={true}
+            // Wait for the channels dialog to close and release its scroll lock.
+            onOpenWhatsApp={() => setTimeout(() => setCurrentTool('whatsapp'), 300)}
+          />
+        )}
+        {currentSection === 'messages' && currentTool === 'whatsapp' && (
+          <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
         )}
 
-        {/* Section 4: Content */}
-        {currentSection === 'content' && (
-          <div className="space-y-6">
-            <MinistryDevotionalsManager ministryId={ministry.id} />
-            <MinistryPrayerLibraryManager ministryId={ministry.id} />
-            <MinistryVideoMessagesManager ministryId={ministry.id} ministryName={ministry.name} />
-            <MinistryRulesManager ministryId={ministry.id} />
-            <MinistryAnnouncementsManager ministryId={ministry.id} />
-            <MinistryTestimoniesManager ministryId={ministry.id} />
-          </div>
+        {/* Finance */}
+        {currentSection === 'finance' && currentTool === 'donations' && (
+          <MinistryDonationsManager ministryId={ministry.id} ministryName={ministry.name} themeColor={ministry.theme_color} isLeader={true} />
         )}
-
-        {/* Section 5: Engagement */}
-        {currentSection === 'engagement' && (
-          <div className="space-y-6">
-            <MinistryPrayerRequestsManager ministryId={ministry.id} />
-            <MinistryDonationsManager ministryId={ministry.id} ministryName={ministry.name} themeColor={ministry.theme_color} isLeader={true} />
-            <MinistryEventsManager ministryId={ministry.id} />
-            <EvangelismInbox
-              ministryId={ministry.id}
-              ministryName={ministry.name}
-              isLeader={true}
-              // Wait for the channels dialog to close and release its scroll lock.
-              onOpenWhatsApp={() => setTimeout(() => document.getElementById('ministry-whatsapp-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)}
-            />
-            <div id="ministry-whatsapp-hub">
-              <MinistryWhatsAppHub ministryId={ministry.id} ministryName={ministry.name} />
-            </div>
-          </div>
+        {currentSection === 'finance' && currentTool === 'payment-gateways' && <MinistryPaymentSettings ministryId={ministry.id} />}
+        {currentSection === 'finance' && currentTool === 'gift-aid-settings' && (
+          <MinistryGiftAidSettings ministryId={ministry.id} countryCode={ministry.country_code} />
         )}
-
-        {/* Section 7: Finance & Billing */}
-        {currentSection === 'finance-billing' && (
-          <div className="space-y-6">
-            <MinistryPaymentSettings ministryId={ministry.id} />
-            <MinistryGiftAidSettings ministryId={ministry.id} countryCode={ministry.country_code} />
-            <BillingSettings ministryId={ministry.id} />
-          </div>
-        )}
+        {currentSection === 'finance' && currentTool === 'billing' && <BillingSettings ministryId={ministry.id} />}
         </Suspense>
       </main>
     </div>

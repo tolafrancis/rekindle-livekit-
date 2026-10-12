@@ -18,6 +18,7 @@ import {
   ExternalLink, RefreshCw, Shield, Copy,
   Info, Zap, Clock, ChevronRight, Settings, FileText,
 } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 declare global {
   interface Window {
@@ -425,7 +426,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-bold text-green-900">{t('ministryWhatsAppConnect', 'useCredits', 'Use Credits')}</p>
-                      <span className="text-[10px] font-bold bg-green-600 text-white px-2 py-0.5 rounded-full">
+                      <span className="text-xs font-bold bg-green-600 text-white px-2 py-0.5 rounded-full">
                         {t('ministryWhatsAppConnect', 'cheaper', 'CHEAPER')}
                       </span>
                     </div>
@@ -462,7 +463,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-bold text-purple-900">{t('ministryWhatsAppConnect', 'customWaba', 'Custom WABA')}</p>
-                      <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
+                      <span className="text-xs font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
                         {t('ministryWhatsAppConnect', 'yourBrand', 'YOUR BRAND')}
                       </span>
                     </div>
@@ -535,7 +536,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                   className={`relative rounded-xl border-2 p-5 flex flex-col ${plan.colour} ${plan.popular ? 'ring-2 ring-purple-400' : ''}`}
                 >
                   {plan.popular && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[11px] font-bold bg-purple-500 text-white px-3 py-0.5 rounded-full">
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-bold bg-purple-500 text-white px-3 py-0.5 rounded-full">
                       {t('ministryWhatsAppConnect', 'popular', 'POPULAR')}
                     </span>
                   )}
@@ -747,7 +748,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                     <div key={label} className="bg-gray-50 rounded-lg p-3">
                       <p className="text-xs text-muted-foreground">{label}</p>
                       <p className="text-sm font-medium mt-0.5 break-all">{value}</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{note}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{note}</p>
                     </div>
                   ))}
                 </div>
@@ -820,7 +821,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                     </p>
                     <p className="text-xs text-muted-foreground truncate max-w-md mt-0.5">{tpl.body_text}</p>
                   </div>
-                  <Button
+                  <Button aria-label={t('ministryWhatsAppConnect', 'copyTemplateName', 'Copy template name')}
                     variant="ghost"
                     size="sm"
                     onClick={() => { navigator.clipboard.writeText(tpl.name); toast({ title: t('ministryWhatsAppConnect', 'copiedTemplateName', 'Copied template name') }); }}
@@ -918,7 +919,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                 size="sm"
                 className="border-red-200 text-red-600 hover:bg-red-50 gap-2"
                 onClick={async () => {
-                  if (!confirm(t('ministryWhatsAppConnect', 'disconnectConfirm', 'Disconnect your WhatsApp Business Account? You can reconnect later.'))) return;
+                  if (!await confirmAction({ title: t('ministryWhatsAppConnect', 'disconnectConfirmTitle', 'Disconnect your WhatsApp Business Account?'), description: t('ministryWhatsAppConnect', 'disconnectConfirmDesc', 'You can reconnect later.'), confirmLabel: t('ministryWhatsAppConnect', 'disconnect', 'Disconnect'), destructive: true })) return;
                   await supabase
                     .from('ministry_whatsapp_configs')
                     .update({ connection_status: 'pending', phone_number_id: '', waba_id: '' })

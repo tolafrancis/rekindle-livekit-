@@ -38,7 +38,7 @@ export const UpgradePromptModal: React.FC<Props> = ({ prompt, onClose, onUpgrade
                 : <Heart className="h-5 w-5 text-white" />
               }
             </div>
-            <button onClick={onClose} className="text-white/70 hover:text-white p-1">
+            <button aria-label="Close" onClick={onClose} className="text-white/70 hover:text-white p-1">
               <X className="h-4 w-4" />
             </button>
           </div>

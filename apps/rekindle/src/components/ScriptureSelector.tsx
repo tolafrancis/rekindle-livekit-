@@ -46,7 +46,7 @@ export const ScriptureSelector: React.FC<ScriptureSelectorProps> = ({ onSelect, 
               <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm font-medium">
                 <Book className="h-3 w-3" />{s.reference} ({s.version})
               </span>
-              <button onClick={() => onRemove(s.reference)} className="text-gray-400 hover:text-red-500"><X className="h-4 w-4" /></button>
+              <button aria-label="Remove scripture" onClick={() => onRemove(s.reference)} className="text-gray-400 hover:text-red-500"><X className="h-4 w-4" /></button>
             </div>
             <p className="text-sm text-gray-700 italic">"{s.text}"</p>
           </div>
@@ -70,7 +70,7 @@ export const ScriptureSelector: React.FC<ScriptureSelectorProps> = ({ onSelect, 
             ))}
           </SelectContent>
         </Select>
-        <Button onClick={handleAdd} disabled={!book || !chapter} size="icon"><Plus className="h-4 w-4" /></Button>
+        <Button aria-label="Add scripture" onClick={handleAdd} disabled={!book || !chapter} size="icon"><Plus className="h-4 w-4" /></Button>
       </div>
     </div>
   );

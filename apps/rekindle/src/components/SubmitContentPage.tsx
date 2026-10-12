@@ -158,7 +158,7 @@ export const SubmitContentPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">{isSingleEntry ? 'Content' : `Day ${d.day}`}</span>
         {isMultiDay && days.length > 1 && (
-          <Button type="button" size="sm" variant="ghost" onClick={() => removeDay(i)}><Trash2 className="h-4 w-4" /></Button>
+          <Button aria-label="Remove day" type="button" size="sm" variant="ghost" onClick={() => removeDay(i)}><Trash2 className="h-4 w-4" /></Button>
         )}
       </div>
       <div><Label>Title</Label><Input value={d.title} onChange={(e) => updateDay(i, { title: e.target.value })} placeholder="Title" /></div>

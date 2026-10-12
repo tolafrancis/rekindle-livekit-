@@ -218,7 +218,7 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0 flex-1">
-            <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
+            <Button aria-label={t('a11y', 'close', 'Close')} variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
               <X className="h-5 w-5" />
             </Button>
             <div className="min-w-0">
@@ -236,13 +236,13 @@ export const DevotionalReader: React.FC<DevotionalReaderProps> = ({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-            <Button variant="ghost" size="icon" onClick={() => setFullscreen(!fullscreen)}>
+            <Button aria-label={fullscreen ? t('a11y', 'exitFullscreen', 'Exit fullscreen') : t('a11y', 'enterFullscreen', 'Enter fullscreen')} variant="ghost" size="icon" onClick={() => setFullscreen(!fullscreen)}>
               {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleShare}>
+            <Button aria-label={t('a11y', 'share', 'Share')} variant="ghost" size="icon" onClick={handleShare}>
               <Share2 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleToggleBookmark}>
+            <Button aria-label={bookmarked ? t('a11y', 'removeBookmark', 'Remove bookmark') : t('a11y', 'bookmark', 'Bookmark')} variant="ghost" size="icon" onClick={handleToggleBookmark}>
               {bookmarked ? (
                 <BookmarkCheck className="h-4 w-4 text-purple-600" />
               ) : (

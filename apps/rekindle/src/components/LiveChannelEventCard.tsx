@@ -153,6 +153,7 @@ export const LiveChannelEventCard: React.FC<LiveChannelEventCardProps> = ({
             e.stopPropagation();
             handleShare();
           }}
+          aria-label={t('liveChannelEventCard', 'shareEvent', 'Share event')}
           className="absolute top-3 right-3 text-white bg-black/50 hover:bg-black/70 backdrop-blur-sm"
         >
           {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
@@ -216,7 +217,7 @@ export const LiveChannelEventCard: React.FC<LiveChannelEventCardProps> = ({
             <Clock className="h-4 w-4 text-purple-500" />
             <span>{formatEventTime(event.scheduled_start)}</span>
             {event.duration_minutes && (
-              <span className="text-gray-400">
+              <span className="text-gray-500">
                 • {event.duration_minutes} {t('liveChannelEventCard', 'minAbbrev', 'min')}
               </span>
             )}
@@ -230,7 +231,7 @@ export const LiveChannelEventCard: React.FC<LiveChannelEventCardProps> = ({
             <span>{event.total_registered} {t('liveChannelEventCard', 'registeredCountLabel', 'registered')}</span>
           </div>
           {event.max_participants && (
-            <span className="text-gray-400">
+            <span className="text-gray-500">
               / {event.max_participants} {t('liveChannelEventCard', 'maxLabel', 'max')}
             </span>
           )}
@@ -282,6 +283,7 @@ export const LiveChannelEventCard: React.FC<LiveChannelEventCardProps> = ({
                 variant="outline" 
                 size="icon"
                 onClick={onViewDetails}
+                aria-label={t('liveChannelEventCard', 'viewDetails', 'View details')}
               >
                 <Eye className="h-4 w-4" />
               </Button>

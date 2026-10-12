@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -12,7 +13,7 @@ import { ContentSafetyMenu } from './ContentSafetyMenu';
 import { 
   Heart, Award, BookOpen, Flame, 
   Users, Filter, RefreshCw, Loader2, MessageCircle,
-  Clock, Star, CheckCircle, Trophy, Target, Sparkles
+  Clock, Star, CheckCircle, Trophy, Target, Sparkles, LayoutGrid
 } from 'lucide-react';
 import { describeCommunityActivity } from '../communityActivityService';
 import { SearchFilterPanel, activeFilterChipClass, filterChipClass } from './SearchFilterPanel';
@@ -44,11 +45,16 @@ interface CommunityActivityFeedProps {
   /** Inside a ministry: only that ministry's members' activity, via an RPC
    *  that also checks the viewer belongs to the ministry. */
   ministryId?: string;
+  /** Open the Prayer Wall to post a request. Defaults to the /wall route. */
+  onOpenPrayerWall?: () => void;
+  /** Open Revelations to share one. Defaults to the /revelations route. */
+  onOpenRevelations?: () => void;
 }
 
 const ACTIVITY_LIMIT = 50;
 
-export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ ministryId }) => {
+export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ ministryId, onOpenPrayerWall, onOpenRevelations }) => {
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const { filterBlocked } = useModeration();
   const { t } = useLanguage();
@@ -260,12 +266,44 @@ export const CommunityActivityFeed: React.FC<CommunityActivityFeedProps> = ({ mi
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-end">
-        <Button variant="outline" onClick={loadActivities} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          {t('communityActivityFeed', 'refresh', 'Refresh')}
-        </Button>
+      {/* Header — this page shows activity; posting happens on the Prayer Wall
+          and in Revelations, so point people there. (Not inside a ministry,
+          whose own wall/revelations live in the ministry workspace.) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-gray-900">{t('communityActivityFeed', 'activityTitle', 'Activity')}</h2>
+          {!ministryId && (
+            <p className="text-sm text-gray-500">
+              {t('communityActivityFeed', 'wantToShare', 'Want to share something? Post on the Prayer Wall or in Revelations.')}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {!ministryId && (
+            <>
+              <Button
+                size="sm"
+                className="bg-purple-600 hover:bg-purple-700"
+                onClick={() => (onOpenPrayerWall ? onOpenPrayerWall() : navigate('/wall', { state: { openTab: 'wall' } }))}
+              >
+                <LayoutGrid className="h-4 w-4 mr-2" />
+                {t('communityActivityFeed', 'postPrayerRequest', 'Post a prayer request')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => (onOpenRevelations ? onOpenRevelations() : navigate('/revelations', { state: { openTab: 'revelations' } }))}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                {t('communityActivityFeed', 'shareRevelation', 'Share a revelation')}
+              </Button>
+            </>
+          )}
+          <Button variant="outline" size="sm" onClick={loadActivities} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            {t('communityActivityFeed', 'refresh', 'Refresh')}
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}

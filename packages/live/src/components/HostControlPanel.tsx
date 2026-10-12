@@ -261,7 +261,7 @@ export const HostControlPanel: React.FC<HostControlPanelProps> = ({
                                 {participant.isLocal && ' (You)'}
                               </p>
                               {participant.isSpotlighted && (
-                                <Badge className="h-4 px-1.5 text-[10px] bg-amber-500 text-white border-0 flex-shrink-0">
+                                <Badge className="h-4 px-1.5 text-xs bg-amber-500 text-white border-0 flex-shrink-0">
                                   <Star className="h-2.5 w-2.5 mr-0.5 fill-current" />
                                   Spotlight{spotIndex(participant.session_id) >= 0 && (spotlightParticipants?.length ?? 0) > 1 ? ` ${spotIndex(participant.session_id) + 1}` : ''}
                                 </Badge>

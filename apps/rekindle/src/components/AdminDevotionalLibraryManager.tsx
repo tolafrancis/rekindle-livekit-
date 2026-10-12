@@ -24,6 +24,7 @@ import {
   generateDevotionalOutline, regenerateSeriesField, generateDevotionalDay, rewriteDevotionalDay,
   type DevotionalOutlineDay,
 } from '@/lib/generateDevotionalContent';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Inline cover-image field: paste a URL or upload a file
 const CoverImageField: React.FC<{
@@ -293,7 +294,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
   };
 
   const handleDeleteCategory = async (cat: Category) => {
-    if (!window.confirm(t('adminDevotionalLibraryManager', 'confirmDeleteCategory', 'Delete category "{name}"? Series in this category will become uncategorized.').replace('{name}', String(cat.name)))) {
+    if (!await confirmAction({ title: t('adminDevotionalLibraryManager', 'confirmDeleteCategoryTitle', 'Delete category "{name}"?').replace('{name}', String(cat.name)), description: t('adminDevotionalLibraryManager', 'confirmDeleteCategoryDesc', 'Series in this category will become uncategorized.'), confirmLabel: t('adminDevotionalLibraryManager', 'delete', 'Delete'), destructive: true })) {
       return;
     }
     try {
@@ -381,7 +382,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
   };
 
   const handleDeleteSeries = async (seriesId: string) => {
-    if (!confirm(t('adminDevotionalLibraryManager', 'confirmDeleteSeries', 'Are you sure you want to delete this series? This will also delete all entries.'))) {
+    if (!await confirmAction({ title: t('adminDevotionalLibraryManager', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('adminDevotionalLibraryManager', 'confirmDeleteSeriesDesc', 'This will also delete all entries.'), confirmLabel: t('adminDevotionalLibraryManager', 'delete', 'Delete'), destructive: true })) {
       return;
     }
 
@@ -460,14 +461,14 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button
+                  <Button aria-label={t('a11y', 'editCategory', 'Edit category')}
                     variant="outline"
                     size="sm"
                     onClick={() => { setEditingCategory(cat); setShowCategoryModal(true); }}
                   >
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button
+                  <Button aria-label={t('a11y', 'deleteCategory', 'Delete category')}
                     variant="outline"
                     size="sm"
                     className="text-red-600 hover:bg-red-50 hover:text-red-700"
@@ -505,14 +506,14 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
               </SelectContent>
             </Select>
             <div className="flex gap-1">
-              <Button
+              <Button aria-label={t('a11y', 'gridView', 'Grid view')}
                 variant={viewMode === 'grid' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setViewMode('grid')}
               >
                 <Grid className="h-4 w-4" />
               </Button>
-              <Button
+              <Button aria-label={t('a11y', 'listView', 'List view')}
                 variant={viewMode === 'list' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setViewMode('list')}
@@ -575,7 +576,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
                           <BookOpen className="h-4 w-4 mr-1" />
                           {t('adminDevotionalLibraryManager', 'viewEntries', 'View Entries')}
                         </Button>
-                        <Button
+                        <Button aria-label={t('a11y', 'editSeries', 'Edit series')}
                           variant="ghost"
                           size="sm"
                           onClick={() => {
@@ -596,7 +597,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
 
                         <TranslateNowButton contentType="devotional_series" contentId={item.id} />
 
-                        <Button
+                        <Button aria-label={t('a11y', 'deleteSeries', 'Delete series')}
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteSeries(item.id)}
@@ -702,7 +703,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
                           </div>
 
                           <div className="flex gap-2 pt-2">
-                            <Button
+                            <Button aria-label={t('a11y', 'editEntry', 'Edit entry')}
                               variant="ghost"
                               size="sm"
                               onClick={() => {
@@ -713,7 +714,7 @@ export const AdminDevotionalLibraryManager: React.FC = () => {
                               <Edit className="h-4 w-4" />
                             </Button>
                             <TranslateNowButton contentType="devotional_entry" contentId={entry.id} />
-                            <Button
+                            <Button aria-label={t('a11y', 'deleteEntry', 'Delete entry')}
                               variant="ghost"
                               size="sm"
                               onClick={() => {
@@ -1777,7 +1778,7 @@ const EntryModal: React.FC<{
                     <SelectItem value="nlt">NLT</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button onClick={handleLoadScripture} disabled={loadingScripture}>
+                <Button aria-label={t('a11y', 'loadScriptureText', 'Load scripture text')} onClick={handleLoadScripture} disabled={loadingScripture}>
                   {loadingScripture ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -1805,7 +1806,7 @@ const EntryModal: React.FC<{
                       </div>
                       <div className="flex gap-1">
                         {!scripture.is_primary && (
-                          <Button 
+                          <Button aria-label={t('a11y', 'setAsPrimaryScripture', 'Set as primary scripture')} 
                             size="sm" 
                             variant="ghost"
                             onClick={() => handleSetPrimaryScripture(index)}
@@ -1813,7 +1814,7 @@ const EntryModal: React.FC<{
                             <Star className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button 
+                        <Button aria-label={t('a11y', 'removeScripture', 'Remove scripture')} 
                           size="sm" 
                           variant="ghost"
                           onClick={() => handleRemoveScripture(index)}

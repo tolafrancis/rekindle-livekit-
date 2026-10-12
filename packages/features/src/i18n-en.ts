@@ -486,7 +486,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     'journal.subtitle': 'Record your prayers and reflect on answered ones',
     'revelations.title': 'Revelations',
     'revelations.subtitle': 'Capture and share insights from the Word',
-    'community-feed.title': 'Community Feed',
+    'community-feed.title': 'Activity',
     'community-feed.subtitle': 'See what believers around you are sharing',
     'reading-plan.title': 'Reading Plan',
     'reading-plan.subtitle': 'Stay consistent in the Word, one day at a time',

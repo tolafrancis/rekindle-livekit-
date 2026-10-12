@@ -39,7 +39,7 @@ const ProfileCompletionPrompt: React.FC<Props> = ({ ministryId, ministryName, sl
 
   return (
     <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 relative">
-      <button onClick={() => setDismissed(true)} className="absolute top-2 right-2 text-purple-300 hover:text-purple-500"><X className="h-4 w-4" /></button>
+      <button aria-label="Dismiss" onClick={() => setDismissed(true)} className="absolute top-2 right-2 text-purple-300 hover:text-purple-500"><X className="h-4 w-4" /></button>
       <div className="flex items-center gap-2 mb-1.5">
         <Sparkles className="h-4 w-4 text-purple-600" />
         <p className="text-sm font-medium text-purple-900">

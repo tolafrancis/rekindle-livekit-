@@ -21,6 +21,7 @@ import {
 import { MinistryPaymentSettings } from './MinistryPaymentSettings';
 import { MinistryDonationForm } from './MinistryDonationForm';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryDonationsManagerProps {
   ministryId: string;
@@ -306,7 +307,7 @@ export const MinistryDonationsManager: React.FC<MinistryDonationsManagerProps> =
   };
 
   const handleDeleteCampaign = async (id: string) => {
-    if (!confirm(t('ministryDonationsManager', 'confirmDeleteCampaign', 'Are you sure you want to delete this campaign?'))) return;
+    if (!await confirmAction({ title: t('ministryDonationsManager', 'confirmDeleteCampaignTitle', 'Delete this campaign?'), confirmLabel: t('ministryDonationsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -739,7 +740,7 @@ export const MinistryDonationsManager: React.FC<MinistryDonationsManagerProps> =
                           >
                             {campaign.is_active ? t('ministryDonationsManager', 'end', 'End') : t('ministryDonationsManager', 'activate', 'Activate')}
                           </Button>
-                          <Button 
+                          <Button aria-label={t('ministryDonationsManager', 'deleteCampaign', 'Delete campaign')} 
                             variant="ghost" 
                             size="sm"
                             onClick={() => handleDeleteCampaign(campaign.id)}

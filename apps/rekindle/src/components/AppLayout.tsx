@@ -149,7 +149,7 @@ const TAB_TO_NAV_KEY: Record<string, string> = {
   'prayer-library': 'prayerLibrary',
   'journal': 'prayerJournal',
   'revelations': 'revelations',
-  'community-feed': 'communityFeed',
+  'community-feed': 'communityActivity',
   'reading-plan': 'readingPlan',
   'books': 'books',
   'live-channels': 'liveChannels',
@@ -215,7 +215,7 @@ const PAGE_HERO: Record<string, { title: string; subtitle: string }> = {
   'prayer-library':     { title: 'Prayer Library',     subtitle: 'Deepen your prayer life with guided sessions and series' },
   'journal':            { title: 'Prayer Journal',     subtitle: 'Record your prayers and reflect on answered ones' },
   'revelations':        { title: 'Revelations',        subtitle: 'Capture and share insights from the Word' },
-  'community-feed':     { title: 'Community Feed',      subtitle: 'See what believers around you are sharing' },
+  'community-feed':     { title: 'Activity',            subtitle: 'See what believers around you are sharing' },
   'reading-plan':       { title: 'Reading Plan',        subtitle: 'Stay consistent in the Word, one day at a time' },
   'books':              { title: 'Books',               subtitle: 'Faith-building reads and resources' },
   'live-channels':      { title: 'Live Broadcast',       subtitle: 'Join live ministry broadcasts and meetings' },
@@ -228,7 +228,7 @@ const PAGE_HERO: Record<string, { title: string; subtitle: string }> = {
   'bookings':           { title: 'My Bookings',         subtitle: 'Manage your counselling appointments' },
   'ai':                 { title: 'Pastoral Assistant',  subtitle: 'A thoughtful guide for your faith questions' },
   'music':              { title: 'Music Library',       subtitle: 'Worship and instrumental soundtracks' },
-  'billing':            { title: 'Billing',             subtitle: 'Manage your plan and payments' },
+  'billing':            { title: 'Billing',             subtitle: 'Your payments and receipts' },
   'sponsor':            { title: 'Give',                subtitle: 'Support the mission and partner with us' },
   'referral':           { title: 'Refer a Friend',      subtitle: 'Invite others into the journey' },
   'profile':            { title: 'Settings',            subtitle: 'Manage your account and preferences' },
@@ -246,7 +246,7 @@ const TAB_LABELS: Record<string, string> = {
   'prayer-library': 'Prayer Library',
   'journal': 'Prayer Journal',
   'revelations': 'Revelations',
-  'community-feed': 'Community Feed',
+  'community-feed': 'Activity',
   'reading-plan': 'Reading Plan',
   'books': 'Books',
   'live-channels': 'Live Broadcast',
@@ -272,19 +272,19 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 // Primary modules. The secondary rail owns the real navigation inside a module.
-// Each group carries a colorful gradient so its icon renders as a filled, modern
-// "app icon" chip (no flat outline-only glyphs). `emoji` overrides the lucide icon
+// Each group renders its icon in a rounded chip using the single brand accent
+// (purple when active, neutral tint otherwise). `emoji` overrides the lucide icon
 // where a richer, more literal symbol is wanted (e.g. praying hands for Prayer).
 // `labelKey` points at a navigation-namespace key so the label renders through
 // t(); `label` is the English fallback.
-type NavGroup = { id: string; label: string; labelKey: string; icon: typeof Home; gradient: string; emoji?: string; children?: string[] };
+type NavGroup = { id: string; label: string; labelKey: string; icon: typeof Home; emoji?: string; children?: string[] };
 const NAV_GROUPS: NavGroup[] = [
-  { id: 'home',          label: 'Home',           labelKey: 'home',         icon: Home,       gradient: 'from-violet-500 to-purple-600' },
-  { id: 'the-word',      label: 'The Word',       labelKey: 'theWord',      icon: BookOpen,   gradient: 'from-amber-400 to-orange-500', children: ['devotional-library', 'reading-plan', 'scripture', 'books'] },
-  { id: 'prayer',        label: 'Prayer',         labelKey: 'prayers',      icon: HandHeart,  gradient: 'from-rose-400 to-pink-600', emoji: '🙏', children: ['prayer-library', 'journal', 'wall'] },
-  { id: 'ministries',    label: 'Ministries',     labelKey: 'ministries',   icon: Church,     gradient: 'from-sky-500 to-blue-600' },
-  { id: 'live-channels', label: 'Live Broadcast', labelKey: 'liveChannels', icon: Radio,      gradient: 'from-red-500 to-rose-600' },
-  { id: 'community',     label: 'Community',      labelKey: 'community',     icon: UsersRound, gradient: 'from-emerald-400 to-teal-600', children: ['community-feed', 'revelations', 'challenges', 'music'] },
+  { id: 'home',          label: 'Home',           labelKey: 'home',         icon: Home },
+  { id: 'the-word',      label: 'The Word',       labelKey: 'theWord',      icon: BookOpen, children: ['devotional-library', 'reading-plan', 'scripture', 'books'] },
+  { id: 'prayer',        label: 'Prayer',         labelKey: 'prayers',      icon: HandHeart, emoji: '🙏', children: ['prayer-library', 'journal', 'wall'] },
+  { id: 'ministries',    label: 'Ministries',     labelKey: 'ministries',   icon: Church },
+  { id: 'live-channels', label: 'Live Broadcast', labelKey: 'liveChannels', icon: Radio },
+  { id: 'community',     label: 'Community',      labelKey: 'community',     icon: UsersRound, children: ['community-feed', 'revelations', 'challenges', 'music'] },
 ];
 
 type MinistryHubView = 'discover' | 'my-ministries' | 'manage' | 'ministry-space' | 'ministry-management';
@@ -323,7 +323,7 @@ const SECONDARY_NAV: Record<string, SecondaryNavItem[]> = {
     { id: 'analytics', label: 'Analytics', labelKey: 'analytics', icon: BarChart3, liveTab: 'analytics', hostOnly: true },
   ],
   community: [
-    { id: 'community-feed', label: 'Feed', labelKey: 'feed', icon: Users, tab: 'community-feed' },
+    { id: 'community-feed', label: 'Activity', labelKey: 'activity', icon: Users, tab: 'community-feed' },
     { id: 'revelations', label: 'Revelations', labelKey: 'revelations', icon: Sparkles, tab: 'revelations' },
     { id: 'challenges', label: 'Challenges', labelKey: 'challenges', icon: Trophy, tab: 'challenges' },
     { id: 'music', label: 'Music', labelKey: 'music', icon: Music, tab: 'music' },
@@ -1056,8 +1056,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             }`}
           >
             <span
-              className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${group.gradient} text-white shadow-md transition-transform ${
-                active ? 'scale-110 ring-2 ring-purple-300 ring-offset-2' : 'group-hover:scale-105'
+              className={`flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
+                active ? 'bg-purple-600 text-white shadow-sm' : 'bg-purple-50 text-purple-700 group-hover:bg-purple-100'
               }`}
             >
               {group.emoji ? (
@@ -1238,7 +1238,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               onClick={() => { setSearchOpen(true); setShowNotifications(false); }}
               title={t('common', 'search', 'Search')}
               aria-label={t('common', 'search', 'Search')}
-              className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-slate-500 to-gray-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+              className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
             >
               <Search className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
@@ -1278,7 +1278,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   size="icon"
                   onClick={() => { navigateTab('messages'); setShowNotifications(false); setSearchOpen(false); }}
                   aria-label={t('navigation', 'messages', 'Messages')}
-                  className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                  className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                 >
                   <MessagesSquare className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
@@ -1300,7 +1300,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   size="icon"
                   onClick={() => { setShowNotifications((v) => !v); setSearchOpen(false); }}
                   aria-label={t('profile', 'notifications', 'Notifications')}
-                  className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                  className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                 >
                   <Bell className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
@@ -1330,7 +1330,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     variant="ghost"
                     size="icon"
                     aria-label="Account menu"
-                    className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                    className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                   >
                     <User className="h-4 w-4 md:h-5 md:w-5" />
                   </Button>
@@ -1460,14 +1460,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             <Suspense fallback={<RouteFallback fullScreen={false} />}>
           {activeTab === 'home' && (
             <div className="space-y-6">
-              <ReminderSetupTip
-                onSetup={() => {
-                  setActiveTab('profile');
-                  // Let ProfileSettings mount, then open the Daily Reminders section.
-                  setTimeout(() => window.dispatchEvent(
-                    new CustomEvent('openProfileSection', { detail: { section: 'reminders' } })), 100);
-                }}
-              />
+              {/* Home order: (greeting + stats above) → live strip → streak →
+                  today's devotional, declaration, affirmation → tips/promos. */}
               {liveNowCount > 0 && isFeatureNavGroupOn('consumer', 'live-channels') && (
                 <button
                   type="button"
@@ -1480,12 +1474,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   </span>
                   <span className="text-sm font-medium opacity-90">{t('appShell', 'watch', 'Watch')}</span>
                 </button>
-              )}
-              {canHost && (
-                <FreeMeetingsPromoCard
-                  onStartMeeting={() => { navigateTab('live-channels'); setLiveChannelsTab('meetings'); }}
-                  onSeePlans={() => navigateTab('subscription')}
-                />
               )}
               <StreakWidget />
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1502,6 +1490,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     source={devotionalSource}
                     ministryId={devotionalMinistryId}
                     streamId={devotionalStreamId}
+                    onOpenLibrary={() => navigateTab('devotional-library')}
                   />
                 </div>
                 <div id="daily-declaration">
@@ -1510,6 +1499,22 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                 <AffirmationCard showDaily />
               </div>
               <InstrumentalPlayer />
+              {/* Tips and promos come after the core daily content. */}
+              <ReminderSetupTip
+                onSetup={() => {
+                  setActiveTab('profile');
+                  // Let ProfileSettings mount, then open the Daily Reminders section.
+                  setTimeout(() => window.dispatchEvent(
+                    new CustomEvent('openProfileSection', { detail: { section: 'reminders' } })), 100);
+                }}
+              />
+              {canHost && (
+                <FreeMeetingsPromoCard
+                  onStartMeeting={() => { navigateTab('live-channels'); setLiveChannelsTab('meetings'); }}
+                  onSeePlans={() => navigateTab('subscription')}
+                  showApiLink={false}
+                />
+              )}
             </div>
           )}
 
@@ -1535,7 +1540,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           {activeTab === 'journal' && <PrayerJournal />}
 
           {activeTab === 'revelations' && <CommunityRevelations />}
-          {activeTab === 'community-feed' && <CommunityActivityFeed />}
+          {activeTab === 'community-feed' && (
+            <CommunityActivityFeed onOpenPrayerWall={() => navigateTab('wall')} onOpenRevelations={() => navigateTab('revelations')} />
+          )}
           {activeTab === 'reading-plan' && <BibleReadingPlan />}
           {activeTab === 'books' && <BookSummaries />}
           {activeTab === 'live-channels' && (

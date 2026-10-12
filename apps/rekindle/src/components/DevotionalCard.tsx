@@ -94,7 +94,7 @@ export const DevotionalCard: React.FC<DevotionalCardProps> = ({
                   )}
                 </div>
                 {onToggleBookmark && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }}>
+                  <Button aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark'} variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }}>
                     {isBookmarked ? <BookmarkCheck className="h-4 w-4 text-purple-600" /> : <Bookmark className="h-4 w-4" />}
                   </Button>
                 )}
@@ -137,7 +137,7 @@ export const DevotionalCard: React.FC<DevotionalCardProps> = ({
           {progress?.is_completed && <Badge className="bg-green-600 text-white shadow-lg"><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>}
         </div>
         {onToggleBookmark && (
-          <button onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }} className="absolute top-3 right-3 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-colors">
+          <button aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark'} onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }} className="absolute top-3 right-3 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-colors">
             {isBookmarked ? <BookmarkCheck className="h-4 w-4 text-purple-600" /> : <Bookmark className="h-4 w-4 text-gray-700" />}
           </button>
         )}

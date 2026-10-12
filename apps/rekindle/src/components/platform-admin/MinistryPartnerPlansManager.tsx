@@ -198,7 +198,7 @@ export const MinistryPartnerPlansManager: React.FC = () => {
                       <Switch checked={plan.is_active} onCheckedChange={() => toggleActive(plan)} />
                     </td>
                     <td className="p-4">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(plan)}>
+                      <Button aria-label={t('a11y', 'editPlan', 'Edit plan')} variant="ghost" size="icon" onClick={() => openEdit(plan)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     </td>

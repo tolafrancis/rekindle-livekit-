@@ -10,7 +10,8 @@ import { Loader2, Building2, UserPlus, UserCheck, ArrowLeft, Lock, CheckCircle2,
 
 type Screen = 'loading' | 'invalid' | 'idle' | 'choose' | 'returning' | 'pick' | 'welcome' | 'register';
 
-const IDLE_MS = 10 * 60 * 1000;   // auto-lock after 10 min inactivity
+const IDLE_MS = 60 * 1000;        // after 60s inactivity ask "Still there?"
+const IDLE_WARN_S = 15;           // …then reset to the start screen after a 15s countdown
 const HEARTBEAT_MS = 5 * 60 * 1000;
 const THANKYOU_MS = 5000;
 
@@ -34,6 +35,8 @@ const MinistryKiosk: React.FC = () => {
   const [exitOpen, setExitOpen] = useState(false);
   const [pin, setPin] = useState('');
   const idleTimer = useRef<any>(null);
+  const idleWarnTimer = useRef<any>(null);
+  const [idleWarn, setIdleWarn] = useState<number | null>(null);
 
   // ── load branding + validate this device's kiosk token ─────────────────────
   useEffect(() => {
@@ -64,15 +67,35 @@ const MinistryKiosk: React.FC = () => {
   }, [screen, slug]);
 
   // ── idle auto-lock ───────────────────────────────────────────────────────────
-  const resetIdle = useCallback(() => {
+  const clearIdleTimers = () => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
+    if (idleWarnTimer.current) clearTimeout(idleWarnTimer.current);
+  };
+  const resetIdle = useCallback(() => {
+    clearIdleTimers();
+    setIdleWarn(null);
     idleTimer.current = setTimeout(() => {
-      setLookup({ phone: '', email: '' });
-      setWelcomeName('');
-      setExitOpen(false);
-      setScreen('idle');
+      // Show the "Still there?" prompt, then reset if nobody responds.
+      setIdleWarn(IDLE_WARN_S);
+      idleWarnTimer.current = setTimeout(() => {
+        setIdleWarn(null);
+        setLookup({ phone: '', email: '' });
+        setLookupMethod('choice');
+        setMatches([]);
+        setWelcomeName('');
+        setExitOpen(false);
+        setPin('');
+        setScreen('idle');
+      }, IDLE_WARN_S * 1000);
     }, IDLE_MS);
   }, []);
+  // Countdown shown in the "Still there?" prompt.
+  const idleWarnVisible = idleWarn !== null;
+  useEffect(() => {
+    if (!idleWarnVisible) return;
+    const i = setInterval(() => setIdleWarn((s) => (s !== null && s > 1 ? s - 1 : s)), 1000);
+    return () => clearInterval(i);
+  }, [idleWarnVisible]);
   useEffect(() => {
     if (screen === 'loading' || screen === 'invalid' || screen === 'idle') return;
     resetIdle();
@@ -82,7 +105,8 @@ const MinistryKiosk: React.FC = () => {
     return () => {
       window.removeEventListener('pointerdown', onAct);
       window.removeEventListener('keydown', onAct);
-      if (idleTimer.current) clearTimeout(idleTimer.current);
+      clearIdleTimers();
+      setIdleWarn(null);
     };
   }, [screen, resetIdle]);
 
@@ -246,6 +270,7 @@ const MinistryKiosk: React.FC = () => {
                 {['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', 'del'].map((key) => (
                   <button
                     key={key}
+                    aria-label={key === 'del' ? 'Delete last digit' : undefined}
                     onClick={() => setLookup((l) => ({
                       ...l,
                       phone: key === 'del' ? l.phone.slice(0, -1) : l.phone + key,
@@ -268,8 +293,8 @@ const MinistryKiosk: React.FC = () => {
             <>
               <p className="text-sm text-gray-500 mb-3">Enter your email address.</p>
               <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input autoFocus className="h-14 text-lg" type="email" inputMode="email" value={lookup.email} onChange={(e) => setLookup({ ...lookup, email: e.target.value })} placeholder="you@example.com" />
+                <Label htmlFor="kiosk-lookup-email">Email</Label>
+                <Input id="kiosk-lookup-email" autoFocus className="h-14 text-lg" type="email" inputMode="email" value={lookup.email} onChange={(e) => setLookup({ ...lookup, email: e.target.value })} placeholder="you@example.com" />
               </div>
               <Button className="w-full h-14 text-lg mt-5" disabled={searching || !lookup.email} onClick={doLookup}>
                 {searching ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Check in'}
@@ -330,11 +355,23 @@ const MinistryKiosk: React.FC = () => {
         </div>
       )}
 
+      {idleWarn !== null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-6" role="alertdialog" aria-modal="true" aria-labelledby="kiosk-idle-title" aria-describedby="kiosk-idle-desc">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center">
+            <h3 id="kiosk-idle-title" className="text-xl font-bold mb-2">Still there?</h3>
+            <p id="kiosk-idle-desc" className="text-gray-600 mb-5" aria-live="polite">
+              Returning to the start screen in {idleWarn} second{idleWarn === 1 ? '' : 's'}.
+            </p>
+            <Button autoFocus className="w-full h-14 text-lg" onClick={() => resetIdle()}>I’m still here</Button>
+          </div>
+        </div>
+      )}
+
       {exitOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onClick={() => { setExitOpen(false); setPin(''); }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-xs" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold mb-3 flex items-center gap-2"><Lock className="h-4 w-4" /> Enter kiosk PIN to exit</h3>
-            <Input className="h-12 text-center text-2xl tracking-widest" inputMode="numeric" maxLength={4} value={pin}
+            <Input aria-label="Kiosk PIN" className="h-12 text-center text-2xl tracking-widest" inputMode="numeric" maxLength={4} value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="••••" />
             <div className="flex gap-2 mt-4">
               <Button variant="outline" className="flex-1" onClick={() => { setExitOpen(false); setPin(''); }}>Cancel</Button>

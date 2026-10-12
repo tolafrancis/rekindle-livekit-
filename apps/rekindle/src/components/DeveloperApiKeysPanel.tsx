@@ -157,7 +157,7 @@ export const DeveloperApiKeysPanel: React.FC = () => {
                       <KeyRound className="h-4 w-4 text-gray-400 shrink-0" />
                       <span className="font-medium text-sm truncate">{k.label}</span>
                       {k.revokedAt && (
-                        <span className="text-[10px] uppercase tracking-wide text-red-500 bg-red-50 rounded px-1.5 py-0.5">
+                        <span className="text-xs uppercase tracking-wide text-red-500 bg-red-50 rounded px-1.5 py-0.5">
                           {t('developerApiKeys', 'revokedBadge', 'Revoked')}
                         </span>
                       )}
@@ -198,7 +198,7 @@ export const DeveloperApiKeysPanel: React.FC = () => {
           </DialogHeader>
           <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
             <code className="text-sm font-mono break-all flex-1">{mintedKey?.key}</code>
-            <Button size="icon" variant="ghost" onClick={() => mintedKey && copyKey(mintedKey.key)}>
+            <Button aria-label={t('a11y', 'copyApiKey', 'Copy API key')} size="icon" variant="ghost" onClick={() => mintedKey && copyKey(mintedKey.key)}>
               <Copy className="h-4 w-4" />
             </Button>
           </div>

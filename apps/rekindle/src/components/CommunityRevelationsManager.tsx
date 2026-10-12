@@ -17,6 +17,7 @@ import {
   Search, Edit, Trash2, Eye, EyeOff,
   BookOpen, Heart, MessageSquare, RefreshCw, Loader2, Sparkles, Star
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // ─────────────────────────────────────────────
 // Types
@@ -143,7 +144,7 @@ export const CommunityRevelationsManager: React.FC<CommunityRevelationsManagerPr
   };
 
   const handleRevDelete = async (id: string) => {
-    if (!confirm(t('communityRevelationsManager', 'confirmDeleteRevelation', 'Are you sure you want to delete this revelation?'))) return;
+    if (!await confirmAction({ title: t('communityRevelationsManager', 'confirmDeleteRevelationTitle', 'Delete this revelation?'), confirmLabel: t('communityRevelationsManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('community_revelations').delete().eq('id', id);
       if (error) throw error;
@@ -227,7 +228,7 @@ export const CommunityRevelationsManager: React.FC<CommunityRevelationsManagerPr
   };
 
   const handleTestDelete = async (id: string) => {
-    if (!confirm(t('communityRevelationsManager', 'confirmDeleteTestimony', 'Are you sure you want to delete this testimony?'))) return;
+    if (!await confirmAction({ title: t('communityRevelationsManager', 'confirmDeleteTestimonyTitle', 'Delete this testimony?'), confirmLabel: t('communityRevelationsManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('app_testimonies').delete().eq('id', id);
       if (error) throw error;

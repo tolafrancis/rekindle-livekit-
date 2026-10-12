@@ -62,7 +62,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
       {value ? (
         <div className="relative w-full h-32 rounded-lg overflow-hidden border">
           <img src={value} alt="Preview" className="w-full h-full object-cover" />
-          <button
+          <button aria-label="Remove image"
             type="button"
             onClick={() => onChange('')}
             className="absolute top-2 right-2 bg-black/50 rounded-full p-1 text-white hover:bg-black/70"

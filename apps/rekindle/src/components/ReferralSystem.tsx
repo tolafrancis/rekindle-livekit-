@@ -47,7 +47,7 @@ import {
   QrCode,
   UserPlus,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';

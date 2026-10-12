@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { ScrollText, Plus, Edit, Trash2, Loader2, ChevronUp, ChevronDown, Upload, History, CheckCircle2 } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryRulesManagerProps {
   ministryId: string;
@@ -145,7 +146,7 @@ export const MinistryRulesManager: React.FC<MinistryRulesManagerProps> = ({ mini
   };
 
   const deleteItem = async (item: RuleItem) => {
-    if (!window.confirm(`Remove "${item.title}" from the draft?`)) return;
+    if (!await confirmAction({ title: `Remove "${item.title}" from the draft?`, confirmLabel: 'Remove', destructive: true })) return;
     try {
       const { error } = await supabase.from('ministry_rule_items').delete().eq('id', item.id);
       if (error) throw error;
@@ -262,10 +263,10 @@ export const MinistryRulesManager: React.FC<MinistryRulesManagerProps> = ({ mini
           <Card key={item.id}>
             <CardContent className="py-3 flex items-start gap-3">
               <div className="flex flex-col gap-0.5 shrink-0 pt-0.5">
-                <button type="button" onClick={() => moveItem(idx, -1)} disabled={idx === 0} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
+                <button aria-label={t('ministryRules', 'moveUp', 'Move up')} type="button" onClick={() => moveItem(idx, -1)} disabled={idx === 0} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
                   <ChevronUp className="h-4 w-4" />
                 </button>
-                <button type="button" onClick={() => moveItem(idx, 1)} disabled={idx === items.length - 1} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
+                <button aria-label={t('ministryRules', 'moveDown', 'Move down')} type="button" onClick={() => moveItem(idx, 1)} disabled={idx === items.length - 1} className="text-gray-400 hover:text-gray-700 disabled:opacity-30">
                   <ChevronDown className="h-4 w-4" />
                 </button>
               </div>
@@ -274,8 +275,8 @@ export const MinistryRulesManager: React.FC<MinistryRulesManagerProps> = ({ mini
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-0.5">{item.body}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => openEdit(item)}><Edit className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="sm" onClick={() => deleteItem(item)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                <Button aria-label={t('ministryRules', 'edit', 'Edit')} variant="ghost" size="sm" onClick={() => openEdit(item)}><Edit className="h-4 w-4" /></Button>
+                <Button aria-label={t('ministryRules', 'delete', 'Delete')} variant="ghost" size="sm" onClick={() => deleteItem(item)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
               </div>
             </CardContent>
           </Card>

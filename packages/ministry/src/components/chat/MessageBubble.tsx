@@ -157,7 +157,7 @@ export const MessageBubble = memo<MessageBubbleProps>(({
             ) : (
               <>
                 {m.pinned_at && (
-                  <span className="mb-1 flex items-center gap-1 text-[11px] font-medium opacity-80">
+                  <span className="mb-1 flex items-center gap-1 text-xs font-medium opacity-80">
                     <Pin className="h-3 w-3" />{t('groupChat', 'pinned', 'Pinned')}
                   </span>
                 )}
@@ -216,7 +216,7 @@ export const MessageBubble = memo<MessageBubbleProps>(({
           )}
         </div>
 
-        <span className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
+        <span className="mt-0.5 flex items-center gap-1 px-1 text-xs text-muted-foreground">
           {m.localState === 'sending' && (<><Loader2 className="h-3 w-3 animate-spin" />{t('groupChat', 'sending', 'Sending…')}</>)}
           {m.localState === 'failed' && (
             <>

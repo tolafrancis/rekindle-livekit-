@@ -175,11 +175,11 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className, hideT
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-sm font-medium text-gray-900">{f.title}</span>
                           {f.audience && AUDIENCE_LABEL[f.audience] && (
-                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-gray-500">{AUDIENCE_LABEL[f.audience]}</Badge>
+                            <Badge variant="outline" className="h-5 px-1.5 text-xs text-gray-500">{AUDIENCE_LABEL[f.audience]}</Badge>
                           )}
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">{f.answer ?? f.description}</p>
-                        <p className="text-[11px] text-purple-600 mt-1 flex flex-wrap items-center gap-0.5">
+                        <p className="text-xs text-purple-600 mt-1 flex flex-wrap items-center gap-0.5">
                           {f.path.map((step, idx) => (
                             <React.Fragment key={idx}>
                               {idx > 0 && <ChevronRight className="h-3 w-3 text-purple-300" />}

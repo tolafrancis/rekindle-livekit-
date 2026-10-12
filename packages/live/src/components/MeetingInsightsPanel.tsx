@@ -19,7 +19,7 @@ import {
   Loader2, Clock, Globe, TrendingUp, Users,
   ChevronRight, AlertCircle, Languages
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { canNativeShare } from '@rekindle/features/webShare';
 import {
   MeetingInsights,

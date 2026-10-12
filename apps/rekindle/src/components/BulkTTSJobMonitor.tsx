@@ -198,7 +198,7 @@ export const BulkTTSJobMonitor: React.FC = () => {
                         Export
                       </Button>
                     )}
-                    <Button
+                    <Button aria-label="Toggle job details"
                       variant="outline"
                       size="sm"
                       onClick={() => loadJobDetails(job.id)}

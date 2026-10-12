@@ -16,6 +16,7 @@ import {
   downloadUrl, downloadTextFile, generateInviteCode, sha256Hex,
 } from '@rekindle/features/qrCode';
 import { publicWebOrigin } from '@rekindle/features/platform';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface Props {
   ministry: any;          // ministry_groups row (select '*')
@@ -173,9 +174,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
   };
 
   const handleRegenerate = async () => {
-    const ok = window.confirm(
-      t('ministryRegistrationSettings', 'regenerateConfirm', 'Regenerate the join code?\n\nPreviously printed QR codes and shared links will STOP working. Members will need the new code from you.'),
-    );
+    const ok = await confirmAction({ title: t('ministryRegistrationSettings', 'regenerateConfirmTitle', 'Regenerate the join code?'), description: t('ministryRegistrationSettings', 'regenerateConfirmDesc', 'Previously printed QR codes and shared links will STOP working. Members will need the new code from you.'), confirmLabel: t('ministryRegistrationSettings', 'regenerate', 'Regenerate'), destructive: true });
     if (!ok) return;
     setSaving(true);
     try {
@@ -329,7 +328,7 @@ export const MinistryRegistrationSettings: React.FC<Props> = ({ ministry, onUpda
                   {sessions.map((s) => (
                     <div key={s.id} className="flex items-center justify-between text-xs border rounded-md px-2 py-1.5">
                       <span className="truncate">{s.device_name || t('ministryRegistrationSettings', 'deviceFallback', 'Device')} {t('ministryRegistrationSettings', 'lastSeenX', '· last seen {time}').replace('{time}', s.last_ping_at ? new Date(s.last_ping_at).toLocaleString() : t('ministryRegistrationSettings', 'never', 'never'))}</span>
-                      <button onClick={() => deactivateSession(s.id)} className="text-red-500 hover:text-red-600 ml-2"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button aria-label={t('ministryRegistrationSettings', 'deactivateKiosk', 'Deactivate kiosk')} onClick={() => deactivateSession(s.id)} className="text-red-500 hover:text-red-600 ml-2"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   ))}
                 </div>

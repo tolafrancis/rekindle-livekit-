@@ -248,7 +248,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
             <FileText className="h-5 w-5 shrink-0 text-blue-200" />
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-white truncate">{message.attachment.name}</p>
-              <p className="text-[10px] text-gray-300">{formatSize(message.attachment.size)}</p>
+              <p className="text-xs text-gray-300">{formatSize(message.attachment.size)}</p>
             </div>
             <Download className="h-4 w-4 shrink-0 text-gray-300" />
           </div>

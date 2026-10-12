@@ -254,7 +254,7 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
           {busy === channel ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plug className="h-4 w-4 mr-1" />}
           {configs[channel] ? t('evangelismChannelsPanel', 'reconnect', 'Reconnect') : t('evangelismChannelsPanel', 'connect', 'Connect')}
         </Button>
-        <p className="text-[11px] text-gray-400">
+        <p className="text-xs text-gray-500">
           {t('evangelismChannelsPanel', 'pageMustBeSubscribed', 'The Page must be subscribed to the app webhook in Meta.')} {label === 'Instagram' ? t('evangelismChannelsPanel', 'useIgLinkedPage', 'Use the IG-linked Page’s ID and token.') : ''}
         </p>
       </CardContent>
@@ -342,7 +342,7 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
                             {t('evangelismChannelsPanel', 'connectInstagram', 'Connect Instagram')}{p.instagram_username ? ` (@${p.instagram_username})` : ''}
                           </Button>
                         ) : (
-                          <span className="text-[11px] text-gray-400 self-center">{t('evangelismChannelsPanel', 'noInstagramLinked', 'No Instagram linked to this Page')}</span>
+                          <span className="text-xs text-gray-500 self-center">{t('evangelismChannelsPanel', 'noInstagramLinked', 'No Instagram linked to this Page')}</span>
                         )}
                       </div>
                     </div>
@@ -377,7 +377,7 @@ const EvangelismChannelsPanel: React.FC<Props> = ({ ministryId, ministryName, is
           ) : (
             <>
               <p className="text-sm text-gray-500">{t('evangelismChannelsPanel', 'pasteWidgetBefore', 'Paste this on your site. It posts visitor messages into your inbox (call')} <code className="text-xs">rkSendMessage(text, name)</code> {t('evangelismChannelsPanel', 'pasteWidgetAfter', 'from your chat UI).')}</p>
-              <pre className="text-[11px] bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{widgetSnippet}</pre>
+              <pre className="text-xs bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{widgetSnippet}</pre>
               <Button size="sm" variant="outline" onClick={copyWidget}>
                 {copied ? <CheckCheck className="h-4 w-4 mr-1 text-green-600" /> : <Copy className="h-4 w-4 mr-1" />}
                 {copied ? t('evangelismChannelsPanel', 'copied', 'Copied') : t('evangelismChannelsPanel', 'copySnippet', 'Copy snippet')}

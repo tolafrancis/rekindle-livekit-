@@ -28,6 +28,7 @@ import {
   TrendingUp,
   Flag
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface PrayerPost {
   id: string;
@@ -189,7 +190,7 @@ export const CommunityPrayerManager: React.FC<CommunityPrayerManagerProps> = ({ 
   // Delete post
   // Delete post
 const handleDelete = async (postId: string) => {
-  if (!confirm(t('communityPrayerManager', 'confirmDelete', 'Are you sure you want to delete this prayer request? This action cannot be undone.'))) {
+  if (!await confirmAction({ title: t('communityPrayerManager', 'confirmDeleteTitle', 'Delete this prayer request?'), description: t('communityPrayerManager', 'cannotBeUndone', 'This action cannot be undone.'), confirmLabel: t('communityPrayerManager', 'delete', 'Delete'), destructive: true })) {
     return;
   }
   
@@ -472,7 +473,7 @@ const handleDelete = async (postId: string) => {
                         <Eye className="h-4 w-4 mr-1" />
                         {t('communityPrayerManager', 'details', 'Details')}
                       </Button>
-                      <Button 
+                      <Button aria-label={t('a11y', 'toggleFeatured', 'Toggle featured')} 
                         size="sm" 
                         variant="outline"
                         onClick={() => toggleFeatured(post)}
@@ -480,7 +481,7 @@ const handleDelete = async (postId: string) => {
                       >
                         <Flag className="h-4 w-4" />
                       </Button>
-                      <Button 
+                      <Button aria-label={post.is_hidden ? t('a11y', 'unhidePost', 'Unhide post') : t('a11y', 'hidePost', 'Hide post')} 
                         size="sm" 
                         variant="outline"
                         onClick={() => toggleHidden(post)}
@@ -488,7 +489,7 @@ const handleDelete = async (postId: string) => {
                       >
                         {post.is_hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                       </Button>
-                      <Button 
+                      <Button aria-label={t('a11y', 'toggleAnswered', 'Toggle answered')} 
                         size="sm" 
                         variant="outline"
                         onClick={() => markAnswered(post)}
@@ -496,14 +497,14 @@ const handleDelete = async (postId: string) => {
                       >
                         <CheckCircle className="h-4 w-4" />
                       </Button>
-                      <Button 
+                      <Button aria-label={t('a11y', 'editPost', 'Edit post')} 
                         size="sm" 
                         variant="outline"
                         onClick={() => handleEdit(post)}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button 
+                      <Button aria-label={t('a11y', 'deletePost', 'Delete post')} 
                         size="sm" 
                         variant="outline"
                         onClick={() => handleDelete(post.id)}

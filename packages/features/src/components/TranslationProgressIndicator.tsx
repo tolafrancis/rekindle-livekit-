@@ -203,7 +203,7 @@ export function TranslationProgressIndicator({
           
           {showLanguages && (
             <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-6 px-2">
+              <Button aria-label={expanded ? 'Hide details' : 'Show details'} variant="ghost" size="sm" className="h-6 px-2">
                 {expanded ? (
                   <ChevronUp className="h-4 w-4" />
                 ) : (

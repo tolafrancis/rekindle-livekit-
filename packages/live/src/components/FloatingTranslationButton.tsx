@@ -970,7 +970,8 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           <button
             type="button"
             title="Live Translation"
-            className={`flex h-10 items-center gap-1.5 rounded-full shadow-lg backdrop-blur-sm px-3 transition-colors ${
+            aria-label="Live Translation"
+            className={`flex h-11 items-center gap-1.5 rounded-full shadow-lg backdrop-blur-sm px-3 transition-colors ${
               currentLanguage || captionMode !== 'off' ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
             }`}
           >
@@ -1195,7 +1196,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           </div>
         )}
 
-        <p className="text-[10px] text-gray-400 px-2.5 pt-1.5">
+        <p className="text-xs text-gray-400 px-2.5 pt-1.5">
           Audio "Original" mutes the translation and restores the room's normal audio. Captions run independently of
           whichever audio you're listening to.
         </p>

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { BroadcastWallet } from './BroadcastWallet';
 import type { MinistryWABAConfig } from './MinistryWhatsAppConnect';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -267,7 +268,7 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
 
   // ── Remove subscriber (manual opt-out) ────────────────────────────────
   const removeSubscriber = async (id: string, phone: string) => {
-    if (!confirm(t('ministryWhatsAppUsage', 'confirmRemoveSubscriber', 'Remove {phone} from your subscriber list?').replace('{phone}', String(phone)))) return;
+    if (!await confirmAction({ title: t('ministryWhatsAppUsage', 'confirmRemoveSubscriber', 'Remove {phone} from your subscriber list?').replace('{phone}', String(phone)), confirmLabel: t('ministryWhatsAppUsage', 'remove', 'Remove'), destructive: true })) return;
     await supabase
       .from('ministry_whatsapp_subscribers')
       .update({ opted_in: false, opted_out_at: new Date().toISOString() })
@@ -716,7 +717,7 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs font-medium truncate">{tx.description || tx.type}</p>
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {fmt(tx.created_at)}
                             {tx.recipients_count ? ` · ${tx.recipients_count.toLocaleString()} ${t('ministryWhatsAppUsage', 'msgs', 'msgs')}` : ''}
                           </p>
@@ -727,7 +728,7 @@ export const MinistryWhatsAppUsage: React.FC<MinistryWhatsAppUsageProps> = ({
                           {isCredit ? '+' : ''}{tx.credits.toLocaleString()}
                         </p>
                         {tx.usd_amount != null && (
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             ${Math.abs(tx.usd_amount).toFixed(2)}
                           </p>
                         )}
