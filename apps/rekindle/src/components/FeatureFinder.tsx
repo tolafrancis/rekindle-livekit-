@@ -16,6 +16,8 @@ import { FEATURES, searchFeatures, type FeatureAction, type FeatureEntry } from 
 export const FEATURE_NAVIGATE_EVENT = 'rk:feature-navigate';
 /** MinistrySpace listens for this while it's open and sets `handled`. */
 export const MINISTRY_GO_EVENT = 'rk:ministry-go';
+/** Opens the Find a feature dialog from elsewhere (e.g. the Help menu). */
+export const FEATURE_FINDER_OPEN_EVENT = 'rk:feature-finder-open';
 
 export interface MinistryGoDetail { group: string; child: string; handled: boolean }
 
@@ -60,6 +62,12 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => 
   }, []);
 
   useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(FEATURE_FINDER_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(FEATURE_FINDER_OPEN_EVENT, onOpen);
+  }, []);
+
+  useEffect(() => {
     if (!open) { setQuery(''); return; }
     const id = window.setTimeout(() => inputRef.current?.focus(), 50);
     return () => window.clearTimeout(id);
@@ -101,6 +109,7 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className }) => 
       <button
         type="button"
         onClick={() => setOpen(true)}
+        data-tour="feature-finder"
         aria-label={label}
         title={`${label} (Ctrl+K)`}
         className={`fixed z-[60] flex items-center gap-2 rounded-full bg-white/95 text-purple-700 border border-purple-200 shadow-lg backdrop-blur px-3 py-2.5 hover:bg-purple-50 transition-colors ${className ?? ''}`}

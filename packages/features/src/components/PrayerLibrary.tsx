@@ -1250,9 +1250,9 @@ export function PrayerLibrary() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="prayer-topics" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerTopics', 'Prayer Topics')}</TabsTrigger>
-          <TabsTrigger value="prayer-series" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'series', 'Prayer Series')}</TabsTrigger>
-          <TabsTrigger value="prayer-watch" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerWatch', 'Prayer Watch')}</TabsTrigger>
+          <TabsTrigger value="prayer-topics" data-tour="prayer-tab-topics" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerTopics', 'Prayer Topics')}</TabsTrigger>
+          <TabsTrigger value="prayer-series" data-tour="prayer-tab-series" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'series', 'Prayer Series')}</TabsTrigger>
+          <TabsTrigger value="prayer-watch" data-tour="prayer-tab-watch" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">{t('prayers', 'prayerWatch', 'Prayer Watch')}</TabsTrigger>
         </TabsList>
 
         {/* ===== PRAYER TOPICS TAB ===== */}

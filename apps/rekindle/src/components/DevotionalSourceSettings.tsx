@@ -80,6 +80,7 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
   return (
     <div className="mb-2">
       <button
+        data-tour="devotional-source-toggle"
         onClick={() => setExpanded((v) => !v)}
         className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors mb-1"
       >

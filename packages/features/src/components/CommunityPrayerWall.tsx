@@ -362,6 +362,7 @@ export function CommunityPrayerWall() {
         <Dialog open={showForm} onOpenChange={setShowForm}>
           <DialogTrigger asChild>
             <Button
+              data-tour="prayer-wall-share"
               disabled={!canPostPrayers}
               onClick={() => {
                 if (!canPostPrayers) {
@@ -378,7 +379,7 @@ export function CommunityPrayerWall() {
               {t('communityPrayerWall', 'shareRequest', 'Share Request')}
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent data-tour="prayer-wall-form">
             <DialogHeader>
               <DialogTitle>{t('communityPrayerWall', 'sharePrayerRequest', 'Share Prayer Request')}</DialogTitle>
             </DialogHeader>
@@ -414,7 +415,7 @@ export function CommunityPrayerWall() {
                   <option value="gratitude">{t('communityPrayerWall', 'catGratitude', 'Gratitude')}</option>
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-sm" data-tour="prayer-wall-anonymous">
                 <input 
                   type="checkbox" 
                   checked={isAnonymous} 
