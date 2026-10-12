@@ -1,6 +1,7 @@
 // The first-visit welcome: what Rekindle is, how the tour works, and a free
-// choice to take it, explore alone, or be reminded later. Shown once; "Remind
-// me later" brings it back the next day, a few times at most.
+// choice to take it now or later. Until the member starts the tour or says
+// "Don't show this again", it comes back the next day they visit, up to four
+// times in all (MAX_REMIND_LATER reminders after the first).
 import React, { useEffect, useState } from 'react';
 import { BookOpen, HandHeart, Users, Compass, Clock } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -35,8 +36,8 @@ export const WelcomeDialog: React.FC<Props> = ({ allowed }) => {
     setWelcome('dismissed');
     start(INTRO_TUTORIAL_ID, { restart: true });
   };
-  const explore = () => { setOpen(false); setWelcome('dismissed'); };
   const later = () => { setOpen(false); setWelcome('later'); };
+  const never = () => { setOpen(false); setWelcome('dismissed'); };
 
   const points = [
     { icon: <BookOpen className="h-5 w-5 text-purple-600" />, bg: 'bg-purple-100', text: w('point1', 'Read a daily devotional and speak daily declarations and affirmations.') },
@@ -81,12 +82,15 @@ export const WelcomeDialog: React.FC<Props> = ({ allowed }) => {
           <Button onClick={startTour} className="min-h-[44px] w-full bg-purple-600 hover:bg-purple-700">
             {w('start', 'Start Tutorial')}
           </Button>
-          <Button variant="outline" onClick={explore} className="min-h-[44px] w-full">
-            {w('explore', 'Explore on My Own')}
+          <Button variant="outline" onClick={later} className="min-h-[44px] w-full">
+            {w('exploreForNow', 'Explore on My Own for Now')}
           </Button>
-          <Button variant="ghost" onClick={later} className="min-h-[44px] w-full text-gray-600">
-            {w('later', 'Remind Me Later')}
+          <Button variant="ghost" onClick={never} className="min-h-[44px] w-full text-gray-600">
+            {w('never', "Don't Show This Again")}
           </Button>
+          <p className="text-center text-xs text-gray-500">
+            {w('whereLater', 'You can start the tour any time from Help (?) at the top.')}
+          </p>
         </DialogFooter>
       </DialogContent>
     </Dialog>
