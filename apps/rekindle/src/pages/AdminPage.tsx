@@ -171,22 +171,22 @@ const AdminPage: React.FC = () => {
                     <ArrowLeft className="h-5 w-5" />
                   </Button>
                 </Link>
-                <h1 className="text-xl sm:text-2xl font-serif font-bold text-purple-700">Rekindle Admin</h1>
+                <h1 className="text-2xl font-serif font-bold text-purple-700">ReKindle Admin</h1>
               </div>
-              <div className="flex items-center gap-2 sm:gap-4">
+              <div className="flex items-center gap-4">
                 {/* Refresh Profile Button */}
-                <Button variant="ghost" size="sm" onClick={handleRefreshProfile} title="Reload your admin role">
-                  <RefreshCw className="h-4 w-4 sm:mr-2" aria-hidden="true" />
-                  <span className="sr-only sm:not-sr-only">Refresh role</span>
+                <Button variant="ghost" size="sm" onClick={handleRefreshProfile}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh
                 </Button>
                 
                 {isSuperAdmin() ? (
-                  <Badge variant="default" className="bg-amber-600" title={user?.email ? `Signed in as ${user.email}` : undefined}>
+                  <Badge variant="default" className="bg-amber-600">
                     <Crown className="h-3 w-3 mr-1" />
                     Super Admin
                   </Badge>
                 ) : (
-                  <Badge variant="default" className="bg-purple-600" title={user?.email ? `Signed in as ${user.email}` : undefined}>
+                  <Badge variant="default" className="bg-purple-600">
                     <UserCog className="h-3 w-3 mr-1" />
                     Admin
                   </Badge>
@@ -195,7 +195,36 @@ const AdminPage: React.FC = () => {
             </div>
           </header>
           
-          <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
+          {/* Current User Info */}
+          {user && (
+            <div className="max-w-7xl mx-auto px-4 py-2">
+              <Card className="bg-purple-50 border-purple-200">
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      {isSuperAdmin() ? (
+                        <Crown className="h-4 w-4 text-amber-600" />
+                      ) : (
+                        <UserCog className="h-4 w-4 text-purple-600" />
+                      )}
+                      <span className="text-sm font-medium text-purple-800">Logged in as: {user.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">Role:</span>
+                      <Badge className={isSuperAdmin() ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700"}>
+                        {isSuperAdmin() ? 'Super Admin' : profile?.role || 'admin'}
+                      </Badge>
+                      {isSuperAdmin() && (
+                        <span className="text-xs text-gray-500">(Can assign roles)</span>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          
+          <div className="max-w-7xl mx-auto px-4 py-6">
             <ErrorBoundary>
               <AdminDashboard isSuperAdmin={isSuperAdmin()} />
             </ErrorBoundary>

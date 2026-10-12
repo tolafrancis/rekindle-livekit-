@@ -71,7 +71,7 @@ export default function MetaWhatsAppCallback() {
           if (window.opener && window.opener !== window) {
             window.close();
           } else {
-            navigate('/admin/whatsapp-admin', { replace: true });
+            navigate('/admin?tab=whatsapp', { replace: true });
           }
         }, 1200);
       } catch (err: any) {
@@ -88,7 +88,7 @@ export default function MetaWhatsAppCallback() {
     if (window.opener && window.opener !== window) {
       window.close();
     } else {
-      navigate('/admin/whatsapp-admin', { replace: true });
+      navigate('/admin?tab=whatsapp', { replace: true });
     }
   };
 

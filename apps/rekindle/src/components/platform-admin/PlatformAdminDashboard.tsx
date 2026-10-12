@@ -45,19 +45,10 @@ interface PlatformStats {
   storageUsedGB: number;
 }
 
-interface PlatformAdminDashboardProps {
-  /** When the admin sidebar drives the tab (/admin/platform/<tab>), the
-   *  in-page tab strip is hidden and these control the tab instead. */
-  activeTab?: string;
-  onTabChange?: (tab: string) => void;
-}
-
-const PlatformAdminDashboard: React.FC<PlatformAdminDashboardProps> = ({ activeTab: controlledTab, onTabChange }) => {
+const PlatformAdminDashboard: React.FC = () => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
-  const [ownTab, setOwnTab] = useViewHistory<string>("platform-admin-dashboard", 'overview');
-  const activeTab = controlledTab ?? ownTab;
-  const setActiveTab = onTabChange ?? setOwnTab;
+  const [activeTab, setActiveTab] = useViewHistory<string>("platform-admin-dashboard", 'overview');
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<PlatformStats>({
     totalMinistries: 0,
@@ -253,7 +244,6 @@ const PlatformAdminDashboard: React.FC<PlatformAdminDashboardProps> = ({ activeT
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        {!onTabChange && (
         <TabsList className="grid w-full grid-cols-5 lg:grid-cols-[repeat(13,minmax(0,1fr))] gap-1 h-auto p-1 bg-gray-100">
           <TabsTrigger value="overview" className="text-xs px-2 py-2">
             <BarChart3 className="h-4 w-4 mr-1" />
@@ -314,7 +304,6 @@ const PlatformAdminDashboard: React.FC<PlatformAdminDashboardProps> = ({ activeT
             {t('platformAdminDashboard', 'tabSettings', 'Settings')}
           </TabsTrigger>
         </TabsList>
-        )}
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="mt-6">
