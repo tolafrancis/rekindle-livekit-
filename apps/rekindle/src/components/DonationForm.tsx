@@ -399,7 +399,7 @@ export const DonationForm: React.FC<DonationFormProps> = ({ ministryId, ministry
                         <p className="text-xs text-gray-400">{f.label}</p>
                         <p className="text-sm font-medium">{f.value}</p>
                       </div>
-                      <button onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
+                      <button aria-label={`${t('a11y', 'copy', 'Copy')} ${f.label}`} onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
                         <Copy className="h-3.5 w-3.5 text-gray-400" />
                       </button>
                     </div>

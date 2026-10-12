@@ -460,7 +460,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
                       {new Date(session.updated_at).toLocaleDateString()}
                     </p>
                   </div>
-                  <Button
+                  <Button aria-label={t('a11y', 'archiveConversation', 'Archive conversation')}
                     variant="ghost"
                     size="sm"
                     onClick={(e) => {
@@ -602,7 +602,7 @@ export const AISpiritualCompanionChat: React.FC = () => {
               disabled={isLoading || !currentSession || !spiritualCompanion || (limitStatus ? !limitStatus.allowed : false)}
               className="flex-1 text-sm"
             />
-            <Button
+            <Button aria-label={t('a11y', 'sendMessage', 'Send message')}
               onClick={handleSendMessage}
               disabled={isLoading || !input.trim() || !currentSession || !spiritualCompanion || (limitStatus ? !limitStatus.allowed : false)}
               className="bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-sm transition-transform hover:scale-105 hover:text-white rounded-xl"

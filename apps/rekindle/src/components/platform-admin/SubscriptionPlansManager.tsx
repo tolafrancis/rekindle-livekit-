@@ -622,7 +622,7 @@ export const SubscriptionPlansManager: React.FC<SubscriptionPlansManagerProps> =
                               {t('subscriptionPlansManager', 'approve', 'Approve')}
                             </Button>
                           )}
-                          <Button variant="ghost" size="icon" onClick={() => handleEditSubscription(sub)}>
+                          <Button aria-label={t('a11y', 'editSubscription', 'Edit subscription')} variant="ghost" size="icon" onClick={() => handleEditSubscription(sub)}>
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button

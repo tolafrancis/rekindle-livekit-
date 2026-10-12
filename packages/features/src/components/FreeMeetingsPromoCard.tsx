@@ -16,7 +16,13 @@ const API_PORTAL_URL = 'https://developers.rekindlebc.com';
  * Create Meeting modal. Also the primary on-ramp to the standalone
  * Interactive Meetings API (apps/developer-portal).
  */
-export const FreeMeetingsPromoCard: React.FC<{ onStartMeeting?: () => void; onSeePlans?: () => void }> = ({ onStartMeeting, onSeePlans }) => {
+export const FreeMeetingsPromoCard: React.FC<{
+  onStartMeeting?: () => void;
+  onSeePlans?: () => void;
+  /** Show the developer "Build with our API" link. Default true (ministry app);
+   *  the member app passes false — that link is for developers, not members. */
+  showApiLink?: boolean;
+}> = ({ onStartMeeting, onSeePlans, showApiLink = true }) => {
   const { t } = useLanguage();
   return (
     <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50">
@@ -52,15 +58,17 @@ export const FreeMeetingsPromoCard: React.FC<{ onStartMeeting?: () => void; onSe
               <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
           )}
-          <a
-            href={API_PORTAL_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-purple-700 hover:underline whitespace-nowrap"
-          >
-            <Code2 className="h-3.5 w-3.5" />
-            {t('freeMeetingsPromo', 'apiLink', 'Build with our API')}
-          </a>
+          {showApiLink && (
+            <a
+              href={API_PORTAL_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-purple-700 hover:underline whitespace-nowrap"
+            >
+              <Code2 className="h-3.5 w-3.5" />
+              {t('freeMeetingsPromo', 'apiLink', 'Build with our API')}
+            </a>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -187,7 +187,7 @@ export const ModerationReportsPanel: React.FC = () => {
                     <span>
                       Author: <span className="text-foreground">{r.reported_user_name || 'Unknown'}</span>
                       {r.reported_user_is_banned && (
-                        <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-[10px]">banned</Badge>
+                        <Badge variant="destructive" className="ml-2 px-1.5 py-0 text-xs">banned</Badge>
                       )}
                     </span>
                     {r.content_url && (

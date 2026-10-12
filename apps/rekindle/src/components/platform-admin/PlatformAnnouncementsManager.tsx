@@ -17,6 +17,7 @@ import {
   AlertTriangle, Info, CheckCircle, Bell, Calendar,
   Users, Building2, Eye, EyeOff
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface Announcement {
   id: string;
@@ -169,7 +170,7 @@ export const PlatformAnnouncementsManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('platformAnnouncementsManager', 'confirmDelete', 'Are you sure you want to delete this announcement?'))) return;
+    if (!await confirmAction({ title: t('platformAnnouncementsManager', 'confirmDeleteTitle', 'Delete this announcement?'), confirmLabel: t('platformAnnouncementsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { data, error } = await supabase.from('platform_announcements').delete().eq('id', id).select().maybeSingle();
@@ -365,10 +366,10 @@ export const PlatformAnnouncementsManager: React.FC = () => {
                       >
                         {announcement.is_active ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(announcement)}>
+                      <Button aria-label={t('a11y', 'editAnnouncement', 'Edit announcement')} variant="ghost" size="icon" onClick={() => handleEdit(announcement)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(announcement.id)}>
+                      <Button aria-label={t('a11y', 'deleteAnnouncement', 'Delete announcement')} variant="ghost" size="icon" onClick={() => handleDelete(announcement.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

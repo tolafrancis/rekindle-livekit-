@@ -380,7 +380,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                 <Plug className="h-3.5 w-3.5" />
                 {t('evangelismInbox', 'connectChannels', 'Connect channels')}
               </Button>
-              <Button variant="ghost" size="icon" onClick={loadContacts} title={t('evangelismInbox', 'refresh', 'Refresh')}>
+              <Button aria-label={t('evangelismInbox', 'refresh', 'Refresh')} variant="ghost" size="icon" onClick={loadContacts} title={t('evangelismInbox', 'refresh', 'Refresh')}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
@@ -482,7 +482,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                     {contact.tags.length > 0 && (
                       <div className="flex gap-1 mt-1 flex-wrap">
                         {contact.tags.slice(0, 2).map(tag => (
-                          <span key={tag} className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{tag}</span>
+                          <span key={tag} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{tag}</span>
                         ))}
                       </div>
                     )}
@@ -508,7 +508,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
           {/* Thread header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/80">
             <div className="flex items-center gap-3 min-w-0">
-              <button
+              <button aria-label={t('evangelismInbox', 'backToContacts', 'Back to contacts')}
                 className="md:hidden p-1 rounded hover:bg-gray-100"
                 onClick={() => setSelectedContact(null)}
               >
@@ -547,7 +547,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                 </Button>
               )}
               {selectedContact.status !== 'archived' && (
-                <Button variant="ghost" size="sm" className="text-xs text-gray-400" onClick={() => updateStatus('archived')}>
+                <Button aria-label={t('evangelismInbox', 'archiveConversation', 'Archive conversation')} variant="ghost" size="sm" className="text-xs text-gray-400" onClick={() => updateStatus('archived')}>
                   <Archive className="h-3.5 w-3.5" />
                 </Button>
               )}
@@ -570,7 +570,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                 {selectedContact.tags.map(tag => (
                   <span key={tag} className="inline-flex items-center gap-1 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
                     {tag}
-                    <button onClick={() => removeTag(tag)} className="hover:text-purple-900">×</button>
+                    <button aria-label={t('evangelismInbox', 'removeTag', 'Remove tag')} onClick={() => removeTag(tag)} className="hover:text-purple-900">×</button>
                   </span>
                 ))}
                 <input
@@ -605,11 +605,11 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                     }`}>
                       <p className="break-words">{msg.body}</p>
                       <div className={`flex items-center justify-end gap-1 mt-1 ${isOut ? 'text-purple-200' : 'text-gray-400'}`}>
-                        <span className="text-[10px]">{timeAgo(msg.created_at)}</span>
+                        <span className="text-xs">{timeAgo(msg.created_at)}</span>
                         {isOut && (
                           msg.status === 'read'      ? <CheckCheck className="h-3 w-3 text-blue-300" /> :
                           msg.status === 'delivered' ? <CheckCheck className="h-3 w-3" /> :
-                          msg.status === 'failed'    ? <span className="text-red-300 text-[10px]">{t('evangelismInbox', 'failed', 'failed')}</span> :
+                          msg.status === 'failed'    ? <span className="text-red-300 text-xs">{t('evangelismInbox', 'failed', 'failed')}</span> :
                           <Clock className="h-3 w-3" />
                         )}
                       </div>
@@ -640,7 +640,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                   >
                     {t('evangelismInbox', 'use', 'Use')}
                   </Button>
-                  <Button
+                  <Button aria-label={t('evangelismInbox', 'dismissSuggestion', 'Dismiss suggestion')}
                     size="sm" variant="ghost"
                     className="text-xs h-7 text-gray-400"
                     onClick={() => setAiSuggestion('')}
@@ -686,7 +686,7 @@ export const EvangelismInbox: React.FC<Props> = ({ ministryId, ministryName, isL
                   </Button>
                 </div>
               </div>
-              <p className="text-[10px] text-gray-400 mt-1">{t('evangelismInbox', 'replyHint', 'Enter to send · Shift+Enter for new line · 🤖 for AI suggestion')}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('evangelismInbox', 'replyHint', 'Enter to send · Shift+Enter for new line · 🤖 for AI suggestion')}</p>
             </div>
           ) : (
             <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">

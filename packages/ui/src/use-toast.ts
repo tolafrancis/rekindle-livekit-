@@ -5,7 +5,8 @@ import type {
   ToastProps,
 } from "./toast";
 
-const TOAST_LIMIT = 1;
+// Up to 3 at once, so bursts (e.g. webinar questions) stack instead of replacing each other.
+const TOAST_LIMIT = 3;
 const TOAST_REMOVE_DELAY = 1000000;
 
 type ToasterToast = ToastProps & {

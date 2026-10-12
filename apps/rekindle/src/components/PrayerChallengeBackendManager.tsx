@@ -643,7 +643,7 @@ export const PrayerChallengeBackendManager: React.FC = () => {
                         <><Eye className="h-4 w-4 mr-1" />{t('prayerChallengeBackendManager', 'activate', 'Activate')}</>
                       )}
                     </Button>
-                    <Button
+                    <Button aria-label={t('a11y', 'deleteChallenge', 'Delete challenge')}
                       size="sm"
                       variant="destructive"
                       onClick={() => {
@@ -839,7 +839,7 @@ export const PrayerChallengeBackendManager: React.FC = () => {
                       placeholder={t('prayerChallengeBackendManager', 'prayerPointX', 'Prayer point {num}').replace('{num}', String(idx + 1))}
                     />
                     {editForm.prayer_points.length > 1 && (
-                      <Button
+                      <Button aria-label={t('a11y', 'removePrayerPoint', 'Remove prayer point')}
                         type="button"
                         variant="ghost"
                         size="icon"
@@ -969,7 +969,7 @@ export const PrayerChallengeBackendManager: React.FC = () => {
                       placeholder={t('prayerChallengeBackendManager', 'prayerPointX', 'Prayer point {num}').replace('{num}', String(idx + 1))}
                     />
                     {editForm.prayer_points.length > 1 && (
-                      <Button
+                      <Button aria-label={t('a11y', 'removePrayerPoint', 'Remove prayer point')}
                         type="button"
                         variant="ghost"
                         size="icon"

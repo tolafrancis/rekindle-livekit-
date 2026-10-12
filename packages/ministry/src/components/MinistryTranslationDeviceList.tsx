@@ -153,7 +153,7 @@ export const MinistryTranslationDeviceList: React.FC<MinistryTranslationDeviceLi
               </p>
             </div>
             {device.status === 'active' && (
-              <Button variant="ghost" size="sm" onClick={() => setRevokeTarget(device)}>
+              <Button aria-label="Revoke device" variant="ghost" size="sm" onClick={() => setRevokeTarget(device)}>
                 <Trash2 className="h-4 w-4 text-red-600" />
               </Button>
             )}
@@ -182,7 +182,7 @@ export const MinistryTranslationDeviceList: React.FC<MinistryTranslationDeviceLi
               </Alert>
               <div className="flex items-center gap-2">
                 <code className="flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all">{newRawKey}</code>
-                <Button variant="outline" size="sm" onClick={copyKey}><Copy className="h-4 w-4" /></Button>
+                <Button aria-label="Copy key" variant="outline" size="sm" onClick={copyKey}><Copy className="h-4 w-4" /></Button>
               </div>
             </div>
           )}

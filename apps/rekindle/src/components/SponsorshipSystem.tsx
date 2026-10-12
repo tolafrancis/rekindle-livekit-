@@ -322,7 +322,10 @@ export const SponsorshipSystem: React.FC = () => {
     setAmount('');
     setCustomAmount('');
     loadDonations();
-    toast({ title: t('sponsorshipSystem', 'thankYou', 'Thank You! 🙏'), description: t('sponsorshipSystem', 'youAreNowPartner', 'You are now {tier} Partner.').replace('{tier}', selectedTier === 'ministry' ? t('sponsorshipSystem', 'aMinistry', 'a Ministry') : t('sponsorshipSystem', 'anIndividual', 'an Individual')) });
+    toast({ title: t('sponsorshipSystem', 'thankYou', 'Thank You! 🙏'), description: selectedTier === 'ministry'
+      // Only Ministry giving grants partner access (see calcPartnerDays); individual giving is a donation.
+      ? t('sponsorshipSystem', 'youAreNowPartner', 'You are now {tier} Partner.').replace('{tier}', t('sponsorshipSystem', 'aMinistry', 'a Ministry'))
+      : t('sponsorshipSystem', 'thankYouForGift', 'Thank you for your gift to the mission.') });
   };
 
   const redeemVoucher = async () => {
@@ -355,8 +358,8 @@ export const SponsorshipSystem: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-serif font-bold">{t('sponsorshipSystem', 'partnerWithRekindle', 'Partner with ReKindle BC')}</h1>
-          <p className="text-gray-600 mt-1">{t('sponsorshipSystem', 'supportMissionSubtitle', 'Support the mission and unlock powerful features')}</p>
+          <h1 className="text-3xl font-serif font-bold">{t('sponsorshipSystem', 'giveTitle', 'Give')}</h1>
+          <p className="text-gray-600 mt-1">{t('sponsorshipSystem', 'giveSubtitle', 'Support the mission and partner with us')}</p>
         </div>
         <Button variant="outline" onClick={() => setShowRedeemModal(true)}>
           <Ticket className="h-4 w-4 mr-2" />{t('sponsorshipSystem', 'redeemVoucher', 'Redeem Voucher')}
@@ -387,7 +390,7 @@ export const SponsorshipSystem: React.FC = () => {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="partners">{t('sponsorshipSystem', 'becomeAPartner', 'Become a Partner')}</TabsTrigger>
+          <TabsTrigger value="partners">{t('sponsorshipSystem', 'giveTab', 'Give')}</TabsTrigger>
           <TabsTrigger value="vouchers">{t('sponsorshipSystem', 'vouchers', 'Vouchers')}</TabsTrigger>
           <TabsTrigger value="history">{t('sponsorshipSystem', 'givingHistory', 'Giving History')}</TabsTrigger>
         </TabsList>
@@ -513,7 +516,7 @@ export const SponsorshipSystem: React.FC = () => {
                             <div>
                               <p className="font-semibold text-sm flex items-center gap-2">
                                 {opt.title}
-                                {opt.highlight && <Badge className="bg-[#003087] text-white text-[10px] px-1.5 py-0">{t('sponsorshipSystem', 'popular', 'Popular')}</Badge>}
+                                {opt.highlight && <Badge className="bg-[#003087] text-white text-xs px-1.5 py-0">{t('sponsorshipSystem', 'popular', 'Popular')}</Badge>}
                               </p>
                               <p className="text-xs text-gray-500">{opt.subtitle}</p>
                             </div>
@@ -597,7 +600,7 @@ export const SponsorshipSystem: React.FC = () => {
                         <p className="text-xs text-gray-400">{f.label}</p>
                         <p className="text-sm font-medium">{f.value}</p>
                       </div>
-                      <button onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
+                      <button aria-label={`${t('a11y', 'copy', 'Copy')} ${f.label}`} onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
                         <Copy className="h-3.5 w-3.5 text-gray-400" />
                       </button>
                     </div>
@@ -654,7 +657,7 @@ export const SponsorshipSystem: React.FC = () => {
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <span>{t('sponsorshipSystem', 'expiresLabel', 'Expires:')} {new Date(v.expires_at).toLocaleDateString()}</span>
                       {v.status === 'active' && (
-                        <Button size="sm" variant="ghost" onClick={() => copyToClipboard(v.code, t('sponsorshipSystem', 'voucherCode', 'Voucher code'))}>
+                        <Button aria-label={t('a11y', 'copyVoucherCode', 'Copy voucher code')} size="sm" variant="ghost" onClick={() => copyToClipboard(v.code, t('sponsorshipSystem', 'voucherCode', 'Voucher code'))}>
                           <Copy className="h-4 w-4" />
                         </Button>
                       )}

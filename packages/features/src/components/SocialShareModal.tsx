@@ -162,7 +162,7 @@ export const SocialShareModal: React.FC<Props> = ({
               readOnly
               className="flex-1 bg-gray-50"
             />
-            <Button
+            <Button aria-label={t('a11y', 'copyLink', 'Copy link')}
               onClick={copyLink}
               variant={copied ? 'default' : 'outline'}
               className={copied ? 'bg-green-600 hover:bg-green-700' : ''}

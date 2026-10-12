@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { AppProvider } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginForm } from '@/components/auth/LoginForm';
-import { SignupForm } from '@/components/auth/SignupForm';
+import { SignupForm, ConfirmEmailNotice } from '@/components/auth/SignupForm';
 import { PasswordResetForm } from '@/components/auth/PasswordResetForm';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
@@ -95,7 +95,8 @@ const AuthGate: React.FC = () => {
     initialized, 
     clearAuthState, 
     isRecoveryMode, 
-    setRecoveryMode 
+    setRecoveryMode,
+    signOut
   } = useAuth();
   
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'reset'>('login');
@@ -106,6 +107,9 @@ const AuthGate: React.FC = () => {
   const [forceShowContent, setForceShowContent] = useState(false);
   // True when an unauthenticated user arrives via a meeting join link
   const [isGuestJoining, setIsGuestJoining] = useState(false);
+  // Address a sign-up was just made with, when Supabase created the account
+  // but returned no session (email confirmation on) — shows "Confirm your email".
+  const [pendingConfirmEmail, setPendingConfirmEmail] = useState<string | null>(null);
   
   // State for tab navigation from location state
   const [pendingRoomJoin, setPendingRoomJoin] = useState<{
@@ -319,6 +323,26 @@ const AuthGate: React.FC = () => {
     );
   }
 
+  // Sign-up succeeded but the account needs its email confirmed first. Shown
+  // before the user/app checks below: AuthContext's signUp() records the new
+  // user locally even without a session, which would otherwise drop the
+  // visitor into an app shell they can't use yet.
+  if (pendingConfirmEmail) {
+    return (
+      <ConfirmEmailNotice
+        email={pendingConfirmEmail}
+        onBackToSignIn={() => {
+          // Clear the session-less local user via the context's existing
+          // signOut(), then reopen the sign-in form.
+          void signOut();
+          setPendingConfirmEmail(null);
+          setAuthMode('login');
+          setAuthOpen(true);
+        }}
+      />
+    );
+  }
+
   // Not logged in — show a preview of the shared item (free taste) for shared
   // content links, otherwise the marketing landing page. Auth forms overlay both.
   if (!user && !isGuestJoining) {
@@ -361,7 +385,9 @@ const AuthGate: React.FC = () => {
           {authMode === 'signup' && (
             <SignupForm
               onSwitchToLogin={() => setAuthMode('login')}
-              onSuccess={() => {}}
+              onSuccess={(info) => {
+                if (info?.needsEmailConfirmation) setPendingConfirmEmail(info.email);
+              }}
             />
           )}
         </div>

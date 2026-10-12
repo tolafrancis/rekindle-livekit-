@@ -305,7 +305,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
                 value={settings.template_name}
                 onChange={(e) => setSettings((s) => ({ ...s, template_name: e.target.value }))}
               />
-              <p className="text-[11px] text-gray-400 mt-1">{t('ministryBirthdayWishes', 'twilioHint', 'Twilio users: paste the Content SID (HX…).')}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('ministryBirthdayWishes', 'twilioHint', 'Twilio users: paste the Content SID (HX…).')}</p>
             </div>
             <div>
               <Label htmlFor="lang">{t('ministryBirthdayWishes', 'templateLanguage', 'Template language')}</Label>
@@ -315,14 +315,14 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
                 value={settings.template_language}
                 onChange={(e) => setSettings((s) => ({ ...s, template_language: e.target.value }))}
               />
-              <p className="text-[11px] text-gray-400 mt-1">{t('ministryBirthdayWishes', 'languageHint', 'Match the language code of the approved template (e.g. en_US, vi).')}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('ministryBirthdayWishes', 'languageHint', 'Match the language code of the approved template (e.g. en_US, vi).')}</p>
             </div>
           </div>
 
           {/* Variable mapping */}
           <div>
             <Label>{t('ministryBirthdayWishes', 'variableMapping', 'Variable mapping')}</Label>
-            <p className="text-[11px] text-gray-400 mb-2">
+            <p className="text-xs text-gray-500 mb-2">
               {t('ministryBirthdayWishes', 'variableMappingDesc', 'Map each template variable slot in order: the first row fills {slot1}, the second {slot2}, and so on.').replace('{slot1}', '{{1}}').replace('{slot2}', '{{2}}')}
             </p>
             <div className="space-y-2">
@@ -339,7 +339,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button variant="ghost" size="icon" onClick={() => removeMapping(idx)} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                  <Button aria-label={t('ministryBirthdayWishes', 'removeMapping', 'Remove')} variant="ghost" size="icon" onClick={() => removeMapping(idx)} className="text-gray-400 hover:text-red-500 flex-shrink-0">
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -390,10 +390,10 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
               value={settings.sms_message}
               onChange={(e) => setSettings((s) => ({ ...s, sms_message: e.target.value }))}
             />
-            <p className="text-[11px] text-gray-400 mt-1">
+            <p className="text-xs text-gray-500 mt-1">
               {t('ministryBirthdayWishes', 'smsMessageHint', 'Use {member_name} and {ministry_name} anywhere in the text — both get replaced per member.')}
             </p>
-            <p className="text-[11px] text-gray-400 mt-1">
+            <p className="text-xs text-gray-500 mt-1">
               {t('ministryBirthdayWishes', 'smsSegmentHint', '{count} characters · {segments} SMS segment(s)')
                 .replace('{count}', String(settings.sms_message.length))
                 .replace('{segments}', String(Math.max(1, Math.ceil(settings.sms_message.length / SMS_SEGMENT_LENGTH))))}
@@ -405,7 +405,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
               <Link2 className="h-3.5 w-3.5" /> {t('ministryBirthdayWishes', 'twilioSmsCredentials', 'Twilio SMS credentials')}
             </p>
             {smsConfig?.connection_status === 'connected' && (
-              <p className="text-[11px] text-gray-500">
+              <p className="text-xs text-gray-500">
                 {t('ministryBirthdayWishes', 'currentlyConnectedAs', 'Currently connected: {number}').replace('{number}', smsConfig.from_number || '')}
               </p>
             )}
@@ -470,7 +470,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
                 )}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-gray-400 mt-1">{t('ministryBirthdayWishes', 'timezoneHint', '"Today" is decided in this timezone.')}</p>
+            <p className="text-xs text-gray-500 mt-1">{t('ministryBirthdayWishes', 'timezoneHint', '"Today" is decided in this timezone.')}</p>
           </div>
           <div>
             <Label htmlFor="hour" className="flex items-center gap-1">
@@ -486,7 +486,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-gray-400 mt-1">{t('ministryBirthdayWishes', 'sendHourHint', 'Messages go out around this hour, in the timezone above.')}</p>
+            <p className="text-xs text-gray-500 mt-1">{t('ministryBirthdayWishes', 'sendHourHint', 'Messages go out around this hour, in the timezone above.')}</p>
           </div>
         </CardContent>
       </Card>
@@ -502,7 +502,7 @@ export const MinistryBirthdayWishes: React.FC<Props> = ({ ministryId, ministryNa
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-base">{t('ministryBirthdayWishes', 'recentSends', 'Recent sends')}</CardTitle>
-          <Button variant="ghost" size="sm" onClick={loadLog}>
+          <Button aria-label={t('ministryBirthdayWishes', 'refreshLog', 'Refresh')} variant="ghost" size="sm" onClick={loadLog}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </CardHeader>

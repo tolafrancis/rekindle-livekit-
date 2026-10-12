@@ -180,7 +180,7 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({
             <span className="text-sm font-medium text-green-700 flex-1 truncate">
               {selectedTrack.title}
             </span>
-            <Button
+            <Button aria-label="Clear selected music"
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
@@ -245,7 +245,7 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({
       {/* Preview Controls */}
       {showPreview && previewTrack && (
         <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-          <Button
+          <Button aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-purple-600"
@@ -266,7 +266,7 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({
             <p className="text-xs text-purple-500 truncate">{previewTrack.artist}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
+            <Button aria-label={isMuted ? 'Unmute' : 'Mute'}
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-purple-600"
@@ -281,7 +281,7 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({
               className="w-16"
             />
           </div>
-          <Button
+          <Button aria-label="Stop preview"
             variant="ghost"
             size="icon"
             className="h-6 w-6 text-purple-600"

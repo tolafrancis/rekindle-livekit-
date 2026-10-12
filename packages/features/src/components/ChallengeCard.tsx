@@ -133,7 +133,7 @@ export const ChallengeCard: React.FC<Props> = ({
         </div>
 
         <div className="absolute top-2 right-2">
-          <Button
+          <Button aria-label="Share"
             variant="ghost"
             size="icon"
             onClick={onShare}

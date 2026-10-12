@@ -823,7 +823,7 @@ export const AdminTranslationDashboard: React.FC = () => {
                       .replace('{total}', String(filteredEntries.length))}
                   </span>
                   <div className="flex gap-2">
-                    <Button
+                    <Button aria-label={t('a11y', 'previousPage', 'Previous page')}
                       variant="outline"
                       size="sm"
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
@@ -836,7 +836,7 @@ export const AdminTranslationDashboard: React.FC = () => {
                         .replace('{current}', String(currentPage))
                         .replace('{total}', String(totalPages))}
                     </span>
-                    <Button
+                    <Button aria-label={t('a11y', 'nextPage', 'Next page')}
                       variant="outline"
                       size="sm"
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}

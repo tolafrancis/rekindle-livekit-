@@ -58,7 +58,7 @@ export const StreakWidget: React.FC = () => {
           {longest > 0 && (
             <div className="text-right flex-shrink-0">
               <p className="text-base font-semibold leading-none">{longest}</p>
-              <p className="text-[10px] uppercase tracking-wide opacity-70 mt-1">{t('streak', 'best', 'best')}</p>
+              <p className="text-xs uppercase tracking-wide opacity-70 mt-1">{t('streak', 'best', 'best')}</p>
             </div>
           )}
         </div>
@@ -67,7 +67,7 @@ export const StreakWidget: React.FC = () => {
 
         {current > 0 && (
           <div className="mt-3">
-            <div className="flex justify-between text-[11px] opacity-80 mb-1">
+            <div className="flex justify-between text-xs opacity-80 mb-1">
               <span>{t('streak', 'nextMilestone', 'Next milestone')}</span>
               <span>{t('streak', 'progress', '{current} / {target} days', { current, target })}</span>
             </div>

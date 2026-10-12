@@ -601,7 +601,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
             </div>
           </div>
           <div className="flex gap-2">
-          <Button
+          <Button aria-label={t('mLiveChannel', 'refresh', 'Refresh')}
             variant="secondary"
             size="icon"
             onClick={loadChannels}
@@ -1168,7 +1168,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
                 {newChannel.channel_logo_url ? (
                   <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
                     <img src={newChannel.channel_logo_url} alt={t('mLiveChannel', 'logoAlt', 'Logo')} className="w-full h-full object-cover" />
-                    <button
+                    <button aria-label={t('mLiveChannel', 'removeLogo', 'Remove logo')}
                       type="button"
                       onClick={() => setNewChannel(prev => ({ ...prev, channel_logo_url: '' }))}
                       className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
@@ -1205,7 +1205,7 @@ export const MLiveChannel: React.FC<MLiveChannelProps> = ({
               {newChannel.featured_image_url ? (
                 <div className="relative w-full h-24 rounded-lg overflow-hidden border-2 border-gray-200">
                   <img src={newChannel.featured_image_url} alt={t('mLiveChannel', 'featuredAlt', 'Featured')} className="w-full h-full object-cover" />
-                  <button
+                  <button aria-label={t('mLiveChannel', 'removeFeaturedImage', 'Remove featured image')}
                     type="button"
                     onClick={() => setNewChannel(prev => ({ ...prev, featured_image_url: '' }))}
                     className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"

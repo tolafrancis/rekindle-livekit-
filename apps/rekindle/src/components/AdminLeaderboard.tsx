@@ -12,6 +12,7 @@ import {
   Trophy, Award, RefreshCw, Loader2, Search, Edit, Plus, Trash2,
   Users, Zap, Flame, Target, Crown
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface UserStat {
   id: string;
@@ -120,7 +121,7 @@ export const AdminLeaderboard: React.FC = () => {
   };
 
   const handleResetStreak = async (userId: string) => {
-    if (!confirm(t('adminLeaderboard', 'resetStreakConfirm', 'Reset prayer streak for this user?'))) return;
+    if (!await confirmAction({ title: t('adminLeaderboard', 'resetStreakConfirm', 'Reset prayer streak for this user?'), confirmLabel: t('adminLeaderboard', 'reset', 'Reset'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -263,14 +264,14 @@ export const AdminLeaderboard: React.FC = () => {
                     <td className="p-4">{stat.disciples_mentored}</td>
                     <td className="p-4">
                       <div className="flex gap-2">
-                        <Button
+                        <Button aria-label={t('a11y', 'edit', 'Edit')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleEdit(stat)}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
+                        <Button aria-label={t('a11y', 'resetStreak', 'Reset streak')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleResetStreak(stat.user_id)}

@@ -98,8 +98,10 @@ export const PartnerDonationPage: React.FC = () => {
     ? new Date(profile.partner_expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : null;
 
-  const USD_AMOUNTS = [5, 10, 25, 50, 100];
-  const NGN_AMOUNTS = [1000, 2500, 5000, 10000, 25000];
+  // Same individual-gift presets as the Give screen (SponsorshipSystem) so
+  // the two never show different amounts. Custom amounts are still accepted.
+  const USD_AMOUNTS = [5, 10, 25, 50];
+  const NGN_AMOUNTS = [1000, 5000, 10000, 25000];
   const amounts = currency === 'NGN' ? NGN_AMOUNTS : USD_AMOUNTS;
   const symbol  = currency === 'NGN' ? '₦' : '$';
 
@@ -215,7 +217,7 @@ export const PartnerDonationPage: React.FC = () => {
       <div className="text-center pt-4">
         <div className="flex items-center justify-center gap-2 mb-2">
           <Heart className="h-6 w-6 text-rose-500 fill-rose-500" />
-          <h1 className="text-2xl font-bold">{t('partnerDonationPage', 'partnerWithRekindle', 'Partner with ReKindle BC')}</h1>
+          <h1 className="text-2xl font-bold">{t('partnerDonationPage', 'giveTitle', 'Give')}</h1>
         </div>
         <p className="text-sm text-gray-500">{t('partnerDonationPage', 'reachSoulsGlobally', 'Help us reach souls globally through digital ministry')}</p>
       </div>
@@ -249,7 +251,7 @@ export const PartnerDonationPage: React.FC = () => {
                 <p className="text-xs text-gray-500">
                   {isPartner
                     ? t('partnerDonationPage', 'active', 'Active')
-                    : t('partnerDonationPage', 'giveAnyAmount', 'Give any amount to become a Partner')}
+                    : t('partnerDonationPage', 'partnerViaPlan', 'Partner access comes with a Partner plan')}
                 </p>
               </div>
             </div>
@@ -267,7 +269,7 @@ export const PartnerDonationPage: React.FC = () => {
             <Sparkles className="h-4 w-4 text-amber-500" />
             {t('partnerDonationPage', 'partnerBenefits', 'Partner Benefits')}
           </CardTitle>
-          <CardDescription>{t('partnerDonationPage', 'unlockedByDonation', 'Unlocked by any donation')}</CardDescription>
+          <CardDescription>{t('partnerDonationPage', 'includedWithPlan', 'Included with a Partner plan')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {PARTNER_BENEFITS.map(b => (
@@ -339,7 +341,7 @@ export const PartnerDonationPage: React.FC = () => {
                         <p className="font-semibold text-sm flex items-center gap-2">
                           {optTitle}
                           {opt.highlight && (
-                            <Badge className="bg-purple-600 text-white text-[10px] px-1.5 py-0">{t('partnerDonationPage', 'popular', 'Popular')}</Badge>
+                            <Badge className="bg-purple-600 text-white text-xs px-1.5 py-0">{t('partnerDonationPage', 'popular', 'Popular')}</Badge>
                           )}
                         </p>
                         <p className="text-xs text-gray-500">{optSubtitle}</p>
@@ -404,7 +406,7 @@ export const PartnerDonationPage: React.FC = () => {
               </div>
 
               {/* Amount buttons */}
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 {amounts.map(a => (
                   <button
                     key={a}
@@ -517,7 +519,7 @@ export const PartnerDonationPage: React.FC = () => {
                         <p className="text-xs text-gray-400">{f.label}</p>
                         <p className="text-sm font-medium">{f.value}</p>
                       </div>
-                      <button onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
+                      <button aria-label={`${t('a11y', 'copy', 'Copy')} ${f.label}`} onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
                         <Copy className="h-3.5 w-3.5 text-gray-400" />
                       </button>
                     </div>

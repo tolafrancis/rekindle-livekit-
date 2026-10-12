@@ -24,6 +24,7 @@ import {
   FileText
 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface PaymentReceipt {
   id: string;
@@ -142,7 +143,7 @@ export const PaymentHistory: React.FC<PaymentHistoryProps> = ({ onNavigateToSubs
       return;
     }
 
-    if (!confirm(t('paymentHistory', 'confirmCancelSubscription', 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your billing period.'))) {
+    if (!await confirmAction({ title: t('paymentHistory', 'confirmCancelSubscriptionTitle', 'Cancel your subscription?'), description: t('paymentHistory', 'confirmCancelSubscriptionDesc', 'You will lose access to premium features at the end of your billing period.'), confirmLabel: t('paymentHistory', 'cancelSubscription', 'Cancel subscription'), destructive: true })) {
       return;
     }
 
@@ -275,96 +276,23 @@ For questions, contact support@rekindle.app
 
   return (
     <div className="space-y-6">
-      {/* Giving & Partnership */}
-      <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-white">
+      {/* Payment History */}
+      <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Heart className="h-6 w-6 text-purple-600" />
+              <div className="p-2 bg-gray-100 rounded-lg">
+                <Receipt className="h-6 w-6 text-gray-600" />
               </div>
               <div>
-                <CardTitle>{t('paymentHistory', 'givingPartnership', 'Giving & Partnership')}</CardTitle>
-                <CardDescription>{t('paymentHistory', 'givingSustainsMission', 'ReKindle is free — your giving sustains the mission')}</CardDescription>
+                <CardTitle>{t('paymentHistory', 'paymentHistoryTitle', 'Payment History')}</CardTitle>
+                <CardDescription>{t('paymentHistory', 'viewDownloadReceipts', 'View and download your past receipts')}</CardDescription>
               </div>
             </div>
             <Button variant="outline" size="sm" onClick={loadPaymentData}>
               <RefreshCw className="h-4 w-4 mr-2" />
               {t('paymentHistory', 'refresh', 'Refresh')}
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {subscription ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">{t('paymentHistory', 'partnerLevel', 'Partner level')}</p>
-                  <p className="font-semibold capitalize">{subscription.subscription_tier}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">{t('paymentHistory', 'status', 'Status')}</p>
-                  {getStatusBadge(subscription.status)}
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">{t('paymentHistory', 'partnerSince', 'Partner since')}</p>
-                  <p className="font-medium">{formatDate(subscription.current_period_start)}</p>
-                </div>
-              </div>
-              <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm text-purple-800">
-                {t('paymentHistory', 'thankYouPartnering', 'Thank you for partnering with ReKindle. Your giving keeps the platform free and the mission moving forward.')}
-              </div>
-              <div className="flex gap-3 pt-1">
-                <Button className="bg-purple-600 hover:bg-purple-700" onClick={handleUpgradeToPremium}>
-                  <Heart className="h-4 w-4 mr-2" />
-                  {t('paymentHistory', 'manageGiving', 'Manage giving')}
-                </Button>
-                {subscription.stripe_customer_id && (
-                  <Button
-                    variant="outline"
-                    onClick={openStripePortal}
-                    disabled={actionLoading === 'stripe-portal'}
-                  >
-                    {actionLoading === 'stripe-portal' ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <CreditCard className="h-4 w-4 mr-2" />
-                    )}
-                    {t('paymentHistory', 'paymentMethods', 'Payment methods')}
-                  </Button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-6">
-              <Heart className="h-10 w-10 mx-auto text-purple-300 mb-3" />
-              <p className="text-gray-700 font-medium mb-1">{t('paymentHistory', 'freeForEveryone', 'ReKindle is free for everyone.')}</p>
-              <p className="text-gray-500 mb-4 text-sm">
-                {t('paymentHistory', 'becomePartnerSupport', 'Become a partner to support the mission and help us reach more people.')}
-              </p>
-              <Button
-                className="bg-purple-600 hover:bg-purple-700"
-                onClick={handleUpgradeToPremium}
-              >
-                <Heart className="h-4 w-4 mr-2" />
-                {t('paymentHistory', 'becomeAPartner', 'Become a Partner')}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Payment History */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Receipt className="h-6 w-6 text-gray-600" />
-            </div>
-            <div>
-              <CardTitle>{t('paymentHistory', 'paymentHistoryTitle', 'Payment History')}</CardTitle>
-              <CardDescription>{t('paymentHistory', 'viewDownloadReceipts', 'View and download your past receipts')}</CardDescription>
-            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -419,7 +347,7 @@ For questions, contact support@rekindle.app
                   </div>
                   <div className="flex items-center gap-2">
                     {receipt.receipt_url && (
-                      <Button 
+                      <Button aria-label={t('a11y', 'openReceipt', 'Open receipt')} 
                         variant="ghost" 
                         size="sm"
                         onClick={() => window.open(receipt.receipt_url!, '_blank')}
@@ -438,6 +366,81 @@ For questions, contact support@rekindle.app
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Your plan — summary only; giving itself lives on the Give screen */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Heart className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <CardTitle>{t('paymentHistory', 'yourPlanTitle', 'Your plan')}</CardTitle>
+                <CardDescription>{t('paymentHistory', 'givingSustainsMission', 'ReKindle is free — your giving sustains the mission')}</CardDescription>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {subscription ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">{t('paymentHistory', 'planLabel', 'Plan')}</p>
+                  <p className="font-semibold capitalize">{subscription.subscription_tier}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">{t('paymentHistory', 'status', 'Status')}</p>
+                  {getStatusBadge(subscription.status)}
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">{t('paymentHistory', 'partnerSince', 'Partner since')}</p>
+                  <p className="font-medium">{formatDate(subscription.current_period_start)}</p>
+                </div>
+              </div>
+              <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm text-purple-800">
+                {t('paymentHistory', 'thankYouPartnering', 'Thank you for partnering with ReKindle. Your giving keeps the platform free and the mission moving forward.')}
+              </div>
+              <div className="flex gap-3 pt-1">
+                <Button className="bg-purple-600 hover:bg-purple-700" onClick={handleUpgradeToPremium}>
+                  <Heart className="h-4 w-4 mr-2" />
+                  {t('paymentHistory', 'managePlan', 'Manage plan')}
+                </Button>
+                {subscription.stripe_customer_id && (
+                  <Button
+                    variant="outline"
+                    onClick={openStripePortal}
+                    disabled={actionLoading === 'stripe-portal'}
+                  >
+                    {actionLoading === 'stripe-portal' ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <CreditCard className="h-4 w-4 mr-2" />
+                    )}
+                    {t('paymentHistory', 'paymentMethods', 'Payment methods')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <Heart className="h-10 w-10 mx-auto text-purple-300 mb-3" />
+              <p className="text-gray-700 font-medium mb-1">{t('paymentHistory', 'freeForEveryone', 'ReKindle is free for everyone.')}</p>
+              <p className="text-gray-500 mb-4 text-sm">
+                {t('paymentHistory', 'supportViaPlansOrGive', 'Support the mission with a plan, or give a gift any time from Give.')}
+              </p>
+              <Button
+                className="bg-purple-600 hover:bg-purple-700"
+                onClick={handleUpgradeToPremium}
+              >
+                <Heart className="h-4 w-4 mr-2" />
+                {t('paymentHistory', 'seePlans', 'See plans')}
+              </Button>
             </div>
           )}
         </CardContent>
