@@ -867,7 +867,7 @@ export const BookSummaries: React.FC = () => {
                       <FileText className="h-4 w-4 text-white" />
                     </div>
                   )}
-                  <Button 
+                  <Button aria-label={t('a11y', 'saveBook', 'Save book')} 
                     size="icon" 
                     variant="ghost" 
                     className="h-8 w-8 bg-white/20 hover:bg-white/40" 
@@ -983,23 +983,23 @@ export const BookSummaries: React.FC = () => {
                             </div>
                             
                             <div className="flex items-center gap-2">
-                              <Button variant="ghost" size="icon" onClick={skipBackward}>
+                              <Button aria-label={t('a11y', 'skipBack', 'Skip back')} variant="ghost" size="icon" onClick={skipBackward}>
                                 <SkipBack className="h-5 w-5" />
                               </Button>
-                              <Button
+                              <Button aria-label={isPlaying ? t('a11y', 'pause', 'Pause') : t('a11y', 'play', 'Play')}
                                 onClick={togglePlay}
                                 size="icon"
                                 className="h-12 w-12 rounded-full bg-purple-600 hover:bg-purple-700"
                               >
                                 {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-1" />}
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={skipForward}>
+                              <Button aria-label={t('a11y', 'skipForward', 'Skip forward')} variant="ghost" size="icon" onClick={skipForward}>
                                 <SkipForward className="h-5 w-5" />
                               </Button>
                             </div>
                             
                             <div className="flex items-center gap-2">
-                              <Button variant="ghost" size="icon" onClick={toggleMute}>
+                              <Button aria-label={isMuted ? t('a11y', 'unmute', 'Unmute') : t('a11y', 'mute', 'Mute')} variant="ghost" size="icon" onClick={toggleMute}>
                                 {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
                               </Button>
                               <Slider
@@ -1171,7 +1171,7 @@ export const BookSummaries: React.FC = () => {
                     readOnly 
                     className="font-mono bg-white"
                   />
-                  <Button
+                  <Button aria-label={t('a11y', 'copyReferralCode', 'Copy referral code')}
                     onClick={() => {
                       navigator.clipboard.writeText(userReferralCode);
                       toast({ title: t('bookSummaries', 'copied', 'Copied!'), description: t('bookSummaries', 'referralCodeCopied', 'Referral code copied to clipboard') });

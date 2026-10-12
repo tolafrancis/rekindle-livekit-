@@ -19,6 +19,7 @@ import {
   Star, Plus, Edit, Trash2, Search, Loader2, 
   AlertTriangle, RefreshCw, Volume2, X, Sparkles
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Types
 interface Affirmation {
@@ -207,7 +208,7 @@ export const AdminAffirmationManager: React.FC<AdminAffirmationManagerProps> = (
 
   // Handle delete
   const handleDelete = async (id: string) => {
-    if (!confirm(t('adminAffirmationManager', 'confirmDelete', 'Are you sure you want to delete this affirmation?'))) return;
+    if (!await confirmAction({ title: t('adminAffirmationManager', 'confirmDeleteTitle', 'Delete this affirmation?'), confirmLabel: t('adminAffirmationManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -493,7 +494,7 @@ export const AdminAffirmationManager: React.FC<AdminAffirmationManagerProps> = (
                                     {t('adminAffirmationManager', 'ttsAudioPreview', 'TTS Audio Preview')}
                                   </span>
                                 </div>
-                                <Button
+                                <Button aria-label={t('a11y', 'closeAudioPreview', 'Close audio preview')}
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => setShowAudioPreview(null)}

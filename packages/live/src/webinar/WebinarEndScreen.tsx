@@ -4,7 +4,7 @@ import { Button } from '@rekindle/ui/button';
 import { Label } from '@rekindle/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { PhoneOff, Clock, BarChart3 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import { supabase } from '@rekindle/supabase';
 import { WebinarAnalytics } from './WebinarAnalytics';
 import { WebinarTranscriptPanel } from './WebinarTranscriptPanel';

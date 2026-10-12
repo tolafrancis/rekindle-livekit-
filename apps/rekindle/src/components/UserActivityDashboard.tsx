@@ -778,7 +778,7 @@ export const UserActivityDashboard: React.FC = () => {
                       readOnly 
                       className="font-mono bg-white"
                     />
-                    <Button onClick={copyReferralCode}>
+                    <Button aria-label={t('a11y', 'copyReferralCode', 'Copy referral code')} onClick={copyReferralCode}>
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
@@ -863,7 +863,7 @@ export const UserActivityDashboard: React.FC = () => {
                             <p className="font-bold text-green-900">{book.conversions}</p>
                             <p className="text-xs text-gray-500">{t('userActivityDashboard', 'readsLabel', 'reads')}</p>
                           </div>
-                          <Button
+                          <Button aria-label={t('a11y', 'copyReferralLink', 'Copy referral link')}
                             size="sm"
                             variant="outline"
                             onClick={() => shareReferralLink(book)}

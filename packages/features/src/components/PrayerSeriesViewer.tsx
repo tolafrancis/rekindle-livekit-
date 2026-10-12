@@ -37,6 +37,7 @@ import {
   Share2, Copy, Send
 } from 'lucide-react';
 import { publicWebOrigin } from '../platform';
+import { clickableProps } from '../clickableProps';
 
 interface PrayerSeries {
   id: string;
@@ -1764,6 +1765,8 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
                 <div
                   key={track.id}
                   onClick={() => setSelectedMusicId(track.id)}
+                  {...clickableProps(() => setSelectedMusicId(track.id))}
+                  aria-pressed={selectedMusicId === track.id}
                   className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                     selectedMusicId === track.id
                       ? 'border-purple-600 bg-purple-50'
@@ -2130,6 +2133,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
                 key={series.id} 
                 className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                 onClick={() => loadSeries(series.id)}
+                {...clickableProps(() => loadSeries(series.id))}
               >
                 {series.cover_image_url ? (
                   <div className="h-48 bg-gradient-to-br from-indigo-500 to-purple-500">
@@ -2170,6 +2174,7 @@ export const PrayerSeriesViewer: React.FC<PrayerSeriesViewerProps> = ({
               key={series.id} 
               className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
               onClick={() => loadSeries(series.id)}
+              {...clickableProps(() => loadSeries(series.id))}
             >
               {series.cover_image_url ? (
                 <div className="h-32 bg-gradient-to-br from-indigo-500 to-purple-500">

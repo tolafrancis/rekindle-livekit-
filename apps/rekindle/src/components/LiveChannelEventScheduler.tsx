@@ -304,7 +304,7 @@ export const LiveChannelEventScheduler: React.FC<LiveChannelEventSchedulerProps>
                     alt={t('liveChannelEventScheduler', 'eventCoverAlt', 'Event cover')}
                     className="w-full h-full object-cover" 
                   />
-                  <button
+                  <button aria-label={t('a11y', 'removeCoverImage', 'Remove cover image')}
                     onClick={() => setFormData(prev => ({ ...prev, cover_image_url: '' }))}
                     className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1"
                   >

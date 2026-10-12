@@ -140,10 +140,10 @@ export const LiveChannelEventsCalendar: React.FC<LiveChannelEventsCalendarProps>
               <Button variant="outline" size="sm" onClick={goToToday}>
                 Today
               </Button>
-              <Button variant="outline" size="icon" onClick={goToPreviousMonth}>
+              <Button variant="outline" size="icon" onClick={goToPreviousMonth} aria-label="Previous month">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button variant="outline" size="icon" onClick={goToNextMonth}>
+              <Button variant="outline" size="icon" onClick={goToNextMonth} aria-label="Next month">
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>

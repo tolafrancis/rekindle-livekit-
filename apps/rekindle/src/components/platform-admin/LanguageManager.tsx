@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import { Loader2, Plus, Languages, Sparkles, Check, Trash2, Globe } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface AppLanguage {
   code: string;
@@ -323,7 +324,7 @@ export const LanguageManager: React.FC = () => {
 
   const removeLanguage = async (lang: AppLanguage) => {
     if (lang.code === 'en') { toast({ title: 'Not allowed', description: 'English is the base language and cannot be removed.', variant: 'destructive' }); return; }
-    if (!confirm(`Remove ${lang.name}? This deletes its registry entry and its ${lang.code} UI translations.`)) return;
+    if (!await confirmAction({ title: `Remove ${lang.name}?`, description: `This deletes its registry entry and its ${lang.code} UI translations.`, confirmLabel: 'Remove', destructive: true })) return;
     await supabase.from('ui_translations').delete().eq('language_code', lang.code);
     const { error } = await supabase.from('app_languages').delete().eq('code', lang.code);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
@@ -398,7 +399,7 @@ export const LanguageManager: React.FC = () => {
                     <Button size="sm" onClick={() => setPublished(lang, true)}><Check className="h-4 w-4 mr-1" /> Publish</Button>
                   )}
                   {lang.code !== 'en' && (
-                    <Button variant="ghost" size="icon" onClick={() => removeLanguage(lang)} className="text-red-600">
+                    <Button aria-label="Remove language" variant="ghost" size="icon" onClick={() => removeLanguage(lang)} className="text-red-600">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   )}

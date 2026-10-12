@@ -274,6 +274,7 @@ export const LiveChannelEventDetails: React.FC<LiveChannelEventDetailsProps> = (
               variant="ghost"
               size="icon"
               onClick={handleShare}
+              aria-label={t('liveChannelEventDetails', 'shareEvent', 'Share event')}
               className="absolute top-4 right-4 text-white bg-black/50 hover:bg-black/70"
             >
               {copied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}

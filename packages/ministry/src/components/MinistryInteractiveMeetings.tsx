@@ -24,6 +24,10 @@ import {
 } from '@rekindle/ui/select';
 import { Switch } from '@rekindle/ui/switch';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@rekindle/ui/alert-dialog';
+import {
   Video, Users, Calendar, Clock, Plus, Play, Circle,
   Copy, AlertCircle, Loader2,
   Lock, Globe,
@@ -44,7 +48,7 @@ import {
   commonTimeZones,
   REMINDER_OFFSET_OPTIONS,
 } from '@rekindle/features/meetingTime';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
 import { useActiveCall, useActiveCallOptional } from '@rekindle/live/ActiveCallContext';
 import MeetingRecordingPanel from '@rekindle/live/components/MeetingRecordingPanel';
@@ -87,6 +91,7 @@ import {
 // canHostInteractiveMeeting used to gate this off the wrong (legacy,
 // individual-donor) system. See ministry-billing-tier-enforcement-audit.md.
 import { getMinistryEntitlements, checkMinistryMeetingQuota } from '@rekindle/auth/ministryEntitlements';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 // Flat, platform-wide ceiling on real participants a single Interactive
 // Meeting may ever have (2026-09-21) — same value livekit-token/index.ts
@@ -190,6 +195,8 @@ const EnhancedVideoCallWrapper = ({
   // True while a DailyVideoCall side panel (chat / host controls) is open — hides
   // the Copy Link / End chrome so it doesn't collide with the panel.
   const [panelOpen, setPanelOpen] = useState(false);
+  // Host's top-right "End for All" asks first — it ends the call for everyone.
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   // In-call raise-hand (distinct from the webinar `stage.raiseHand` request-to-speak
   // below) — DailyVideoCall reports it here so the button can sit beside
   // ReactionButton instead of taking a slot in the control bar.
@@ -633,6 +640,50 @@ const EnhancedVideoCallWrapper = ({
         onTranslationControlsChange={setCallTranslation}
         onCaptionsBridgeChange={setCallCaptionsBridge}
         scriptureControl={callScripture}
+        secondaryControls={!isPiP ? (
+          <>
+            {/* Background moved into DailyVideoCall's own Meeting Controls menu
+                (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
+            {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
+            {callTranslation && (
+              <FloatingTranslationButton
+                translation={callTranslation}
+                ministryId={meeting.ministry_id}
+                roomName={meeting.room_name}
+                isHost={isHost}
+                userId={userId}
+                onScriptureStateChange={setCallScripture}
+                showCaptionsOption={false}
+                captionsBridge={callCaptionsBridge}
+                ccEnabled={captions.enabled}
+              />
+            )}
+            {callCaptionsBridge && (
+              <CaptionsButton
+                enabled={captions.enabled}
+                status={captions.status}
+                size={captions.size}
+                onToggle={captions.toggle}
+                onSizeChange={captions.setSize}
+              />
+            )}
+            <ReactionButton onReact={sendReaction} />
+            {callHandRaise && (
+              <button
+                type="button"
+                onClick={callHandRaise.raiseHand}
+                disabled={callHandRaise.handRaised}
+                title={callHandRaise.handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
+                aria-label={callHandRaise.handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
+                className={`flex h-11 w-11 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
+                  callHandRaise.handRaised ? 'bg-amber-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
+                }`}
+              >
+                <Hand className="h-5 w-5" />
+              </button>
+            )}
+          </>
+        ) : undefined}
       />
 
       {/* Floating reactions over the call + a single reaction button that opens a
@@ -654,49 +705,11 @@ const EnhancedVideoCallWrapper = ({
         />
       )}
       {!isPiP && <div className="absolute top-14 left-2 sm:top-3 sm:left-3 z-50"><MeetingNotesBanner active={notesActive} /></div>}
-      {!isPiP && (
-        <div className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
-          {/* Background moved into DailyVideoCall's own Meeting Controls menu
-              (2026-09-29, top-right toolbar) — no longer a floating pill here. */}
-          {callBackground && !callBackground.isNative && <FloatingSpeakerButton />}
-          {callTranslation && (
-            <FloatingTranslationButton
-              translation={callTranslation}
-              ministryId={meeting.ministry_id}
-              roomName={meeting.room_name}
-              isHost={isHost}
-              userId={userId}
-              onScriptureStateChange={setCallScripture}
-              showCaptionsOption={false}
-              captionsBridge={callCaptionsBridge}
-              ccEnabled={captions.enabled}
-            />
-          )}
-          {callCaptionsBridge && (
-            <CaptionsButton
-              enabled={captions.enabled}
-              status={captions.status}
-              size={captions.size}
-              onToggle={captions.toggle}
-              onSizeChange={captions.setSize}
-            />
-          )}
-          <ReactionButton onReact={sendReaction} />
-          {callHandRaise && (
-            <button
-              type="button"
-              onClick={callHandRaise.raiseHand}
-              disabled={callHandRaise.handRaised}
-              title={callHandRaise.handRaised ? t('dailyVideoCall', 'handRaised', 'Hand Raised') : t('dailyVideoCall', 'raiseHand', 'Raise Hand')}
-              className={`flex h-10 w-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors ${
-                callHandRaise.handRaised ? 'bg-amber-600 text-white' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
-              }`}
-            >
-              <Hand className="h-5 w-5" />
-            </button>
-          )}
-        </div>
-      )}
+      {/* Secondary call controls (Speaker, Live Translation, Captions,
+          Reactions, Raise Hand) are passed to DailyVideoCall as
+          secondaryControls above: it floats them just over the control bar
+          from tablet width up and puts them in the bar's "More" tray on
+          phones. */}
 
       {/* Additional Features Overlay - UI only, no media control. Hidden in the
           mini-player, and while a side panel (chat / host controls) is open. */}
@@ -711,7 +724,8 @@ const EnhancedVideoCallWrapper = ({
           }}
           variant="secondary"
           size="sm"
-          className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
+          aria-label={t('ministryInteractiveMeetings', 'copyLink', 'Copy Link')}
+          className="h-11 min-w-11 sm:h-9 sm:min-w-0 bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
         >
           <Copy className="h-4 w-4 sm:mr-2" />
           <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'copyLink', 'Copy Link')}</span>
@@ -725,8 +739,9 @@ const EnhancedVideoCallWrapper = ({
             onClick={() => setStreamConfigOpen(true)}
             variant="secondary"
             size="sm"
-            className="bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
+            className="h-11 min-w-11 sm:h-9 sm:min-w-0 bg-white/90 text-gray-900 hover:bg-white backdrop-blur-sm border border-gray-200 shadow-sm"
             title={t('ministryInteractiveMeetings', 'streamSetupAria', 'OBS / restream setup')}
+            aria-label={t('ministryInteractiveMeetings', 'streamSetupAria', 'OBS / restream setup')}
           >
             <Radio className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'streamSetup', 'Stream')}</span>
@@ -736,16 +751,42 @@ const EnhancedVideoCallWrapper = ({
         {/* Host End Meeting Button */}
         {isHost && onEndMeeting && (
           <Button
-            onClick={handleHostEndMeeting}
+            onClick={() => setConfirmEndOpen(true)}
             variant="destructive"
             size="sm"
-            className="bg-orange-600/90 backdrop-blur-sm hover:bg-orange-700"
+            aria-label={t('ministryInteractiveMeetings', 'endForAll', 'End for All')}
+            className="h-11 min-w-11 sm:h-9 sm:min-w-0 bg-orange-600/90 backdrop-blur-sm hover:bg-orange-700"
           >
             <PhoneOff className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">{t('ministryInteractiveMeetings', 'endForAll', 'End for All')}</span>
           </Button>
         )}
       </div>
+      )}
+
+      {/* Confirm before the host's top-right End for All ends the call for
+          everyone (the control bar's own Leave/End popover is already a
+          two-step choice). */}
+      {isHost && onEndMeeting && (
+        <AlertDialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('ministryInteractiveMeetings', 'confirmEndForAllTitle', 'End the meeting for everyone?')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('ministryInteractiveMeetings', 'confirmEndForAllBody', 'Everyone will be disconnected and the meeting will close. This can’t be undone.')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('ministryInteractiveMeetings', 'keepMeeting', 'Keep meeting')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => { void handleHostEndMeeting(); }}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {t('ministryInteractiveMeetings', 'endForAll', 'End for All')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
@@ -758,6 +799,7 @@ const EnhancedVideoCallWrapper = ({
                   onClick={() => setShowAiPanel(false)}
                   className="bg-gray-900/80 backdrop-blur-sm text-white/80 hover:text-white rounded-full p-1.5"
                   title={t('ministryInteractiveMeetings', 'hideAiFeatures', 'Hide AI features')}
+                  aria-label={t('ministryInteractiveMeetings', 'hideAiFeatures', 'Hide AI features')}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -876,7 +918,7 @@ const EnhancedVideoCallWrapper = ({
                           {m.userName}{m.isGuest ? t('ministryInteractiveMeetings', 'guestSuffix', ' (guest)') : ''}
                         </span>
                         {m.isGuest ? (
-                          <span className="text-[10px] text-gray-500">{t('ministryInteractiveMeetings', 'viewing', 'viewing')}</span>
+                          <span className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'viewing', 'viewing')}</span>
                         ) : (
                           <Button
                             size="sm"
@@ -1974,7 +2016,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
-    if (!confirm(t('ministryInteractiveMeetings', 'confirmDeleteMeeting', 'Are you sure you want to delete this meeting?'))) return;
+    if (!await confirmAction({ title: t('ministryInteractiveMeetings', 'confirmDeleteMeetingTitle', 'Delete this meeting?'), confirmLabel: t('ministryInteractiveMeetings', 'delete', 'Delete'), destructive: true })) return;
     
     setDeletingMeetingId(meetingId);
     try {

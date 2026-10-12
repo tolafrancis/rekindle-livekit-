@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface DayReading {
   day: number;
@@ -170,7 +171,7 @@ export const ReadingPlanManager: React.FC = () => {
   };
 
   const handleDelete = async (planId: string) => {
-    if (!confirm(t('readingPlanManager', 'confirmDelete', 'Are you sure you want to delete this reading plan?'))) return;
+    if (!await confirmAction({ title: t('readingPlanManager', 'confirmDeleteTitle', 'Delete this reading plan?'), confirmLabel: t('readingPlanManager', 'delete', 'Delete'), destructive: true })) return;
 
     const updatedPlans = readingPlans.filter(p => p.id !== planId);
     setReadingPlans(updatedPlans);
@@ -388,17 +389,17 @@ export const ReadingPlanManager: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
+                      <Button aria-label={isExpanded ? t('a11y', 'collapsePlan', 'Collapse plan') : t('a11y', 'expandPlan', 'Expand plan')}
                         variant="ghost"
                         size="icon"
                         onClick={() => setExpandedPlan(isExpanded ? null : plan.id)}
                       >
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(plan)}>
+                      <Button aria-label={t('a11y', 'editPlan', 'Edit plan')} variant="ghost" size="icon" onClick={() => handleEdit(plan)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(plan.id)}>
+                      <Button aria-label={t('a11y', 'deletePlan', 'Delete plan')} variant="ghost" size="icon" onClick={() => handleDelete(plan.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>
@@ -509,7 +510,7 @@ export const ReadingPlanManager: React.FC = () => {
                           <span className="font-medium text-sm">{t('readingPlanManager', 'dayNColon', 'Day {day}:').replace('{day}', String(reading.day))}</span>
                           <span className="text-sm text-gray-600 ml-2">{reading.passages.join(', ')}</span>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => removeReading(reading.day)}>
+                        <Button aria-label={t('a11y', 'removeReading', 'Remove reading')} variant="ghost" size="sm" onClick={() => removeReading(reading.day)}>
                           <X className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -533,7 +534,7 @@ export const ReadingPlanManager: React.FC = () => {
                         className="bg-white"
                       />
                       {currentReading.passages.length > 1 && (
-                        <Button variant="ghost" size="icon" onClick={() => removePassageField(index)}>
+                        <Button aria-label={t('a11y', 'removePassage', 'Remove passage')} variant="ghost" size="icon" onClick={() => removePassageField(index)}>
                           <X className="h-4 w-4" />
                         </Button>
                       )}

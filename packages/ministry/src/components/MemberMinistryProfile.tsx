@@ -378,7 +378,7 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
               <Input className="col-span-5" defaultValue={c.name} placeholder={t('memberMinistryProfile', 'namePlaceholder', 'Name')} onBlur={(e) => saveChild(c.id, { name: e.target.value })} />
               <Input className="col-span-4" type="date" defaultValue={c.date_of_birth || ''} onBlur={(e) => saveChild(c.id, { date_of_birth: e.target.value || null })} />
               <Input className="col-span-2" defaultValue={c.gender || ''} placeholder={t('memberMinistryProfile', 'genderPlaceholder', 'Gender')} onBlur={(e) => saveChild(c.id, { gender: e.target.value })} />
-              <button className="col-span-1 text-red-500 flex justify-center" onClick={() => removeChild(c.id)}><Trash2 className="h-4 w-4" /></button>
+              <button aria-label={t('memberMinistryProfile', 'removeChild', 'Remove child')} className="col-span-1 text-red-500 flex justify-center" onClick={() => removeChild(c.id)}><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
           <Button variant="outline" size="sm" onClick={addChild}><Plus className="h-4 w-4 mr-1" /> {t('memberMinistryProfile', 'addChild', 'Add child')}</Button>
@@ -395,7 +395,7 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
               <Input className="col-span-4" defaultValue={c.contact_name} placeholder={t('memberMinistryProfile', 'namePlaceholder', 'Name')} onBlur={(e) => saveContact(c.id, { contact_name: e.target.value })} />
               <Input className="col-span-3" defaultValue={c.relationship || ''} placeholder={t('memberMinistryProfile', 'relationshipPlaceholder', 'Relationship')} onBlur={(e) => saveContact(c.id, { relationship: e.target.value })} />
               <Input className="col-span-4" defaultValue={c.phone_number || ''} placeholder={t('memberMinistryProfile', 'phonePlaceholder', 'Phone')} onBlur={(e) => saveContact(c.id, { phone_number: e.target.value })} />
-              <button className="col-span-1 text-red-500 flex justify-center" onClick={() => removeContact(c.id)}><Trash2 className="h-4 w-4" /></button>
+              <button aria-label={t('memberMinistryProfile', 'removeContact', 'Remove contact')} className="col-span-1 text-red-500 flex justify-center" onClick={() => removeContact(c.id)}><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
           <Button variant="outline" size="sm" onClick={addContact}><Plus className="h-4 w-4 mr-1" /> {t('memberMinistryProfile', 'addContact', 'Add contact')}</Button>
@@ -410,14 +410,14 @@ const MemberMinistryProfile: React.FC<{ slug?: string }> = ({ slug: slugProp }) 
             {interests.map((i) => (
               <Badge key={i.id} variant="secondary" className="flex items-center gap-1">
                 {i.value}
-                <button onClick={() => removeInterest(i.id)} className="text-gray-400 hover:text-red-500">×</button>
+                <button aria-label={t('memberMinistryProfile', 'removeInterest', 'Remove interest')} onClick={() => removeInterest(i.id)} className="text-gray-400 hover:text-red-500">×</button>
               </Badge>
             ))}
             {interests.length === 0 && <p className="text-sm text-gray-400">{t('memberMinistryProfile', 'noneYet', 'None yet.')}</p>}
           </div>
           <div className="flex gap-2">
             <Input value={newInterest} onChange={(e) => setNewInterest(e.target.value)} placeholder={t('memberMinistryProfile', 'interestPlaceholder', 'e.g. Choir, Media, Ushering')} />
-            <Button variant="outline" size="sm" onClick={addInterest}><Plus className="h-4 w-4" /></Button>
+            <Button aria-label={t('memberMinistryProfile', 'addInterest', 'Add interest')} variant="outline" size="sm" onClick={addInterest}><Plus className="h-4 w-4" /></Button>
           </div>
         </CardContent>
       </Card>

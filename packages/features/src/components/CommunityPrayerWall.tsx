@@ -393,7 +393,9 @@ export function CommunityPrayerWall() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
+                <label htmlFor="prayer-wall-title" className="sr-only">{t('communityPrayerWall', 'prayerTitlePlaceholder', 'Prayer title')}</label>
                 <Input
+                  id="prayer-wall-title"
                   placeholder={t('communityPrayerWall', 'prayerTitlePlaceholder', 'Prayer title')}
                   value={title} 
                   onChange={e => setTitle(e.target.value)}
@@ -401,7 +403,9 @@ export function CommunityPrayerWall() {
                 />
               </div>
               <div>
+                <label htmlFor="prayer-wall-content" className="sr-only">{t('communityPrayerWall', 'shareRequestPlaceholder', 'Share your prayer request...')}</label>
                 <Textarea
+                  id="prayer-wall-content"
                   placeholder={t('communityPrayerWall', 'shareRequestPlaceholder', 'Share your prayer request...')}
                   value={content} 
                   onChange={e => setContent(e.target.value)} 
@@ -410,10 +414,12 @@ export function CommunityPrayerWall() {
                 />
               </div>
               <div>
+                <label htmlFor="prayer-wall-category" className="sr-only">{t('communityPrayerWall', 'category', 'Category')}</label>
                 <select 
+                  id="prayer-wall-category"
                   value={category} 
                   onChange={e => setCategory(e.target.value)} 
-                  className="w-full p-2 border rounded"
+                  className="w-full min-h-[44px] p-2 border rounded"
                   disabled={loading}
                 >
                   <option value="general">{t('communityPrayerWall', 'catGeneral', 'General')}</option>
@@ -423,7 +429,7 @@ export function CommunityPrayerWall() {
                   <option value="gratitude">{t('communityPrayerWall', 'catGratitude', 'Gratitude')}</option>
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-sm min-h-[44px]">
                 <input 
                   type="checkbox" 
                   checked={isAnonymous} 
@@ -527,7 +533,7 @@ export function CommunityPrayerWall() {
                   onClick={() => prayForPost(post)}
                   disabled={loading}
                   aria-pressed={prayedPostIds.has(post.id)}
-                  className={prayedPostIds.has(post.id) ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' : undefined}
+                  className={`min-h-[44px] sm:min-h-0 ${prayedPostIds.has(post.id) ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' : ''}`}
                 >
                   <Heart className={`h-4 w-4 mr-1 text-red-500 ${prayedPostIds.has(post.id) ? 'fill-red-500' : ''}`} />
                   {t('communityPrayerWall', 'countPraying', '{count} Praying').replace('{count}', String(post.prayer_count))}
@@ -538,6 +544,7 @@ export function CommunityPrayerWall() {
                     variant="outline" 
                     onClick={() => markAnswered(post.id)}
                     disabled={loading}
+                    className="min-h-[44px] sm:min-h-0"
                   >
                     <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
                     {t('communityPrayerWall', 'markAnswered', 'Mark Answered')}

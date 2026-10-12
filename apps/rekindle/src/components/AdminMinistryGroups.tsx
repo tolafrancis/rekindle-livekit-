@@ -18,6 +18,7 @@ import {
   Settings, Eye, EyeOff, Loader2
 } from 'lucide-react';
 import { buildJoinUrl } from '@rekindle/features/qrCode';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface MinistryGroup {
   id: string;
@@ -284,7 +285,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
 
 
   const handleDelete = async (groupId: string) => {
-    if (!confirm(t('adminMinistryGroups', 'confirmDeleteGroup', 'Are you sure you want to delete this ministry group? This will also remove all members and invites.'))) {
+    if (!await confirmAction({ title: t('adminMinistryGroups', 'confirmDeleteGroupTitle', 'Delete this ministry group?'), description: t('adminMinistryGroups', 'confirmDeleteGroupDesc', 'This will also remove all members and invites.'), confirmLabel: t('adminMinistryGroups', 'delete', 'Delete'), destructive: true })) {
       return;
     }
 
@@ -305,7 +306,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!confirm(t('adminMinistryGroups', 'confirmRemoveMember', 'Are you sure you want to remove this member?'))) return;
+    if (!await confirmAction({ title: t('adminMinistryGroups', 'confirmRemoveMemberTitle', 'Remove this member?'), confirmLabel: t('adminMinistryGroups', 'remove', 'Remove'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -455,7 +456,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                               <code className="bg-gray-100 px-2 py-1 rounded text-sm">
                                 {group.invite_code}
                               </code>
-                              <Button
+                              <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
@@ -658,7 +659,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                         <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
                           {member.role || 'member'}
                         </Badge>
-                        <Button
+                        <Button aria-label={t('a11y', 'removeMember', 'Remove member')}
                           variant="ghost"
                           size="icon"
                           onClick={() => handleRemoveMember(member.id)}
@@ -717,7 +718,7 @@ export const AdminMinistryGroups: React.FC<AdminMinistryGroupsProps> = ({ onUpda
                     placeholder={selectedGroup.slug ? undefined : t('adminMinistryGroups', 'inviteLinkNoSlug', "This ministry has no join link set up yet — set one in Registration Settings first.")}
                     className="bg-white"
                   />
-                  <Button
+                  <Button aria-label={t('a11y', 'copyInviteLink', 'Copy invite link')}
                     variant="outline"
                     onClick={() => copyInviteLink(selectedGroup)}
                   >

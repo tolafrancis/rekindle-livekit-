@@ -19,7 +19,7 @@ import {
   Loader2, ChevronDown, ChevronUp, Mic
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
-import { toast } from 'sonner';
+import { toast } from '@rekindle/ui/toast-compat';
 import {
   RawTranscript,
   CleanedTranscript,

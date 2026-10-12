@@ -272,19 +272,19 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 // Primary modules. The secondary rail owns the real navigation inside a module.
-// Each group carries a colorful gradient so its icon renders as a filled, modern
-// "app icon" chip (no flat outline-only glyphs). `emoji` overrides the lucide icon
+// Each group renders its icon in a rounded chip using the single brand accent
+// (purple when active, neutral tint otherwise). `emoji` overrides the lucide icon
 // where a richer, more literal symbol is wanted (e.g. praying hands for Prayer).
 // `labelKey` points at a navigation-namespace key so the label renders through
 // t(); `label` is the English fallback.
-type NavGroup = { id: string; label: string; labelKey: string; icon: typeof Home; gradient: string; emoji?: string; children?: string[] };
+type NavGroup = { id: string; label: string; labelKey: string; icon: typeof Home; emoji?: string; children?: string[] };
 const NAV_GROUPS: NavGroup[] = [
-  { id: 'home',          label: 'Home',           labelKey: 'home',         icon: Home,       gradient: 'from-violet-500 to-purple-600' },
-  { id: 'the-word',      label: 'The Word',       labelKey: 'theWord',      icon: BookOpen,   gradient: 'from-amber-400 to-orange-500', children: ['devotional-library', 'reading-plan', 'scripture', 'books'] },
-  { id: 'prayer',        label: 'Prayer',         labelKey: 'prayers',      icon: HandHeart,  gradient: 'from-rose-400 to-pink-600', emoji: '🙏', children: ['prayer-library', 'journal', 'wall'] },
-  { id: 'ministries',    label: 'Ministries',     labelKey: 'ministries',   icon: Church,     gradient: 'from-sky-500 to-blue-600' },
-  { id: 'live-channels', label: 'Live Broadcast', labelKey: 'liveChannels', icon: Radio,      gradient: 'from-red-500 to-rose-600' },
-  { id: 'community',     label: 'Community',      labelKey: 'community',     icon: UsersRound, gradient: 'from-emerald-400 to-teal-600', children: ['community-feed', 'revelations', 'challenges', 'music'] },
+  { id: 'home',          label: 'Home',           labelKey: 'home',         icon: Home },
+  { id: 'the-word',      label: 'The Word',       labelKey: 'theWord',      icon: BookOpen, children: ['devotional-library', 'reading-plan', 'scripture', 'books'] },
+  { id: 'prayer',        label: 'Prayer',         labelKey: 'prayers',      icon: HandHeart, emoji: '🙏', children: ['prayer-library', 'journal', 'wall'] },
+  { id: 'ministries',    label: 'Ministries',     labelKey: 'ministries',   icon: Church },
+  { id: 'live-channels', label: 'Live Broadcast', labelKey: 'liveChannels', icon: Radio },
+  { id: 'community',     label: 'Community',      labelKey: 'community',     icon: UsersRound, children: ['community-feed', 'revelations', 'challenges', 'music'] },
 ];
 
 type MinistryHubView = 'discover' | 'my-ministries' | 'manage' | 'ministry-space' | 'ministry-management';
@@ -1056,8 +1056,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             }`}
           >
             <span
-              className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${group.gradient} text-white shadow-md transition-transform ${
-                active ? 'scale-110 ring-2 ring-purple-300 ring-offset-2' : 'group-hover:scale-105'
+              className={`flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
+                active ? 'bg-purple-600 text-white shadow-sm' : 'bg-purple-50 text-purple-700 group-hover:bg-purple-100'
               }`}
             >
               {group.emoji ? (
@@ -1238,7 +1238,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               onClick={() => { setSearchOpen(true); setShowNotifications(false); }}
               title={t('common', 'search', 'Search')}
               aria-label={t('common', 'search', 'Search')}
-              className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-slate-500 to-gray-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+              className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
             >
               <Search className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
@@ -1278,7 +1278,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   size="icon"
                   onClick={() => { navigateTab('messages'); setShowNotifications(false); setSearchOpen(false); }}
                   aria-label={t('navigation', 'messages', 'Messages')}
-                  className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                  className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                 >
                   <MessagesSquare className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
@@ -1300,7 +1300,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   size="icon"
                   onClick={() => { setShowNotifications((v) => !v); setSearchOpen(false); }}
                   aria-label={t('profile', 'notifications', 'Notifications')}
-                  className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                  className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                 >
                   <Bell className="h-4 w-4 md:h-5 md:w-5" />
                 </Button>
@@ -1330,7 +1330,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     variant="ghost"
                     size="icon"
                     aria-label="Account menu"
-                    className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                    className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                   >
                     <User className="h-4 w-4 md:h-5 md:w-5" />
                   </Button>

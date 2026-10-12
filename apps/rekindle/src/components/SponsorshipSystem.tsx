@@ -516,7 +516,7 @@ export const SponsorshipSystem: React.FC = () => {
                             <div>
                               <p className="font-semibold text-sm flex items-center gap-2">
                                 {opt.title}
-                                {opt.highlight && <Badge className="bg-[#003087] text-white text-[10px] px-1.5 py-0">{t('sponsorshipSystem', 'popular', 'Popular')}</Badge>}
+                                {opt.highlight && <Badge className="bg-[#003087] text-white text-xs px-1.5 py-0">{t('sponsorshipSystem', 'popular', 'Popular')}</Badge>}
                               </p>
                               <p className="text-xs text-gray-500">{opt.subtitle}</p>
                             </div>
@@ -600,7 +600,7 @@ export const SponsorshipSystem: React.FC = () => {
                         <p className="text-xs text-gray-400">{f.label}</p>
                         <p className="text-sm font-medium">{f.value}</p>
                       </div>
-                      <button onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
+                      <button aria-label={`${t('a11y', 'copy', 'Copy')} ${f.label}`} onClick={() => copyToClipboard(f.value, f.label)} className="p-1.5 hover:bg-gray-200 rounded">
                         <Copy className="h-3.5 w-3.5 text-gray-400" />
                       </button>
                     </div>
@@ -657,7 +657,7 @@ export const SponsorshipSystem: React.FC = () => {
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <span>{t('sponsorshipSystem', 'expiresLabel', 'Expires:')} {new Date(v.expires_at).toLocaleDateString()}</span>
                       {v.status === 'active' && (
-                        <Button size="sm" variant="ghost" onClick={() => copyToClipboard(v.code, t('sponsorshipSystem', 'voucherCode', 'Voucher code'))}>
+                        <Button aria-label={t('a11y', 'copyVoucherCode', 'Copy voucher code')} size="sm" variant="ghost" onClick={() => copyToClipboard(v.code, t('sponsorshipSystem', 'voucherCode', 'Voucher code'))}>
                           <Copy className="h-4 w-4" />
                         </Button>
                       )}

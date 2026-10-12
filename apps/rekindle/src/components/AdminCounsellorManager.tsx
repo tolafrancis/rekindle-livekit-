@@ -21,6 +21,7 @@ import {
   ExternalLink, MessageSquare, History, Award, EyeOff, Flag,
   Filter, BarChart3, TrendingUp
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface Counsellor {
   id: string;
@@ -271,7 +272,7 @@ export const AdminCounsellorManager: React.FC = () => {
   };
 
   const handleDeleteReview = async (reviewId: string) => {
-    if (!confirm(t('adminCounsellorManager', 'confirmDeleteReview', 'Are you sure you want to permanently delete this review?'))) return;
+    if (!await confirmAction({ title: t('adminCounsellorManager', 'confirmDeleteReviewTitle', 'Permanently delete this review?'), confirmLabel: t('adminCounsellorManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -514,7 +515,7 @@ export const AdminCounsellorManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('adminCounsellorManager', 'confirmDeleteCounsellor', 'Are you sure you want to delete this counsellor?'))) return;
+    if (!await confirmAction({ title: t('adminCounsellorManager', 'confirmDeleteCounsellorTitle', 'Delete this counsellor?'), confirmLabel: t('adminCounsellorManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase.from('counsellors').delete().eq('id', id);
@@ -1041,10 +1042,10 @@ export const AdminCounsellorManager: React.FC = () => {
                             >
                               <UserCheck className={`h-4 w-4 ${counsellor.is_verified ? 'text-blue-500' : 'text-gray-400'}`} />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleEdit(counsellor)}>
+                            <Button aria-label={t('a11y', 'editCounsellor', 'Edit counsellor')} variant="ghost" size="icon" onClick={() => handleEdit(counsellor)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDelete(counsellor.id)}>
+                            <Button aria-label={t('a11y', 'deleteCounsellor', 'Delete counsellor')} variant="ghost" size="icon" onClick={() => handleDelete(counsellor.id)}>
                               <Trash2 className="h-4 w-4 text-red-500" />
                             </Button>
                           </div>

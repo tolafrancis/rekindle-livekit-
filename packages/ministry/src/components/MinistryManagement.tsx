@@ -269,7 +269,7 @@ export const MinistryManagement: React.FC<MinistryManagementProps> = ({
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-4">
               {onBack && (
-                <Button variant="ghost" size="icon" onClick={onBack}>
+                <Button aria-label={t('ministryManagement', 'back', 'Back')} variant="ghost" size="icon" onClick={onBack}>
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
               )}

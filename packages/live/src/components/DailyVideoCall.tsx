@@ -21,7 +21,7 @@ import {
   Monitor, MonitorOff, Users, Clock, Loader2, AlertCircle,
   Maximize2, Minimize2, Settings, VolumeX, Volume2, CheckCircle2,
   XCircle, HelpCircle, X, MessageSquare, Hand, Circle, Square, Pin, Sparkles, Shield, PictureInPicture2, WifiOff,
-  LogOut, BookOpen,
+  LogOut, BookOpen, MoreHorizontal,
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -135,6 +135,12 @@ interface DailyVideoCallProps {
    *  as a side panel like Chat/Host Controls, both rendered here so they sit
    *  among the call's own real controls instead of buried in a popover. */
   scriptureControl?: ScriptureControlState | null;
+  /** The parent's secondary call controls (reactions, raise hand, speaker,
+   *  live translation, captions…). Rendered here, ONCE, so their state is
+   *  never duplicated: a floating row just above the control bar from tablet
+   *  width up, and inside the control bar's "More" tray on phones, where the
+   *  bottom bar only shows Mic, Camera, Chat, More and Leave. */
+  secondaryControls?: React.ReactNode;
 }
 
 export interface ModeratorControls {
@@ -1124,8 +1130,27 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onCaptionsBridgeChange,
   onModeratorControlsChange,
   scriptureControl,
+  secondaryControls,
 }) => {
   const isNative = Capacitor.isNativePlatform();
+  // Phone layout (below Tailwind's `sm`): the bottom bar keeps Mic, Camera,
+  // Chat, More and Leave; everything else moves into the "More" tray.
+  const [isPhone, setIsPhone] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 639px)').matches
+      : false,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(max-width: 639px)');
+    const onChange = () => setIsPhone(mql.matches);
+    onChange();
+    mql.addEventListener?.('change', onChange);
+    return () => mql.removeEventListener?.('change', onChange);
+  }, []);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreTrayId = React.useId();
+  useEffect(() => { if (!isPhone) setMoreOpen(false); }, [isPhone]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   // iOS Safari has no Fullscreen API for arbitrary elements (only <video>), so
   // requestFullscreen() throws there. Detect support once and hide the button
@@ -2140,9 +2165,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               Close
             </Button>
           ) : (
-            <Button onClick={handleJoinRoom} className="w-full bg-purple-600 hover:bg-purple-700">
-              Rejoin
-            </Button>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 min-h-11" onClick={() => { isExitingRef.current = true; onCallEnd?.(); }}>
+                {t('dailyVideoCall', 'leave', 'Leave')}
+              </Button>
+              <Button onClick={handleJoinRoom} className="flex-1 min-h-11 bg-purple-600 hover:bg-purple-700">
+                {t('dailyVideoCall', 'rejoin', 'Rejoin')}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -2174,7 +2204,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       <div className="absolute top-1 right-1 z-10 flex items-center gap-1">
         {spotIndex >= 0 && (
           <span
-            className="flex items-center gap-0.5 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-medium text-white"
+            className="flex items-center gap-0.5 rounded bg-amber-500 px-1.5 py-0.5 text-xs font-medium text-white"
             title={t('dailyVideoCall', 'spotlight', 'Spotlight')}
           >
             <Sparkles className="h-2.5 w-2.5" />
@@ -2215,7 +2245,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     if (quality !== 'poor' && quality !== 'lost') return null;
     return (
       <div
-        className={`absolute bottom-1 left-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${quality === 'lost' ? 'bg-red-600' : 'bg-amber-500'}`}
+        className={`absolute bottom-1 left-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white ${quality === 'lost' ? 'bg-red-600' : 'bg-amber-500'}`}
         title={quality === 'lost' ? t('dailyVideoCall', 'connectionLost', 'Connection lost') : t('dailyVideoCall', 'poorConnection', 'Poor connection')}
       >
         <WifiOff className="h-2.5 w-2.5" />
@@ -2273,7 +2303,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             <button
               onClick={toggleMic}
               title={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
-              aria-label={isMicOn ? 'Mute' : 'Unmute'}
+              aria-label={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
               className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
             >
               {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
@@ -2281,7 +2311,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             <button
               onClick={toggleCamera}
               title={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
-              aria-label={isCameraOn ? 'Stop video' : 'Start video'}
+              aria-label={isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
               className={`flex h-8 w-8 items-center justify-center rounded-full text-white transition-colors ${isCameraOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
             >
               {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
@@ -2292,6 +2322,113 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       </div>
     );
   }
+
+  // Control-bar building blocks. 48px circles on phones (over the 44px
+  // minimum touch target), 64px from `sm` up; every button carries a visible
+  // label and an aria-label.
+  const ctlCircle = 'relative w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 transform group-hover:scale-105';
+  const ctlIcon = 'h-5 w-5 sm:h-7 sm:w-7';
+  const ctlLabel = 'block whitespace-nowrap text-xs font-medium text-gray-300';
+  const micLabel = isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute');
+  const cameraLabel = isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video');
+  const screenShareLabel = isScreenSharing ? t('dailyVideoCall', 'stopShare', 'Stop Share') : t('dailyVideoCall', 'shareScreen', 'Share Screen');
+
+  // Screen share toggle - controlled by Daily SDK via useDailyRoom
+  const screenShareButton = (
+    <button
+      type="button"
+      onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+      title={isScreenSharing ? undefined : t('dailyVideoCall', 'shareScreenAudioHint', 'Tick "Share tab audio" / "Share system audio" in the picker to include sound')}
+      aria-label={screenShareLabel}
+      className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+    >
+      <div className={`
+        ${ctlCircle}
+        ${isScreenSharing 
+          ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+          : 'bg-gray-700 hover:bg-gray-600 text-white'}
+      `}>
+        {isScreenSharing ? (
+          <MonitorOff className={ctlIcon} />
+        ) : (
+          <Monitor className={ctlIcon} />
+        )}
+      </div>
+      <span className={ctlLabel}>{screenShareLabel}</span>
+    </button>
+  );
+
+  // Live Scripture — moved here from a buried Live Translation popover
+  // section (2026-09-29), replacing Layout/Spotlight's old slot (those moved
+  // into the top-right Meeting Controls menu, see MeetingControlsMenu). Opens
+  // a side panel like Chat, not a popover, so the operator can keep an eye on
+  // it while the call runs.
+  const scriptureButton = scriptureControl ? (
+    <button
+      type="button"
+      onClick={() => {
+        setShowScripturePanel((v) => {
+          const next = !v;
+          if (next && !scriptureControl.on) scriptureControl.toggle();
+          return next;
+        });
+        setShowChat(false);
+        setShowHostControls(false);
+        setMoreOpen(false);
+      }}
+      aria-label={t('dailyVideoCall', 'scripture', 'Scripture')}
+      aria-expanded={showScripturePanel}
+      className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+    >
+      <div className={`
+        ${ctlCircle}
+        ${showScripturePanel || scriptureControl.on
+          ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+          : 'bg-gray-700 hover:bg-gray-600 text-white'}
+      `}>
+        {scriptureControl.starting ? <Loader2 className={`${ctlIcon} animate-spin`} /> : <BookOpen className={ctlIcon} />}
+      </div>
+      <span className={ctlLabel}>
+        {t('dailyVideoCall', 'scripture', 'Scripture')}
+      </span>
+    </button>
+  ) : null;
+
+  // Recording button — host only, shown when enableRecording is true
+  const recordLabel = recordingStatus === 'starting' ? t('dailyVideoCall', 'startingEllipsis', 'Starting…')
+    : recordingStatus === 'stopping' ? t('dailyVideoCall', 'stoppingEllipsis', 'Stopping…')
+    : recordingStatus === 'error' ? t('dailyVideoCall', 'recError', 'Rec Error')
+    : isRecordingActive ? t('dailyVideoCall', 'stopRec', 'Stop Rec')
+    : t('dailyVideoCall', 'record', 'Record');
+  const recordButton = isHost && enableRecording ? (
+    <button
+      type="button"
+      onClick={handleToggleRecording}
+      disabled={recordingStatus === 'starting' || recordingStatus === 'stopping'}
+      aria-label={recordLabel}
+      className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+    >
+      <div className={`
+        ${ctlCircle}
+        ${isRecordingActive
+          ? 'bg-red-600 hover:bg-red-700 text-white'
+          : recordingStatus === 'starting' || recordingStatus === 'stopping'
+          ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+          : recordingStatus === 'error'
+          ? 'bg-orange-600 hover:bg-orange-700 text-white'
+          : 'bg-gray-700 hover:bg-gray-600 text-white'}
+      `}>
+        {recordingStatus === 'starting' || recordingStatus === 'stopping' ? (
+          <Loader2 className="h-4 w-4 sm:h-7 sm:w-7 animate-spin" />
+        ) : isRecordingActive ? (
+          <Square className={ctlIcon} />
+        ) : (
+          <Circle className={ctlIcon} />
+        )}
+      </div>
+      <span className={ctlLabel}>{recordLabel}</span>
+    </button>
+  ) : null;
 
   // Active call screen - all media controls come from useDailyRoom
   return withAttach(
@@ -2352,7 +2489,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             <div className={`relative flex shrink-0 aspect-video items-center justify-center rounded-lg bg-gray-800 text-white ${className}`}>
               <div className="text-center">
                 <Users className="h-4 w-4 mx-auto mb-0.5 opacity-70" />
-                <p className="text-[11px] font-medium">+{count}</p>
+                <p className="text-xs font-medium">+{count}</p>
               </div>
             </div>
           );
@@ -2566,7 +2703,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                 <button
                   onClick={() => selfSpotlit ? removeFromSpotlight(localParticipant.sessionId) : spotlightParticipant(localParticipant.sessionId)}
                   title={selfSpotlit ? t('dailyVideoCall', 'youAreSpotlighted', "You're spotlighted — tap to remove") : t('dailyVideoCall', 'spotlightYourself', 'Spotlight yourself')}
-                  className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white ${selfSpotlit ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
+                  aria-label={selfSpotlit ? t('dailyVideoCall', 'youAreSpotlighted', "You're spotlighted — tap to remove") : t('dailyVideoCall', 'spotlightYourself', 'Spotlight yourself')}
+                  className={`absolute top-1 right-1 z-10 flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white ${selfSpotlit ? 'bg-amber-500' : 'bg-black/60 hover:bg-amber-500'}`}
                 >
                   <Sparkles className="h-2.5 w-2.5" />
                   {selfSpotlit && <span className="hidden sm:inline">{t('dailyVideoCall', 'spotlightedShort', 'Spotlight')}</span>}
@@ -2719,6 +2857,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   onClick={() => activeCallCtx.minimize()}
                   className="text-white hover:bg-white/20"
                   title={t('dailyVideoCall', 'minimizeToMiniPlayer', 'Minimize to mini-player')}
+                  aria-label={t('dailyVideoCall', 'minimizeToMiniPlayer', 'Minimize to mini-player')}
                 >
                   <PictureInPicture2 className="h-5 w-5" />
                 </Button>
@@ -2728,6 +2867,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   variant="ghost"
                   size="icon"
                   onClick={toggleFullscreen}
+                  aria-label={isFullscreen ? t('dailyVideoCall', 'exitFullscreen', 'Exit full screen') : t('dailyVideoCall', 'enterFullscreen', 'Full screen')}
+                  title={isFullscreen ? t('dailyVideoCall', 'exitFullscreen', 'Exit full screen') : t('dailyVideoCall', 'enterFullscreen', 'Full screen')}
                   className="text-white hover:bg-white/20"
                 >
                   {isFullscreen ? (
@@ -2757,7 +2898,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-gray-300 hover:text-white"
+                    className="h-11 sm:h-7 px-2 text-gray-300 hover:text-white"
                     onClick={() => lowerHand(h.sessionId)}
                   >
                     {t('dailyVideoCall', 'lower', 'Lower')}
@@ -2771,178 +2912,152 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
       {/* Controls bar - all controls from useDailyRoom (Daily SDK).
           pb uses the iOS safe-area inset so the buttons clear the home indicator /
-          browser chrome and stay tappable on mobile (they were being cut off). */}
+          browser chrome and stay tappable on mobile (they were being cut off).
+          Phones (below `sm`) get five labelled buttons — Mic, Camera, Chat, More,
+          Leave; Screen share, Scripture, Record, the caller's extra buttons
+          (unless they stand in for Chat) and the caller's secondaryControls (reactions, raise hand, speaker,
+          translation, captions) sit in the "More" tray. From `sm` up the bar
+          shows everything inline, as before, with secondaryControls floating
+          just above it. */}
+      {!showControls && secondaryControls && (
+        <div className="absolute bottom-3 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2">
+          {secondaryControls}
+        </div>
+      )}
       {showControls && (
-        <div className="bg-gray-900 border-t border-gray-800 px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6">
-          <div className={`flex items-center justify-center ${'gap-2 px-1'} sm:gap-6 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]`}>
+        <div className="relative bg-gray-900 border-t border-gray-800 px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6">
+          <div className={`flex items-start sm:items-center justify-center ${'gap-2 px-1'} sm:gap-6 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]`}>
             {/* Mic toggle - controlled by Daily SDK via useDailyRoom */}
             <button
+              type="button"
               onClick={toggleMic}
+              aria-label={micLabel}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                transition-all duration-200 transform group-hover:scale-105
-                ${isMicOn 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-white' 
+                ${ctlCircle}
+                ${isMicOn
+                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
                   : 'bg-red-600 hover:bg-red-700 text-white'}
               `}>
                 {isMicOn ? (
-                  <Mic className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <Mic className={ctlIcon} />
                 ) : (
-                  <MicOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <MicOff className={ctlIcon} />
                 )}
               </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
-                {isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}
-              </span>
+              <span className={ctlLabel}>{micLabel}</span>
             </button>
 
             {/* Camera toggle - controlled by Daily SDK via useDailyRoom */}
             <button
+              type="button"
               onClick={toggleCamera}
+              aria-label={cameraLabel}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                transition-all duration-200 transform group-hover:scale-105
-                ${isCameraOn 
-                  ? 'bg-gray-700 hover:bg-gray-600 text-white' 
+                ${ctlCircle}
+                ${isCameraOn
+                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
                   : 'bg-red-600 hover:bg-red-700 text-white'}
               `}>
                 {isCameraOn ? (
-                  <Video className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <Video className={ctlIcon} />
                 ) : (
-                  <VideoOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <VideoOff className={ctlIcon} />
                 )}
               </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
-                {isCameraOn ? t('dailyVideoCall', 'stopVideo', 'Stop Video') : t('dailyVideoCall', 'startVideo', 'Start Video')}
-              </span>
+              <span className={ctlLabel}>{cameraLabel}</span>
             </button>
 
-            {/* Screen share toggle - controlled by Daily SDK via useDailyRoom */}
-            <button
-              onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-              title={isScreenSharing ? undefined : t('dailyVideoCall', 'shareScreenAudioHint', 'Tick "Share tab audio" / "Share system audio" in the picker to include sound')}
-              className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
-            >
-              <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                transition-all duration-200 transform group-hover:scale-105
-                ${isScreenSharing 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                  : 'bg-gray-700 hover:bg-gray-600 text-white'}
-              `}>
-                {isScreenSharing ? (
-                  <MonitorOff className="h-5 w-5 sm:h-7 sm:w-7" />
-                ) : (
-                  <Monitor className="h-5 w-5 sm:h-7 sm:w-7" />
-                )}
-              </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
-                {isScreenSharing ? t('dailyVideoCall', 'stopShare', 'Stop Share') : t('dailyVideoCall', 'shareScreen', 'Share Screen')}
-              </span>
-            </button>
+            {!isPhone && screenShareButton}
 
-            {extraControlButtons}
+            {/* A caller that hides the built-in Chat (WebinarStage) passes its
+                own Chat/Q&A/Polls here; on phones those keep Chat's slot in
+                the bar so their unread badges stay visible. */}
+            {(!isPhone || !showChatButton) && extraControlButtons}
 
             {/* Chat button — opening chat closes Host Controls so only one side
                 panel shows at a time (they otherwise overlap on the right edge). */}
             {showChatButton && (
             <button
-              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); setShowScripturePanel(false); }}
+              type="button"
+              onClick={() => { setShowChat((v) => !v); setShowHostControls(false); setShowScripturePanel(false); setMoreOpen(false); }}
+              aria-label={chatMessages.length > 0 && !showChat
+                ? `${t('dailyVideoCall', 'chat', 'Chat')} (${chatMessages.length})`
+                : t('dailyVideoCall', 'chat', 'Chat')}
+              aria-expanded={showChat}
               className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
             >
               <div className={`
-                w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                transition-all duration-200 transform group-hover:scale-105
+                ${ctlCircle}
                 ${showChat
                   ? 'bg-purple-600 hover:bg-purple-700 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-white'}
               `}>
-                <MessageSquare className="h-5 w-5 sm:h-7 sm:w-7" />
+                <MessageSquare className={ctlIcon} />
                 {chatMessages.length > 0 && !showChat && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  <span aria-hidden="true" className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {chatMessages.length > 9 ? '9+' : chatMessages.length}
                   </span>
                 )}
               </div>
-              <span className="hidden sm:block text-xs font-medium text-gray-300">
+              <span className={ctlLabel}>
                 {t('dailyVideoCall', 'chat', 'Chat')}
               </span>
             </button>
             )}
 
-            {/* Live Scripture — moved here from a buried Live Translation
-                popover section (2026-09-29), replacing Layout/Spotlight's
-                old slot (those moved into the top-right Meeting Controls
-                menu, see MeetingControlsMenu). Opens a side panel like Chat,
-                not a popover, so the operator can keep an eye on it while
-                the call runs. */}
-            {scriptureControl && (
+            {!isPhone && scriptureButton}
+
+            {!isPhone && recordButton}
+
+            {/* More (phones only) — opens the tray below, which holds every
+                control that doesn't fit in the five-button phone bar. */}
+            {isPhone && (
               <button
-                onClick={() => {
-                  setShowScripturePanel((v) => {
-                    const next = !v;
-                    if (next && !scriptureControl.on) scriptureControl.toggle();
-                    return next;
-                  });
-                  setShowChat(false);
-                  setShowHostControls(false);
-                }}
-                className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-label={t('dailyVideoCall', 'moreControls', 'More controls')}
+                aria-expanded={moreOpen}
+                aria-controls={moreTrayId}
+                className="flex flex-col items-center gap-1 group shrink-0"
               >
-                <div className={`
-                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                  transition-all duration-200 transform group-hover:scale-105
-                  ${showScripturePanel || scriptureControl.on
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                    : 'bg-gray-700 hover:bg-gray-600 text-white'}
-                `}>
-                  {scriptureControl.starting ? <Loader2 className="h-5 w-5 sm:h-7 sm:w-7 animate-spin" /> : <BookOpen className="h-5 w-5 sm:h-7 sm:w-7" />}
+                <div className={`${ctlCircle} ${moreOpen ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
+                  <MoreHorizontal className={ctlIcon} />
                 </div>
-                <span className="hidden sm:block text-xs font-medium text-gray-300">
-                  {t('dailyVideoCall', 'scripture', 'Scripture')}
-                </span>
+                <span className={ctlLabel}>{t('dailyVideoCall', 'more', 'More')}</span>
               </button>
             )}
 
-            {/* Recording button — host only, shown when enableRecording is true */}
-            {isHost && enableRecording && (
-              <button
-                onClick={handleToggleRecording}
-                disabled={recordingStatus === 'starting' || recordingStatus === 'stopping'}
-                className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
-              >
-                <div className={`
-                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center relative
-                  transition-all duration-200 transform group-hover:scale-105
-                  ${isRecordingActive
-                    ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : recordingStatus === 'starting' || recordingStatus === 'stopping'
-                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    : recordingStatus === 'error'
-                    ? 'bg-orange-600 hover:bg-orange-700 text-white'
-                    : 'bg-gray-700 hover:bg-gray-600 text-white'}
-                `}>
-                  {recordingStatus === 'starting' || recordingStatus === 'stopping' ? (
-                    <Loader2 className="h-4 w-4 sm:h-7 sm:w-7 animate-spin" />
-                  ) : isRecordingActive ? (
-                    <Square className="h-5 w-5 sm:h-7 sm:w-7" />
-                  ) : (
-                    <Circle className="h-5 w-5 sm:h-7 sm:w-7" />
-                  )}
-                </div>
-                <span className="hidden sm:block text-xs font-medium text-gray-300">
-                  {recordingStatus === 'starting' ? t('dailyVideoCall', 'startingEllipsis', 'Starting…')
-                    : recordingStatus === 'stopping' ? t('dailyVideoCall', 'stoppingEllipsis', 'Stopping…')
-                    : recordingStatus === 'error' ? t('dailyVideoCall', 'recError', 'Rec Error')
-                    : isRecordingActive ? t('dailyVideoCall', 'stopRec', 'Stop Rec')
-                    : t('dailyVideoCall', 'record', 'Record')}
-                </span>
-              </button>
-            )}
+            {/* The "More" tray on phones / the floating secondary row from `sm`
+                up. Always rendered at this same spot (only its classes change)
+                so the caller's stateful controls — e.g. the translation picker —
+                never remount when the window crosses the breakpoint.
+                Absolutely positioned against the bar wrapper, so it neither
+                takes a slot in this row nor gets clipped by its overflow. */}
+            <div
+              id={moreTrayId}
+              role="group"
+              aria-label={t('dailyVideoCall', 'moreControls', 'More controls')}
+              onKeyDown={(e) => { if (e.key === 'Escape' && moreOpen) { e.stopPropagation(); setMoreOpen(false); } }}
+              className={isPhone
+                ? (moreOpen
+                    ? 'absolute inset-x-2 bottom-full z-40 mb-2 flex flex-wrap items-start justify-center gap-3 rounded-2xl bg-gray-900/95 p-3 shadow-2xl backdrop-blur-sm'
+                    : 'hidden')
+                : 'absolute bottom-full left-1/2 z-40 mb-3 flex -translate-x-1/2 items-center gap-2'}
+            >
+              {isPhone && (
+                <>
+                  {screenShareButton}
+                  {showChatButton && extraControlButtons}
+                  {scriptureButton}
+                  {recordButton}
+                </>
+              )}
+              {secondaryControls}
+            </div>
 
             {/* End call button — host/co-host gets a choice (Leave vs End for
                 Everyone, real gap: a host stepping out had no way to leave
@@ -2951,16 +3066,17 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             {isHost ? (
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0">
-                    <div className="
-                      w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                      bg-red-600 hover:bg-red-700 text-white
-                      transition-all duration-200 transform group-hover:scale-105
-                    ">
-                      <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                  <button
+                    type="button"
+                    aria-label={t('dailyVideoCall', 'leaveOrEndMeeting', 'Leave or end meeting')}
+                    className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
+                  >
+                    <div className={`${ctlCircle} bg-red-600 hover:bg-red-700 text-white`}>
+                      <PhoneOff className={ctlIcon} />
                     </div>
-                    <span className="hidden sm:block text-xs font-medium text-gray-300">
-                      {t('dailyVideoCall', 'endForAll', 'End for All')}
+                    <span className={ctlLabel}>
+                      <span className="sm:hidden">{t('dailyVideoCall', 'leave', 'Leave')}</span>
+                      <span className="hidden sm:inline">{t('dailyVideoCall', 'endForAll', 'End for All')}</span>
                     </span>
                   </button>
                 </PopoverTrigger>
@@ -2968,7 +3084,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   <button
                     type="button"
                     onClick={() => handleEndCall(false)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                    className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                   >
                     <LogOut className="h-4 w-4" />
                     {t('dailyVideoCall', 'leaveMeeting', 'Leave meeting')}
@@ -2976,7 +3092,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                   <button
                     type="button"
                     onClick={() => handleEndCall(true)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                    className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
                   >
                     <PhoneOff className="h-4 w-4" />
                     {t('dailyVideoCall', 'endForEveryone', 'End meeting for everyone')}
@@ -2985,17 +3101,15 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </Popover>
             ) : (
               <button
+                type="button"
                 onClick={() => handleEndCall()}
+                aria-label={t('dailyVideoCall', 'leave', 'Leave')}
                 className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
               >
-                <div className="
-                  w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center
-                  bg-red-600 hover:bg-red-700 text-white
-                  transition-all duration-200 transform group-hover:scale-105
-                ">
-                  <PhoneOff className="h-5 w-5 sm:h-7 sm:w-7" />
+                <div className={`${ctlCircle} bg-red-600 hover:bg-red-700 text-white`}>
+                  <PhoneOff className={ctlIcon} />
                 </div>
-                <span className="hidden sm:block text-xs font-medium text-gray-300">
+                <span className={ctlLabel}>
                   {t('dailyVideoCall', 'leave', 'Leave')}
                 </span>
               </button>

@@ -80,7 +80,7 @@ export const PrivacyPolicy: React.FC<Props> = ({ open, onClose }) => {
             </div>
             <p style={{ fontSize: '.8rem', color: 'rgba(255,255,255,.3)' }}>Effective date: {EFFECTIVE_DATE} · {COMPANY}</p>
           </div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,.5)', flexShrink: 0, marginLeft: 16 }}
+          <button aria-label="Close" onClick={onClose} style={{ background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 8, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,.5)', flexShrink: 0, marginLeft: 16 }}
             onMouseOver={e => (e.currentTarget.style.background = 'rgba(255,255,255,.1)')}
             onMouseOut={e => (e.currentTarget.style.background = 'rgba(255,255,255,.06)')}
           >

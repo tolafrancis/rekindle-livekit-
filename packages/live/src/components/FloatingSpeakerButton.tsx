@@ -16,7 +16,8 @@ export const FloatingSpeakerButton: React.FC = () => (
       <button
         type="button"
         title="Speaker"
-        className="flex h-10 w-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm bg-gray-900/70 text-white hover:bg-gray-800/80 transition-colors"
+        aria-label="Speaker"
+        className="flex h-11 w-11 items-center justify-center rounded-full shadow-lg backdrop-blur-sm bg-gray-900/70 text-white hover:bg-gray-800/80 transition-colors"
       >
         <Volume2 className="h-5 w-5" />
       </button>
