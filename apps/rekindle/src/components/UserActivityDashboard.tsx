@@ -137,7 +137,8 @@ export const UserActivityDashboard: React.FC = () => {
         libraryDevRes,
         referralsRes
       ] = await Promise.all([
-        supabase.from('prayer_group_members').select('*').eq('user_id', user.id),
+        // Prayer groups were retired (0406); small groups replace them.
+        supabase.from('small_group_members').select('id').eq('user_id', user.id).eq('status', 'active'),
         supabase.from('challenge_participants').select('*, prayer_challenges(*)').eq('user_id', user.id),
         supabase.from('book_referrals').select('*, book_summaries(title, author)').eq('referrer_id', user.id),
         supabase.from('prayer_journal').select('*').eq('user_id', user.id),

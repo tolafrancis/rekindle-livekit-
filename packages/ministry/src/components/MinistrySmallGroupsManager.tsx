@@ -21,6 +21,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { SmallGroupDetailManager } from './SmallGroupDetailManager';
+import { SMALL_GROUP_CATEGORIES } from '../lib/smallGroupCategories';
 
 interface MinistrySmallGroupsManagerProps {
   ministryId: string;
@@ -56,10 +57,7 @@ interface Coordinator {
   user_name?: string;
 }
 
-const CATEGORY_OPTIONS = [
-  'Bible Study', 'Prayer Group', 'Youth', 'Men', 'Women', 'Couples',
-  'Discipleship', 'Outreach', 'Worship', 'Other',
-];
+const CATEGORY_OPTIONS = SMALL_GROUP_CATEGORIES;
 
 const emptyForm = {
   name: '',

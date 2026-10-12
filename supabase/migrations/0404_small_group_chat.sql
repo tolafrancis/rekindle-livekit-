@@ -224,6 +224,7 @@ create table if not exists public.small_group_messages (
   constraint small_group_messages_has_content check (
     deleted_at is not null
     or (message_type = 'image' and attachment_path is not null)
+    or (message_type = 'scripture' and scripture_ref is not null)
     or (message_type <> 'image' and char_length(btrim(body)) > 0)
   )
 );
@@ -331,6 +332,8 @@ begin
 
   if new.message_type <> 'scripture' then
     new.scripture_ref := null;
+  else
+    new.scripture_ref := nullif(btrim(new.scripture_ref), '');
   end if;
 
   return new;
@@ -554,17 +557,24 @@ begin
           or (v_group.members_can_invite and public.is_small_group_member(p_group_id, auth.uid()))) then
     raise exception 'You don''t have permission to invite people to this group.' using errcode = '42501';
   end if;
+  -- Everyone in the ministry who isn't already an active member, by name.
   return query
-    select distinct on (mgm.user_id)
-           mgm.user_id,
-           coalesce(nullif(btrim(up.display_name), ''), nullif(btrim(up.full_name), ''), 'Member')::text,
-           nullif(up.avatar_url, '')::text,
-           sgm.status::text
-      from public.ministry_group_members mgm
-      left join public.user_profiles up on up.user_id = mgm.user_id
-      left join public.small_group_members sgm on sgm.group_id = p_group_id and sgm.user_id = mgm.user_id
-     where mgm.ministry_id = v_group.ministry_id and mgm.user_id is not null
-     order by mgm.user_id;
+    select c.user_id, c.name, c.avatar_url, c.group_status
+      from (
+        select distinct on (mgm.user_id)
+               mgm.user_id,
+               coalesce(nullif(btrim(up.display_name), ''), nullif(btrim(up.full_name), ''), 'Member')::text as name,
+               nullif(up.avatar_url, '')::text as avatar_url,
+               sgm.status::text as group_status
+          from public.ministry_group_members mgm
+          left join public.user_profiles up on up.user_id = mgm.user_id
+          left join public.small_group_members sgm on sgm.group_id = p_group_id and sgm.user_id = mgm.user_id
+         where mgm.ministry_id = v_group.ministry_id and mgm.user_id is not null
+           and coalesce(up.is_banned, false) = false
+           and sgm.status is distinct from 'active'
+         order by mgm.user_id
+      ) c
+     order by lower(c.name);
 end;
 $$;
 
@@ -954,7 +964,11 @@ as $$
   select sg.id, sg.ministry_id, mg.name::text, sg.name, sg.cover_image_url,
          sg.category, sg.member_count, m.role, m.status, m.notify_level,
          sg.chat_enabled, sg.last_message_at,
-         lm.message_type, left(lm.body, 140), lm.sender_id,
+         lm.message_type,
+         left(case when lm.message_type = 'scripture'
+                   then concat_ws(' · ', lm.scripture_ref, nullif(lm.body, ''))
+                   else lm.body end, 140),
+         lm.sender_id,
          coalesce(nullif(btrim(lp.display_name), ''), nullif(btrim(lp.full_name), ''))::text,
          lm.deleted_at is not null,
          case when m.status = 'active' then (

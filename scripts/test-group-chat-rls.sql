@@ -109,6 +109,11 @@ select pg_temp.must_fail($$insert into public.small_group_messages (group_id, bo
   values ('00000000-0000-4000-c000-000000000001', repeat('a', 2001))$$, 'messages over 2,000 characters are rejected');
 select pg_temp.must_fail($$insert into public.small_group_messages (group_id, body)
   values ('00000000-0000-4000-c000-000000000001', '   ')$$, 'empty messages are rejected');
+-- A Scripture needs its reference; the note is optional
+insert into public.small_group_messages (group_id, client_id, message_type, scripture_ref)
+  values ('00000000-0000-4000-c000-000000000001', gen_random_uuid(), 'scripture', 'John 3:16');
+select pg_temp.must_fail($$insert into public.small_group_messages (group_id, message_type, scripture_ref)
+  values ('00000000-0000-4000-c000-000000000001', 'scripture', '  ')$$, 'a Scripture without a reference or note is rejected');
 -- No direct edits or deletes
 select pg_temp.must_fail($$update public.small_group_messages set body = 'edited' where id = (select v from t_ids where k = 'c_msg')$$,
   'members cannot update messages directly');
@@ -261,6 +266,10 @@ reset role;
 -- ── A: leader ───────────────────────────────────────────────────────
 select pg_temp.as_user('00000000-0000-4000-a000-00000000000a');
 set local role authenticated;
+select pg_temp.assert(
+  exists (select 1 from public.group_chat_invite_candidates('00000000-0000-4000-c000-000000000001') where user_id = '00000000-0000-4000-a000-00000000000d')
+  and not exists (select 1 from public.group_chat_invite_candidates('00000000-0000-4000-c000-000000000001') where user_id = '00000000-0000-4000-a000-00000000000c'),
+  'invite list offers ministry members who are not already in the group');
 select pg_temp.assert((select public.group_chat_invite('00000000-0000-4000-c000-000000000001',
   array['00000000-0000-4000-a000-00000000000d', '00000000-0000-4000-a000-00000000000e']::uuid[]) = 1),
   'leader invites ministry members only');

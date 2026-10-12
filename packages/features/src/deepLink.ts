@@ -25,6 +25,8 @@ export const DEEP_LINK_TAB: Record<string, string> = {
   'ministry-videos': 'ministries',
   'books': 'books',
   'small-group': 'ministries',
+  // Small group chat (notifications link to /messages/:groupId).
+  'messages': 'messages',
 };
 
 export function setDeepLink(dl: DeepLink): void {

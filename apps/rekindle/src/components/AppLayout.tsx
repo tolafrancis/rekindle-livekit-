@@ -25,6 +25,7 @@ import { DeclarationCard } from './DeclarationCard';
 import { InstrumentalPlayer } from './InstrumentalPlayer';
 import { NotificationFeed } from './NotificationFeed';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useGroupChatInbox } from '@rekindle/ministry/lib/useGroupChatInbox';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { AppFooter } from './AppFooter';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
@@ -55,7 +56,8 @@ import {
   List,
   BookOpen,
   Radio,
-  Building2
+  Building2,
+  MessagesSquare
 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import {
@@ -95,6 +97,7 @@ import type { FeatureAction } from '@/lib/featureIndex';
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminSystemHealthDashboard = lazy(() => import('./AdminSystemHealthDashboard'));
 const MinistriesHub = lazy(() => import('./MinistriesHub'));
+const GroupChatInbox = lazy(() => import('@rekindle/ministry/components/GroupChatInbox'));
 
 interface UserProfile {
   id: string;
@@ -148,6 +151,7 @@ const TAB_TO_NAV_KEY: Record<string, string> = {
   'analytics': 'analytics',
   'reminders': 'reminders',
   'notifications': 'notifications',
+  'messages': 'messages',
   'challenges': 'challenges',
   'wall': 'prayerWall',
   'scripture': 'scriptureMemory',
@@ -170,6 +174,7 @@ const TAB_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   'home': Home,
   'my-dashboard': LayoutDashboard,
   'ministries': Building2,
+  'messages': MessagesSquare,
   'devotional-library': BookOpen,
   'prayer-library': Library,
   'journal': FileText,
@@ -242,6 +247,7 @@ const TAB_LABELS: Record<string, string> = {
   'analytics': 'Analytics',
   'reminders': 'Reminders',
   'notifications': 'Notifications',
+  'messages': 'Messages',
   'challenges': 'Challenges',
   'wall': 'Prayer Wall',
   'scripture': 'Scripture Memory',
@@ -452,6 +458,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const notif = useNotifications();
+  // Small group chats: unread count for the header, and the group a
+  // /messages/:id link (e.g. a push notification) should open.
+  const groupChats = useGroupChatInbox(user?.id);
+  const messagesGroupId = location.pathname.startsWith('/messages/') ? location.pathname.split('/')[2] || null : null;
+  const onChatScreen = activeTab === 'messages';
   const [searchOpen, setSearchOpen] = useState(false);
   // Platform-admin feature switches by nav group (platform_settings, migrations
   // 0266/0394). Everything reads as shown while the switches load, so this
@@ -1276,6 +1287,28 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               </Button>
             )}
 
+            {(groupChats.chats.length > 0 || activeTab === 'messages') && (
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => { navigateTab('messages'); setShowNotifications(false); setSearchOpen(false); }}
+                  aria-label={t('navigation', 'messages', 'Messages')}
+                  className="h-8 w-8 md:h-10 md:w-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-sm transition-transform hover:scale-105 hover:text-white p-0"
+                >
+                  <MessagesSquare className="h-4 w-4 md:h-5 md:w-5" />
+                </Button>
+                {(groupChats.unreadTotal + groupChats.inviteCount) > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[11px] font-bold leading-none shadow ring-2 ring-white pointer-events-none"
+                    aria-label={`${groupChats.unreadTotal + groupChats.inviteCount} unread`}
+                  >
+                    {groupChats.unreadTotal + groupChats.inviteCount > 99 ? '99+' : groupChats.unreadTotal + groupChats.inviteCount}
+                  </span>
+                )}
+              </div>
+            )}
+
             <>
               <div className="relative">
                 <Button
@@ -1514,6 +1547,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             />
           )}
 
+          {activeTab === 'messages' && (
+            <GroupChatInbox
+              initialGroupId={messagesGroupId}
+              onFindGroups={() => navigateTab('ministries')}
+            />
+          )}
+
           {activeTab === 'prayer-library' && <PrayerLibrary />}
 
           {activeTab === 'journal' && <PrayerJournal />}
@@ -1644,7 +1684,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       {!ministryWorkspaceActive && !Capacitor.isNativePlatform() && <AppFooter onNavigate={navigateTab} />}
 
       {/* Pastoral Assistant (floating, draggable) */}
-      {!ministryWorkspaceActive && !isViewerActive && <button
+      {!ministryWorkspaceActive && !isViewerActive && !onChatScreen && <button
         onPointerDown={onAssistantPointerDown}
         onPointerMove={onAssistantPointerMove}
         onPointerUp={onAssistantPointerUp}
@@ -1660,24 +1700,24 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       </button>}
 
       {/* Find a feature — on every screen, ministry workspace included. */}
-      {!isViewerActive && (
+      {!isViewerActive && !onChatScreen && (
         <FeatureFinder
           isAdmin={isAdmin}
-          className="bottom-20 left-4 md:bottom-6 md:left-28"
+          className="bottom-20 left-4 md:bottom-6 md:left-28 [body[data-fullscreen-chat]_&]:hidden"
         />
       )}
 
       {/* Back-to-top is rendered globally by <BackToTop /> in App.tsx */}
 
       {/* Offline Indicator */}
-      {!ministryWorkspaceActive && !isViewerActive && <div className="fixed bottom-4 right-4 z-50 md:bottom-20">
+      {!ministryWorkspaceActive && !isViewerActive && !onChatScreen && <div className="fixed bottom-4 right-4 z-50 md:bottom-20">
         <OfflineIndicator />
       </div>}
 
       {/* Floating performance stats (mobile, inner pages). On Home the stat
           tiles render inline, so this is only offered on the other tabs to
           keep the page content area clear. */}
-      {!ministryWorkspaceActive && activeTab !== 'home' && !isViewerActive && (
+      {!ministryWorkspaceActive && activeTab !== 'home' && !onChatScreen && !isViewerActive && (
         <>
           {showStatsPanel && (
             <div

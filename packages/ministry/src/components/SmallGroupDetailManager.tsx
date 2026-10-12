@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
+import { Switch } from '@rekindle/ui/switch';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
@@ -113,6 +114,8 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
         location_type: groupRes.data.location_type, location_address: groupRes.data.location_address || '',
         meeting_link: groupRes.data.meeting_link || '', max_members: groupRes.data.max_members ? String(groupRes.data.max_members) : '',
         cover_image_url: groupRes.data.cover_image_url || '', privacy: groupRes.data.privacy, status: groupRes.data.status,
+        chat_enabled: groupRes.data.chat_enabled !== false, members_can_invite: !!groupRes.data.members_can_invite,
+        welcome_message: groupRes.data.welcome_message || '', rules: groupRes.data.rules || '',
       } : null);
       setMembers(membersRes.data || []);
       setMeetings(meetingsRes.data || []);
@@ -438,6 +441,10 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
         cover_image_url: settingsForm.cover_image_url || null,
         privacy: settingsForm.privacy,
         status: settingsForm.status,
+        chat_enabled: settingsForm.chat_enabled,
+        members_can_invite: settingsForm.members_can_invite,
+        welcome_message: settingsForm.welcome_message.trim() || null,
+        rules: settingsForm.rules.trim() || null,
       }).eq('id', groupId);
       if (error) throw error;
       toast({ title: t('smallGroupDetailManager', 'saved', 'Saved') });
@@ -632,6 +639,35 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                         <SelectItem value="invite_only">{t('smallGroupDetailManager', 'privacyInviteOnly', 'Invite Only')}</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-3 border-t pt-3">
+                    <p className="text-sm font-semibold">{t('smallGroupDetailManager', 'chatSettings', 'Group chat')}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Label htmlFor="sg-chat-enabled">{t('smallGroupDetailManager', 'chatEnabled', 'Chat is on')}</Label>
+                        <p className="text-xs text-muted-foreground">{t('smallGroupDetailManager', 'chatEnabledDesc', 'When off, members can still read past messages but no one can send.')}</p>
+                      </div>
+                      <Switch id="sg-chat-enabled" checked={settingsForm.chat_enabled} onCheckedChange={(v) => setSettingsForm({ ...settingsForm, chat_enabled: v })} />
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Label htmlFor="sg-members-invite">{t('smallGroupDetailManager', 'membersCanInvite', 'Members can invite people')}</Label>
+                        <p className="text-xs text-muted-foreground">{t('smallGroupDetailManager', 'membersCanInviteDesc', 'Otherwise only leaders can invite.')}</p>
+                      </div>
+                      <Switch id="sg-members-invite" checked={settingsForm.members_can_invite} onCheckedChange={(v) => setSettingsForm({ ...settingsForm, members_can_invite: v })} />
+                    </div>
+                    <div>
+                      <Label>{t('smallGroupDetailManager', 'welcomeMessage', 'Welcome message')}</Label>
+                      <Textarea maxLength={1000} rows={3} value={settingsForm.welcome_message}
+                        placeholder={t('smallGroupDetailManager', 'welcomePlaceholder', 'Shown at the top of the chat for new members')}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, welcome_message: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>{t('smallGroupDetailManager', 'groupRules', 'Group guidelines')}</Label>
+                      <Textarea maxLength={2000} rows={4} value={settingsForm.rules}
+                        placeholder={t('smallGroupDetailManager', 'rulesPlaceholder', 'e.g. Keep prayer requests confidential. Be kind.')}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, rules: e.target.value })} />
+                    </div>
                   </div>
                   <Button onClick={saveSettings} disabled={savingSettings}>{savingSettings ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{t('smallGroupDetailManager', 'saveChanges', 'Save Changes')}</Button>
                 </CardContent>

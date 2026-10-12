@@ -45,6 +45,7 @@ const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default:
 const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
 const DiscoverSmallGroups = lazy(() => import('./DiscoverSmallGroups').then((m) => ({ default: m.DiscoverSmallGroups })));
 const MySmallGroups = lazy(() => import('./MySmallGroups').then((m) => ({ default: m.MySmallGroups })));
+const GroupChatInbox = lazy(() => import('./GroupChatInbox').then((m) => ({ default: m.GroupChatInbox })));
 const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
 const BibleReadingPlan = lazy(() => import('@rekindle/features/components/BibleReadingPlan').then((m) => ({ default: m.BibleReadingPlan })));
 const ScriptureMemory = lazy(() => import('@rekindle/features/components/ScriptureMemory').then((m) => ({ default: m.ScriptureMemory })));
@@ -289,6 +290,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Set by the small-group deep-link effect below; passed to DiscoverSmallGroups
   // so it auto-opens the shared group instead of just landing on Discover.
   const [deepLinkGroupId, setDeepLinkGroupId] = useState<string | null>(null);
+  // Small group chat: the chat a /messages/:id link opens, and the group page
+  // the chat's "Meetings, prayer requests and posts" link opens.
+  const [deepLinkChatId, setDeepLinkChatId] = useState<string | null>(null);
+  const [openGroupPageId, setOpenGroupPageId] = useState<string | null>(null);
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
@@ -764,6 +769,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       setActiveTab('discover-groups');
       setDeepLinkGroupId(dlGroup.id);
     }
+
+    const dlChat = consumeDeepLink('messages');
+    if (dlChat?.id) {
+      setActiveTab('group-chats');
+      setDeepLinkChatId(dlChat.id);
+    }
   }, [ministry.id]);
 
   // Load community data when community tab is first activated
@@ -1040,6 +1051,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'challenges', label: 'Challenges', icon: Trophy },
     ] },
     ...(moduleOn('smallGroups') ? [{ id: 'groups', label: 'Small Groups', icon: Users, gradient: 'from-cyan-500 to-blue-600', children: [
+      { id: 'group-chats', label: 'Chats', icon: MessageSquare },
       { id: 'discover-groups', label: 'Discover', icon: Search },
       { id: 'my-groups', label: 'My Groups', icon: Users },
       // Create/edit/delete groups and assign leaders. It only lived in
@@ -3006,6 +3018,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           />
         )}
 
+        {/* Small Groups — Chats */}
+        {activeTab === 'group-chats' && (
+          <GroupChatInbox
+            ministryId={ministry.id}
+            initialGroupId={deepLinkChatId}
+            onFindGroups={() => setActiveTab('discover-groups')}
+            onOpenGroupPage={(groupId) => { setOpenGroupPageId(groupId); setActiveTab('my-groups'); }}
+          />
+        )}
+
         {/* Small Groups — Discover Tab */}
         {activeTab === 'discover-groups' && (
           <DiscoverSmallGroups ministryId={ministry.id} autoOpenGroupId={deepLinkGroupId} />
@@ -3013,7 +3035,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Small Groups — My Groups Tab */}
         {activeTab === 'my-groups' && (
-          <MySmallGroups ministryId={ministry.id} />
+          <MySmallGroups
+            ministryId={ministry.id}
+            autoOpenGroupId={openGroupPageId}
+            onAutoOpened={() => setOpenGroupPageId(null)}
+          />
         )}
 
         {/* Small Groups — Manage Tab (leaders/admins) */}

@@ -135,6 +135,7 @@ const App = () => {
                   <Route path="/ministry-prayer/:id" element={<Index />} />
                   <Route path="/ministry-videos/:id" element={<Index />} />
                   <Route path="/small-group/:id" element={<Index />} />
+                  <Route path="/messages/:id" element={<Index />} />
                   <Route path="/books/:id" element={<Index />} />
                   
                   {/* Meeting join routes - Channel meetings */}
