@@ -349,6 +349,47 @@ const tests = {
     check('help: page tutorial for journal', t === 'Write a prayer', t);
     await context.close();
   },
+
+  // Every tutorial in the library, start to finish, on phone and desktop:
+  // each step must show its card on screen, either on its target or with an
+  // explanation of why the target isn't there.
+  async all_tutorials() {
+    for (const viewport of [PHONE, DESKTOP]) {
+      const st = makeState({ tutorials: done });
+      const { page, context, errors } = await openApp(b, st, { viewport });
+      await sleep(5000);
+      await page.locator('[data-tour="help-button"]:visible').click();
+      await page.getByRole('menuitem', { name: 'Browse Tutorials' }).click();
+      await sleep(500);
+      const names = (await page.locator('li p.font-semibold').allInnerTexts()).map((n) => n.trim());
+      await page.keyboard.press('Escape'); await sleep(400);
+      const label = viewport === PHONE ? 'phone' : 'desktop';
+      for (const name of names) {
+        await startFromLibrary(page, name);
+        let steps = 0; let ok = true; let note = '';
+        while ((await page.locator('[data-rk-tutorial] [role="dialog"]').count()) > 0 && steps < 15) {
+          await page.waitForFunction(() => {
+            const el = document.querySelector('[data-rk-tutorial] [role="dialog"]');
+            return !el || getComputedStyle(el).visibility === 'visible';
+          }, null, { timeout: 8000 }).catch(() => { ok = false; note = 'card never appeared'; });
+          if (!ok) break;
+          const c = page.locator('[data-rk-tutorial] [role="dialog"]');
+          if (!(await inViewport(page))) { ok = false; note = `card off screen at step ${steps + 1}`; }
+          const btn = c.locator('button', { hasText: /^(Next|Done|Skip this step)/ }).last();
+          await btn.click(); await sleep(500);
+          steps++;
+        }
+        // Close anything a step opened (menus, dialogs) before the next one.
+        await page.keyboard.press('Escape'); await sleep(300);
+        await page.keyboard.press('Escape'); await sleep(300);
+        check(`all (${label}): ${name}`, ok && steps > 0, note || `${steps} steps`);
+      }
+      // Stripe.js is blocked by this harness, so the billing screens log it.
+      const real = errors.filter((e) => !e.includes('Stripe.js not available'));
+      check(`all (${label}): no page errors`, real.length === 0, real.join(' | '));
+      await context.close();
+    }
+  },
 };
 
 for (const [name, fn] of Object.entries(tests)) {

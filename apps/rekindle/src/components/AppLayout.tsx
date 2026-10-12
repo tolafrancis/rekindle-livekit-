@@ -1222,6 +1222,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       navigate={tutorialNavigate}
       suspended={ministryWorkspaceActive || isViewerActive}
       isNavGroupOn={isConsumerNavGroupOn}
+      isCounsellor={isCounsellor}
     >
     <div className={appShellClassName}>
       {/* First-visit welcome + guided tours (replaces the old tips modal). */}
