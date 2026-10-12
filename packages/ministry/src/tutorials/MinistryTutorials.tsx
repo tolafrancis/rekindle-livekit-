@@ -1,13 +1,14 @@
 // Wires the shared tutorial engine into a ministry's space: which tours this
 // member can take (only for screens their ministry shows them), the Help (?)
 // button in the ministry header, and the "Take the tour" card on its home.
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HelpCircle, PlayCircle, MapPin, Library, ScrollText, Compass, ChevronRight } from 'lucide-react';
 import { Button } from '@rekindle/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@rekindle/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@rekindle/ui/dialog';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { TutorialProvider, useTutorials } from '@rekindle/features/tutorial/TutorialProvider';
 import { TutorialLibrary } from '@rekindle/features/tutorial/TutorialLibrary';
@@ -125,13 +126,86 @@ export const MinistryHelpMenu: React.FC<{ className?: string }> = ({ className }
   );
 };
 
+// The tour also offers itself in a pop-up on the ministry home: on the first
+// visit, then again on later days, up to MAX_TOUR_PROMPTS times in all, until
+// the member starts it or says not to. Counted per member on this device.
+const MAX_TOUR_PROMPTS = 4;
+const TOUR_PROMPT_GAP_MS = 20 * 60 * 60 * 1000;
+
+interface TourPromptState { shown: number; lastAt: number; never?: boolean }
+
+const promptKey = (userId: string) => `rk:ministry-tour-prompt:${userId}`;
+
+function readPrompt(userId: string): TourPromptState {
+  try {
+    const raw = localStorage.getItem(promptKey(userId));
+    if (raw) return { shown: 0, lastAt: 0, ...JSON.parse(raw) };
+  } catch { /* storage blocked */ }
+  return { shown: 0, lastAt: 0 };
+}
+
+function writePrompt(userId: string, state: TourPromptState) {
+  try { localStorage.setItem(promptKey(userId), JSON.stringify(state)); } catch { /* storage blocked */ }
+}
+
 /** "Take the tour" on the ministry home, until the member finishes or skips it. */
-export const MinistryTourCard: React.FC = () => {
-  const { start, statusOf, ready, tr } = useTutorials();
+export const MinistryTourCard: React.FC<{ userId?: string | null; suspended?: boolean }> = ({ userId, suspended }) => {
+  const { start, statusOf, ready, active, tr } = useTutorials();
   const status = statusOf(MINISTRY_INTRO_TUTORIAL_ID);
-  if (!ready || status === 'completed' || status === 'skipped') return null;
+  const done = status === 'completed' || status === 'skipped';
+  const [promptOpen, setPromptOpen] = useState(false);
+
+  useEffect(() => {
+    if (!ready || !userId || suspended || done || active || status === 'in_progress') return;
+    const state = readPrompt(userId);
+    if (state.never || state.shown >= MAX_TOUR_PROMPTS) return;
+    if (state.lastAt && Date.now() - state.lastAt < TOUR_PROMPT_GAP_MS) return;
+    // Let the home screen settle first so the tour has real elements to show.
+    const id = window.setTimeout(() => {
+      writePrompt(userId, { ...state, shown: state.shown + 1, lastAt: Date.now() });
+      setPromptOpen(true);
+    }, 800);
+    return () => window.clearTimeout(id);
+  }, [ready, userId, suspended, done, active, status]);
+
+  if (!ready || done) return null;
   const resuming = status === 'in_progress';
+  const p = (key: string, fallback: string) => tr(`ministryHelp.prompt.${key}`, fallback);
+
+  const startFromPrompt = () => {
+    setPromptOpen(false);
+    start(MINISTRY_INTRO_TUTORIAL_ID, { restart: true });
+  };
+  const never = () => {
+    setPromptOpen(false);
+    if (userId) writePrompt(userId, { ...readPrompt(userId), never: true });
+  };
+
   return (
+    <>
+    <Dialog open={promptOpen} onOpenChange={setPromptOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-purple-800">
+            <Compass className="h-5 w-5" />{p('title', 'Take a quick tour of your ministry?')}
+          </DialogTitle>
+          <DialogDescription className="text-sm text-gray-600">
+            {p('body', 'We will highlight parts of the real screen and explain them one at a time: the menu, the Word, prayer, community and more. About two minutes, and you can stop whenever you like.')}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+          <Button onClick={startFromPrompt} className="min-h-[44px] w-full bg-purple-600 hover:bg-purple-700">
+            {p('start', 'Start the Tour')}
+          </Button>
+          <Button variant="outline" onClick={() => setPromptOpen(false)} className="min-h-[44px] w-full">
+            {p('later', 'Not Now')}
+          </Button>
+          <Button variant="ghost" onClick={never} className="min-h-[44px] w-full text-gray-600">
+            {p('never', "Don't Show This Again")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <button
       type="button"
       data-tour="ministry-tour-card"
@@ -151,5 +225,6 @@ export const MinistryTourCard: React.FC = () => {
       </span>
       <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
     </button>
+    </>
   );
 };
