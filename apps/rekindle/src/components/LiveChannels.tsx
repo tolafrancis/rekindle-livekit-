@@ -83,6 +83,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
+  const canHost = entitlements.isAdmin || entitlements.canCreateLiveChannel || entitlements.canHostInteractiveMeetings;
   const { activePrompt, show: showUpgradePrompt, dismiss: dismissUpgradePrompt } = useUpgradePrompt();
   
   console.log('[LiveChannels] Component mounted/rendered');
@@ -826,6 +827,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
+        {/* Inside the app shell the sub-tabs come from its navigation, so this row
+            only shows when LiveChannels is used on its own. */}
+        {!onActiveTabChange && (
         <TabsList className="flex w-full overflow-x-auto gap-1 h-auto p-1 flex-nowrap md:hidden">
           <TabsTrigger value="discover" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Tv className="h-4 w-4" />
@@ -839,6 +843,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
             <Heart className="h-4 w-4" />
             Following ({followedChannels.length})
           </TabsTrigger>
+          {canHost && (<>
           <TabsTrigger value="my-channels" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Mic className="h-4 w-4" />
             My Channels ({myChannels.length})
@@ -851,7 +856,9 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
             <BarChart3 className="h-4 w-4" />
             Analytics
           </TabsTrigger>
+          </>)}
         </TabsList>
+        )}
 
 
         {/* Discover Tab */}

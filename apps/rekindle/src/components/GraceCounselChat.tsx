@@ -261,7 +261,7 @@ export const GraceCounselChat: React.FC = () => {
   if (!spiritualCompanion) {
     return (
       <div className={`bg-white rounded-xl shadow-lg flex items-center justify-center ${
-        isNative ? 'h-[calc(100vh-130px)]' : isCompact ? 'h-[calc(100dvh-180px)] min-h-[420px]' : 'h-[600px]'
+        isNative ? 'h-[calc(100vh-200px)]' : isCompact ? 'h-[calc(100dvh-230px)] min-h-[380px]' : 'h-[600px]'
       }`}>
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
