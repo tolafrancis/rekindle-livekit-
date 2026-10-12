@@ -9,6 +9,10 @@ import { getPlatformSetting, setPlatformSetting } from './platformSettings';
 
 export const APP_DOWNLOAD_LINKS_KEY = 'app_download_links';
 
+/** Always the newest published ReKindle desktop installer. */
+export const CONSUMER_WINDOWS_LATEST =
+  'https://github.com/tolafrancis/rekindle-livekit-/releases/latest/download/ReKindle-Setup.exe';
+
 export interface AppDownloadLinks {
   /** ReKindle BC (consumer app) on Google Play. */
   consumerPlayStore: string;
@@ -39,9 +43,12 @@ export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
   ministryPlayStore: import.meta.env.VITE_PLAY_STORE_MINISTRY_URL || 'https://play.google.com/store/apps/details?id=com.rekindlebc.ministry',
   consumerAppStore: '',
   ministryAppStore: '',
-  // Each app's build used to set its own VITE_WINDOWS_INSTALLER_URL; keep
-  // honouring it for whichever app this bundle is until an admin saves links.
-  consumerWindows: import.meta.env.VITE_APP_TYPE === 'ministry' ? '' : (import.meta.env.VITE_WINDOWS_INSTALLER_URL || ''),
+  // ReKindle's Windows installer, on both sites: GitHub's "latest release"
+  // link, so each new desktop release only needs a ReKindle-Setup.exe asset
+  // attached to it (no site rebuild to bump a version in the URL).
+  consumerWindows: CONSUMER_WINDOWS_LATEST,
+  // The Ministry installer still comes from that build's
+  // VITE_WINDOWS_INSTALLER_URL until an admin saves links.
   ministryWindows: import.meta.env.VITE_APP_TYPE === 'ministry' ? (import.meta.env.VITE_WINDOWS_INSTALLER_URL || '') : '',
   translatorWindows: '',
   consumerMac: '',
