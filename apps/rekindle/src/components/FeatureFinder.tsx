@@ -18,6 +18,8 @@ export const FEATURE_NAVIGATE_EVENT = 'rk:feature-navigate';
 export const OPEN_FEATURE_FINDER_EVENT = 'rk:open-feature-finder';
 /** MinistrySpace listens for this while it's open and sets `handled`. */
 export const MINISTRY_GO_EVENT = 'rk:ministry-go';
+/** Opens the Find a feature dialog from elsewhere (e.g. the Help menu). */
+export const FEATURE_FINDER_OPEN_EVENT = OPEN_FEATURE_FINDER_EVENT;
 
 export interface MinistryGoDetail { group: string; child: string; handled: boolean }
 
@@ -111,6 +113,7 @@ const FeatureFinder: React.FC<FeatureFinderProps> = ({ isAdmin, className, hideT
       {!hideTrigger && <button
         type="button"
         onClick={() => setOpen(true)}
+        data-tour="feature-finder"
         aria-label={label}
         title={`${label} (Ctrl+K)`}
         className={`fixed z-[60] flex items-center gap-2 rounded-full bg-white/95 text-purple-700 border border-purple-200 shadow-lg backdrop-blur px-3 py-2.5 hover:bg-purple-50 transition-colors ${className ?? ''}`}

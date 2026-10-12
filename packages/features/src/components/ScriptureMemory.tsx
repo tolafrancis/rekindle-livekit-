@@ -447,6 +447,7 @@ export function ScriptureMemory() {
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogTrigger asChild>
             <Button 
+              data-tour="scripture-add"
               disabled={verseLimit !== null && verseLimit !== undefined && cards.length >= verseLimit}
             >
               {verseLimit !== null && verseLimit !== undefined && cards.length >= verseLimit && (
@@ -600,7 +601,7 @@ export function ScriptureMemory() {
 
       {/* Review Button */}
       {cards.length > 0 && (
-        <Button onClick={startReview} className="w-full py-6 text-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
+        <Button onClick={startReview} data-tour="scripture-review" className="w-full py-6 text-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
           <Brain className="h-5 w-5 mr-2" />
           {t('scriptureMemory', 'startReviewSession', 'Start Review Session ({count} verses)').replace('{count}', String(cards.length))}
         </Button>

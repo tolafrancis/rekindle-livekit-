@@ -20,7 +20,6 @@ import { PrayerPointModal } from './PrayerPointModal';
 import { AffirmationCard } from './AffirmationCard';
 import { StreakWidget } from './StreakWidget';
 import { ReminderSetupTip } from './ReminderSetupTip';
-import { OnboardingTips } from './OnboardingTips';
 import { DeclarationCard } from './DeclarationCard';
 import { InstrumentalPlayer } from './InstrumentalPlayer';
 import { NotificationFeed } from './NotificationFeed';
@@ -99,6 +98,11 @@ const CounsellorDashboard = lazy(() => import('./CounsellorDashboard').then((m) 
 const GlobalSearch = lazy(() => import('./GlobalSearch'));
 import FeatureFinder, { FEATURE_NAVIGATE_EVENT, OPEN_FEATURE_FINDER_EVENT } from './FeatureFinder';
 import type { FeatureAction } from '@/lib/featureIndex';
+import type { TutorialNav } from '@rekindle/features/tutorial/types';
+import { RekindleTutorialProvider } from '@/tutorials/RekindleTutorials';
+import { WelcomeDialog } from '@/tutorials/WelcomeDialog';
+import { HelpMenu } from '@/tutorials/HelpMenu';
+import { TutorialLibrary } from '@/tutorials/TutorialLibrary';
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminSystemHealthDashboard = lazy(() => import('./AdminSystemHealthDashboard'));
 const MinistriesHub = lazy(() => import('./MinistriesHub'));
@@ -1042,13 +1046,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const nowPlayingTitle = t('appShell', 'nowPlaying', 'Now playing');
 
   const renderPrimaryNavigation = (className: string) => (
-    <nav className={className} aria-label="Primary navigation">
+    <nav className={className} aria-label="Primary navigation" data-tour="primary-nav">
       {NAV_GROUPS.filter((group) => isFeatureNavGroupOn('consumer', group.id)).map((group) => {
         const Icon = group.icon ?? List;
         const active = activeGroup?.id === group.id;
         return (
           <button
             key={group.id}
+            data-tour={`nav-${group.id}`}
             onClick={() => navigateTab(group.children ? group.children[0] : group.id)}
             aria-current={active ? 'page' : undefined}
             className={`group flex shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[11px] font-semibold leading-tight transition-colors ${
@@ -1117,6 +1122,38 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
     return () => window.removeEventListener(FEATURE_NAVIGATE_EVENT, handler);
   }, [navigateTab, ministryWorkspaceActive]);
 
+  // Guided tutorials open screens through this. It must be idempotent: the
+  // engine calls it even when the screen is already showing.
+  const settingsRetryTimers = useRef<number[]>([]);
+  const tutorialNavigate = useCallback((nav: TutorialNav) => {
+    const openTab = (tab: string) => { if (activeTab !== tab) navigateTab(tab); };
+    switch (nav.kind) {
+      case 'tab':
+        openTab(nav.tab as string);
+        break;
+      case 'live':
+        openTab('live-channels');
+        setLiveChannelsTab(nav.tab as LiveChannelsTab);
+        break;
+      case 'ministries':
+        openTab('ministries');
+        setMinistryView(nav.view as MinistryHubView);
+        break;
+      case 'settings': {
+        openTab('profile');
+        // Settings may still be loading, so ask a few times; a newer request
+        // cancels the older one's retries.
+        const detail = { section: nav.section };
+        settingsRetryTimers.current.forEach((id) => window.clearTimeout(id));
+        settingsRetryTimers.current = [60, 400, 1200].map((ms) => window.setTimeout(
+          () => window.dispatchEvent(new CustomEvent('openProfileSection', { detail })), ms));
+        break;
+      }
+    }
+  }, [activeTab, navigateTab]);
+  const isConsumerNavGroupOn = useCallback(
+    (navId: string) => isFeatureNavGroupOn('consumer', navId), [isFeatureNavGroupOn]);
+
   const isSecondaryActive = (item: SecondaryNavItem) => {
     if (item.tab) return activeTab === item.tab;
     if (item.ministryView) return activeTab === 'ministries' && ministryView === item.ministryView;
@@ -1136,13 +1173,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('navigation', 'module', 'Module')}</p>
           <h2 className="text-base font-semibold text-gray-900">{groupLabel(activeGroup)}</h2>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label={`${groupLabel(activeGroup)} navigation`}>
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label={`${groupLabel(activeGroup)} navigation`} data-tour="secondary-nav">
           {secondaryItems.map((item) => {
             const Icon = item.icon;
             const active = isSecondaryActive(item);
             return (
               <button
                 key={item.id}
+                data-tour={`subnav-${item.id}`}
                 onClick={() => handleSecondaryClick(item)}
                 aria-current={active ? 'page' : undefined}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${
@@ -1198,8 +1236,18 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const appShellClassName = ministryWorkspaceActive ? 'min-h-screen bg-gray-50' : shellClassName;
 
   return (
+    <RekindleTutorialProvider
+      userId={user?.id}
+      currentPage={activeTab}
+      navigate={tutorialNavigate}
+      suspended={ministryWorkspaceActive || isViewerActive}
+      isNavGroupOn={isConsumerNavGroupOn}
+      isCounsellor={isCounsellor}
+    >
     <div className={appShellClassName}>
-      {!ministryWorkspaceActive && <OnboardingTips onNavigate={navigateTab} />}
+      {/* First-visit welcome + guided tours (replaces the old tips modal). */}
+      <WelcomeDialog allowed={!ministryWorkspaceActive && !isViewerActive && activeTab === 'home' && location.pathname.split('/').filter(Boolean).length <= 1} />
+      <TutorialLibrary />
 
       {!ministryWorkspaceActive && !isViewerActive && (
         <>
@@ -1236,12 +1284,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
               variant="ghost"
               size="icon"
               onClick={() => { setSearchOpen(true); setShowNotifications(false); }}
+              data-tour="search-button"
               title={t('common', 'search', 'Search')}
               aria-label={t('common', 'search', 'Search')}
               className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
             >
               <Search className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
+            <HelpMenu className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0" />
 
             {isPremium && (
               <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-white hidden md:flex">
@@ -1299,6 +1349,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   variant="ghost"
                   size="icon"
                   onClick={() => { setShowNotifications((v) => !v); setSearchOpen(false); }}
+                  data-tour="notifications-button"
                   aria-label={t('profile', 'notifications', 'Notifications')}
                   className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                 >
@@ -1330,6 +1381,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     variant="ghost"
                     size="icon"
                     aria-label="Account menu"
+                    data-tour="account-menu"
                     className="h-10 w-10 rounded-xl text-gray-700 hover:bg-gray-100 hover:text-gray-900 p-0"
                   >
                     <User className="h-4 w-4 md:h-5 md:w-5" />
@@ -1345,7 +1397,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                       {group.items.map((item) => {
                         const ItemIcon = TAB_ICONS[item] ?? List;
                         return (
-                          <DropdownMenuItem key={item} onClick={() => navigateTab(item)} className="gap-2">
+                          <DropdownMenuItem key={item} onClick={() => navigateTab(item)} className="gap-2" data-tour={`account-${item}`}>
                             <ItemIcon className="h-4 w-4" />
                             {getTabLabel(item)}
                           </DropdownMenuItem>
@@ -1416,13 +1468,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
         {/* Phone sub-tabs for the current module (Word, Prayer, Live, Community). */}
         {!ministryWorkspaceActive && !isViewerActive && activeGroup && secondaryItems.length > 0 && (
-          <nav className="md:hidden -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label={`${groupLabel(activeGroup)} navigation`}>
+          <nav className="md:hidden -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label={`${groupLabel(activeGroup)} navigation`} data-tour="secondary-nav">
             {secondaryItems.map((item) => {
               const Icon = item.icon;
               const active = isSecondaryActive(item);
               return (
                 <button
                   key={item.id}
+                  data-tour={`subnav-${item.id}`}
                   onClick={() => handleSecondaryClick(item)}
                   aria-current={active ? 'page' : undefined}
                   className={`flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors ${
@@ -1455,7 +1508,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             {renderStatCapsules('grid grid-cols-2 gap-2 md:grid-cols-4')}
           </div>
         )}
-        <div className="min-w-0 max-w-full overflow-x-clip">
+        <div className="min-w-0 max-w-full overflow-x-clip" data-tour={`page-${activeTab}`}>
             <ErrorBoundary>
             <Suspense fallback={<RouteFallback fullScreen={false} />}>
           {activeTab === 'home' && (
@@ -1475,9 +1528,12 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   <span className="text-sm font-medium opacity-90">{t('appShell', 'watch', 'Watch')}</span>
                 </button>
               )}
-              <StreakWidget />
+              <div data-tour="home-streak">
+                <StreakWidget />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div>
+                  <div data-tour="devotional-source">
                   <DevotionalSourceSettings
                     onSaved={(src, minId, streamId) => {
                       setDevotionalSource(src);
@@ -1485,6 +1541,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                       setDevotionalStreamId(streamId ?? null);
                     }}
                   />
+                  </div>
+                  <div data-tour="home-devotional">
                   <DailyDevotionalWidget
                     onStartDevotional={handleStartDevotional}
                     source={devotionalSource}
@@ -1492,11 +1550,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                     streamId={devotionalStreamId}
                     onOpenLibrary={() => navigateTab('devotional-library')}
                   />
+                  </div>
                 </div>
-                <div id="daily-declaration">
+                <div id="daily-declaration" data-tour="home-declaration">
                   <DeclarationCard showDaily />
                 </div>
-                <AffirmationCard showDaily />
+                <div data-tour="home-affirmation">
+                  <AffirmationCard showDaily />
+                </div>
               </div>
               <InstrumentalPlayer />
               {/* Tips and promos come after the core daily content. */}
@@ -1582,7 +1643,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   <p className="text-gray-500">{noCounsellorsDesc}</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-tour="counsellor-list">
                   {counsellors.map((c) => (
                     <CounsellorCard
                       key={c.id}
@@ -1667,6 +1728,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         onPointerUp={onAssistantPointerUp}
         onClick={() => { if (!assistantDrag.current.moved) navigateTab('ai'); }}
         aria-label="Pastoral Assistant"
+        data-tour="assistant-button"
         title="Pastoral Assistant"
         style={assistantPos ? { left: assistantPos.x, top: assistantPos.y, touchAction: 'none' } : { touchAction: 'none' }}
         className={`fixed ${assistantPos ? '' : 'bottom-20 right-4'} z-50 h-14 w-14 rounded-full shadow-lg flex items-center justify-center transition-colors cursor-grab active:cursor-grabbing select-none ${
@@ -1708,6 +1770,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                 <button
                   key={b.id}
                   type="button"
+                  data-tour={`nav-${b.id}`}
                   onClick={() => {
                     // Tapping the current module again returns to its top.
                     if (active) window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1803,6 +1866,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
         </Suspense>
       )}
     </div>
+    </RekindleTutorialProvider>
   );
 };
 

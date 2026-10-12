@@ -129,7 +129,7 @@ const SettingsSidebar: React.FC<{ section: string; onSelect: (key: string) => vo
     {/* Mobile: a single flat horizontal scroller (buttons are direct flex
         children via display:contents wrappers — same structure as the working
         primary nav). Desktop: grouped vertical list. */}
-    <nav className={Capacitor.isNativePlatform() 
+    <nav data-tour="settings-nav" className={Capacitor.isNativePlatform() 
       ? "flex flex-col gap-3 pb-2"
       : "flex flex-nowrap gap-1 overflow-x-auto pb-2 md:flex-col md:overflow-x-visible md:pb-0 [-webkit-overflow-scrolling:touch]"
     }>
@@ -146,6 +146,7 @@ const SettingsSidebar: React.FC<{ section: string; onSelect: (key: string) => vo
               return (
                 <button
                   key={it.key}
+                  data-tour={`settings-${it.key}`}
                   onClick={() => onSelect(it.key)}
                   aria-current={active ? 'page' : undefined}
                   className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 min-h-[44px] md:min-h-0 text-sm font-medium whitespace-nowrap transition-colors ${

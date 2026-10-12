@@ -108,6 +108,7 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
           type="button"
           variant="outline"
           size="sm"
+          data-tour="devotional-source-toggle"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
           className="ml-auto h-7 shrink-0 px-2.5 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"

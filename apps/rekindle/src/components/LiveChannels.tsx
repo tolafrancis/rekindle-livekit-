@@ -834,28 +834,28 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
             only shows when LiveChannels is used on its own. */}
         {!onActiveTabChange && (
         <TabsList className="flex w-full overflow-x-auto gap-1 h-auto p-1 flex-nowrap md:hidden">
-          <TabsTrigger value="discover" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="discover" data-tour="live-tab-discover" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Tv className="h-4 w-4" />
             Discover
           </TabsTrigger>
-          <TabsTrigger value="events" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="events" data-tour="live-tab-events" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Calendar className="h-4 w-4" />
             Events
           </TabsTrigger>
-          <TabsTrigger value="following" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="following" data-tour="live-tab-following" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Heart className="h-4 w-4" />
             Following ({followedChannels.length})
           </TabsTrigger>
           {canHost && (<>
-          <TabsTrigger value="my-channels" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="my-channels" data-tour="live-tab-my-channels" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Mic className="h-4 w-4" />
             My Channels ({myChannels.length})
           </TabsTrigger>
-          <TabsTrigger value="meetings" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="meetings" data-tour="live-tab-meetings" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Video className="h-4 w-4" />
             Meetings
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="analytics" data-tour="live-tab-analytics" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <BarChart3 className="h-4 w-4" />
             Analytics
           </TabsTrigger>

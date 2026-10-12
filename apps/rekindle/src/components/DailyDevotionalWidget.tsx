@@ -676,6 +676,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
             <Button
               variant="outline"
               className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20"
+              data-tour="devotional-audio"
               onClick={() => setShowAudioPreview(v => !v)}
             >
               <Volume2 className="h-4 w-4 mr-2" />{t('devotionals', 'previewAudio', 'Preview Audio')}
@@ -685,6 +686,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
           <div className="flex gap-2">
             <Button
               className="flex-1 bg-white text-purple-700 hover:bg-purple-50 font-semibold"
+              data-tour="devotional-start"
               onClick={() => setShowMinistryModule(true)}
             >
               <Play className="h-4 w-4 mr-2" />
@@ -853,6 +855,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
           {/* Audio preview */}
           {!showAudioPreview ? (
             <Button
+              data-tour="devotional-audio"
               onClick={() => setShowAudioPreview(true)}
               variant="outline"
               className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20"
@@ -879,6 +882,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
 
           <div className="flex gap-2">
             <Button
+              data-tour="devotional-start"
               onClick={handleStartDevotional}
               className="flex-1 bg-white text-purple-700 hover:bg-purple-50 font-semibold"
             >
@@ -936,6 +940,7 @@ export const DailyDevotionalWidget: React.FC<Props> = ({
             <div className="flex gap-2">
               <Button
                 className="flex-1 bg-white text-purple-700 hover:bg-purple-50 font-semibold"
+                data-tour="devotional-start"
                 onClick={() => setShowMinistryModule(true)}
               >
                 <Play className="h-4 w-4 mr-2" />{t('devotionals', 'startMinistryDevotional', 'Start Ministry Devotional')}<ChevronRight className="h-4 w-4 ml-2" />
