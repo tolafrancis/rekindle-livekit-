@@ -168,6 +168,20 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
   const [directorySearch, setDirectorySearch] = useState('');
   // Platform admins switch Discover on in Platform Settings; off by default.
   const [discoverEnabled, setDiscoverEnabled] = useState(false);
+  // Each member then chooses whether to show the list on their own device.
+  // Off until they switch it on.
+  const showDiscoverKey = user?.id ? `rk:show-public-ministries:${user.id}` : null;
+  const [showDiscover, setShowDiscover] = useState(false);
+  useEffect(() => {
+    if (!showDiscoverKey) return;
+    try { setShowDiscover(localStorage.getItem(showDiscoverKey) === '1'); } catch { /* storage blocked */ }
+  }, [showDiscoverKey]);
+  const toggleShowDiscover = (on: boolean) => {
+    setShowDiscover(on);
+    if (!on) setDirectorySearch('');
+    if (!showDiscoverKey) return;
+    try { localStorage.setItem(showDiscoverKey, on ? '1' : '0'); } catch { /* storage blocked */ }
+  };
   const [inviteInput, setInviteInput] = useState('');
 
 
@@ -844,11 +858,23 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
           </CardContent>
         </Card>
 
-        {(directoryLoading || hasDiscoverable) && (
+        {discoverEnabled && (directoryLoading || hasDiscoverable) && (
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <h3 className="font-semibold text-gray-800">{t('ministriesHub', 'discoverTitle', 'Discover public ministries')}</h3>
-              {hasDiscoverable && (
+              <div className="flex items-center justify-between gap-3 sm:justify-start">
+                <h3 id="discover-ministries-title" className="font-semibold text-gray-800">{t('ministriesHub', 'discoverTitle', 'Discover public ministries')}</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">
+                    {showDiscover ? t('ministriesHub', 'discoverShown', 'Shown') : t('ministriesHub', 'discoverHidden', 'Hidden')}
+                  </span>
+                  <Switch
+                    checked={showDiscover}
+                    onCheckedChange={toggleShowDiscover}
+                    aria-labelledby="discover-ministries-title"
+                  />
+                </div>
+              </div>
+              {showDiscover && hasDiscoverable && (
                 <div className="relative sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
@@ -862,7 +888,9 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               )}
             </div>
 
-            {directoryLoading ? (
+            {!showDiscover ? (
+              <p className="text-sm text-gray-500">{t('ministriesHub', 'discoverOffHint', 'Switch this on to browse public ministries you can join.')}</p>
+            ) : directoryLoading ? (
               <div className="flex items-center justify-center py-6">
                 <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
               </div>

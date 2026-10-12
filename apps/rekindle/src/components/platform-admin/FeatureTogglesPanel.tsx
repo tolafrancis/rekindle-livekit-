@@ -147,8 +147,9 @@ const MinistryDiscoverToggle: React.FC = () => {
           <Badge variant="outline" className="text-xs font-normal">Ministries page</Badge>
         </div>
         <p className="text-xs text-gray-500 mt-0.5">
-          Lists public ministries on the Ministries page so members can find and join them. Off by default; members
-          can still join with an invite link or a ministry's join page.
+          Lets members show a list of public ministries on the Ministries page, using their own switch there (off
+          until they turn it on). Off by default; members can still join with an invite link or a ministry's join
+          page.
         </p>
       </div>
       <Switch
