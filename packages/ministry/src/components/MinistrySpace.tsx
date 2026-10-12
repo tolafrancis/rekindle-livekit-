@@ -87,6 +87,8 @@ const MINISTRY_NAV = [
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
 import { normalizeSettingsSection, type SettingsSectionId } from './ministrySettingsSections';
+import type { TutorialNav } from '@rekindle/features/tutorial/types';
+import { MinistryTutorialProvider, MinistryHelpMenu, MinistryTourCard } from '../tutorials/MinistryTutorials';
 import { AcceptRulesModal } from './AcceptRulesModal';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
@@ -1189,6 +1191,22 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     return () => window.removeEventListener('rk:ministry-go', handler);
   }, []);
 
+  // Guided tours (../tutorials): the page they see, and how they open one.
+  // Groups that switch a sub-view report it too, e.g. "word/reading".
+  const tourPage = ownsSubtab(activeTab) ? `${activeTab}/${SUBTAB[activeTab].value}` : activeTab;
+  const tourNavigate = (nav: TutorialNav) => {
+    if (nav.kind !== 'ministry') return;
+    const g = GROUPS.find((x) => x.id === nav.group);
+    if (!g) return;
+    setNavMenuOpen(false);
+    const child = typeof nav.child === 'string' ? nav.child : null;
+    if (child && g.children?.some((c) => c.id === child)) {
+      if (!isChildActive(g, child)) goToChild(g, child);
+    } else if (activeTab !== g.id) {
+      goToGroup(g);
+    }
+  };
+
   // Deterministic daily pick: prefer is_daily rows, rotate by day so it varies.
   const pickDaily = (list: any[]): any | null => {
     if (!list.length) return null;
@@ -1417,6 +1435,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
+    <MinistryTutorialProvider
+      userId={user?.id}
+      currentPage={tourPage}
+      navigate={tourNavigate}
+      suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule}
+      groups={GROUPS}
+    >
     <Suspense fallback={<TabFallback />}>
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Pastor's Video Message player overlay */}
@@ -1483,11 +1508,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   always visible on both web and mobile. */}
               <div className="flex flex-col items-end gap-2 shrink-0">
                 <div className="flex items-center gap-2">
+                  <MinistryHelpMenu className="h-11 w-11 sm:h-8 sm:w-8 rounded-lg bg-white/20 text-white hover:bg-white/30 hover:text-white" />
                   {/* My Profile — the member's own registration details plus the
                       Leave Ministry / Delete My Data Danger Zone
                       (MemberMinistryProfile.tsx). Previously only reachable by
                       typing /my-membership/:slug directly. */}
                   <button
+                    data-tour="ministry-my-profile"
                     onClick={() => mySlug && navigate(`/my-membership/${mySlug}`)}
                     disabled={!mySlug}
                     title={t('ministrySpace', 'myProfile', 'My Profile')}
@@ -1522,6 +1549,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             <div className="relative w-full">
               {/* Full-width mobile navigation trigger */}
               <button
+                data-tour="ministry-nav"
                 onClick={() => setNavMenuOpen((o) => !o)}
                 aria-label={t('ministrySpace', 'openNavMenu', 'Open navigation menu')}
                 aria-expanded={navMenuOpen}
@@ -1648,7 +1676,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 ? <img src={ministry.logo_url} alt={ministry.name} className="h-10 w-10 rounded-xl object-cover" />
                 : <Building2 className="h-5 w-5" style={{ color: themeColor }} />}
             </div>
-            <nav className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
+            <nav data-tour="ministry-nav" className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
               {GROUPS.map((g) => {
                 const GIcon = g.icon;
                 const gActive = isGroupActive(g);
@@ -1707,7 +1735,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         </div>
 
         {/* Main content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" data-tour="ministry-page">
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <Suspense fallback={<TabFallback />}>
         {/* Live Tab - MLiveChannel */}
@@ -1788,6 +1816,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               const firstName = (profile?.full_name || '').trim().split(' ')[0];
               return (
                 <div
+                  data-tour="ministry-welcome"
                   className="relative overflow-hidden rounded-3xl p-6 sm:p-8 text-white shadow-lg"
                   style={{ background: `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}cc 100%)`, boxShadow: `0 12px 40px ${themeColor}40` }}
                 >
@@ -1823,8 +1852,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
             </button>
 
+            {/* Guided tour of this ministry space, until it's finished or skipped */}
+            <MinistryTourCard />
+
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
-            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide" data-tour="ministry-quick-links">
               {GROUPS.filter(g => g.id !== 'home').map(g => {
                 const GIcon = g.icon;
                 return (
@@ -1873,7 +1905,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Today's Devotional: one column, the same width as the consumer home's card */}
-              <div>
+              <div data-tour="ministry-home-devotional">
                 {(() => {
                   const today = getLocalDateString();
                   const available = devotionals.filter(dev =>
@@ -1985,7 +2017,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </div>
 
               {/* Latest Announcements — now beside the devotional (swapped with Prayer Requests) */}
-              <Card className="lg:col-span-2">
+              <Card className="lg:col-span-2" data-tour="ministry-home-announcements">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
                     <Megaphone className="h-5 w-5" style={{ color: themeColor }} />
@@ -2192,7 +2224,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
 
             {/* Prayer Requests — moved to full-width (swapped with Latest Announcements) */}
-            <Card>
+            <Card data-tour="ministry-home-requests">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <Heart className="h-5 w-5" style={{ color: themeColor }} />
@@ -2227,7 +2259,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             </Card>
 
             {/* Upcoming Events */}
-            <Card>
+            <Card data-tour="ministry-home-events">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="h-5 w-5" style={{ color: themeColor }} />
@@ -3506,6 +3538,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       )}
     </div>
     </Suspense>
+    </MinistryTutorialProvider>
     </TakeDeclarationContext.Provider>
   );
 };
