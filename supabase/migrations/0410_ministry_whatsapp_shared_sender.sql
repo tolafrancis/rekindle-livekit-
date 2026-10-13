@@ -66,7 +66,11 @@ grant execute on function public.ministry_whatsapp_optin_info(uuid) to authentic
 -- wallet (BroadcastWallet.tsx does that on first load); balances change only
 -- through the service role (top-up webhook, broadcast deductions) or a
 -- platform admin (AdminWhatsAppManager's "grant credits").
-drop policy if exists users_own_wallet on public.broadcast_wallets;
+--
+-- The old policies are narrowed to service_role (which bypasses RLS anyway)
+-- rather than dropped: this is exactly what production was given on
+-- 2026-10-13, where DROP POLICY stalled behind a confirmation prompt.
+alter policy users_own_wallet on public.broadcast_wallets to service_role;
 drop policy if exists users_read_own_wallet on public.broadcast_wallets;
 drop policy if exists users_create_own_empty_wallet on public.broadcast_wallets;
 drop policy if exists platform_admins_manage_wallets on public.broadcast_wallets;
@@ -93,7 +97,7 @@ create policy platform_admins_manage_wallets on public.broadcast_wallets
                       where p.user_id = auth.uid()
                         and p.role in ('super_admin', 'platform_admin', 'admin')));
 
-drop policy if exists users_own_wallet_transactions on public.broadcast_wallet_transactions;
+alter policy users_own_wallet_transactions on public.broadcast_wallet_transactions to service_role;
 drop policy if exists users_read_own_wallet_transactions on public.broadcast_wallet_transactions;
 drop policy if exists platform_admins_manage_wallet_transactions on public.broadcast_wallet_transactions;
 
@@ -109,7 +113,5 @@ create policy platform_admins_manage_wallet_transactions on public.broadcast_wal
   with check (exists (select 1 from public.user_profiles p
                       where p.user_id = auth.uid()
                         and p.role in ('super_admin', 'platform_admin', 'admin')));
-
-revoke all on public.broadcast_wallets, public.broadcast_wallet_transactions from anon;
 
 commit;
