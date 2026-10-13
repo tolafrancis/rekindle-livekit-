@@ -907,57 +907,16 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
     const uid = selectedMember.user_id;
     setSavingRole(true);
     try {
-      // Primary: ministry_group_members drives the member list view + this screen's
-      // permission checks. Create the row if the person has none yet (e.g. a QR
-      // registrant being promoted), otherwise update it.
-      const { data: existingGroup } = await supabase
-        .from('ministry_group_members')
-        .select('id')
-        .eq('ministry_id', ministryId)
-        .eq('user_id', uid)
-        .limit(1);
-      if (existingGroup && existingGroup.length > 0) {
-        const { error } = await supabase
-          .from('ministry_group_members')
-          .update({ role: cols.role, is_leader: cols.is_leader, group_id: ministryId })
-          .eq('id', existingGroup[0].id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('ministry_group_members')
-          .insert({
-            ministry_id: ministryId,
-            group_id: ministryId,
-            user_id: uid,
-            role: cols.role,
-            is_leader: cols.is_leader,
-            joined_at: new Date().toISOString(),
-          });
-        if (error) throw error;
-      }
-
-      // Mirror to ministry_members (used by some permission checks, e.g. Gift Aid).
-      // Best-effort so a stricter schema there can't fail the whole promotion.
-      try {
-        const { data: existingMember } = await supabase
-          .from('ministry_members')
-          .select('id')
-          .eq('ministry_id', ministryId)
-          .eq('user_id', uid)
-          .limit(1);
-        if (existingMember && existingMember.length > 0) {
-          await supabase
-            .from('ministry_members')
-            .update({ role: cols.role, is_leader: cols.is_leader })
-            .eq('id', existingMember[0].id);
-        } else {
-          await supabase
-            .from('ministry_members')
-            .insert({ ministry_id: ministryId, user_id: uid, role: cols.role, is_leader: cols.is_leader });
-        }
-      } catch (mirrorErr) {
-        console.warn('ministry_members mirror skipped:', mirrorErr);
-      }
+      // set_ministry_member_role (0407) upserts ministry_group_members — creating
+      // the row for e.g. a QR registrant being promoted — and mirrors to
+      // ministry_members. It's an RPC because table RLS only lets platform admins
+      // write other members' rows; the function applies the ministry role rules.
+      const { error } = await supabase.rpc('set_ministry_member_role', {
+        p_ministry_id: ministryId,
+        p_user_id: uid,
+        p_role: cols.role,
+      });
+      if (error) throw error;
 
       setMembers((prev) => prev.map((m) =>
         m.user_id === uid ? { ...m, role: cols.role, is_leader: cols.is_leader, is_registrant: false } : m,
