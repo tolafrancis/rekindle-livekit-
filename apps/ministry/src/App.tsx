@@ -34,6 +34,7 @@ import { Toaster } from '@rekindle/ui/toaster';
 import { ConfirmDialogHost } from '@rekindle/ui/confirm-dialog';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import { MeetingCodeRedirect } from '@rekindle/live/components/MeetingCodeRedirect';
 import { WebinarJoinPage } from '@rekindle/live/webinar/WebinarJoinPage';
 import { WebinarSpeakerInvitePage } from '@rekindle/live/webinar/WebinarSpeakerInvitePage';
 import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDisplayPage';
@@ -274,6 +275,7 @@ function AppRoutes() {
           app, so a shared ministry meeting link shows the guest join page (name
           entry + optional sign-in) instead of forcing sign-up. The join page then
           routes into the live room below. All OUTSIDE the auth gate. */}
+      <Route path="/m/:code" element={<MeetingCodeRedirect />} />
       <Route path="/ministry/:ministryId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/channel/:channelId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/ministry/:ministryId/webinar/:webinarId" element={<WebinarJoinPage />} />
