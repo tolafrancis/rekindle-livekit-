@@ -28,6 +28,23 @@ export function publicAppOrigin(): string {
   return publicWebOrigin();
 }
 
+/**
+ * Join link for an interactive meeting. Uses the short Google Meet style
+ * /m/abc-defg-hij link when the meeting has a short_code (migration 0408),
+ * otherwise the full /ministry|channel/:id/meeting/:id path.
+ */
+export function meetingJoinLink(meeting: {
+  id: string;
+  short_code?: string | null;
+  ministry_id?: string | null;
+  channel_id?: string | null;
+}): string {
+  const origin = publicAppOrigin();
+  if (meeting.short_code) return `${origin}/m/${meeting.short_code}`;
+  if (meeting.channel_id) return `${origin}/channel/${meeting.channel_id}/meeting/${meeting.id}`;
+  return `${origin}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
+}
+
 /** Format an ISO timestamp for share text, e.g. "Sat, 5 Jul, 6:00 PM". */
 function formatWhen(iso?: string | null): string | null {
   if (!iso) return null;

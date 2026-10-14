@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@reki
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
-import { shareMeeting, publicAppOrigin } from '@rekindle/features/liveShare';
+import { shareMeeting, meetingJoinLink } from '@rekindle/features/liveShare';
 import {
   Dialog,
   DialogContent,
@@ -718,7 +718,7 @@ const EnhancedVideoCallWrapper = ({
         {/* Copy Meeting Link */}
         <Button
           onClick={async () => {
-            const link = `${publicAppOrigin()}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
+            const link = meetingJoinLink(meeting);
             const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
           }}
@@ -2211,7 +2211,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           variant="outline"
                           size="icon"
                           onClick={async () => {
-                            const link = `${publicAppOrigin()}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
+                            const link = meetingJoinLink(meeting);
                             const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                           }}
@@ -2382,7 +2382,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           variant="outline"
                           size="icon"
                           onClick={async () => {
-                            const link = `${publicAppOrigin()}/ministry/${meeting.ministry_id}/meeting/${meeting.id}`;
+                            const link = meetingJoinLink(meeting);
                             const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                           }}

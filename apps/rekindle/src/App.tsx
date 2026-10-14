@@ -25,6 +25,7 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const MetaWhatsAppCallback = lazy(() => import("./pages/MetaWhatsAppCallback"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const MeetingCodeRedirect = lazy(() => import("@rekindle/live/components/MeetingCodeRedirect"));
 const MinistryJoinLanding = lazy(() => import("@/components/registration/MinistryJoinLanding"));
 const MinistryKiosk = lazy(() => import("@/components/registration/MinistryKiosk"));
 const MemberMinistryProfile = lazy(() => import("@/components/registration/MemberMinistryProfile"));
@@ -138,6 +139,9 @@ const App = () => {
                   <Route path="/messages/:id" element={<Index />} />
                   <Route path="/books/:id" element={<Index />} />
                   
+                  {/* Short meeting links (/m/abc-defg-hij) redirect to the full join route */}
+                  <Route path="/m/:code" element={<MeetingCodeRedirect />} />
+
                   {/* Meeting join routes - Channel meetings */}
                   <Route path="/channel/:channelId/meeting/:meetingId" element={<Skeleton />} />
                   
