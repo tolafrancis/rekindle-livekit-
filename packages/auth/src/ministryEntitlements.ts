@@ -29,6 +29,9 @@ export interface MinistryCaps {
   customDomain: boolean;
   liveChannels: boolean;
   interactiveMeetings: boolean;
+  /** Webinars (HLS broadcast to an audience, Q&A, polls). Paid plans only —
+   * unlike interactiveMeetings there is no free allowance. */
+  webinars: boolean;
   recordMeetings: boolean;
   broadcastMessaging: boolean;
   manageTeam: boolean;
@@ -70,6 +73,7 @@ const NO_CAPS: MinistryCaps = {
   // with no paid plan — bounded by FREE_TIER_MEETING_LIMITS (checked at
   // creation time via checkMinistryMeetingQuota below), not unlimited.
   interactiveMeetings: true,
+  webinars: false,
   recordMeetings: false,
   broadcastMessaging: false,
   manageTeam: false,
@@ -109,6 +113,10 @@ function capsFromSub(sub: any): MinistryCaps {
     customDomain: !!sub.custom_domain_enabled || feat('customDomain', false),
     liveChannels: feat('liveChannels', liveAllowed),
     interactiveMeetings: feat('interactiveMeetings', liveAllowed),
+    // Same default as liveChannels: every paid tier's copy includes "Live
+    // Broadcast channel & Video Conferencing", and the billing page's
+    // participant caps apply to "Meetings and Webinars" from Starter up.
+    webinars: feat('webinars', liveAllowed),
     recordMeetings: feat('recordMeetings', rank >= 2),
     broadcastMessaging: feat('broadcastMessaging', broadcastAllowed),
     manageTeam: feat('manageTeam', rank >= 2),

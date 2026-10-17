@@ -443,9 +443,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Partner subscriber. getMinistryEntitlements is the same resolver
   // BillingSettings.tsx/CustomDomainSettings.tsx already use correctly.
   const [ministryEntitlements, setMinistryEntitlements] = useState(FREE_ENTITLEMENTS);
+  const [entitlementsLoaded, setEntitlementsLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    getMinistryEntitlements(ministry.id).then((e) => { if (!cancelled) setMinistryEntitlements(e); });
+    getMinistryEntitlements(ministry.id).then((e) => {
+      if (!cancelled) { setMinistryEntitlements(e); setEntitlementsLoaded(true); }
+    });
     return () => { cancelled = true; };
   }, [ministry.id]);
 
@@ -1090,17 +1093,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     // children at all.
     // 'webinars' moved here from the 'admin' group (2026-09-21, per the user's
     // request) — it's a live/broadcast feature, not ministry-admin housekeeping,
-    // and belongs beside Live Channel/Live Translation. Kept unconditional (not
-    // gated behind caps.liveChannels, unlike 'live'/'live-tech' below) — webinar
-    // access is gated separately/deeper (CreateWebinarWizard's own entitlement
-    // check), and it was ungated at this nav level before the move too, so
-    // gating it on liveChannels here would newly hide it for ministries that
-    // have webinars but not live channels.
+    // and belongs beside Live Channel/Live Translation. Gated on its own
+    // caps.webinars (paid plans only), not caps.liveChannels, so a plan
+    // override can grant one without the other.
     {
       id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600',
       children: [
         ...(ministryEntitlements.caps.liveChannels ? [{ id: 'live', label: 'Live Channel', icon: Radio }] : []),
-        { id: 'webinars', label: 'Webinars', icon: Radio },
+        ...(ministryEntitlements.caps.webinars ? [{ id: 'webinars', label: 'Webinars', icon: Radio }] : []),
         ...(ministryEntitlements.caps.liveChannels && canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
       ],
     },
@@ -1135,12 +1135,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ]
     }] : []),
   ];
-  const GROUPS = ALL_GROUPS.filter((g) => isFeatureNavGroupOn('ministry', g.id));
+  // A group whose children were all gated away (e.g. Live on the free plan,
+  // which has neither Live Channel nor Webinars) has nothing to open.
+  const GROUPS = ALL_GROUPS.filter((g) => isFeatureNavGroupOn('ministry', g.id) && (!g.children || g.children.length > 0));
 
   // A switched-off group also closes its screens, so a remembered tab or a
   // deep link can't open it: fall back to Home.
+  // Only feature toggles count here, not plan gating: entitlements load after
+  // first render, so a paid ministry's ?tab=live would otherwise bounce home.
   const hiddenGroupTabs = ALL_GROUPS
-    .filter((g) => !GROUPS.includes(g))
+    .filter((g) => !isFeatureNavGroupOn('ministry', g.id))
     .flatMap((g) => [g.id, ...(g.children ?? []).map((c) => c.id)])
     .join(',');
   useEffect(() => {
@@ -3057,12 +3061,22 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Webinars Tab — a wholly separate meeting type from Interactive
             Meetings, see packages/live/src/webinar */}
-        {activeTab === 'webinars' && (
+        {activeTab === 'webinars' && ministryEntitlements.caps.webinars && (
           <WebinarDashboard
             ministryId={ministry.id}
             isLeader={membership?.is_leader || false}
             renderRecordingsTab={(webinars) => <MinistryRecordingsTab meetings={webinars} />}
           />
+        )}
+        {/* Reached from the Overview's "Upcoming Webinars" card or a deep
+            link on a plan without webinars (the nav entry is hidden). */}
+        {activeTab === 'webinars' && entitlementsLoaded && !ministryEntitlements.caps.webinars && (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-gray-600">
+              Webinars are included on paid plans.
+              {canManageMinistry ? ' Upgrade under Settings > Finance to host webinars.' : ''}
+            </CardContent>
+          </Card>
         )}
 
         {/* Small Groups — Chats */}
