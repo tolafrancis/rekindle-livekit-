@@ -96,6 +96,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['choose-notifications', 'Choose your notifications'],
   ]],
   ['For members', [
+    ['member-stream', 'Choose your devotional stream'],
     ['member-devotionals', 'Read today’s devotional'],
     ['member-prayer', 'Share a prayer request'],
     ['member-journal', 'Keep a prayer journal'],
@@ -111,6 +112,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['leader-people', 'Add and manage members'],
     ['leader-qr', 'Set up QR self-registration'],
     ['leader-kiosk', 'Turn a tablet into a check-in kiosk'],
+    ['leader-devotional-source', 'Choose your devotional source'],
     ['leader-devotional', 'Publish a devotional'],
     ['leader-live', 'Go live'],
     ['leader-meetings', 'Schedule an interactive meeting'],
@@ -217,6 +219,18 @@ const TutorialContent: React.FC = () => (
       <h3>For members</h3>
       <p>The everyday things: reading, praying, watching and giving.</p>
     </div>
+
+    <TutorialSection
+      id="member-stream" eyebrow="Members" title="Choose your devotional stream"
+      path={['Home', 'Devotional stream']}
+      steps={[
+        { text: <>From the main navigation tap <strong>Home</strong>. Just above today’s devotional you’ll see <strong>Devotional stream:</strong> followed by the one you’re following now.</>, shot: 'devotional-stream.png', alt: 'The Devotional stream picker on Home' },
+        { text: <>Tap <strong>Change</strong> to see every stream available. The one marked <strong>Default</strong> is what you get until you pick your own.</> },
+        { text: <>Tap the stream you want to follow. A tick shows your choice and today’s devotional updates straight away.</> },
+        { text: <>Each day’s devotional on Home now comes from that stream. You can come back and switch at any time.</> },
+      ]}
+      tip="Using your church’s own space? There, the devotional on its homepage is chosen by your ministry’s leaders."
+    />
 
     <TutorialSection
       id="member-devotionals" eyebrow="Members" title="Read today’s devotional"
@@ -382,6 +396,18 @@ const TutorialContent: React.FC = () => (
         { text: <>Each person’s details clear before the next, and the kiosk can only be closed with your PIN, so it’s safe to leave unattended.</> },
         { text: <>You’ll see every active kiosk under <strong>Active kiosk devices</strong>, with when it was last seen.</> },
       ]}
+    />
+
+    <TutorialSection
+      id="leader-devotional-source" eyebrow="Leaders" title="Choose your devotional source"
+      path={['Manage', 'Settings', 'Content', 'Devotionals']}
+      steps={[
+        { text: <>In your dashboard go to <strong>Settings › Content</strong> and open <strong>Devotionals</strong>. The <strong>Daily Devotional Source</strong> card is at the top.</>, shot: 'devotional-source.png', alt: 'The Daily Devotional Source card' },
+        { text: <>Choose <strong>Write our own</strong> to show the devotionals your team publishes on your ministry’s homepage.</> },
+        { text: <>Or choose <strong>Use a ReKindle stream</strong>, then pick a stream from the list, to show a ready-made daily devotional instead.</> },
+        { text: <>Your choice saves straight away and your members see it on the homepage from then on. You can switch at any time.</> },
+      ]}
+      tip="Choose this before you invite members, so the first devotional they see is the one you intend."
     />
 
     <TutorialSection
