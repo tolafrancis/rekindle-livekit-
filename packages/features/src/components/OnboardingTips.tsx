@@ -109,7 +109,7 @@ export const MINISTRY_LEADER_TIPS: Tip[] = [
     icon: <BookOpen className="h-5 w-5 text-purple-600" />,
     iconBg: 'bg-purple-100',
     title: 'Choose your devotional source',
-    body: 'In The Word → Devotionals, pick whether members see your ministry’s own devotionals or a ReKindle stream — you can switch any time.',
+    body: 'In Settings › Content › Devotionals, pick whether members see your ministry’s own devotionals or a ReKindle stream — you can switch any time.',
   },
   {
     icon: <BookOpen className="h-5 w-5 text-blue-600" />,

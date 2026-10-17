@@ -97,6 +97,12 @@ const TIPS: Tip[] = [
     body:  'ReKindle is free for everyone. If it has blessed you, consider becoming a partner to help us reach more people.',
     titleVi: '❤️ Đồng hành cùng sứ mệnh',
     bodyVi:  'ReKindle miễn phí cho mọi người. Nếu được phước, hãy cân nhắc trở thành đối tác để giúp chúng tôi tiếp cận nhiều người hơn.' },
+  // Appended (not inserted) so users part-way through the series still get it.
+  { key: 'devotional_stream', link: '#home',
+    title: '📖 Choose your devotional stream',
+    body:  'On Home, tap Change next to "Devotional stream" and pick the daily devotional you want to follow. You can switch any time.',
+    titleVi: '📖 Chọn dòng tĩnh nguyện của bạn',
+    bodyVi:  'Trên Trang chủ, nhấn Thay đổi bên cạnh "Dòng tĩnh nguyện" và chọn bài tĩnh nguyện hằng ngày bạn muốn theo. Bạn có thể đổi bất cứ lúc nào.' },
 ];
 
 function localize(tip: Tip, lang?: string) {
