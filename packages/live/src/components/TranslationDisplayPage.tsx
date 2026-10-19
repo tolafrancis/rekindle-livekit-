@@ -18,6 +18,11 @@ interface SessionInfo {
   target_language: string;
   status: string;
   service_id: string | null;
+  // The translation the bot is still writing for the current sentence,
+  // streamed live via the translation_sessions UPDATE subscription below
+  // (migration 0409). Cleared by the bot once the finished line lands in
+  // translation_logs.
+  interim_translated_text?: string | null;
   // PostgREST embeds the FK target as an object (service_id -> id, a
   // to-one relationship), not an array — see migration 0295 for why an
   // anon /display visitor is now allowed to read this at all.
@@ -446,7 +451,7 @@ export const TranslationDisplayPage: React.FC = () => {
   useEffect(() => {
     const el = mainRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+  }, [lines, session?.interim_translated_text]);
 
   // WebRTC-only audio (see docs/rlt-build-checklist.md's "WebRTC-only
   // /display" plan): join the LiveKit room directly as a subscribe-only
@@ -754,7 +759,14 @@ export const TranslationDisplayPage: React.FC = () => {
     setNeedsUnlock(false);
   };
   const statusDot = connStatus === 'live' ? 'bg-emerald-500' : connStatus === 'ended' ? 'bg-slate-500' : 'bg-amber-500';
-  const visibleLines = presenterMode ? lines.slice(-1) : lines;
+  // Live line: the translation as the bot streams it, shown as the newest
+  // line until the finished row arrives. Hidden once the last final line
+  // already contains it, covering the brief overlap between the final
+  // INSERT and the bot clearing the interim field.
+  const interimText = session?.interim_translated_text?.trim() || '';
+  const lastFinal = lines[lines.length - 1]?.translated_text?.trim() || '';
+  const liveLine = interimText && !lastFinal.startsWith(interimText) ? interimText : '';
+  const visibleLines = presenterMode ? (liveLine ? [] : lines.slice(-1)) : lines;
   const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors';
 
   return (
@@ -885,7 +897,7 @@ export const TranslationDisplayPage: React.FC = () => {
           aria-atomic="false"
           className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
         >
-          {visibleLines.length === 0 ? (
+          {visibleLines.length === 0 && !liveLine ? (
             // session.status === 'ended' never reaches here — the early
             // return above swaps to the "no longer available" page first.
             <p className="text-center text-white/50 text-lg">Translation starting…</p>
@@ -895,13 +907,20 @@ export const TranslationDisplayPage: React.FC = () => {
                 {bilingual && (
                   <p className="text-sm sm:text-base text-white/50 mb-1">{line.source_text}</p>
                 )}
-                <p className={i === visibleLines.length - 1
+                <p className={i === visibleLines.length - 1 && !liveLine
                   ? `${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`
                   : `${OLDER_LINE_CLASS} leading-snug`}>
                   {line.translated_text}
                 </p>
               </div>
             ))
+          )}
+          {liveLine && (
+            // aria-hidden: the finished line is announced when it lands, so
+            // screen readers don't hear every partial word twice.
+            <div className={presenterMode ? '' : 'w-full'} aria-hidden="true">
+              <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`}>{liveLine}</p>
+            </div>
           )}
         </main>
       ) : (
