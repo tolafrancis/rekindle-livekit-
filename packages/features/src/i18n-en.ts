@@ -2243,6 +2243,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "recordingIsOff": "Recording is off for this broadcast",
     "recording": "Recording",
     "notRecording": "Not recording",
+    "scripture": "Scripture",
     "invite": "Invite",
     "ai": "AI",
     "ending": "Ending...",
