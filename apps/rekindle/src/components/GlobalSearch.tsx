@@ -255,7 +255,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ open, onClose }) => {
               <option value="counsellor">{t('globalSearch', 'counsellors', 'Counsellors')}</option>
               <option value="scripture">{t('globalSearch', 'scripture', 'Scripture')}</option>
             </select>
-            <Button variant="ghost" size="icon" onClick={() => { setQuery(''); setResults({ devotional: [], prayer: [], counsellor: [], scripture: [] }); }}>
+            <Button aria-label={t('a11y', 'clearSearch', 'Clear search')} variant="ghost" size="icon" onClick={() => { setQuery(''); setResults({ devotional: [], prayer: [], counsellor: [], scripture: [] }); }}>
               <X className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={onClose}>

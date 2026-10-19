@@ -24,7 +24,8 @@ import { ScrollArea } from '@rekindle/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@rekindle/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@rekindle/ui/dialog';
 import { LiveChannelChat } from './LiveChannelChat';
-import { FloatingTranslationButton } from './FloatingTranslationButton';
+import { FloatingTranslationButton, type ScriptureControlState } from './FloatingTranslationButton';
+import { LiveScriptureSidebar } from './LiveScriptureSidebar';
 import { CaptionOverlay } from './CaptionOverlay';
 import { CaptionsButton } from './CaptionsButton';
 import { useLiveCaptions } from '../useLiveCaptions';
@@ -63,8 +64,10 @@ import {
   FileText,
   Volume2,
   Captions,
+  BookOpen,
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
+import { useTrackElement, type AttachTrackFn } from '../useTrackElement';
 import { LiveChannel, ChannelCoHost } from '@rekindle/types/liveChannelTypes';
 
 interface RaisedHandRequest {
@@ -95,19 +98,15 @@ const BroadcastSpeakerTile: React.FC<{
     videoTrack?: MediaStreamTrack;
     audioTrack?: MediaStreamTrack;
   };
-}> = ({ participant }) => {
+  attach?: AttachTrackFn;
+}> = ({ participant, attach }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   useDuckedVolume(audioRef);
 
-  useEffect(() => {
-    if (participant.videoTrack && participant.videoTrack.readyState === 'live' && videoRef.current) {
-      videoRef.current.srcObject = new MediaStream([participant.videoTrack]);
-      videoRef.current.play().catch(() => {});
-    } else if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, [participant.videoTrack, participant.hasVideo]);
+  // Through the room's attach(): with adaptive stream on, an unattached
+  // remote video counts as hidden and is paused (see useTrackElement).
+  useTrackElement(videoRef, attach, participant.sessionId, 'camera', participant.videoTrack, participant.hasVideo);
 
   useEffect(() => {
     if (participant.audioTrack && participant.audioTrack.readyState === 'live' && audioRef.current) {
@@ -169,6 +168,13 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
 
   // AI features state
   const [showAIPanel, setShowAIPanel] = useState(false);
+  // Live Scripture (auto-detect + display) — FloatingTranslationButton owns
+  // the session/auto-detect logic and lifts its control state up here, the
+  // same pattern MinistryInteractiveMeetings / WebinarStage use with
+  // DailyVideoCall's Scripture button. Broadcast never wired this up, so the
+  // feature had no way to be turned on from a Live broadcast.
+  const [scriptureControl, setScriptureControl] = useState<ScriptureControlState | null>(null);
+  const [showScripturePanel, setShowScripturePanel] = useState(false);
   // True while the AI notes recogniser is running — makes the AI button flicker.
   const [notesActive, setNotesActive] = useState(false);
   const [showInsightsDialog, setShowInsightsDialog] = useState(false);
@@ -1449,7 +1455,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
           what let this row (and everything inside it) refuse to shrink
           below its content's natural size even inside a bounded parent —
           the other half of the same mobile-fit bug. */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-col sm:flex-row flex-1 min-h-0">
         {/* Main Video/Audio Area */}
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Top Bar */}
@@ -1634,7 +1640,7 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                   </div>
                   <div className={`flex flex-col gap-1 ${remoteSpeakers.length === 1 ? 'w-40' : 'w-48'}`}>
                     {remoteSpeakers.map(sp => (
-                      <BroadcastSpeakerTile key={sp.sessionId} participant={sp} />
+                      <BroadcastSpeakerTile key={sp.sessionId} participant={sp} attach={dailyRoom.attachTrack} />
                     ))}
                   </div>
                 </div>
@@ -1741,7 +1747,28 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                 showCaptionsOption={false}
                 captionsBridge={captionsAvailable && dailyRoom.isConnected ? dailyRoom.captionsBridge : null}
                 ccEnabled={captions.enabled}
+                onScriptureStateChange={setScriptureControl}
               />
+            )}
+            {isLiveKitBackend() && (channel as any).ministry_id && scriptureControl && (
+              <Button
+                variant={showScripturePanel || scriptureControl.on ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  const next = !showScripturePanel;
+                  if (next && !scriptureControl.on) scriptureControl.toggle();
+                  setShowScripturePanel(next);
+                }}
+                aria-expanded={showScripturePanel}
+                className={`rounded-full px-3 sm:px-5 h-10 sm:h-12 flex items-center gap-2 ${
+                  showScripturePanel || scriptureControl.on ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-600 text-white' : ''
+                }`}
+              >
+                {scriptureControl.starting
+                  ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+                  : <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />}
+                <span className="hidden md:inline">{t('liveChannelBroadcast', 'scripture', 'Scripture')}</span>
+              </Button>
             )}
             {captionsAvailable && dailyRoom.isConnected && (
               <CaptionsButton
@@ -1866,6 +1893,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
             </div>
           )}
         </div>
+
+        {/* Live Scripture panel — sits beside the stage like a meeting's.
+            Closing it leaves Scripture running; the panel's own switch is
+            the off control. */}
+        {showScripturePanel && scriptureControl && (
+          <LiveScriptureSidebar
+            {...scriptureControl}
+            onClose={() => setShowScripturePanel(false)}
+          />
+        )}
 
         {/* Side Panel - Chat and Participants */}
         <div className="hidden lg:flex w-80 border-l border-gray-700 flex-col">

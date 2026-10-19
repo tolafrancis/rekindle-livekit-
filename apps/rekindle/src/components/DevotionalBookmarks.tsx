@@ -19,6 +19,7 @@ import {
   searchFilterIconClass,
   searchFilterInputClass
 } from './SearchFilterPanel';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface BookmarkedDevotional {
   id: string;
@@ -144,7 +145,7 @@ export const DevotionalBookmarks: React.FC<{
   };
 
   const handleDeleteBookmark = async (id: string) => {
-    if (!confirm(t('devotionalBookmarks', 'confirmRemove', 'Remove this bookmark?'))) return;
+    if (!await confirmAction({ title: t('devotionalBookmarks', 'confirmRemove', 'Remove this bookmark?'), confirmLabel: t('devotionalBookmarks', 'remove', 'Remove'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -199,7 +200,7 @@ export const DevotionalBookmarks: React.FC<{
             className={`${searchFilterInputClass} pr-10`}
           />
           {searchTerm && (
-            <button
+            <button aria-label={t('a11y', 'clearSearch', 'Clear search')}
               onClick={() => setSearchTerm('')}
               className="absolute right-3 top-1/2 -translate-y-1/2"
             >
@@ -323,7 +324,7 @@ export const DevotionalBookmarks: React.FC<{
                       {t('devotionalBookmarks', 'read', 'Read')}
                     </Button>
                   )}
-                  <Button
+                  <Button aria-label={t('a11y', 'deleteBookmark', 'Delete bookmark')}
                     variant="outline"
                     size="sm"
                     onClick={() => handleDeleteBookmark(bookmark.id)}

@@ -47,6 +47,11 @@ export const MeetingControlsMenu: React.FC<MeetingControlsMenuProps> = ({
   useEffect(() => {
     if (!open) return;
     const onDocPointerDown = (e: PointerEvent) => {
+      // Pickers opened from this menu (Background, Layout, Spotlight) render
+      // their popover in a portal outside containerRef. A press inside one
+      // isn't "outside": closing here unmounted the picker before its click
+      // landed, so choosing a background just closed the menu.
+      if ((e.target as Element | null)?.closest?.('[data-radix-popper-content-wrapper]')) return;
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
@@ -64,7 +69,9 @@ export const MeetingControlsMenu: React.FC<MeetingControlsMenuProps> = ({
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Meeting controls"
-        className="relative flex h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/20 transition-colors"
+        aria-label="Meeting controls"
+        aria-expanded={open}
+        className="relative flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-full text-white hover:bg-white/20 transition-colors"
       >
         <SlidersHorizontal className="h-5 w-5" />
         {showHostControlsRow && waitingRoomCount > 0 && (

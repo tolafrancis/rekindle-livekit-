@@ -18,6 +18,7 @@ import {
 } from '../conversation/conversationApi';
 import { useBilingualConversation, type ConnectionStatus, type PendingTurn } from '../conversation/useBilingualConversation';
 import { ensureMicrophonePermission, useSpeechCapture, type SpeechCaptureError } from '../conversation/useSpeechCapture';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 /**
  * Live → Conversation: the two-person bilingual room, shared by the host
@@ -190,7 +191,7 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
     copyLink();
   };
   const makeNewInvite = async () => {
-    if (guestJoined && !window.confirm(`Create a new invite link? ${otherName || 'The current guest'} will be removed from this conversation.`)) return;
+    if (guestJoined && !await confirmAction({ title: 'Create a new invite link?', description: `${otherName || 'The current guest'} will be removed from this conversation.`, confirmLabel: 'Create new link', destructive: true })) return;
     setBusy('invite');
     try {
       setInviteToken(await convo.createInvite());
@@ -213,7 +214,7 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
   };
 
   const leave = async () => {
-    if (role === 'host' && !ended && !window.confirm('Leave and end this conversation for both of you? The transcript stays available.')) return;
+    if (role === 'host' && !ended && !await confirmAction({ title: 'Leave and end this conversation for both of you?', description: 'The transcript stays available.', confirmLabel: 'End conversation', destructive: true })) return;
     setBusy('leave');
     setMicOn(false);
     await convo.leave();
@@ -250,7 +251,10 @@ export const BilingualConversationRoom: React.FC<Props> = ({ conversationId, sea
   const connectionChip = CONNECTION_COPY[connection];
 
   return (
-    <div className="flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border bg-card">
+    // translate="no": this room already shows each line in both languages,
+    // and browser page translation rewriting it mid-conversation both garbles
+    // the transcript and fights React for the DOM (NotFoundError in Sentry).
+    <div translate="no" className="notranslate flex h-full min-h-[70vh] flex-col overflow-hidden rounded-xl border bg-card">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2.5 sm:px-4">
         <Languages className="h-5 w-5 text-indigo-500" />

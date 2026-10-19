@@ -53,6 +53,7 @@ interface BufferedFrame {
 // this connection was actually sent; checkpoints map that audio timeline back
 // to wall-clock time across gate open/close gaps.
 class DeepgramConnection {
+  loggedFirstTranscript = false;
   readonly live: ListenLiveClient;
   ready = false;
   closedByUs = false;
@@ -119,9 +120,16 @@ export class SpeakerTranscriber {
   private segmentCounter = 0;
   private interimShown = false;
   private closed = false;
+  // Diagnostics (no speech content is logged): first audio frame, and the
+  // first transcript on each Deepgram connection.
+  private loggedFirstFrame = false;
+  private loggedFirstSpeech = false;
+  private readonly tag: string;
 
   constructor(opts: SpeakerTranscriberOptions) {
     this.opts = opts;
+    this.tag = `[transcriber ${opts.speakerIdentity.slice(0, 12)}]`;
+    console.log(this.tag, 'subscribed to microphone', opts.trackSid);
     this.stream = new AudioStream(opts.track, SAMPLE_RATE, 1);
     void this.readLoop();
   }
@@ -165,6 +173,7 @@ export class SpeakerTranscriber {
   }
 
   private onFrame(frame: AudioFrame): void {
+    if (!this.loggedFirstFrame) { this.loggedFirstFrame = true; console.log(this.tag, 'receiving audio'); }
     const durationMs = (frame.samplesPerChannel / frame.sampleRate) * 1000;
     const buffered: BufferedFrame = {
       // Int16Array.slice() copies into a dedicated ArrayBuffer — the SDK's
@@ -185,6 +194,7 @@ export class SpeakerTranscriber {
   }
 
   private openGate(): void {
+    if (!this.loggedFirstSpeech) { this.loggedFirstSpeech = true; console.log(this.tag, 'speaking — streaming to Deepgram'); }
     this.gateOpen = true;
     const dg = this.ensureDeepgram();
     for (const f of this.preRoll) dg.send(f);
@@ -211,6 +221,7 @@ export class SpeakerTranscriber {
     const tag = `[transcriber ${this.opts.speakerIdentity}]`;
 
     dg.live.on(LiveTranscriptionEvents.Open, () => {
+      console.log(tag, 'Deepgram connected');
       dg.ready = true;
       dg.flushPending();
       if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
@@ -255,6 +266,10 @@ export class SpeakerTranscriber {
     };
     const text = (result.channel?.alternatives?.[0]?.transcript ?? '').trim();
     const isFinal = result.is_final === true;
+    if (text && !dg.loggedFirstTranscript) {
+      dg.loggedFirstTranscript = true;
+      console.log(this.tag, `first transcript on this connection (${text.length} chars)`);
+    }
     const segmentId = `${this.opts.segmentPrefix}-${this.opts.speakerIdentity}-${this.segmentCounter}`;
 
     if (!text) {

@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -81,7 +82,9 @@ const COLORS = ['#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#6366f1'
 export const UserActivityDashboard: React.FC = () => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [activeChallenges, setActiveChallenges] = useState<{ id: string; title: string; sessions: number; streak: number }[]>([]);
   const [activityData, setActivityData] = useState<UserActivityData>({
     prayerGroupsJoined: 0,
     challengesCompleted: 0,
@@ -137,7 +140,8 @@ export const UserActivityDashboard: React.FC = () => {
         libraryDevRes,
         referralsRes
       ] = await Promise.all([
-        supabase.from('prayer_group_members').select('*').eq('user_id', user.id),
+        // Prayer groups were retired (0406); small groups replace them.
+        supabase.from('small_group_members').select('id').eq('user_id', user.id).eq('status', 'active'),
         supabase.from('challenge_participants').select('*, prayer_challenges(*)').eq('user_id', user.id),
         supabase.from('book_referrals').select('*, book_summaries(title, author)').eq('referrer_id', user.id),
         supabase.from('prayer_journal').select('*').eq('user_id', user.id),
@@ -169,6 +173,12 @@ export const UserActivityDashboard: React.FC = () => {
       // Calculate metrics
       const completedChallenges = challengeParticipants.filter(c => c.completed);
       const inProgressChallenges = challengeParticipants.filter(c => !c.completed);
+      setActiveChallenges(inProgressChallenges.map((c: any) => ({
+        id: c.id,
+        title: c.prayer_challenges?.title || t('userActivityDashboard', 'prayerChallenge', 'Prayer challenge'),
+        sessions: Number(c.completed_sessions) || 0,
+        streak: Number(c.current_streak) || 0,
+      })));
       const completedDevotionals = devotionalProgress.filter(d => d.completed);
 
       // Calculate book referral metrics
@@ -642,22 +652,24 @@ export const UserActivityDashboard: React.FC = () => {
                   {t('userActivityDashboard', 'youHaveXChallengesInProgress', 'You have {count} challenge(s) in progress').replace('{count}', String(activityData.challengesInProgress))}
                 </p>
                 <div className="space-y-3">
-                  {/* Placeholder for actual challenge progress */}
-                  <div className="p-3 bg-amber-50 rounded-lg">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-medium">{t('userActivityDashboard', 'prayerChallenge21Day', '21-Day Prayer Challenge')}</span>
-                      <Badge variant="outline">{t('userActivityDashboard', 'inProgress', 'In Progress')}</Badge>
+                  {activeChallenges.map((c) => (
+                    <div key={c.id} className="p-3 bg-amber-50 rounded-lg">
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="font-medium">{c.title}</span>
+                        <Badge variant="outline">{t('userActivityDashboard', 'inProgress', 'In Progress')}</Badge>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {t('userActivityDashboard', 'xSessionsYStreak', '{sessions} sessions · {streak}-day streak').replace('{sessions}', String(c.sessions)).replace('{streak}', String(c.streak))}
+                      </p>
                     </div>
-                    <Progress value={65} className="h-2" />
-                    <p className="text-xs text-gray-500 mt-1">{t('userActivityDashboard', 'xOfYDaysCompleted', '14 of 21 days completed')}</p>
-                  </div>
+                  ))}
                 </div>
               </div>
             ) : (
               <div className="text-center py-6">
                 <Trophy className="h-12 w-12 mx-auto text-gray-300 mb-2" />
                 <p className="text-gray-500">{t('userActivityDashboard', 'noActiveChallenges', 'No active challenges')}</p>
-                <Button variant="outline" size="sm" className="mt-2">
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => navigate('/challenges')}>
                   {t('userActivityDashboard', 'browseChallenges', 'Browse Challenges')}
                 </Button>
               </div>
@@ -766,7 +778,7 @@ export const UserActivityDashboard: React.FC = () => {
                       readOnly 
                       className="font-mono bg-white"
                     />
-                    <Button onClick={copyReferralCode}>
+                    <Button aria-label={t('a11y', 'copyReferralCode', 'Copy referral code')} onClick={copyReferralCode}>
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
@@ -851,7 +863,7 @@ export const UserActivityDashboard: React.FC = () => {
                             <p className="font-bold text-green-900">{book.conversions}</p>
                             <p className="text-xs text-gray-500">{t('userActivityDashboard', 'readsLabel', 'reads')}</p>
                           </div>
-                          <Button
+                          <Button aria-label={t('a11y', 'copyReferralLink', 'Copy referral link')}
                             size="sm"
                             variant="outline"
                             onClick={() => shareReferralLink(book)}

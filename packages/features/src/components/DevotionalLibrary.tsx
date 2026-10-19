@@ -508,7 +508,7 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
     const lzEntry = getLocalizedContent(currentEntry, ['title', 'scripture_reference', 'scripture_text', 'content', 'prayer', 'reflection_questions']);
     return (
       <DevotionalModule
-        entry={lzEntry}
+        entry={{ ...lzEntry, author: (lzEntry as any).author || selectedSeries.author || '' }}
         seriesTitle={lzSeries.title || 'Devotional'}
         totalDays={selectedSeries.total_days || 1}
         shareUrl={`${publicWebOrigin()}/devotional-series/${selectedSeries.id}`}
@@ -580,17 +580,20 @@ export const DevotionalLibrary: React.FC<{ hidePlanBanner?: boolean }> = ({ hide
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">{t('devotionals', 'emailAddress', 'Email Address')}</label>
+              <label htmlFor="devotional-share-email" className="text-sm font-medium">{t('devotionals', 'emailAddress', 'Email Address')}</label>
               <Input
+                id="devotional-share-email"
                 type="email"
+                autoComplete="email"
                 placeholder="friend@example.com"
                 value={shareEmail}
                 onChange={(e) => setShareEmail(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-sm font-medium">{t('devotionals', 'personalMessageOptional', 'Personal Message (Optional)')}</label>
+              <label htmlFor="devotional-share-message" className="text-sm font-medium">{t('devotionals', 'personalMessageOptional', 'Personal Message (Optional)')}</label>
               <Textarea
+                id="devotional-share-message"
                 placeholder={t('devotionals', 'addPersonalNote', 'Add a personal note...')}
                 value={shareMessage}
                 onChange={(e) => setShareMessage(e.target.value)}

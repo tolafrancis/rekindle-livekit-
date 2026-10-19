@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { SearchFilterPanel, searchFilterIconClass, searchFilterInputClass, searchFilterSelectTriggerClass } from '@rekindle/features/components/SearchFilterPanel';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryAnnouncementsManagerProps {
   ministryId: string;
@@ -376,7 +377,7 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryAnnouncementsManager', 'confirmDelete', 'Are you sure you want to delete this announcement?'))) return;
+    if (!await confirmAction({ title: t('ministryAnnouncementsManager', 'confirmDeleteTitle', 'Delete this announcement?'), confirmLabel: t('ministryAnnouncementsManager', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -671,7 +672,7 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
                       </div>
                     </div>
                     <div className="flex gap-2 ml-4">
-                      <Button
+                      <Button aria-label={announcement.is_pinned ? t('ministryAnnouncementsManager', 'unpin', 'Unpin') : t('ministryAnnouncementsManager', 'pin', 'Pin')}
                         variant="ghost"
                         size="icon"
                         onClick={() => handleTogglePin(announcement)}
@@ -679,13 +680,13 @@ export const MinistryAnnouncementsManager: React.FC<MinistryAnnouncementsManager
                       >
                         <Pin className={`h-4 w-4 ${announcement.is_pinned ? 'text-amber-500 fill-amber-500' : ''}`} />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(announcement)}>
+                      <Button aria-label={t('ministryAnnouncementsManager', 'editAnnouncement', 'Edit announcement')} variant="ghost" size="icon" onClick={() => handleEdit(announcement)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDuplicate(announcement)}>
+                      <Button aria-label={t('ministryAnnouncementsManager', 'duplicateAnnouncement', 'Duplicate announcement')} variant="ghost" size="icon" onClick={() => handleDuplicate(announcement)}>
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(announcement.id)}>
+                      <Button aria-label={t('ministryAnnouncementsManager', 'deleteAnnouncement', 'Delete announcement')} variant="ghost" size="icon" onClick={() => handleDelete(announcement.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

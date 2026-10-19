@@ -33,7 +33,7 @@ const chipClass = (active: boolean) =>
     active ? 'bg-indigo-600 text-white' : 'bg-white/10 text-white hover:bg-white/20'
   }`;
 
-const baseClass = 'flex h-10 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors';
+const baseClass = 'flex h-11 items-center justify-center rounded-full shadow-lg backdrop-blur-sm transition-colors';
 
 export function CaptionsButton({ enabled, status, size, onToggle, onSizeChange }: CaptionsButtonProps) {
   const busy = enabled && status === 'starting';
@@ -44,7 +44,8 @@ export function CaptionsButton({ enabled, status, size, onToggle, onSizeChange }
         onClick={onToggle}
         aria-pressed={enabled}
         title={enabled ? 'Turn captions off' : 'Turn captions on'}
-        className={`${baseClass} w-10 ${enabled ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'}`}
+        aria-label={enabled ? 'Turn captions off' : 'Turn captions on'}
+        className={`${baseClass} w-11 ${enabled ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'}`}
       >
         {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : enabled ? <Captions className="h-5 w-5" /> : <CaptionsOff className="h-5 w-5" />}
       </button>
@@ -80,12 +81,12 @@ function CaptionStyleMenu({ size, onSizeChange }: { size: CaptionSize; onSizeCha
         className={`${baseClass} gap-0.5 px-2.5 ${open ? 'bg-indigo-600' : 'bg-gray-900/70 hover:bg-gray-800/80'} text-white`}
       >
         <Type className={size === 'sm' ? 'h-3.5 w-3.5' : size === 'md' ? 'h-4 w-4' : 'h-5 w-5'} />
-        <span className="text-[10px] font-semibold">{size.toUpperCase()}</span>
+        <span className="text-xs font-semibold">{size.toUpperCase()}</span>
       </button>
       {open && (
-        <div className="absolute bottom-12 left-1/2 z-50 w-64 -translate-x-1/2 space-y-3 rounded-xl bg-gray-900/95 p-3 text-white shadow-xl backdrop-blur-sm">
+        <div className="absolute bottom-14 left-1/2 z-50 w-64 -translate-x-1/2 space-y-3 rounded-xl bg-gray-900/95 p-3 text-white shadow-xl backdrop-blur-sm">
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">Size</p>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-white/60">Size</p>
             <div className="flex flex-wrap gap-1.5">
               {(Object.keys(SIZE_LABEL) as CaptionSize[]).map((s) => (
                 <button key={s} type="button" className={chipClass(size === s)} onClick={() => onSizeChange(s)}>{SIZE_LABEL[s]}</button>
@@ -93,7 +94,7 @@ function CaptionStyleMenu({ size, onSizeChange }: { size: CaptionSize; onSizeCha
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">Background</p>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-white/60">Background</p>
             <div className="flex flex-wrap gap-1.5">
               {(Object.keys(BACKGROUND_LABEL) as CaptionBackground[]).map((b) => (
                 <button key={b} type="button" className={chipClass(prefs.background === b)} onClick={() => updateCaptionPrefs({ background: b })}>
@@ -103,7 +104,7 @@ function CaptionStyleMenu({ size, onSizeChange }: { size: CaptionSize; onSizeCha
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">Text colour</p>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-white/60">Text colour</p>
             <div className="flex gap-2">
               {(Object.keys(COLOR_SWATCH) as CaptionColor[]).map((c) => (
                 <button
@@ -119,7 +120,7 @@ function CaptionStyleMenu({ size, onSizeChange }: { size: CaptionSize; onSizeCha
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">Position</p>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-white/60">Position</p>
             <div className="flex flex-wrap gap-1.5">
               {(Object.keys(POSITION_LABEL) as Array<keyof typeof POSITION_LABEL>).map((p) => (
                 <button key={p} type="button" className={chipClass(prefs.position === p)} onClick={() => updateCaptionPrefs({ position: p })}>
@@ -128,7 +129,7 @@ function CaptionStyleMenu({ size, onSizeChange }: { size: CaptionSize; onSizeCha
               ))}
               {prefs.position === 'custom' && <span className={chipClass(true)}>Custom</span>}
             </div>
-            <p className="mt-1.5 text-[11px] text-white/60">Or drag the captions anywhere on the video.</p>
+            <p className="mt-1.5 text-xs text-white/60">Or drag the captions anywhere on the video.</p>
           </div>
         </div>
       )}

@@ -23,6 +23,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { IngressClient, IngressInput } from 'https://esm.sh/livekit-server-sdk@2';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,6 +113,10 @@ serve(async (req) => {
 
     if (action === 'create') {
       if (!body.roomName) return json({ error: 'roomName required' }, 400);
+      // The ingest must publish into the target's own room, not any room the
+      // caller names (2026-10-10).
+      const bound = await bindRoomContext(admin, body.roomName, authCtx);
+      if (!bound.ok || !bound.bound) return json({ error: 'room_mismatch' }, 403);
 
       // Idempotent — provisionChannelStream() calls this directly (no delete
       // first), so a channel that already has an ingress must hand back the

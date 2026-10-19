@@ -11,6 +11,7 @@ import { supabase } from '@rekindle/supabase';
 import { LiveScriptureSettingsCard } from './LiveScriptureSettingsCard';
 import { toast } from '@rekindle/ui/use-toast';
 import { Languages, Loader2, Lock, Plus, X, Check, Play, Square, ChevronsUpDown, Mic, Upload, Trash2, Search, LibraryBig } from 'lucide-react';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface MinistryTranslationSettingsProps {
   ministryId: string;
@@ -118,7 +119,7 @@ const VoicePicker: React.FC<{
                   {playingId === v.voice_id ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                 </button>
                 <span className="flex-1 truncate">{v.name}</span>
-                {v.category && <span className="text-[10px] text-muted-foreground uppercase">{v.category}</span>}
+                {v.category && <span className="text-xs text-muted-foreground uppercase">{v.category}</span>}
                 {value === v.voice_id && <Check className="h-3.5 w-3.5 shrink-0" />}
               </div>
             ))}
@@ -441,7 +442,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
     setCloning(true);
     try {
       const ext = cloneFile.name.split('.').pop() || 'audio';
-      const samplePath = `${ministryId}/${crypto.randomUUID()}.${ext}`;
+      const samplePath = `${ministryId}/${randomId()}.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from('translation-voice-samples')
         .upload(samplePath, cloneFile);
@@ -495,7 +496,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
     setReplacingVoiceId(targetId);
     try {
       const ext = file.name.split('.').pop() || 'audio';
-      const samplePath = `${ministryId}/${crypto.randomUUID()}.${ext}`;
+      const samplePath = `${ministryId}/${randomId()}.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from('translation-voice-samples')
         .upload(samplePath, file);
@@ -1130,7 +1131,7 @@ export const MinistryTranslationSettings: React.FC<MinistryTranslationSettingsPr
                             </button>
                             <div className="min-w-0">
                               <p className="text-sm truncate">{v.name}</p>
-                              <p className="text-[10px] text-muted-foreground uppercase truncate">
+                              <p className="text-xs text-muted-foreground uppercase truncate">
                                 {[v.language, v.accent, v.gender].filter(Boolean).join(' · ')}
                               </p>
                             </div>

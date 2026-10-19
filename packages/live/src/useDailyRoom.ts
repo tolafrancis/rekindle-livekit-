@@ -12,7 +12,7 @@ import { useAuth } from '@rekindle/features/AuthContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { createVideoWrapper, isLiveKitBackend } from './videoBackend';
 import { NativeScreenShare } from './NativeScreenShare';
-import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant } from '@rekindle/types/videoRoom';
+import type { IVideoRoomWrapper, LiveCaptionSegment, NormalizedParticipant, TrackAttachSource, DisconnectKind } from '@rekindle/types/videoRoom';
 import type { LiveCaptionsBridge } from './useLiveCaptions';
 import {
   DEFAULT_LAYOUT_STATE,
@@ -99,6 +99,10 @@ export interface UseDailyRoomReturn {
    *  to enable sound" banner. Call enableAudioPlayback() from that button's
    *  own click handler (must be a real user gesture). */
   audioPlaybackBlocked: boolean;
+  /** Why the last connection ended (set on an unexpected disconnect, cleared
+   *  on the next join): another tab/device, removed by the host, or the
+   *  room closed. */
+  disconnectReason: DisconnectKind | null;
   enableAudioPlayback: () => Promise<void>;
   /** Per-participant network quality, keyed by LiveKit identity ('' for the
    *  local participant). */
@@ -106,6 +110,10 @@ export interface UseDailyRoomReturn {
   /** Subscribe/unsubscribe a remote participant's camera track — see
    *  LiveKitRoomWrapper.ts's own doc comment. */
   setParticipantVideoSubscribed: (identity: string, subscribed: boolean) => void;
+  setParticipantVideoQuality: (identity: string, quality: 'high' | 'low') => void;
+  /** Play a participant's track in an element via LiveKit's attach(); null
+   *  when it isn't available yet. See IVideoRoomWrapper.attachTrack. */
+  attachTrack: (identity: string, source: TrackAttachSource, el: HTMLMediaElement) => (() => void) | null;
 
   // Room info
   roomUrl: string | null;
@@ -252,10 +260,22 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // stable pointer to the current advisory-message handler (fed by wrapper.onData).
   const livekitRolesRef = useRef<Map<string, ParticipantRole>>(new Map());
   const controlMessageHandlerRef = useRef<((event: { data: any; fromId?: string }) => void) | null>(null);
+  // Join bookkeeping (2026-10-10). joinInFlightRef blocks a second join while
+  // one is running (React state read from a closure can't: a double-click on
+  // Rejoin used to connect twice). joinGenRef is bumped by leave/cleanup, so
+  // a join still fetching its token or connecting when the user walks away
+  // notices, disconnects itself, and doesn't leave a ghost in the room.
+  const joinInFlightRef = useRef(false);
+  const joinGenRef = useRef(0);
   // Phase 5: active Egress recording id (LiveKit), so stopRecording can target it.
   const recordingEgressIdRef = useRef<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const sessionStartTimeRef = useRef<Date | null>(null);
+  // The chat session everyone in this meeting shares (2026-10-10). Chat used
+  // to be keyed on each client's OWN join time, so history and realtime both
+  // dropped everyone else's messages (only the data-channel copy got
+  // through, and late joiners saw nothing). See resolveChatFloor.
+  const chatFloorRef = useRef<string | null>(null);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Connection state
@@ -271,6 +291,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // indicator; not yet rendered anywhere.
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false);
+  const [disconnectReason, setDisconnectReason] = useState<DisconnectKind | null>(null);
   const [connectionQuality, setConnectionQuality] = useState<Record<string, string>>({});
 
   // Room info
@@ -405,12 +426,17 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       if (isMicOn || isCameraOn) {
         console.log('[Daily] Speaker permission removed, disabling media');
 
+        // Straight to the wrapper: toggleMic/toggleCamera refuse exactly this
+        // case (no speaker permission), so the demoted speaker stayed live and
+        // got a "host must grant you permission" toast instead (2026-10-10).
         (async () => {
-          if (isMicOn) {
-            await toggleMic();
-          }
-          if (isCameraOn) {
-            await toggleCamera();
+          const wrapper = wrapperRef.current;
+          if (!wrapper) return;
+          try {
+            if (isMicOn) { await wrapper.setAudio(false); setIsMicOn(false); }
+            if (isCameraOn) { await wrapper.setVideo(false); setIsCameraOn(false); }
+          } catch (err) {
+            console.error('[Daily] Could not turn off media after losing speaker permission:', err);
           }
         })();
       }
@@ -574,21 +600,30 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       return;
     }
 
+    const previousRole = getParticipantRole(participantId);
     setParticipantRoles(prev => {
       const updated = new Map(prev);
       updated.set(participantId, role);
       return updated;
     });
 
-    // Broadcast role change via app message
+    // Server first: the role only exists once livekit-moderation applied it.
+    // A failure used to be an unhandled rejection with the new role left
+    // showing locally (2026-10-10).
     const wrapper = wrapperRef.current;
     if (wrapper) {
-      await wrapper.sendAppMessage({
-        type: 'role-change',
-        participantId,
-        role
-      }, '*');
-      if (isLiveKitBackend()) await moderate('set-role', { identity: participantId, role });
+      try {
+        if (isLiveKitBackend()) await moderate('set-role', { identity: participantId, role });
+        await wrapper.sendAppMessage({ type: 'role-change', participantId, role }, '*').catch(() => {});
+      } catch (err: any) {
+        setParticipantRoles(prev => {
+          const updated = new Map(prev);
+          updated.set(participantId, previousRole);
+          return updated;
+        });
+        toast({ title: 'Could not change role', description: err?.message || 'Unknown error', variant: 'destructive' });
+        return;
+      }
     }
 
     // Update database if meetingId exists
@@ -601,7 +636,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     }
 
     toast({ title: 'Role Updated', description: `Participant role changed to ${role}` });
-  }, [options.isHost, options.meetingId]);
+  }, [options.isHost, options.meetingId, getParticipantRole]);
 
   // Sync participant states with Daily participants
   const syncParticipantStates = useCallback(() => {
@@ -682,7 +717,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         // "Connecting…" spinner — waiting forever. Race it against a timer
         // so a stuck edge function always surfaces as an error.
         const TOKEN_FETCH_TIMEOUT_MS = 15000;
-        const { data, error } = await Promise.race([
+        const { data: tokenData, error } = await Promise.race([
           supabase.functions.invoke('livekit-token', {
             body: {
               action: 'token',
@@ -700,7 +735,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             );
           }),
         ]);
-        if (error) throw new Error(error.message || 'Failed to get LiveKit token');
+        let data = tokenData;
+        if (error) {
+          // A refusal (403 locked / meeting_full / ...) arrives as a non-2xx
+          // FunctionsHttpError with data null; its reason is in the body.
+          let body: any = null;
+          try { body = await (error as any).context?.json?.(); } catch { /* not JSON */ }
+          if (!body?.error) throw new Error(error.message || 'Failed to get LiveKit token');
+          data = body;
+        }
         if (data?.waiting) {
           // Gated into the waiting room (§1C). Phase 3D wires the admit round-trip.
           setConnectionError('waiting-room');
@@ -713,7 +756,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           // creation-time block + the in-meeting tip that both point hosts
           // there ahead of time).
           if (data.error === 'meeting_full') throw new Error('This meeting is full (100 participants) — create a Webinar for larger audiences.');
-          throw new Error(data.error === 'locked' ? 'This meeting is locked' : data.error);
+          const friendly: Record<string, string> = {
+            locked: 'This meeting is locked',
+            not_entitled: "You don't have access to this meeting.",
+            rejected: 'The host declined your request to join.',
+            sign_in_required: 'Please sign in to join this meeting.',
+            room_mismatch: "This meeting link doesn't match the meeting. Please reopen it from the app.",
+            context_required: "This meeting link doesn't match the meeting. Please reopen it from the app.",
+          };
+          throw new Error(friendly[data.error] ?? data.error);
         }
         if (!data?.url || !data?.token) throw new Error('Invalid response from livekit-token');
         // Debug: log token info for guest name validation
@@ -762,6 +813,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       ? (local as NormalizedParticipant).videoTrack
       : ((local as DailyParticipant).tracks?.video?.persistentTrack || (local as DailyParticipant).tracks?.video?.track);
 
+    // Through LiveKit's attach() so the self-view shows the background
+    // effect and follows camera restarts (attach is a no-op when the same
+    // element is already attached).
+    const el = localVideoRef.current;
+    if (track && track.readyState === 'live' && isLiveKitBackend() && wrapper.attachTrack) {
+      const id = (local as NormalizedParticipant).sessionId;
+      if (wrapper.attachTrack(id, 'camera', el)) return;
+    }
+
     if (track && track.readyState === 'live') {
       // Don't reattach the same track — reassigning srcObject reloads the <video>
       // and flickers. The periodic 2s re-check + track-published events would
@@ -776,13 +836,25 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Join room using EnhancedDailyVideoWrapper
   const joinRoom = useCallback(async (): Promise<boolean> => {
-    if (isConnecting || isJoining || isConnected) {
+    if (joinInFlightRef.current || isConnecting || isJoining || isConnected) {
       console.log('[Daily] Already connecting/joined');
       return false;
     }
 
+    joinInFlightRef.current = true;
+    const gen = ++joinGenRef.current;
+    const cancelled = () => gen !== joinGenRef.current;
     setIsJoining(true);
     setConnectionError(null);
+
+    // Set once the wrapper exists. Events from a wrapper that has since been
+    // replaced or left (a superseded join, a stale onLeft landing after the
+    // new onJoined) must not touch this call's state.
+    let self: any = null;
+    const live = <A extends any[]>(fn: (...args: A) => void) => (...args: A) => {
+      if (self && wrapperRef.current !== self) return;
+      fn(...args);
+    };
 
     try {
       // Check audio input before joining (skip for viewer-only mode)
@@ -791,6 +863,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       }
 
       const roomInfo = await createRoom();
+      if (cancelled()) return false;
       if (!roomInfo) {
         setIsJoining(false);
         return false;
@@ -804,8 +877,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
       // Create the wrapper with callbacks (Daily or LiveKit, per VITE_VIDEO_BACKEND)
       const wrapper = await createVideoWrapper({
-        onJoined: () => {
+        onJoined: live(() => {
           console.log('[Daily] Wrapper: onJoined callback');
+          setDisconnectReason(null);
           setIsConnected(true);
           setIsConnecting(false);
           setIsJoining(false);
@@ -840,16 +914,19 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           if (localParticipant?.owner || localParticipant?.isOwner) {
             options.onHostJoined?.();
           }
-        },
-        onLeft: () => {
-          console.log('[Daily] Wrapper: onLeft callback');
+        }),
+        onLeft: live((reason?: DisconnectKind) => {
+          console.log('[Daily] Wrapper: onLeft callback', reason);
           setIsConnected(false);
+          // A drop ends any reconnect attempt; don't leave its banner up.
+          setIsReconnecting(false);
+          if (reason && reason !== 'client') setDisconnectReason(reason);
           
           if (durationIntervalRef.current) {
             clearInterval(durationIntervalRef.current);
             durationIntervalRef.current = null;
           }
-        },
+        }),
         onParticipantJoined: (participant: any) => {
           console.log('[Daily] Wrapper: Participant joined', participant?.user_name ?? participant?.userName);
           updateParticipants();
@@ -903,16 +980,23 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             variant: 'destructive'
           });
         },
-        onError: (event) => {
+        onError: live((event: any) => {
           console.error('[Daily] Wrapper: Error', event);
-          setConnectionError(event?.errorMsg || 'An error occurred');
-        },
+          setConnectionError(event?.errorMsg || event?.message || 'An error occurred');
+        }),
+        // Non-fatal problems (mic won't open, device switch failed...): a
+        // toast, never the full-screen connection error (2026-10-10).
+        onWarning: live((message: string) => {
+          console.warn('[Daily] Wrapper: Warning', message);
+          toast({ title: 'Something went wrong', description: message, variant: 'destructive' });
+        }),
+        onScreenShareStopped: live(() => setIsScreenSharing(false)),
         onData: (data: any, fromIdentity?: string) => {
           // LiveKit advisory data channel (§3C) → the same control-message handler
           // Daily uses. fromIdentity == sessionId (we align identity/sessionId).
           controlMessageHandlerRef.current?.({ data, fromId: fromIdentity });
         },
-        onMediaStateChange: (video, audio) => {
+        onMediaStateChange: live((video: boolean, audio: boolean) => {
           console.log('[Daily] Wrapper: Media state changed - video:', video, 'audio:', audio);
           setIsCameraOn(video);
           setIsMicOn(audio);
@@ -923,7 +1007,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
               attachLocalVideoTrack();
             }, 100);
           }
-        },
+        }),
         onTranslationTracksChanged: (tracks) => {
           setTranslationTracks(tracks);
         },
@@ -945,9 +1029,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         // clear it on both Reconnected and the ordinary Connected path (a
         // fresh join) so a stale "Reconnecting…" banner can't survive past
         // whichever recovery actually happens.
-        onReconnecting: () => setIsReconnecting(true),
-        onReconnected: () => setIsReconnecting(false),
+        onReconnecting: live(() => setIsReconnecting(true)),
+        onReconnected: live(() => setIsReconnecting(false)),
         onAudioPlaybackBlocked: () => setAudioPlaybackBlocked(true),
+        onAudioPlaybackResumed: () => setAudioPlaybackBlocked(false),
         onConnectionQualityChanged: (identity, quality) => {
           setConnectionQuality(prev => (prev[identity] === quality ? prev : { ...prev, [identity]: quality }));
         },
@@ -956,6 +1041,16 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         }
       });
 
+      self = wrapper;
+      if (cancelled()) {
+        wrapper.destroy().catch(() => {});
+        return false;
+      }
+      // Never orphan a previous wrapper (its connection, audio context and
+      // timers would keep running).
+      if (wrapperRef.current && wrapperRef.current !== wrapper) {
+        wrapperRef.current.destroy().catch(() => {});
+      }
       wrapperRef.current = wrapper;
 
       // CRITICAL: Stop all previews before joining
@@ -981,8 +1076,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         await wrapper.joinMeeting(roomInfo.url, roomInfo.token, options.userName, false, options.isHost);
       }
 
+      if (cancelled()) {
+        // Left (or unmounted) while connecting: disconnect what we just joined.
+        if (wrapperRef.current === wrapper) wrapperRef.current = null;
+        wrapper.destroy().catch(() => {});
+        return false;
+      }
       return true;
     } catch (error: any) {
+      if (cancelled()) return false;
       console.error('[Daily] Failed to join room:', error);
       setConnectionError(error.message || 'Failed to join room');
       setIsConnecting(false);
@@ -995,6 +1097,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       });
       
       return false;
+    } finally {
+      // Only the current join owns the flag; a superseded one must not clear
+      // it out from under a newer join.
+      if (!cancelled()) joinInFlightRef.current = false;
     }
   }, [isConnecting, isJoining, isConnected, createRoom, updateParticipants, checkAudioInput, options, attachLocalVideoTrack]);
 
@@ -1003,6 +1109,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   const leaveRoom = useCallback(async () => {
     try {
       console.log('[Daily] Leaving room...');
+      joinGenRef.current++;
+      joinInFlightRef.current = false;
       
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
@@ -1038,16 +1146,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       raisedHandsRef.current.clear();
             setRaisedHands([]);
 
-      if (options.sessionId && finalDuration > 0) {
-        await supabase
-          .from('counseling_sessions')
-          .update({
-            duration: finalDuration,
-            status: 'completed',
-            ended_at: new Date().toISOString()
-          })
-          .eq('id', options.sessionId);
-      }
+      // (A write to 'counseling_sessions' used to sit here: misspelt table,
+      // so it never ran. CounsellingVideoSession records the session's end
+      // itself through onSessionEnd below.)
+      void finalDuration;
 
       options.onSessionEnd?.();
     } catch (error: any) {
@@ -1072,12 +1174,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       
       // Clear chat messages from this session
       if (sessionStartTimeRef.current) {
-        const sessionStartTime = sessionStartTimeRef.current.toISOString();
+        const floor = chatFloorRef.current ?? sessionStartTimeRef.current.toISOString();
         const { error: chatError } = await supabase
           .from('chat_messages')
           .delete()
           .eq('meeting_id', options.meetingId)
-          .eq('session_start_time', sessionStartTime);
+          .gte('created_at', floor);
 
         if (chatError) {
           console.error('[Daily] Failed to clear chat messages:', chatError);
@@ -1572,75 +1674,88 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
     setMeetingSettings(prev => ({ ...prev, ...settings }));
 
-    // Broadcast settings to all participants
+    // Broadcast settings to all participants (best-effort: the local change
+    // stands, and an unhandled rejection here used to reach Sentry).
     const wrapper = wrapperRef.current;
     if (wrapper) {
-      await wrapper.sendAppMessage({
-        type: 'settings-update',
-        settings
-      }, '*');
+      try {
+        await wrapper.sendAppMessage({ type: 'settings-update', settings }, '*');
+      } catch (err) {
+        console.warn('[Daily] settings broadcast failed:', err);
+      }
     }
   }, [options.isHost]);
 
-  // Recording controls
-  const startRecording = useCallback(async () => {
-    if (!options.isHost) {
-      toast({ title: 'Permission Denied', description: 'Only hosts can start recording', variant: 'destructive' });
-      return;
+  // Recording controls. Both throw on failure so the caller (DailyVideoCall's
+  // handleToggleRecording, which owns the toasts) only shows "recording" or
+  // "stopped" once the server confirmed it. Before 2026-10-10 they swallowed
+  // every error, so the button could say recording when nothing started, or
+  // stopped while the egress kept recording (and billing). The broadcast to
+  // other participants is best-effort and never undoes a real start/stop.
+  const recordingBusyRef = useRef(false);
+  const invokeEgress = useCallback(async (body: Record<string, unknown>) => {
+    const { data, error } = await supabase.functions.invoke('livekit-egress', { body });
+    if (error) {
+      let reason: string | undefined;
+      try { reason = (await (error as any).context?.json?.())?.error; } catch { /* not JSON */ }
+      throw new Error(reason || error.message || 'Request failed');
     }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }, []);
+  const broadcastRecordingStatus = useCallback(async (recordingStatus: MeetingSettings['recordingStatus']) => {
+    try {
+      await updateMeetingSettings({ recordingStatus });
+    } catch (err) {
+      console.warn('[Recording] status broadcast failed:', err);
+    }
+  }, [updateMeetingSettings]);
 
+  const startRecording = useCallback(async () => {
+    if (!options.isHost) throw new Error('Only hosts can start recording');
+    if (recordingBusyRef.current) return;
+    recordingBusyRef.current = true;
     try {
       // §12 — record the room composite via LiveKit Egress → S3 HLS.
-      const { data, error } = await supabase.functions.invoke('livekit-egress', {
-        body: {
-          action: 'start-recording',
-          roomName: options.roomName,
-          // The recording's own layout, independent of anyone's screen.
-          recordingLayout: layoutStateRef.current.recordingLayout,
-          kind: options.channelId ? 'channel' : 'meeting',
-          channelId: options.channelId,
-          meetingId: options.meetingId,
-          context: roleContext(),
-        },
+      const data = await invokeEgress({
+        action: 'start-recording',
+        roomName: options.roomName,
+        // The recording's own layout, independent of anyone's screen.
+        recordingLayout: layoutStateRef.current.recordingLayout,
+        kind: options.channelId ? 'channel' : 'meeting',
+        channelId: options.channelId,
+        meetingId: options.meetingId,
+        context: roleContext(),
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
       recordingEgressIdRef.current = data?.egressId ?? null;
-
       setIsRecording(true);
-      // updateMeetingSettings both applies this locally AND broadcasts it to every
-      // other participant (settings-update app message) — previously this called
-      // setMeetingSettings directly, which only ever updated the host's own browser,
-      // so nobody else in the call was ever told recording had started.
-      await updateMeetingSettings({ recordingStatus: 'recording' });
+      // Tell everyone else in the call (settings-update app message).
+      await broadcastRecordingStatus('recording');
       toast({ title: 'Recording Started', description: 'Meeting is now being recorded' });
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      toast({ title: 'Recording Failed', description: 'Could not start recording', variant: 'destructive' });
+    } finally {
+      recordingBusyRef.current = false;
     }
-  }, [options.isHost, options.roomName, options.channelId, options.meetingId, roleContext, updateMeetingSettings]);
+  }, [options.isHost, options.roomName, options.channelId, options.meetingId, roleContext, invokeEgress, broadcastRecordingStatus]);
 
   const stopRecording = useCallback(async () => {
-    if (!options.isHost) return;
-
+    if (!options.isHost) throw new Error('Only hosts can stop recording');
+    if (recordingBusyRef.current) return;
+    recordingBusyRef.current = true;
     try {
-      await supabase.functions.invoke('livekit-egress', {
-        body: {
-          action: 'stop-recording',
-          roomName: options.roomName,
-          egressId: recordingEgressIdRef.current,
-          context: roleContext(),
-        },
+      await invokeEgress({
+        action: 'stop-recording',
+        roomName: options.roomName,
+        egressId: recordingEgressIdRef.current,
+        context: roleContext(),
       });
       recordingEgressIdRef.current = null;
-
       setIsRecording(false);
-      await updateMeetingSettings({ recordingStatus: 'processing' });
+      await broadcastRecordingStatus('processing');
       toast({ title: 'Recording Stopped', description: 'Recording has been stopped' });
-    } catch (error) {
-      console.error('Failed to stop recording:', error);
+    } finally {
+      recordingBusyRef.current = false;
     }
-  }, [options.isHost, options.roomName, roleContext, updateMeetingSettings]);
+  }, [options.isHost, options.roomName, roleContext, invokeEgress, broadcastRecordingStatus]);
 
   const pauseRecording = useCallback(async () => {
     if (!options.isHost) return;
@@ -1775,6 +1890,28 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, [participants]);
 
   // Send chat message
+  // Start of the current meeting session, the same for every participant:
+  // the meeting row's started_at (set when it goes live; webinars count their
+  // backstage too), never older than a day so a recurring meeting doesn't
+  // replay last week's chat. Kinds without a row fall back to the day window.
+  const resolveChatFloor = useCallback(async (): Promise<string> => {
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    let started: string | null = null;
+    try {
+      const kind = options.meetingKind;
+      const table = kind === 'ministry_meeting' ? 'ministry_video_meetings'
+        : kind === 'channel_meeting' ? 'live_channel_video_meetings'
+        : kind === 'ministry_webinar' ? 'ministry_webinars' : null;
+      if (table && options.meetingId) {
+        const cols = table === 'ministry_webinars' ? 'started_at, backstage_started_at' : 'started_at';
+        const { data } = await (supabase as any).from(table).select(cols).eq('id', options.meetingId).maybeSingle();
+        started = data?.backstage_started_at ?? data?.started_at ?? null;
+      }
+    } catch { /* fall back to the day window */ }
+    const t = started ? new Date(started).getTime() : NaN;
+    return new Date(Number.isFinite(t) ? Math.max(t, dayAgo) : dayAgo).toISOString();
+  }, [options.meetingKind, options.meetingId]);
+
   const sendChatMessage = useCallback(async (content: string, isPrivate: boolean = false, recipientId?: string, attachment?: ChatAttachment | null) => {
     const localParticipant = participants.find(p => p.isLocal);
     // GUESTS may chat too: no `user` required. Registered users store their uid in
@@ -1804,7 +1941,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       return;
     }
 
-    const sessionStartTime = sessionStartTimeRef.current.toISOString();
+    const sessionStartTime = chatFloorRef.current ?? sessionStartTimeRef.current.toISOString();
     
     console.log('[Chat] Sending message:', {
       content,
@@ -1902,7 +2039,6 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
       return;
     }
 
-    const sessionStartTime = sessionStartTimeRef.current.toISOString();
     const localParticipant = participantsRef.current.find(p => p.isLocal);
     if (!localParticipant) {
       console.log('[Chat] No local participant, delaying subscription');
@@ -1912,20 +2048,25 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     console.log('[Chat] Setting up real-time subscription:', {
       guest: !user,
       meetingId: options.meetingId,
-      sessionStartTime,
       userId: user?.id ?? null
     });
 
+    let cancelledChat = false;
+    let sessionFloor = '';
     // Load existing messages from current session
     const loadMessages = async () => {
       try {
+        sessionFloor = await resolveChatFloor();
+        if (cancelledChat) return;
+        chatFloorRef.current = sessionFloor;
         console.log('[Chat] Loading existing messages...');
         const { data, error } = await supabase
           .from('chat_messages')
           .select('*')
           .eq('meeting_id', options.meetingId)
-          .eq('session_start_time', sessionStartTime)
+          .gte('created_at', sessionFloor)
           .order('created_at', { ascending: true });
+        if (cancelledChat) return;
 
         if (error) {
           console.error('[Chat] Failed to load messages:', error);
@@ -1959,7 +2100,11 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             msg.recipientId === localParticipant.sessionId
           );
 
-          setChatMessages(visibleMessages);
+          // Merge, don't replace: realtime may already have delivered some.
+          setChatMessages(prev => {
+            const ids = new Set(visibleMessages.map(m => m.id));
+            return [...visibleMessages, ...prev.filter(m => !ids.has(m.id))];
+          });
           console.log('[Chat] Set', visibleMessages.length, 'visible messages');
         }
       } catch (error) {
@@ -1985,15 +2130,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           console.log('[Chat] ✅ Received real-time message:', payload);
           const msg = payload.new as any;
           
-          // Filter by session on client side - normalize timestamps for comparison
-          const msgSessionTime = new Date(msg.session_start_time).toISOString();
-          if (msgSessionTime !== sessionStartTime) {
-            console.log('[Chat] Message from different session, ignoring', {
-              msgSessionTime,
-              expectedSessionTime: sessionStartTime
-            });
-            return;
-          }
+          // Older sessions of the same meeting row (recurring meetings).
+          if (sessionFloor && new Date(msg.created_at).getTime() < new Date(sessionFloor).getTime()) return;
           
           const newMessage: ChatMessageType = {
             attachment: msg.attachment_url
@@ -2040,9 +2178,10 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
     return () => {
       console.log('[Chat] Cleaning up real-time subscription');
+      cancelledChat = true;
       supabase.removeChannel(channel);
     };
-  }, [isConnected, options.meetingId, chatLocalSessionId, user]);
+  }, [isConnected, options.meetingId, chatLocalSessionId, user, resolveChatFloor]);
 
   // enableSpeakerMedia — called by LiveChannelViewer after an invitation is accepted.
   // Bypasses the hasSpeakerPermission gate (the DB row was just written, Realtime fires async).
@@ -2253,9 +2392,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   }, []);
 
   // Start screen share
+  // isScreenSharing only flips once the picker resolves, so a second click
+  // while it's open used to start a second share (and a renegotiation race).
+  const screenShareStartingRef = useRef(false);
   const startScreenShare = useCallback(async () => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || isScreenSharing) return;
+    if (!wrapper || isScreenSharing || screenShareStartingRef.current) return;
+    screenShareStartingRef.current = true;
 
     try {
       // Native Android: the WebView's getDisplayMedia is a non-functional stub
@@ -2276,6 +2419,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
             userName: options.userName,
             context: roleContext(),
             asScreenShareShadow: true,
+            // Lets the server name the shadow after our real identity (a
+            // guest's identity is random per token).
+            joinToken: wrapper.getAccessToken?.() ?? undefined,
           },
         });
         if (error || data?.error || !data?.url || !data?.token) {
@@ -2303,12 +2449,15 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         // fire-and-forget and nothing else surfaces its message to the user, so
         // without reading it back here every failure looked like the same
         // generic "Could not start screen sharing".
+        // No detail means the person cancelled the browser's picker: say nothing.
         const detail = (wrapper as any).getLastScreenShareError?.();
-        toast({
-          title: 'Screen Share Error',
-          description: detail || 'Could not start screen sharing',
-          variant: 'destructive'
-        });
+        if (detail) {
+          toast({
+            title: 'Screen Share Error',
+            description: detail,
+            variant: 'destructive'
+          });
+        }
       }
     } catch (error: any) {
       console.error('[Daily] Failed to start screen share:', error);
@@ -2320,6 +2469,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
           variant: 'destructive'
         });
       }
+    } finally {
+      screenShareStartingRef.current = false;
     }
   }, [isScreenSharing, roleContext]);
 
@@ -2363,6 +2514,14 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // its own render logic and just needs a way to act on it.
   const setParticipantVideoSubscribed = useCallback((identity: string, subscribed: boolean) => {
     wrapperRef.current?.setParticipantVideoSubscribed(identity, subscribed);
+  }, []);
+
+  const attachTrack = useCallback((identity: string, source: TrackAttachSource, el: HTMLMediaElement) =>
+    wrapperRef.current?.attachTrack?.(identity, source, el) ?? null, []);
+
+  // Main stage → high layer, thumbnails → low (see LiveKitRoomWrapper).
+  const setParticipantVideoQuality = useCallback((identity: string, quality: 'high' | 'low') => {
+    wrapperRef.current?.setParticipantVideoQuality?.(identity, quality);
   }, []);
 
   // Delete room — actually closes the LiveKit room via livekit-token's
@@ -2411,18 +2570,26 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         messageType: data.type
       });
       
-      if (!isFromHost && (
-        data.type === 'mute-participant' ||
-        data.type === 'allow-unmute' ||
-        data.type === 'mute-all' ||
-        data.type === 'disable-video' ||
-        data.type === 'allow-video' ||
-        data.type === 'disable-all-video' ||
-        data.type === 'remove-participant'
-      )) {
+      // Data messages can be sent by anyone in the room, so every host-only
+      // command must come from a host/co-host (role read from the server-minted
+      // LiveKit metadata). Before 2026-10-10 only the mute/video/remove ones
+      // were checked: any participant could eject someone with a fake
+      // 'reject-from-waiting-room', or flip everyone's lock/settings state.
+      const HOST_ONLY = [
+        'mute-participant', 'allow-unmute', 'request-unmute', 'mute-all',
+        'disable-video', 'allow-video', 'request-video', 'disable-all-video',
+        'remove-participant', 'role-change', 'admit-from-waiting-room',
+        'reject-from-waiting-room', 'meeting-lock-change', 'settings-update',
+      ];
+      if (!isFromHost && HOST_ONLY.includes(data.type)) {
         console.log('[Control] Ignoring control message from non-host');
         return;
       }
+      // Self-reports must be about the sender: you raise your own hand and sign
+      // your own chat messages. A host may lower anyone's hand.
+      if (data.type === 'hand-raised' && data.participantId !== fromId) return;
+      if (data.type === 'hand-lowered' && !isFromHost && data.participantId !== fromId) return;
+      if (data.type === 'chat-message' && data.message?.sender_id !== fromId) return;
 
       const localPart = participants.find(p => p.isLocal);
       const localSessionId = localPart?.sessionId;
@@ -2477,7 +2644,9 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         case 'mute-all':
           if (!data.except?.includes(localSessionId)) {
             console.log('[Control] Received mute-all command from host');
-            setHostMutedByHost(true);
+            // One-shot: mutes everyone now but doesn't lock unmute. A lock here
+            // could never be lifted (the host's panel only offers "Allow unmute"
+            // for people muted one by one), so attendees stayed muted all call.
             
             // Directly turn off audio using wrapper
             const wrapper = wrapperRef.current;
@@ -2549,7 +2718,7 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
         case 'disable-all-video':
           if (!data.except?.includes(localSessionId)) {
             console.log('[Control] Received disable-all-video command from host');
-            setVideoDisabledByHost(true);
+            // One-shot, like mute-all above: never locks the camera.
             
             // Directly turn off video using wrapper
             const wrapper = wrapperRef.current;
@@ -2724,6 +2893,8 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
   // Cleanup function
   const cleanup = useCallback(() => {
     console.log('[Daily] Cleaning up...');
+    joinGenRef.current++;
+    joinInFlightRef.current = false;
     
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
@@ -2816,9 +2987,12 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
     connectionError,
     isReconnecting,
     audioPlaybackBlocked,
+    disconnectReason,
     enableAudioPlayback,
     connectionQuality,
     setParticipantVideoSubscribed,
+    setParticipantVideoQuality,
+    attachTrack,
     roomUrl,
     roomToken,
     roomName: options.roomName,

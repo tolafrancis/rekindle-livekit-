@@ -19,6 +19,11 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.generate-affirmation]
+enabled = true
+# Admin/super_admin only, same pattern as generate-prayer-content.
+verify_jwt = true
+
 [functions.generate-devotional-series]
 enabled = true
 # Admin/super_admin only (checked via user_profiles.role inside the function,
@@ -83,6 +88,14 @@ enabled = true
 # project anon key as their Bearer, which passes gateway JWT verification —
 # kept on, matching livekit-token / livekit-egress / livekit-ingress.
 verify_jwt = true
+
+[functions.gift-aid-declaration]
+enabled = true
+# Donors declare from the public /gift-aid/:slug page, the kiosk and guest
+# registration without signing in; the function validates the payload and
+# checks Gift Aid is enabled for the ministry itself. Matches the deployed
+# setting.
+verify_jwt = false
 
 [functions.livekit-webhook]
 enabled = true
@@ -393,4 +406,26 @@ enabled = true
 # anon key. It only ends webinars whose host has been gone past the grace
 # period (or that ran far past their booked time), so any valid JWT may call
 # it; gateway verification still keeps unsigned callers out.
+verify_jwt = true
+
+[functions.prewarm-devotional-audio]
+enabled = true
+# Called by pg_cron with a service-role JWT, or by a platform admin's
+# "Run now". The gateway verifies the JWT; the function checks the role.
+verify_jwt = true
+
+[functions.send-shared-devotional-followup]
+enabled = true
+verify_jwt = true
+
+[functions.process-scheduled-broadcasts]
+enabled = true
+# Called by pg_cron (private.call_edge_fn) with a service-role JWT. The
+# gateway verifies the JWT; the function checks the role.
+verify_jwt = true
+
+[functions.process-prayer-reminders]
+enabled = true
+# Called by pg_cron (private.call_edge_fn) with a service-role JWT. The
+# gateway verifies the JWT; the function checks the role.
 verify_jwt = true

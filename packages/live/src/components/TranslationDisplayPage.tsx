@@ -6,8 +6,10 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
-import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
+import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, VolumeX, MoreVertical, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
 import { ScripturePanel } from './ScripturePanel';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface SessionInfo {
   id: string;
@@ -16,6 +18,11 @@ interface SessionInfo {
   target_language: string;
   status: string;
   service_id: string | null;
+  // The translation the bot is still writing for the current sentence,
+  // streamed live via the translation_sessions UPDATE subscription below
+  // (migration 0409). Cleared by the bot once the finished line lands in
+  // translation_logs.
+  interim_translated_text?: string | null;
   // PostgREST embeds the FK target as an object (service_id -> id, a
   // to-one relationship), not an array — see migration 0295 for why an
   // anon /display visitor is now allowed to read this at all.
@@ -181,7 +188,7 @@ export const TranslationDisplayPage: React.FC = () => {
     try {
       let fp = localStorage.getItem('rk-question-fingerprint');
       if (!fp) {
-        fp = crypto.randomUUID();
+        fp = randomId();
         localStorage.setItem('rk-question-fingerprint', fp);
       }
       fingerprintRef.current = fp;
@@ -444,7 +451,7 @@ export const TranslationDisplayPage: React.FC = () => {
   useEffect(() => {
     const el = mainRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+  }, [lines, session?.interim_translated_text]);
 
   // WebRTC-only audio (see docs/rlt-build-checklist.md's "WebRTC-only
   // /display" plan): join the LiveKit room directly as a subscribe-only
@@ -501,6 +508,15 @@ export const TranslationDisplayPage: React.FC = () => {
       // we joined) — both paths funnel through here.
       const playTrack = (track: RemoteTrack) => {
         if (cancelled) return;
+        // A bot handover or reconnect can deliver the track again: replace
+        // the previous element rather than play both (2026-10-10).
+        const prev = audioElRef.current;
+        if (prev) {
+          const cur = prev.srcObject;
+          if (cur instanceof MediaStream && cur.getAudioTracks()[0] === track.mediaStreamTrack) return;
+          prev.pause();
+          prev.srcObject = null;
+        }
         const el = new Audio();
         el.autoplay = true;
         el.srcObject = new MediaStream([track.mediaStreamTrack]);
@@ -524,8 +540,8 @@ export const TranslationDisplayPage: React.FC = () => {
       room.on(RoomEvent.Disconnected, () => {
         if (cancelled) return;
         // Unexpected drop (not our own teardown, which sets `cancelled`
-        // first) — reset all the way back to idle so the "Listen" button
-        // reappears and a re-tap actually re-triggers this effect (it only
+        // first) — reset all the way back to idle so "Listen" in the header
+        // menu is offered again and a re-tap actually re-triggers this effect (it only
         // fires on a false→true transition of `listening`).
         setAudioStatus('idle');
         setListening(false);
@@ -737,8 +753,20 @@ export const TranslationDisplayPage: React.FC = () => {
     );
   }
 
+  const stopListening = () => {
+    setListening(false);
+    setAudioStatus('idle');
+    setNeedsUnlock(false);
+  };
   const statusDot = connStatus === 'live' ? 'bg-emerald-500' : connStatus === 'ended' ? 'bg-slate-500' : 'bg-amber-500';
-  const visibleLines = presenterMode ? lines.slice(-1) : lines;
+  // Live line: the translation as the bot streams it, shown as the newest
+  // line until the finished row arrives. Hidden once the last final line
+  // already contains it, covering the brief overlap between the final
+  // INSERT and the bot clearing the interim field.
+  const interimText = session?.interim_translated_text?.trim() || '';
+  const lastFinal = lines[lines.length - 1]?.translated_text?.trim() || '';
+  const liveLine = interimText && !lastFinal.startsWith(interimText) ? interimText : '';
+  const visibleLines = presenterMode ? (liveLine ? [] : lines.slice(-1)) : lines;
   const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors';
 
   return (
@@ -816,6 +844,30 @@ export const TranslationDisplayPage: React.FC = () => {
           >
             <Maximize2 className="h-4 w-4" />
           </button>
+          {/* Listen lives behind this menu, not as a full-width button: the
+              captions are the default view, and a prominent "Listen" got
+              tapped by almost everyone on arrival. */}
+          {session && session.status !== 'error' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={`${iconBtn} relative`} title="More options" aria-label="More options">
+                  <MoreVertical className="h-4 w-4" />
+                  {listening && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {listening ? (
+                  <DropdownMenuItem onSelect={stopListening}>
+                    <VolumeX className="h-4 w-4 mr-2" /> Stop listening
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => setListening(true)}>
+                    <Volume2 className="h-4 w-4 mr-2" /> Listen to live audio
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <span className={`ml-1 h-2.5 w-2.5 rounded-full shrink-0 ${statusDot}`} title={connStatus} />
         </header>
       )}
@@ -845,7 +897,7 @@ export const TranslationDisplayPage: React.FC = () => {
           aria-atomic="false"
           className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
         >
-          {visibleLines.length === 0 ? (
+          {visibleLines.length === 0 && !liveLine ? (
             // session.status === 'ended' never reaches here — the early
             // return above swaps to the "no longer available" page first.
             <p className="text-center text-white/50 text-lg">Translation starting…</p>
@@ -855,13 +907,20 @@ export const TranslationDisplayPage: React.FC = () => {
                 {bilingual && (
                   <p className="text-sm sm:text-base text-white/50 mb-1">{line.source_text}</p>
                 )}
-                <p className={i === visibleLines.length - 1
+                <p className={i === visibleLines.length - 1 && !liveLine
                   ? `${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`
                   : `${OLDER_LINE_CLASS} leading-snug`}>
                   {line.translated_text}
                 </p>
               </div>
             ))
+          )}
+          {liveLine && (
+            // aria-hidden: the finished line is announced when it lands, so
+            // screen readers don't hear every partial word twice.
+            <div className={presenterMode ? '' : 'w-full'} aria-hidden="true">
+              <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`}>{liveLine}</p>
+            </div>
           )}
         </main>
       ) : (
@@ -963,7 +1022,8 @@ export const TranslationDisplayPage: React.FC = () => {
       )}
 
       {/* session.status === 'ended' never reaches here, same as above. */}
-      {!presenterMode && session && session.status !== 'error' && (
+      {/* Only shown once the visitor turns audio on from the header menu. */}
+      {!presenterMode && session && session.status !== 'error' && audioStatus !== 'idle' && (
         <footer className="border-t border-white/10 px-4 py-3">
           {audioStatus === 'live' && needsUnlock && (
             <Button
@@ -983,7 +1043,15 @@ export const TranslationDisplayPage: React.FC = () => {
               {/* WebRTC direct — same room the bot publishes into, not a
                   segmented HLS pull, so this is real-time (sub-second),
                   not the "2–8s behind" caption the old HLS player carried. */}
-              <span className="text-xs text-white/50">Listening — live audio, real time.</span>
+              <span className="text-xs text-white/50 flex-1">Listening — live audio, real time.</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white shrink-0"
+                onClick={stopListening}
+              >
+                Stop
+              </Button>
             </div>
           )}
           {(audioStatus === 'connecting' || audioStatus === 'waiting-for-bot') && (
@@ -1008,21 +1076,6 @@ export const TranslationDisplayPage: React.FC = () => {
                 Try again
               </Button>
             </div>
-          )}
-          {audioStatus === 'idle' && (
-            // Explicit text/border/hover colors — outline variant's default
-            // ("border border-input bg-background", no text color of its own)
-            // inherited this page's text-white onto bg-background's light
-            // theme, same near-invisible white-on-white bug as the landing
-            // page's language buttons and the PIN-screen Cards above.
-            <Button
-              variant="outline"
-              className="w-full text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white"
-              onClick={() => setListening(true)}
-            >
-              <Volume2 className="h-4 w-4 mr-2" />
-              Listen
-            </Button>
           )}
         </footer>
       )}

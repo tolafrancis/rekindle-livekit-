@@ -881,7 +881,7 @@ export const AdminLiveChannelManager: React.FC = () => {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2">
-                      <Button
+                      <Button aria-label={t('a11y', 'viewStats', 'View stats')}
                         variant="outline"
                         size="sm"
                         onClick={() => openStatsModal(channel)}
@@ -889,7 +889,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                         <BarChart3 className="h-4 w-4" />
                       </Button>
 
-                      <Button
+                      <Button aria-label={t('a11y', 'manageEvents', 'Manage events')}
                         variant="outline"
                         size="sm"
                         onClick={() => openEventsModal(channel)}
@@ -916,7 +916,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                         <Radio className="h-4 w-4 text-purple-600" />
                       </Button>
 
-                      <Button
+                      <Button aria-label={t('a11y', 'editChannel', 'Edit channel')}
                         variant="outline"
                         size="sm"
                         onClick={() => openEditModal(channel)}
@@ -924,7 +924,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                         <Edit className="h-4 w-4" />
                       </Button>
 
-                      <Button
+                      <Button aria-label={channel.is_active ? t('a11y', 'deactivateChannel', 'Deactivate channel') : t('a11y', 'activateChannel', 'Activate channel')}
                         variant={channel.is_active ? "outline" : "default"}
                         size="sm"
                         onClick={() => toggleActiveStatus(channel)}
@@ -936,7 +936,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                         )}
                       </Button>
 
-                      <Button
+                      <Button aria-label={t('a11y', 'deleteChannel', 'Delete channel')}
                         variant="outline"
                         size="sm"
                         onClick={() => openDeleteDialog(channel)}
@@ -1043,7 +1043,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                   {t('adminLiveChannelManager', 'uploadLogo', 'Upload Logo')}
                 </Button>
                 {formData.channel_logo_url && (
-                  <Button
+                  <Button aria-label={t('a11y', 'removeLogo', 'Remove logo')}
                     type="button"
                     variant="ghost"
                     size="sm"
@@ -1086,7 +1086,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                   {t('adminLiveChannelManager', 'uploadFeaturedImage', 'Upload Featured Image')}
                 </Button>
                 {formData.featured_image_url && (
-                  <Button
+                  <Button aria-label={t('a11y', 'removeFeaturedImage', 'Remove featured image')}
                     type="button"
                     variant="ghost"
                     size="sm"
@@ -1235,7 +1235,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                   {t('adminLiveChannelManager', 'uploadLogo', 'Upload Logo')}
                 </Button>
                 {formData.channel_logo_url && (
-                  <Button
+                  <Button aria-label={t('a11y', 'removeLogo', 'Remove logo')}
                     type="button"
                     variant="ghost"
                     size="sm"
@@ -1278,7 +1278,7 @@ export const AdminLiveChannelManager: React.FC = () => {
                   {t('adminLiveChannelManager', 'uploadFeaturedImage', 'Upload Featured Image')}
                 </Button>
                 {formData.featured_image_url && (
-                  <Button
+                  <Button aria-label={t('a11y', 'removeFeaturedImage', 'Remove featured image')}
                     type="button"
                     variant="ghost"
                     size="sm"

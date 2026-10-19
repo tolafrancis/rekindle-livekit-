@@ -45,15 +45,27 @@ export function useScriptureSettings(ministryId: string): ScriptureSettings {
   const [settings, setSettings] = useState<ScriptureSettings>(DEFAULT_SCRIPTURE_SETTINGS);
   useEffect(() => {
     let cancelled = false;
-    supabase
-      .from('ministry_scripture_settings')
-      .select('preferred_version, preferred_version_label, display_seconds, auto_detect, auto_show')
-      .eq('ministry_id', ministryId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled && data) setSettings({ ...DEFAULT_SCRIPTURE_SETTINGS, ...(data as Partial<ScriptureSettings>) });
-      });
-    return () => { cancelled = true; };
+    const load = () => {
+      supabase
+        .from('ministry_scripture_settings')
+        .select('preferred_version, preferred_version_label, display_seconds, auto_detect, auto_show')
+        .eq('ministry_id', ministryId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && data) setSettings({ ...DEFAULT_SCRIPTURE_SETTINGS, ...(data as Partial<ScriptureSettings>) });
+        });
+    };
+    load();
+    // Re-read so a change made mid-meeting (e.g. from the "Open settings"
+    // tip) applies without rejoining: on return to the tab, and every 30s.
+    const timer = setInterval(load, 30_000);
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [ministryId]);
   return settings;
 }

@@ -17,7 +17,8 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { WebhookReceiver, EgressStatus, EgressClient, SegmentedFileOutput, S3Upload } from 'https://esm.sh/livekit-server-sdk@2';
+import { WebhookReceiver, EgressStatus, EgressClient, RoomServiceClient, SegmentedFileOutput, S3Upload } from 'https://esm.sh/livekit-server-sdk@2';
+import { startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
 
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 
@@ -144,6 +145,9 @@ async function autoStartHlsBroadcast(
   }).eq('id', channelId);
 
   console.log(`[livekit-webhook] Successfully auto-started broadcast for channel ${channelId}, egressId=${info.egressId}`);
+
+  // Saved YouTube/Facebook destinations go live with the OBS broadcast.
+  await startSimulcastEgresses(admin, egressClient, { isMeeting: false, targetId: channelId }, roomName);
 }
 
 // Executes stop-hls logic server-side when OBS disconnects
@@ -174,6 +178,7 @@ async function autoStopHlsBroadcast(
   if (channelId) {
     await admin.from('channel_streams').update({ hls_egress_id: null, updated_at: new Date().toISOString() }).eq('channel_id', channelId);
     await admin.from('live_channels').update({ is_hls_live: false, is_live: false }).eq('id', channelId);
+    await stopSimulcastEgresses(admin, egressClient, { isMeeting: false, targetId: channelId });
   }
 
   console.log(`[livekit-webhook] Successfully auto-stopped broadcast for channel ${channelId}`);
@@ -231,7 +236,13 @@ serve(async (req) => {
     // Verify LiveKit signature over raw request body
     const receiver = new WebhookReceiver(KEY, SECRET);
     const raw = await req.text();
-    const event = await receiver.receive(raw, req.headers.get('Authorization') ?? undefined);
+    let event: Awaited<ReturnType<typeof receiver.receive>>;
+    try {
+      event = await receiver.receive(raw, req.headers.get('Authorization') ?? undefined);
+    } catch (err) {
+      console.error('livekit-webhook: signature check failed:', err);
+      return new Response('unauthorized', { status: 401 });
+    }
 
     const admin = createClient(SB_URL, SB_SERVICE);
 
@@ -272,6 +283,16 @@ serve(async (req) => {
 
         const ended = event.event === 'egress_ended';
         const failed = info.status === EgressStatus.EGRESS_FAILED || !!info.error;
+
+        // A YouTube/Facebook restream (RTMP egress) that ended on its own,
+        // e.g. the platform rejected the stream key: show why in Broadcast setup.
+        if (ended) {
+          for (const table of ['live_channel_simulcast_targets', 'meeting_simulcast_targets']) {
+            await admin.from(table)
+              .update({ egress_id: null, status: failed ? 'error' : 'idle', last_error: failed ? (info.error || 'Restream stopped') : null, updated_at: new Date().toISOString() })
+              .eq('egress_id', info.egressId);
+          }
+        }
 
         // Real bug found live (2026-09-23): the old unconditional
         // `status: ended ? ... : 'processing'` mislabeled a perfectly
@@ -510,6 +531,29 @@ serve(async (req) => {
       }
     }
 
+    // participant_left also fires when the SAME identity is replaced (the
+    // person joined again from another tab/device: DUPLICATE_IDENTITY) or
+    // during a full reconnect. Those people never left, and the backstops
+    // below used to close their attendance and even mark a running meeting
+    // ended (2026-10-10). Ask LiveKit who is actually still there.
+    let identityStillPresent = false;
+    let realPeopleInRoom: number | null = null;
+    if (event.event === 'participant_left' && LIVEKIT_URL && event.room?.name && event.participant?.identity) {
+      try {
+        const svc = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+        const present = await svc.listParticipants(event.room.name);
+        identityStillPresent = present.some((p) => p.identity === event.participant!.identity);
+        const EGRESS_KIND = 2; // ParticipantInfo.Kind.EGRESS
+        realPeopleInRoom = present.filter((p) =>
+          p.kind !== EGRESS_KIND && !p.permission?.hidden &&
+          !p.identity.startsWith('rlt-bot-') && !p.identity.endsWith('-screenshare') &&
+          !p.identity.startsWith('caption-agent-'),
+        ).length;
+      } catch {
+        realPeopleInRoom = 0; // room already gone: nobody is there
+      }
+    }
+
     // ── 3b. Webinar Attendance (server-side backstop, close-only) ───────────
     // Real gap found in a pre-test pipeline review (2026-09-23): attendance
     // for every meeting kind except Developer API rooms relies ENTIRELY on
@@ -530,7 +574,7 @@ serve(async (req) => {
     // writer competing with it. Scoped to webinars for the same reason as
     // the room_finished backstop above (ministry_webinars.room_name is a
     // confirmed, reliable lookup key).
-    if (event.event === 'participant_left') {
+    if (event.event === 'participant_left' && !identityStillPresent) {
       const roomName = event.room?.name;
       const identity = event.participant?.identity;
       if (roomName?.startsWith('webinar-') && identity
@@ -578,7 +622,7 @@ serve(async (req) => {
     // itself before this webhook fires, so this intentionally no-ops for
     // the common case instead of double-decrementing a count the client
     // already correctly updated.
-    if (event.event === 'participant_left') {
+    if (event.event === 'participant_left' && !identityStillPresent) {
       const roomName = event.room?.name;
       const identity = event.participant?.identity;
       if (roomName?.startsWith('ministry-') && identity
@@ -607,7 +651,9 @@ serve(async (req) => {
 
             const newCount = Math.max(0, (m.participant_count ?? 1) - 1);
             const patch: Record<string, unknown> = { participant_count: newCount };
-            if (newCount === 0) {
+            // End it only when LiveKit agrees the room is empty; the client-
+            // maintained count drifts.
+            if ((realPeopleInRoom ?? (newCount === 0 ? 0 : 1)) === 0) {
               patch.is_active = false;
               patch.ended_at = new Date().toISOString();
             }
@@ -624,7 +670,7 @@ serve(async (req) => {
     // ministry_video_meetings) — the exact same class of gap exists there
     // for the exact same reason (leaveMeetingDb's own client-side self-
     // report can't run if the disconnecting client's network is down).
-    if (event.event === 'participant_left') {
+    if (event.event === 'participant_left' && !identityStillPresent) {
       const roomName = event.room?.name;
       const identity = event.participant?.identity;
       if (roomName?.startsWith('channel-') && identity
@@ -653,7 +699,9 @@ serve(async (req) => {
 
             const newCount = Math.max(0, (m.participant_count ?? 1) - 1);
             const patch: Record<string, unknown> = { participant_count: newCount };
-            if (newCount === 0) {
+            // End it only when LiveKit agrees the room is empty; the client-
+            // maintained count drifts.
+            if ((realPeopleInRoom ?? (newCount === 0 ? 0 : 1)) === 0) {
               patch.is_active = false;
               patch.ended_at = new Date().toISOString();
             }
@@ -665,7 +713,9 @@ serve(async (req) => {
 
     return new Response('ok', { status: 200 });
   } catch (error) {
+    // A processing error, not an auth failure (that's returned above): 500
+    // so it shows as one in the logs and LiveKit's retry has a reason.
     console.error('livekit-webhook error:', error);
-    return new Response('unauthorized', { status: 401 });
+    return new Response('error', { status: 500 });
   }
 });

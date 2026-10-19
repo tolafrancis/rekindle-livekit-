@@ -523,7 +523,7 @@ export const CounsellorApplicationForm: React.FC<CounsellorApplicationFormProps>
               {formData.certification_files.map((file, index) => (
                 <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <span className="text-sm truncate flex-1">{file.name}</span>
-                  <Button
+                  <Button aria-label={t('a11y', 'removeFile', 'Remove file')}
                     type="button"
                     variant="ghost"
                     size="sm"

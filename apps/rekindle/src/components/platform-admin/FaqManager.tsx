@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from '../ui/use-toast';
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 import { fetchFaqItems, FAQ_AUDIENCE_LABELS, type FaqAudience, type FaqItem } from '@rekindle/features/faq';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 // Platform-admin editor for public.faq_items (0393) — the FAQ shown on the
 // landing page and at /faq for individuals and ministry leaders.
@@ -71,7 +72,7 @@ export const FaqManager: React.FC = () => {
   };
 
   const remove = async (item: FaqItem) => {
-    if (!window.confirm(`Delete "${item.question}"?`)) return;
+    if (!await confirmAction({ title: `Delete "${item.question}"?`, confirmLabel: 'Delete', destructive: true })) return;
     const { error } = await supabase.from('faq_items').delete().eq('id', item.id);
     if (error) return toast({ title: 'Could not delete', description: error.message, variant: 'destructive' });
     load();

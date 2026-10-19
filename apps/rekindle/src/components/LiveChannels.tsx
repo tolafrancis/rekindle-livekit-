@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { toast } from './ui/use-toast';
-import { LiveChannel, ChannelFollower, CHANNEL_CATEGORIES, ChannelCategory } from '@rekindle/types/liveChannelTypes';
+import { LiveChannel, ChannelFollower, CHANNEL_CATEGORIES, ChannelCategory, ChannelEvent } from '@rekindle/types/liveChannelTypes';
 import {
   SearchFilterPanel,
   searchFilterIconClass,
@@ -57,17 +57,6 @@ import {
   searchFilterSelectTriggerClass
 } from './SearchFilterPanel';
 
-interface ChannelEvent {
-  id: string;
-  channel_id: string;
-  title: string;
-  description: string;
-  scheduled_start: string;
-  status: 'upcoming' | 'live' | 'ended' | 'cancelled';
-  is_video_enabled: boolean;
-  total_registered: number;
-  channel?: LiveChannel;
-}
 
 type LiveChannelsTab = 'discover' | 'events' | 'following' | 'my-channels' | 'meetings' | 'analytics';
 
@@ -94,6 +83,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const entitlements = useUserEntitlements();
+  const canHost = entitlements.isAdmin || entitlements.canCreateLiveChannel || entitlements.canHostInteractiveMeetings;
   const { activePrompt, show: showUpgradePrompt, dismiss: dismissUpgradePrompt } = useUpgradePrompt();
   
   console.log('[LiveChannels] Component mounted/rendered');
@@ -628,6 +618,11 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
   };
 
   // Watch channel
+  const openEventDetails = (event: ChannelEvent) => {
+    setSelectedEvent(event);
+    setShowEventDetails(true);
+  };
+
   const watchChannel = (channel: LiveChannel) => {
     setSelectedChannel(channel);
     setViewMode('watch');
@@ -739,6 +734,8 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
             size="icon"
             onClick={() => loadChannels()}
             disabled={loading}
+            aria-label={t('live', 'refreshChannels', 'Refresh channels')}
+            className="h-11 w-11"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
@@ -812,11 +809,12 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('live', 'searchChannels', "Search channels...")}
+            aria-label={t('live', 'searchChannels', "Search channels...")}
             className={searchFilterInputClass}
           />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className={`w-full sm:w-48 ${searchFilterSelectTriggerClass}`}>
+          <SelectTrigger aria-label={t('live', 'category', "Category")} className={`w-full sm:w-48 ${searchFilterSelectTriggerClass}`}>
             <SelectValue placeholder={t('live', 'allCategories', "All Categories")} />
           </SelectTrigger>
           <SelectContent>
@@ -832,32 +830,38 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
+        {/* Inside the app shell the sub-tabs come from its navigation, so this row
+            only shows when LiveChannels is used on its own. */}
+        {!onActiveTabChange && (
         <TabsList className="flex w-full overflow-x-auto gap-1 h-auto p-1 flex-nowrap md:hidden">
-          <TabsTrigger value="discover" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="discover" data-tour="live-tab-discover" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Tv className="h-4 w-4" />
             Discover
           </TabsTrigger>
-          <TabsTrigger value="events" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="events" data-tour="live-tab-events" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Calendar className="h-4 w-4" />
             Events
           </TabsTrigger>
-          <TabsTrigger value="following" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="following" data-tour="live-tab-following" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Heart className="h-4 w-4" />
             Following ({followedChannels.length})
           </TabsTrigger>
-          <TabsTrigger value="my-channels" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          {canHost && (<>
+          <TabsTrigger value="my-channels" data-tour="live-tab-my-channels" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Mic className="h-4 w-4" />
             My Channels ({myChannels.length})
           </TabsTrigger>
-          <TabsTrigger value="meetings" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="meetings" data-tour="live-tab-meetings" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <Video className="h-4 w-4" />
             Meetings
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+          <TabsTrigger value="analytics" data-tour="live-tab-analytics" className="flex items-center gap-1 text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
             <BarChart3 className="h-4 w-4" />
             Analytics
           </TabsTrigger>
+          </>)}
         </TabsList>
+        )}
 
 
         {/* Discover Tab */}
@@ -908,8 +912,12 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                       <p className="text-sm text-gray-500 mb-3">{event.channel?.name}</p>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <span className="text-sm text-gray-500">{event.total_registered} registered</span>
-                        <Button variant="outline" size="sm">
-                          Register
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEventDetails(event)}
+                        >
+                          Details &amp; register
                         </Button>
                       </div>
                     </CardContent>
@@ -960,6 +968,29 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
               </div>
             )}
           </div>
+        </TabsContent>
+
+        {/* Events Tab — calendar of live and upcoming events; tapping one
+            opens its details, where members register or watch. */}
+        <TabsContent value="events" className="mt-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            </div>
+          ) : liveEvents.length + upcomingEvents.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Calendar className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No upcoming events</h3>
+              <p className="text-gray-500">
+                Scheduled broadcasts from all channels appear here. Follow channels to hear when they go live.
+              </p>
+            </Card>
+          ) : (
+            <LiveChannelEventsCalendar
+              events={[...liveEvents, ...upcomingEvents]}
+              onEventClick={openEventDetails}
+            />
+          )}
         </TabsContent>
 
         {/* Following Tab */}
@@ -1067,7 +1098,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                           <li>Turn <b>recording</b> on or off for replays.</li>
                           <li>Get <b>OBS / encoder</b> details to stream from external software (under Advanced).</li>
                         </ul>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-500">
                           To just go live from your browser, use the “Go Live” button — no setup needed.
                         </p>
                       </PopoverContent>
@@ -1230,6 +1261,18 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
         </TabsContent>
       </Tabs>
 
+      <LiveChannelEventDetails
+        event={selectedEvent}
+        open={showEventDetails}
+        onOpenChange={setShowEventDetails}
+        onWatchLive={() => {
+          if (selectedEvent?.channel) {
+            setShowEventDetails(false);
+            watchChannel(selectedEvent.channel);
+          }
+        }}
+      />
+
       {/* Create Channel Modal */}
       {editChannel && (
         <ChannelDetailsDialog
@@ -1283,7 +1326,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                 value={newChannel.category}
                 onValueChange={(value: ChannelCategory) => setNewChannel(prev => ({ ...prev, category: value }))}
               >
-                <SelectTrigger>
+                <SelectTrigger id="channel-category">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1330,7 +1373,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
 
             {/* Channel Logo - Optional, Compact */}
             <div className="space-y-2">
-              <Label>{t('live', 'channelLogoOptional', "Channel Logo (Optional)")}</Label>
+              <Label htmlFor="channel-logo-file">{t('live', 'channelLogoOptional', "Channel Logo (Optional)")}</Label>
               <div className="flex items-center gap-3">
                 {newChannel.channel_logo_url ? (
                   <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
@@ -1338,6 +1381,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                     <button
                       type="button"
                       onClick={() => setNewChannel(prev => ({ ...prev, channel_logo_url: '' }))}
+                      aria-label={t('live', 'removeLogo', 'Remove logo')}
                       className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
                     >
                       <X className="h-3 w-3" />
@@ -1350,6 +1394,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                 )}
                 <div className="flex-1 min-w-0">
                   <Input
+                    id="channel-logo-file"
                     type="file"
                     accept="image/*"
                     onChange={handleLogoUpload}
@@ -1368,13 +1413,14 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
 
             {/* Featured Image - Optional, Compact */}
             <div className="space-y-2">
-              <Label>Featured Image (Optional)</Label>
+              <Label htmlFor="channel-featured-file">Featured Image (Optional)</Label>
               {newChannel.featured_image_url ? (
                 <div className="relative w-full h-24 rounded-lg overflow-hidden border-2 border-gray-200">
                   <img src={newChannel.featured_image_url} alt="Featured" className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => setNewChannel(prev => ({ ...prev, featured_image_url: '' }))}
+                    aria-label={t('live', 'removeFeaturedImage', 'Remove featured image')}
                     className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
                   >
                     <X className="h-3 w-3" />
@@ -1386,6 +1432,7 @@ export const LiveChannels: React.FC<LiveChannelsProps> = ({ activeTab: controlle
                 </div>
               )}
               <Input
+                id="channel-featured-file"
                 type="file"
                 accept="image/*"
                 onChange={handleFeaturedUpload}

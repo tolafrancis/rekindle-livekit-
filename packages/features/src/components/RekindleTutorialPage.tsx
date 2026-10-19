@@ -96,6 +96,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['choose-notifications', 'Choose your notifications'],
   ]],
   ['For members', [
+    ['member-stream', 'Choose your devotional stream'],
     ['member-devotionals', 'Read today’s devotional'],
     ['member-prayer', 'Share a prayer request'],
     ['member-journal', 'Keep a prayer journal'],
@@ -111,6 +112,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['leader-people', 'Add and manage members'],
     ['leader-qr', 'Set up QR self-registration'],
     ['leader-kiosk', 'Turn a tablet into a check-in kiosk'],
+    ['leader-devotional-source', 'Choose your devotional source'],
     ['leader-devotional', 'Publish a devotional'],
     ['leader-live', 'Go live'],
     ['leader-meetings', 'Schedule an interactive meeting'],
@@ -217,6 +219,18 @@ const TutorialContent: React.FC = () => (
       <h3>For members</h3>
       <p>The everyday things: reading, praying, watching and giving.</p>
     </div>
+
+    <TutorialSection
+      id="member-stream" eyebrow="Members" title="Choose your devotional stream"
+      path={['Home', 'Devotional stream']}
+      steps={[
+        { text: <>From the main navigation tap <strong>Home</strong>. Just above today’s devotional you’ll see <strong>Devotional stream:</strong> followed by the one you’re following now.</>, shot: 'devotional-stream.png', alt: 'The Devotional stream picker on Home' },
+        { text: <>Tap <strong>Change</strong> to see every stream available. The one marked <strong>Default</strong> is what you get until you pick your own.</> },
+        { text: <>Tap the stream you want to follow. A tick shows your choice and today’s devotional updates straight away.</> },
+        { text: <>Each day’s devotional on Home now comes from that stream. You can come back and switch at any time.</> },
+      ]}
+      tip="Using your church’s own space? There, the devotional on its homepage is chosen by your ministry’s leaders."
+    />
 
     <TutorialSection
       id="member-devotionals" eyebrow="Members" title="Read today’s devotional"
@@ -331,7 +345,7 @@ const TutorialContent: React.FC = () => (
     <div className="guide-part">
       <p className="eyebrow">Part 3</p>
       <h3>For ministry leaders</h3>
-      <p>Everything here happens in your ministry’s dashboard: <strong>Ministries › Manage</strong>. The dashboard’s own menu has Live, Ministry and Settings groups, and Settings is split into Overview, General, People, Content, Engagement and Finance &amp; Billing.</p>
+      <p>Everything here happens in your ministry’s dashboard: <strong>Ministries › Manage</strong>. The dashboard’s own menu has Live, Ministry and Settings groups, and Settings is split into Overview, Members, Events, Content, Messages, Finance and Ministry profile, and each one shows a row of tools you can switch between.</p>
     </div>
 
     <TutorialSection
@@ -352,7 +366,7 @@ const TutorialContent: React.FC = () => (
       id="leader-people" eyebrow="Leaders" title="Add and manage members"
       path={['Ministries', 'Manage', 'Settings', 'People']}
       steps={[
-        { text: <>Open <strong>Ministries › Manage</strong>, then <strong>Settings › People</strong>.</>, shot: 'people.png', alt: 'Settings › People, the members list' },
+        { text: <>Open <strong>Ministries › Manage</strong>, then <strong>Settings › Members</strong>.</>, shot: 'people.png', alt: 'Settings › Members, the members list' },
         { text: <>The Members list shows everyone, including people who registered themselves, with their role, status and attendance.</> },
         { text: <>Review new sign-ups here. Likely duplicates are flagged for you, so approve or merge them.</> },
         { text: <>Open a member to change their role: Leader, Admin, Content editor or Member.</> },
@@ -362,26 +376,38 @@ const TutorialContent: React.FC = () => (
 
     <TutorialSection
       id="leader-qr" eyebrow="Leaders" title="Set up QR self-registration"
-      path={['Manage', 'Settings', 'General', 'Member Registration']}
+      path={['Manage', 'Settings', 'Members', 'Join link & QR']}
       steps={[
-        { text: <>In your dashboard go to <strong>Settings › General</strong> and find <strong>Member Registration</strong>.</>, shot: 'registration.png', alt: 'Member Registration settings' },
+        { text: <>In your dashboard go to <strong>Settings › Members</strong>, open <strong>Join link &amp; QR</strong> and find <strong>Member Registration</strong>.</>, shot: 'registration.png', alt: 'Member Registration settings' },
         { text: <>Set your join address, choose whether to <strong>Require admin approval</strong>, and tap <strong>Save registration settings</strong>.</> },
         { text: <>Your <strong>Join QR code</strong> appears. Tap <strong>Print SVG</strong> to print it for the welcome desk or slides, or <strong>Copy link</strong> to share it online.</> },
-        { text: <>Newcomers scan it, fill in the short form on their own phone, and appear under <strong>Settings › People</strong>.</> },
+        { text: <>Newcomers scan it, fill in the short form on their own phone, and appear under <strong>Settings › Members</strong>.</> },
         { text: <>If a code is ever shared too widely, tap <strong>Regenerate</strong>. Old codes and links stop working straight away.</> },
       ]}
     />
 
     <TutorialSection
       id="leader-kiosk" eyebrow="Leaders" title="Turn a tablet into a check-in kiosk"
-      path={['Manage', 'Settings', 'General', 'Kiosk check-in mode']}
+      path={['Manage', 'Settings', 'Members', 'Join link & QR']}
       steps={[
-        { text: <>In <strong>Settings › General</strong>, set a <strong>Kiosk PIN (4 digits)</strong> and switch on <strong>Kiosk check-in mode</strong>. Save.</> },
+        { text: <>In <strong>Settings › Members › Join link &amp; QR</strong>, set a <strong>Kiosk PIN (4 digits)</strong> and switch on <strong>Kiosk check-in mode</strong>. Save.</> },
         { text: <>On the tablet you’ll leave at the door, sign in and open the same screen, then tap <strong>Use this device</strong>. The kiosk opens full-screen.</>, shot: 'kiosk.png', alt: 'The kiosk check-in screen' },
         { text: <>Members check in with their phone number or email, which records their attendance. First-time visitors register on the spot.</> },
         { text: <>Each person’s details clear before the next, and the kiosk can only be closed with your PIN, so it’s safe to leave unattended.</> },
         { text: <>You’ll see every active kiosk under <strong>Active kiosk devices</strong>, with when it was last seen.</> },
       ]}
+    />
+
+    <TutorialSection
+      id="leader-devotional-source" eyebrow="Leaders" title="Choose your devotional source"
+      path={['Manage', 'Settings', 'Content', 'Devotionals']}
+      steps={[
+        { text: <>In your dashboard go to <strong>Settings › Content</strong> and open <strong>Devotionals</strong>. The <strong>Daily Devotional Source</strong> card is at the top.</>, shot: 'devotional-source.png', alt: 'The Daily Devotional Source card' },
+        { text: <>Choose <strong>Write our own</strong> to show the devotionals your team publishes on your ministry’s homepage.</> },
+        { text: <>Or choose <strong>Use a ReKindle stream</strong>, then pick a stream from the list, to show a ready-made daily devotional instead.</> },
+        { text: <>Your choice saves straight away and your members see it on the homepage from then on. You can switch at any time.</> },
+      ]}
+      tip="Choose this before you invite members, so the first devotional they see is the one you intend."
     />
 
     <TutorialSection
@@ -401,7 +427,8 @@ const TutorialContent: React.FC = () => (
       path={['Manage', 'Live', 'Live Channel']}
       steps={[
         { text: <>In your dashboard open <strong>Live › Live Channel</strong>.</>, shot: 'live-channel.png', alt: 'Your ministry’s Live Channel' },
-        { text: <><strong>From a phone or laptop:</strong> tap <strong>Go Live</strong>, allow camera and microphone, give the broadcast a title and start.</> },
+        { text: <><strong>From a phone or laptop (no OBS needed):</strong> tap <strong>Go Live</strong> and allow camera and microphone. Choose your camera from the <strong>Camera Device</strong> list: the built-in camera, a USB camera, or your phone as a webcam (for example with DroidCam).</> },
+        { text: <>Give the broadcast a title and tap <strong>Go Live</strong> once. Your camera and mic come on and viewers see you straight away.</> },
         { text: <><strong>From OBS or a video mixer:</strong> tap <strong>Broadcast setup (OBS / encoder)</strong>, open <strong>Advanced</strong> for the OBS / encoder details, copy them into your software and start streaming from there. The same screen lets you restream to YouTube Live and Facebook Live and turn recording on or off.</> },
         { text: <>Share your channel link. Viewers don’t need to sign in to watch.</> },
         { text: <>When you end the broadcast, the recording is saved to the channel for catch-up.</> },
@@ -506,11 +533,11 @@ const TutorialContent: React.FC = () => (
 
     <TutorialSection
       id="leader-giving" eyebrow="Leaders" title="Set up giving and Gift Aid"
-      path={['Manage', 'Settings', 'Finance & Billing']}
+      path={['Manage', 'Settings', 'Finance']}
       steps={[
-        { text: <>In your dashboard go to <strong>Settings › Finance &amp; Billing</strong>.</>, shot: 'finance.png', alt: 'Finance & Billing settings' },
-        { text: <>Connect a payment provider so members can give by card.</> },
-        { text: <>UK ministries: open the Gift Aid settings and enter your charity details.</> },
+        { text: <>In your dashboard go to <strong>Settings › Finance</strong>.</>, shot: 'finance.png', alt: 'Finance settings' },
+        { text: <>Under <strong>Payment gateways</strong>, connect a payment provider so members can give by card.</> },
+        { text: <>UK ministries: open <strong>Gift Aid</strong> and enter your charity details.</> },
         { text: <>Gifts with a Gift Aid declaration are tracked for you. Review eligible donations and export them to claim from HMRC.</> },
         { text: <>Track one-off and regular giving under <strong>Ministry › Donations</strong>.</> },
       ]}

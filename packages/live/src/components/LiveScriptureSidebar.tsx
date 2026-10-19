@@ -3,7 +3,7 @@ import { CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Switch } from '@rekindle/ui/switch';
-import { BookOpen, X, Loader2, EyeOff } from 'lucide-react';
+import { BookOpen, X, Loader2, EyeOff, Settings } from 'lucide-react';
 import type { ScriptureControlState } from './FloatingTranslationButton';
 
 interface LiveScriptureSidebarProps extends ScriptureControlState {
@@ -28,6 +28,8 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
   hiding,
   onHide,
   canControl,
+  autoOff,
+  onOpenSettings,
   onClose,
 }) => {
   return (
@@ -67,6 +69,21 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
           </p>
         ) : (
           <>
+            {canControl && autoOff && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                <p className="font-semibold text-amber-200">Verses won't show on their own yet</p>
+                <p className="mt-1 leading-snug">
+                  To put verses on screen as they're spoken, switch on both
+                  {' '}<span className="font-medium text-white">Detect references automatically</span> and
+                  {' '}<span className="font-medium text-white">Show confirmed verses automatically</span> in
+                  your ministry's Live Translation settings. You can choose a Bible version there too.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2.5 h-8 w-full" onClick={onOpenSettings}>
+                  <Settings className="h-3.5 w-3.5 mr-1.5" /> Open settings
+                </Button>
+                <p className="mt-1.5 text-xs text-amber-200/80">The meeting keeps running in the mini player.</p>
+              </div>
+            )}
             {onScreenVerse ? (
               <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-indigo-300">
@@ -82,7 +99,7 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
               </div>
             ) : (
               <p className="text-sm text-gray-400">
-                {canControl ? "Listening for Bible references in the captions…" : 'Nothing on screen right now.'}
+                {canControl && !autoOff ? "Listening for Bible references in the captions…" : 'Nothing on screen right now.'}
               </p>
             )}
 

@@ -48,10 +48,11 @@ const STATUS_DOT: Record<SimulcastTarget['status'], string> = {
   error: 'bg-red-500',
 };
 
-const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contextKind?: StreamContext['kind']; isLive: boolean }> = ({ channelId, meetingId, contextKind = 'channel', isLive }) => {
+const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; roomName?: string; contextKind?: StreamContext['kind']; isLive: boolean }> = ({ channelId, meetingId, roomName, contextKind = 'channel', isLive }) => {
   const { t } = useLanguage();
   const targetId = meetingId ?? channelId ?? '';
-  const streamCtx: StreamContext = { kind: contextKind, id: targetId };
+  // roomName matters: livekit-egress only streams a room its context owns.
+  const streamCtx: StreamContext = { kind: contextKind, id: targetId, roomName };
   const blank = <T,>(v: T) => ({ youtube: v, facebook: v } as Record<SimulcastPlatform, T>);
 
   const [loading, setLoading] = useState(true);
@@ -75,7 +76,7 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contex
       const en = blank(true);
       for (const row of res.data.targets) {
         byPlatform[row.platform] = row;
-        su[row.platform] = row.server_url;
+        su[row.platform] = row.server_url || SIMULCAST_DESTINATIONS[row.platform].defaultServerUrl;
         en[row.platform] = row.enabled;
       }
       setTargets(byPlatform);
@@ -99,7 +100,7 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contex
         const en = { youtube: true, facebook: true };
         for (const row of res.data.targets) {
           byPlatform[row.platform] = row;
-          su[row.platform] = row.server_url;
+          su[row.platform] = row.server_url || SIMULCAST_DESTINATIONS[row.platform].defaultServerUrl;
           en[row.platform] = row.enabled;
         }
         setTargets(byPlatform);
@@ -140,7 +141,12 @@ const RestreamSection: React.FC<{ channelId?: string; meetingId?: string; contex
       setReplacing((r) => ({ ...r, [platform]: false }));
       setShowKey((s) => ({ ...s, [platform]: false }));
       await load();
-      toast({ title: t('channelStreamConfig', 'restreamConnectedX', '{platform} restream connected').replace('{platform}', String(SIMULCAST_DESTINATIONS[platform].label)) });
+      toast({
+        title: t('channelStreamConfig', 'restreamConnectedX', '{platform} restream connected').replace('{platform}', String(SIMULCAST_DESTINATIONS[platform].label)),
+        description: res.data?.started
+          ? undefined
+          : t('channelStreamConfig', 'restreamStartsOnLive', 'It starts automatically when you go live.'),
+      });
     } finally {
       setBusy(null);
     }
@@ -679,6 +685,7 @@ export const ChannelStreamConfig: React.FC<ChannelStreamConfigProps> = ({ channe
             <RestreamSection
               channelId={!isMeeting ? channel?.id : undefined}
               meetingId={isMeeting ? targetId : undefined}
+              roomName={streamCtx.roomName}
               contextKind={resolvedKind}
               isLive={isMeeting ? false : !!channel?.is_live}
             />

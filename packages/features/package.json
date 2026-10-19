@@ -13,6 +13,7 @@
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./data/*": "./src/data/*.ts",
+    "./tutorial/*": "./src/tutorial/*.tsx",
     "./*": "./src/*.ts"
   },
   "dependencies": {

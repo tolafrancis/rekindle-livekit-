@@ -485,7 +485,7 @@ function TopUpDialog({
                 }`}
               >
                 {pkg.popular && (
-                  <span className="absolute -top-2 left-3 text-[10px] font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">
+                  <span className="absolute -top-2 left-3 text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">
                     {t('broadcastWallet', 'popular', 'POPULAR')}
                   </span>
                 )}
@@ -496,7 +496,7 @@ function TopUpDialog({
                 <p className="text-base font-semibold text-green-700 mt-1">
                   ${pkg.usd.toFixed(2)}
                 </p>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   ${WHATSAPP_COST_PER_MESSAGE.toFixed(2)}{t('broadcastWallet', 'perMsg', '/msg')}
                 </p>
               </button>
@@ -585,7 +585,7 @@ function TransactionRow({ tx }: { tx: WalletTransaction }) {
             ? <XCircle className="h-3 w-3 text-red-400" />
             : <Clock className="h-3 w-3 text-amber-400" />
           }
-          <span className="text-[10px] text-muted-foreground">{formatDate(tx.created_at)}</span>
+          <span className="text-xs text-muted-foreground">{formatDate(tx.created_at)}</span>
         </div>
       </div>
     </div>

@@ -33,6 +33,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { RoomServiceClient, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -168,8 +169,15 @@ serve(async (req) => {
     const admin = createClient(SB_URL!, SB_SERVICE!);
     const svc = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
 
+    // Only the part of the context that owns roomName counts (2026-10-10):
+    // hosting one meeting/channel must not authorize moderating another room.
+    const bound = await bindRoomContext(admin, body.roomName, body.context);
+    if (!bound.ok) return json({ error: 'room_mismatch' }, 403);
+    body.context = bound.ctx;
+
     // Authorize as host (DB) or co-host (LiveKit metadata).
-    let authorized = await isDbHost(admin, user.id, body.context);
+    const callerIsDbHost = await isDbHost(admin, user.id, body.context);
+    let authorized = callerIsDbHost;
     if (!authorized) {
       try {
         const me = await svc.getParticipant(body.roomName, user.id);
@@ -224,11 +232,28 @@ serve(async (req) => {
 
       case 'set-role': {
         if (!body.identity || !body.role) return json({ error: 'identity and role required' }, 400);
-        const canPublish = body.role === 'host' || body.role === 'co-host' || body.role === 'speaker';
+        const ROLES = ['host', 'co-host', 'speaker', 'attendee', 'viewer'];
+        if (!ROLES.includes(body.role)) return json({ error: 'invalid role' }, 400);
+        const target = await svc.getParticipant(body.roomName, body.identity);
+        let targetMeta: Record<string, unknown> = {};
+        try { targetMeta = target?.metadata ? JSON.parse(target.metadata) : {}; } catch { /* keep {} */ }
+        // Only the real (DB) host may hand out 'host' or change the host's own
+        // role; a co-host could otherwise demote the host or promote itself
+        // (2026-10-10, previously guarded only in the browser).
+        if (!callerIsDbHost && (body.role === 'host' || targetMeta.role === 'host')) {
+          return json({ error: 'Only the host can change the host role' }, 403);
+        }
+        // In a two-way meeting an attendee speaks (their join token can
+        // publish), so demoting someone to attendee mustn't silently take the
+        // mic away. Only broadcasts/webinars have listen-only audiences.
+        const kind = body.context?.kind;
+        const audienceListensOnly = kind === 'channel' || kind === 'ministry_webinar';
+        const canPublish = body.role !== 'viewer' && (body.role !== 'attendee' || !audienceListensOnly);
         await svc.updateParticipant(
           body.roomName,
           body.identity,
-          JSON.stringify({ role: body.role }),
+          // Merge: keep avatarUrl / guest flag that the join token carried.
+          JSON.stringify({ ...targetMeta, role: body.role }),
           { canPublish, canSubscribe: true, canPublishData: true },
         );
         return json({ success: true });

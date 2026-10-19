@@ -29,6 +29,7 @@ import {
   Layers, Plus, Edit, Trash2, Loader2, Star, Eye, EyeOff, Save,
   Hand, Sparkles, Rss, Play, AlertTriangle, CheckCircle2, PenLine,
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 type Mode = 'manual' | 'ai' | 'scrape';
 
@@ -209,7 +210,7 @@ export const AdminDevotionalStreamsManager: React.FC<{
       toast({ title: t('adminDevotionalStreams', 'cannotDeleteDefault', 'The default stream cannot be deleted'), variant: 'destructive' });
       return;
     }
-    if (!confirm(t('adminDevotionalStreams', 'confirmDelete', 'Delete this stream? Its devotionals are kept and fall back to the default stream.'))) return;
+    if (!await confirmAction({ title: t('adminDevotionalStreams', 'confirmDeleteTitle', 'Delete this stream?'), description: t('adminDevotionalStreams', 'confirmDeleteDesc', 'Its devotionals are kept and fall back to the default stream.'), confirmLabel: t('adminDevotionalStreams', 'delete', 'Delete'), destructive: true })) return;
     const { error } = await supabase.from('devotional_streams').delete().eq('id', s.id);
     if (error) {
       toast({ title: t('adminDevotionalStreams', 'deleteFailed', 'Could not delete stream'), description: error.message, variant: 'destructive' });
@@ -334,8 +335,8 @@ export const AdminDevotionalStreamsManager: React.FC<{
                     {runningId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 text-purple-600" />}
                   </Button>
                 )}
-                <Button size="icon" variant="ghost" onClick={() => openEdit(s)}><Edit className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" onClick={() => remove(s)} disabled={s.is_default}>
+                <Button aria-label={t('a11y', 'editStream', 'Edit stream')} size="icon" variant="ghost" onClick={() => openEdit(s)}><Edit className="h-4 w-4" /></Button>
+                <Button aria-label={t('a11y', 'deleteStream', 'Delete stream')} size="icon" variant="ghost" onClick={() => remove(s)} disabled={s.is_default}>
                   <Trash2 className={`h-4 w-4 ${s.is_default ? 'text-gray-300' : 'text-red-500'}`} />
                 </Button>
               </div>

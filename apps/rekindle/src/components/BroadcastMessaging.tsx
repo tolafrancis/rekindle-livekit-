@@ -517,7 +517,7 @@ export const BroadcastMessaging: React.FC<BroadcastMessagingProps> = ({ onSend }
                   <span className="text-sm font-medium text-green-800 flex items-center gap-2">
                     <Wallet className="h-4 w-4" /> {t('broadcastMessaging', 'whatsappCreditsWallet', 'WhatsApp Credits Wallet')}
                   </span>
-                  <button
+                  <button aria-label={t('a11y', 'close', 'Close')}
                     onClick={() => setShowWalletPanel(false)}
                     className="text-green-600 hover:text-green-800 text-lg leading-none"
                   >

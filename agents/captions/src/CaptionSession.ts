@@ -35,6 +35,8 @@ import { HlsBroadcaster } from './HlsBroadcaster.js';
 import { SpeakerTranscriber, type CaptionUpdate } from './SpeakerTranscriber.js';
 
 const HEARTBEAT_MS = 30_000;
+/** Data topic the apps listen on (packages/live/src/LiveKitRoomWrapper.ts). */
+const CAPTIONS_TOPIC = 'rekindle.captions';
 const USAGE_TICK_MS = 60_000;
 
 export class CaptionSession {
@@ -52,6 +54,9 @@ export class CaptionSession {
   private alerted = false;
   private stopped = false;
   private hlsViewerRecent = false;
+  // Diagnostics: log the first active speaker and first caption published.
+  private loggedFirstPublish = false;
+  private loggedFirstSpeaker = false;
   private broadcaster: HlsBroadcaster | null = null;
   private readonly log: (...args: unknown[]) => void;
 
@@ -216,6 +221,7 @@ export class CaptionSession {
 
   private onActiveSpeakers(speakers: Participant[]): void {
     this.activeSpeakers = new Set(speakers.filter((p) => this.isSpeaker(p)).map((p) => p.identity));
+    if (this.activeSpeakers.size && !this.loggedFirstSpeaker) { this.loggedFirstSpeaker = true; this.log('first active speaker reported by LiveKit'); }
     for (const participant of this.room.remoteParticipants.values()) {
       const active = this.activeSpeakers.has(participant.identity);
       for (const pub of participant.trackPublications.values()) {
@@ -247,20 +253,25 @@ export class CaptionSession {
       this.broadcaster.send(update, speaker?.name || update.speakerIdentity);
     }
     try {
-      await this.room.localParticipant?.publishTranscription({
-        participantIdentity: update.speakerIdentity,
-        trackSid: update.trackSid,
-        segments: [{
-          id: update.segmentId,
-          text: update.text,
-          startTime: BigInt(update.startMs),
-          endTime: BigInt(update.endMs),
-          language: update.language,
-          final: update.final,
-        }],
+      if (!this.loggedFirstPublish) { this.loggedFirstPublish = true; this.log('publishing captions to the room'); }
+      // Plain data on CAPTIONS_TOPIC, read by LiveKitRoomWrapper. LiveKit
+      // Cloud never delivered publishTranscription's legacy transcription
+      // packets to anyone (verified 2026-10-07), so captions didn't show.
+      const payload = {
+        id: update.segmentId,
+        text: update.text,
+        final: update.final,
+        language: update.language,
+        startMs: update.startMs,
+        endMs: update.endMs,
+        speaker: update.speakerIdentity,
+      };
+      await this.room.localParticipant?.publishData(new TextEncoder().encode(JSON.stringify(payload)), {
+        reliable: true,
+        topic: CAPTIONS_TOPIC,
       });
     } catch (err) {
-      console.warn('[session] publishTranscription failed:', (err as Error).message);
+      console.warn('[session] publishing caption failed:', (err as Error).message);
     }
   }
 

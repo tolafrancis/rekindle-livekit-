@@ -35,7 +35,8 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { AccessToken, RoomServiceClient } from 'https://esm.sh/livekit-server-sdk@2';
+import { AccessToken, RoomServiceClient, TokenVerifier } from 'https://esm.sh/livekit-server-sdk@2';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -80,6 +81,10 @@ interface RequestBody {
   // rlt-bot- handling) — never a client-chosen identity, always `<caller's own
   // resolved identity>-screenshare`, so this can't be used to spoof anyone else.
   asScreenShareShadow?: boolean;
+  /** With asScreenShareShadow: the token the caller joined the room with.
+   *  Required for guests, whose identity is random per token: the shadow
+   *  must be named after the identity they're actually connected as. */
+  joinToken?: string;
 }
 
 // meetings tables that carry host_id, keyed by context.kind.
@@ -322,9 +327,30 @@ serve(async (req) => {
     // random one so LiveKit never collapses two guests into one participant.
     const identity = user?.id ?? `guest-${crypto.randomUUID()}`;
 
-    const role: Role = isGuest
-      ? (body.viewerOnly ? 'viewer' : 'attendee')
-      : await resolveRole(admin, user!.id, body);
+    // Room binding (2026-10-10): roles below come from body.context, but every
+    // action runs against body.roomName. Keep only the part of the context that
+    // genuinely owns this room, so being host of one meeting/channel can't be
+    // replayed against someone else's room. room-occupancy only reveals a
+    // head count, so it stays unbound.
+    if (action !== 'room-occupancy') {
+      const bound = await bindRoomContext(admin, body.roomName, body.context);
+      if (!bound.ok) return json({ error: 'room_mismatch' }, 403);
+      // A join token (and anything a non-host does) needs a room we can
+      // identify; an unbound room has no owner, so nobody may manage it either.
+      if (!bound.bound) return json({ error: 'context_required' }, 400);
+      body.context = bound.ctx as RequestBody['context'];
+    }
+    const kind = body.context?.kind;
+
+    // Guests: public share links exist for meetings, channels and webinars only.
+    // Never counselling (a private 1:1 session). Channel broadcasts and webinars
+    // are watch-only for guests; meetings honour the viewerOnly request.
+    if (isGuest && action === 'token' && kind === 'counselling') {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+    const guestRole: Role = body.viewerOnly || kind === 'channel' || kind === 'ministry_webinar' ? 'viewer' : 'attendee';
+
+    const role: Role = isGuest ? guestRole : await resolveRole(admin, user!.id, body);
     const isHost = role === 'host';
 
     // ── Room occupancy (read-only) ─────────────────────────────────────────
@@ -421,21 +447,48 @@ serve(async (req) => {
     // not just redundant. A viewer can't publish at all (grantFor already denies
     // canPublish for that role), so screen share is denied here the same way.
     if (body.asScreenShareShadow) {
-      if (role === 'viewer') return json({ error: 'Viewers cannot share their screen' }, 403);
-      const shadowIdentity = `${identity}-screenshare`;
+      // A guest's identity is minted fresh for every token, so the shadow used
+      // to get a different random guest id from the one actually in the room:
+      // nobody's tile matched it and the share was invisible (2026-10-10).
+      // Take the identity and role from the guest's own join token instead,
+      // after checking it's one we signed for this room. Expiry doesn't
+      // matter (LiveKit refreshes tokens of connected clients).
+      let baseIdentity = identity;
+      let shadowRole: Role = role;
+      if (isGuest) {
+        if (!body.joinToken) return json({ error: 'join_token_required' }, 400);
+        try {
+          const g = await new TokenVerifier(LIVEKIT_API_KEY, LIVEKIT_API_SECRET).verify(body.joinToken, 12 * 60 * 60);
+          if (!g.sub?.startsWith('guest-') || g.video?.room !== body.roomName || !g.video?.roomJoin) {
+            return json({ error: 'Not a participant of this room' }, 403);
+          }
+          baseIdentity = g.sub;
+          const meta = g.metadata ? JSON.parse(g.metadata) : {};
+          shadowRole = meta.role === 'attendee' ? 'attendee' : 'viewer';
+        } catch {
+          return json({ error: 'Invalid room token' }, 401);
+        }
+      }
+      if (shadowRole === 'viewer') return json({ error: 'Viewers cannot share their screen' }, 403);
+      const shadowIdentity = `${baseIdentity}-screenshare`;
       const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
         identity: shadowIdentity,
         name: `${body.userName ?? user?.email ?? 'Guest'} (screen share)`,
-        metadata: JSON.stringify({ role, guest: isGuest, screenShareShadow: true }),
+        metadata: JSON.stringify({ role: shadowRole, guest: isGuest, screenShareShadow: true }),
         ttl: '2h',
       });
       at.addGrant({ room: body.roomName, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: false });
-      return json({ url: LIVEKIT_URL, token: await at.toJwt(), role });
+      return json({ url: LIVEKIT_URL, token: await at.toJwt(), role: shadowRole });
     }
 
     // Gate: waiting room (§1C/§3D) — non-hosts get queued instead of a token,
     // UNLESS a host has already admitted them (status='admitted' → fall through
     // and mint the token; that's how admitFromWaitingRoom lets the client back in).
+    if (body.enableWaitingRoom && !isHost && isGuest) {
+      // The queue is keyed on a user id a guest doesn't have, so a guest could
+      // never be admitted; before 2026-10-10 they simply skipped it instead.
+      return json({ error: 'sign_in_required' }, 403);
+    }
     if (body.enableWaitingRoom && !isHost && !isGuest) {
       const meetingKey = body.context?.meetingId ?? body.roomName;
       const { data: existing } = await admin
@@ -474,8 +527,15 @@ serve(async (req) => {
       let realCount = 0;
       try {
         const participants = await withTimeout(svc.listParticipants(body.roomName), 8000, 'listParticipants');
-        // The hidden on-demand caption agent (agents/captions) never takes a seat.
-        realCount = participants.filter((p) => !p.identity.startsWith('caption-agent-')).length;
+        // Only real people take a seat: not the hidden caption agent or
+        // translation listeners, the translation bot, screen-share shadows or
+        // recording/stream egress (2026-10-10, those used to count).
+        const EGRESS_KIND = 2; // livekit ParticipantInfo.Kind.EGRESS
+        realCount = participants.filter((p) =>
+          !p.permission?.hidden && p.kind !== EGRESS_KIND &&
+          !p.identity.startsWith('caption-agent-') && !p.identity.startsWith('rlt-') &&
+          !p.identity.endsWith('-screenshare'),
+        ).length;
       } catch { /* room not up yet → 0 real participants */ }
 
       if (realCount >= MEETING_PARTICIPANT_CAP) {

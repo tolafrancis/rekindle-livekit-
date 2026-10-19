@@ -47,7 +47,7 @@ export const BadgeCard: React.FC<Props> = ({ badge }) => {
         {/* Rarity indicator */}
         {badge.earned && (
           <div className="absolute -top-2 -right-2">
-            <UIBadge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+            <UIBadge variant="secondary" className="text-xs px-1.5 py-0.5">
               {badge.rarity}
             </UIBadge>
           </div>

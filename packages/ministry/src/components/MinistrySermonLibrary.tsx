@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { FileText, UploadCloud, Sparkles, CheckCircle2, Trash2, Link2, Youtube, Loader2, AlertTriangle } from 'lucide-react';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface SermonEntry {
   id: string;
@@ -677,7 +678,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
       toast({ title: 'Paste a YouTube link first', description: 'Add the video URL above, then fetch its transcript.', variant: 'destructive' });
       return;
     }
-    if (transcript.trim() && !window.confirm('This will replace the transcript currently in the box below. Continue?')) {
+    if (transcript.trim() && !await confirmAction({ title: 'Replace the current transcript?', description: 'This will replace the transcript currently in the box below.', confirmLabel: 'Replace' })) {
       return;
     }
     setFetchingYoutubeTranscript(true);
@@ -792,7 +793,7 @@ export const MinistrySermonLibrary: React.FC<MinistrySermonLibraryProps> = ({ mi
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const deleteSermon = async (sermon: SermonEntry) => {
-    if (!window.confirm(`Delete "${sermon.title}"? This can't be undone.`)) return;
+    if (!await confirmAction({ title: `Delete "${sermon.title}"?`, description: "This can't be undone.", confirmLabel: 'Delete', destructive: true })) return;
     setDeletingId(sermon.id);
     try {
       const { error } = await supabase.from('ministry_sermon_library').delete().eq('id', sermon.id);

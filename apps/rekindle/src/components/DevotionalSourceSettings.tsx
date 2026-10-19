@@ -5,6 +5,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { toast } from './ui/use-toast';
 import { BookOpen, Check, Loader2, ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { listPublicStreams, type DevotionalStream } from '@/lib/devotionalStreams';
 
@@ -65,10 +67,27 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
       })
       .eq('user_id', user.id);
     setSavingId(null);
-    if (error) return; // silent — the row stays on the previous choice
+    if (error) {
+      // supabase-js reports failures in `error` (it doesn't throw) — tell the
+      // user; the row stays on the previous choice.
+      console.error('Error saving devotional stream:', error);
+      toast({
+        title: t('devotionalSourceSettings', 'saveErrorTitle', "Couldn't change your devotional"),
+        description: t('devotionalSourceSettings', 'saveErrorDesc', 'Please check your connection and try again.'),
+        variant: 'destructive',
+      });
+      return;
+    }
     setSelectedStreamId(streamId);
     setExpanded(false);
     onSaved?.('platform', null, streamId);
+    const savedName = streams.find((s) => s.id === streamId)?.name;
+    toast({
+      title: t('devotionalSourceSettings', 'savedTitle', 'Devotional updated'),
+      description: savedName
+        ? t('devotionalSourceSettings', 'savedDescNamed', 'You\'ll now see "{name}" each day.').replace('{name}', savedName)
+        : t('devotionalSourceSettings', 'savedDesc', 'Your daily devotional has been updated.'),
+    });
   };
 
   if (loading) return (
@@ -79,15 +98,27 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
 
   return (
     <div className="mb-2">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors mb-1"
-      >
-        <BookOpen className="h-3.5 w-3.5" />
-        {t('devotionalSourceSettings', 'devotionalStreamLabel', 'Devotional stream:')}{' '}
-        <span className="font-medium text-gray-600">{currentName}</span>
-        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-      </button>
+      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1 min-w-0">
+        <BookOpen className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">
+          {t('devotionalSourceSettings', 'devotionalStreamLabel', 'Devotional stream:')}{' '}
+          <span className="font-medium text-gray-700">{currentName}</span>
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-tour="devotional-source-toggle"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="ml-auto h-7 shrink-0 px-2.5 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
+        >
+          {expanded
+            ? t('devotionalSourceSettings', 'close', 'Close')
+            : t('devotionalSourceSettings', 'change', 'Change')}
+          {expanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+        </Button>
+      </div>
 
       {expanded && (
         <Card className="border border-gray-100 shadow-sm mb-3">
@@ -118,7 +149,7 @@ export const DevotionalSourceSettings: React.FC<Props> = ({ onSaved }) => {
                       <div className="flex items-center gap-1.5">
                         <p className={`text-sm font-medium ${isSel ? 'text-gray-900' : 'text-gray-600'}`}>{s.name}</p>
                         {s.is_default && (
-                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1 py-0">
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs px-1 py-0">
                             <Star className="h-2.5 w-2.5 mr-0.5" />{t('devotionalSourceSettings', 'defaultBadge', 'Default')}
                           </Badge>
                         )}

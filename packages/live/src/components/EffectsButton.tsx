@@ -6,6 +6,9 @@ import { Sparkles, Ban, Check, ImagePlus, Loader2, Volume2, Bluetooth, Headphone
 import { useAudioOutput } from '../AudioOutputContext';
 
 const MAX_BG_BYTES = 10 * 1024 * 1024; // 10 MB
+// The uploaded image outlives the picker (see the note in the component), so
+// reopening it still offers the image that's applied.
+let lastCustomBackgroundUrl: string | null = null;
 
 // Photographic-style backdrops shipped in each app's public/backgrounds/. They
 // MUST be same-origin so the LiveKit VirtualBackground canvas isn't CORS-tainted;
@@ -16,6 +19,15 @@ const PRESETS: { label: string; url: string }[] = [
   { label: 'Office', url: '/backgrounds/office.png' },
   { label: 'Warm', url: '/backgrounds/warm.png' },
   { label: 'Nature', url: '/backgrounds/nature.png' },
+  // Stock photos, center-cropped to 1280x720 JPEG.
+  { label: 'Bookshelf', url: '/backgrounds/bookshelf.jpg' },
+  { label: 'Modern office', url: '/backgrounds/modern-office.jpg' },
+  { label: 'Reading desk', url: '/backgrounds/reading-desk.jpg' },
+  { label: 'Home office', url: '/backgrounds/home-office.jpg' },
+  { label: 'Brick wall', url: '/backgrounds/brick-wall.jpg' },
+  { label: 'Teal study', url: '/backgrounds/teal-study.jpg' },
+  { label: 'Beach sunset', url: '/backgrounds/beach-sunset.jpg' },
+  { label: 'Tropical beach', url: '/backgrounds/tropical-beach.jpg' },
 ];
 
 // The Web Audio Output Devices API only gives free-text labels, no structured
@@ -48,14 +60,17 @@ export const EffectsButton: React.FC<Props> = ({ value, onChange, trigger, align
   // to the LOCAL camera before publishing, so it never needs uploading, and a
   // same-origin blob URL avoids the canvas CORS taint a remote URL would cause.
   const fileRef = useRef<HTMLInputElement>(null);
-  const [customUrl, setCustomUrl] = useState<string | null>(null);
+  const [customUrl, setCustomUrl] = useState<string | null>(lastCustomBackgroundUrl);
   const [open, setOpen] = useState(false);
   // The segmentation model behind blur/virtual-background has to load and warm
   // up on first use — that can take a few seconds on a slower device, so this
   // gives visible feedback instead of the picker looking like the click did
   // nothing (matches the reattach retry window in useDailyRoom's setVideoBackground).
   const [applying, setApplying] = useState(false);
-  useEffect(() => () => { if (customUrl) URL.revokeObjectURL(customUrl); }, [customUrl]);
+  // (No revoke on unmount, 2026-10-10: this picker unmounts whenever its
+  // menu closes, and the backstage one when the call starts, while the room
+  // keeps using the image and re-applies it every time the camera comes back
+  // on. Revoking it there broke the background.)
 
   const select = (mode: string) => {
     setApplying(mode !== 'none');
@@ -75,6 +90,7 @@ export const EffectsButton: React.FC<Props> = ({ value, onChange, trigger, align
     }
     if (customUrl) URL.revokeObjectURL(customUrl);
     const url = URL.createObjectURL(file);
+    lastCustomBackgroundUrl = url;
     setCustomUrl(url);
     select(url);
     if (fileRef.current) fileRef.current.value = '';

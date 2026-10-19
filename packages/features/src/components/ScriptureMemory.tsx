@@ -5,13 +5,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Label } from '@rekindle/ui/label';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@rekindle/ui/alert-dialog';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
 import { useUpgradePrompt } from '@rekindle/auth/useUpgradePrompt';
 import { UpgradePromptModal } from './UpgradePromptModal';
-import { BookOpen, Plus, RotateCcw, Check, X, Brain, Trophy, Search, ChevronRight, Download, Loader2, Lock, Crown } from 'lucide-react';
+import { BookOpen, Plus, RotateCcw, Check, X, Trash2, Brain, Trophy, Search, ChevronRight, Download, Loader2, Lock, Crown } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
 import { Input } from '@rekindle/ui/input';
 import { Textarea } from '@rekindle/ui/textarea';
@@ -82,6 +86,7 @@ export function ScriptureMemory() {
   
   const [cards, setCards] = useState<ScriptureCard[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ScriptureCard | null>(null);
   const [selectedVersion, setSelectedVersion] = useState('kjv'); // KJV as default
   const [scriptureReference, setScriptureReference] = useState('');
   const [scriptureText, setScriptureText] = useState('');
@@ -318,7 +323,11 @@ export function ScriptureMemory() {
   };
 
   const deleteCard = async (cardId: string) => {
-    await supabase.from('scripture_memory_cards').delete().eq('id', cardId);
+    const { error } = await supabase.from('scripture_memory_cards').delete().eq('id', cardId);
+    if (error) {
+      toast({ title: t('scriptureMemory', 'deleteFailed', "Couldn't delete"), description: t('scriptureMemory', 'deleteFailedDesc', 'Please try again.'), variant: 'destructive' });
+      return;
+    }
     fetchCards();
     toast({ title: t('scriptureMemory', 'deletedTitle', 'Deleted'), description: t('scriptureMemory', 'verseRemovedDesc', 'Verse removed from memory cards') });
   };
@@ -438,6 +447,7 @@ export function ScriptureMemory() {
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogTrigger asChild>
             <Button 
+              data-tour="scripture-add"
               disabled={verseLimit !== null && verseLimit !== undefined && cards.length >= verseLimit}
             >
               {verseLimit !== null && verseLimit !== undefined && cards.length >= verseLimit && (
@@ -591,7 +601,7 @@ export function ScriptureMemory() {
 
       {/* Review Button */}
       {cards.length > 0 && (
-        <Button onClick={startReview} className="w-full py-6 text-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
+        <Button onClick={startReview} data-tour="scripture-review" className="w-full py-6 text-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
           <Brain className="h-5 w-5 mr-2" />
           {t('scriptureMemory', 'startReviewSession', 'Start Review Session ({count} verses)').replace('{count}', String(cards.length))}
         </Button>
@@ -629,10 +639,11 @@ export function ScriptureMemory() {
                 <Button 
                   variant="ghost" 
                   size="icon"
-                  onClick={() => deleteCard(card.id)}
+                  onClick={() => setPendingDelete(card)}
                   className="text-gray-400 hover:text-red-500"
+                  aria-label={t('scriptureMemory', 'deleteVerseLabel', 'Delete {ref}').replace('{ref}', card.reference)}
                 >
-                  <X className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </Card>
@@ -645,6 +656,26 @@ export function ScriptureMemory() {
         onClose={dismissUpgradePrompt}
         onUpgrade={() => {}}
       />
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('scriptureMemory', 'deleteVerseTitle', 'Delete this verse?')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('scriptureMemory', 'deleteVerseDesc', '{ref} and its review history will be removed. This cannot be undone.').replace('{ref}', pendingDelete?.reference || '')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common', 'cancel', 'Cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => { if (pendingDelete) deleteCard(pendingDelete.id); setPendingDelete(null); }}
+            >
+              {t('common', 'delete', 'Delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

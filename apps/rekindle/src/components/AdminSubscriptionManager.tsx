@@ -45,6 +45,7 @@ import {
   Clock,
   Loader2
 } from 'lucide-react';
+import { confirmAction } from '@/components/ui/confirm-dialog';
 
 interface AdminSubscriptionManagerProps {
   isSuperAdmin: boolean;
@@ -478,7 +479,7 @@ export const AdminSubscriptionManager: React.FC<AdminSubscriptionManagerProps> =
   const handleCancelSubscription = async () => {
     if (!selectedUser || !userSubscription) return;
     
-    if (!confirm(t('adminSubscriptionManager', 'confirmCancel', 'Are you sure you want to cancel the subscription for {email}? They will be moved to the Free tier.').replace('{email}', String(selectedUser.email)))) {
+    if (!await confirmAction({ title: t('adminSubscriptionManager', 'confirmCancelTitle', 'Cancel the subscription for {email}?').replace('{email}', String(selectedUser.email)), description: t('adminSubscriptionManager', 'confirmCancelDesc', 'They will be moved to the Free tier.'), confirmLabel: t('adminSubscriptionManager', 'cancelSubscription', 'Cancel subscription'), destructive: true })) {
       return;
     }
 

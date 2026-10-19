@@ -14,6 +14,7 @@ import { supabase } from '@rekindle/supabase';
 import { getLocalDateString, endOfLocalDayISO } from '@rekindle/ui/utils';
 import { getMinistryStreamId } from '@rekindle/features/devotionalStreams';
 import { consumeDeepLink } from '@rekindle/features/deepLink';
+import { recordSharedDevotionalOpen } from '@rekindle/features/sharedDevotionalFollowup';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -25,13 +26,14 @@ import {
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
-  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard,
+  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard, HandCoins,
 } from 'lucide-react';
 
 // Every workspace tab (live, meetings, webinars, recordings, settings, the
 // shared Word/Prayer/Community screens …) is its own chunk, loaded when the tab
 // is opened, instead of all of them downloading on entering a ministry.
 const MinistrySettingsHub = lazy(() => import('./MinistrySettingsHub').then((m) => ({ default: m.MinistrySettingsHub })));
+const MinistryGiftAidDashboard = lazy(() => import('./MinistryGiftAidDashboard').then((m) => ({ default: m.MinistryGiftAidDashboard })));
 const MinistryLiveTechSettings = lazy(() => import('./MinistryLiveTechSettings').then((m) => ({ default: m.MinistryLiveTechSettings })));
 const MinistryAnnouncementsManager = lazy(() => import('./MinistryAnnouncementsManager').then((m) => ({ default: m.MinistryAnnouncementsManager })));
 const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m) => ({ default: m.MinistryRulesManager })));
@@ -43,6 +45,7 @@ const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default:
 const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
 const DiscoverSmallGroups = lazy(() => import('./DiscoverSmallGroups').then((m) => ({ default: m.DiscoverSmallGroups })));
 const MySmallGroups = lazy(() => import('./MySmallGroups').then((m) => ({ default: m.MySmallGroups })));
+const GroupChatInbox = lazy(() => import('./GroupChatInbox').then((m) => ({ default: m.GroupChatInbox })));
 const MinistrySmallGroupsManager = lazy(() => import('./MinistrySmallGroupsManager').then((m) => ({ default: m.MinistrySmallGroupsManager })));
 const BibleReadingPlan = lazy(() => import('@rekindle/features/components/BibleReadingPlan').then((m) => ({ default: m.BibleReadingPlan })));
 const ScriptureMemory = lazy(() => import('@rekindle/features/components/ScriptureMemory').then((m) => ({ default: m.ScriptureMemory })));
@@ -83,17 +86,33 @@ const MINISTRY_NAV = [
   { id: 'webinars', label: 'Webinars', icon: Radio },
 ] as const;
 import { MinistryManagement } from './MinistryManagement';
-import type { SettingsSectionId } from './MinistrySettingsHub';
+import { normalizeSettingsSection, type SettingsSectionId } from './ministrySettingsSections';
+import type { TutorialNav } from '@rekindle/features/tutorial/types';
+import { MinistryTutorialProvider, MinistryHelpMenu, MinistryTourCard } from '../tutorials/MinistryTutorials';
 import { AcceptRulesModal } from './AcceptRulesModal';
 import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOptIn';
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
+
+const CONSUMER_APP_URL = (import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.rekindlebc.com').replace(/\/+$/, '');
+
+// Public link to a devotional shown in a ministry space. A devotional from a
+// followed stream (e.g. Open Heavens) lives in `devotionals`, not
+// `ministry_devotionals`, so a /ministry-devotional/ link to it can't load;
+// it gets the consumer app's daily-devotional link, which has the preview and reader.
+const ministryDevotionalShareUrl = (d: { id: string; from_stream?: boolean }) =>
+  d.from_stream
+    ? `${CONSUMER_APP_URL}/daily-devotional/${d.id}`
+    : `${publicWebOrigin()}/ministry-devotional/${d.id}`;
+import { shareDevotional } from '@rekindle/features/devotionalShare';
+import { canNativeShare } from '@rekindle/features/webShare';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
 import { useNavigate } from 'react-router-dom';
 import { StreakWidget } from '@rekindle/features/components/StreakWidget';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
+import { isUkCountryCode } from '../giftAid';
 import { ScripturePicker, type PickedScripture } from '@rekindle/features/components/ScripturePicker';
 import { useModeration } from '@rekindle/features/ModerationContext';
 import { ReminderSetupTip } from '@rekindle/features/components/ReminderSetupTip';
@@ -118,6 +137,8 @@ interface Ministry {
   is_public: boolean;
   join_method: string;
   theme_color: string;
+  /** ISO country; 'GB' turns on Gift Aid (see giftAid/countries.ts). */
+  country_code?: string | null;
   owner_id: string;
   leader_id: string;
   is_active: boolean;
@@ -180,12 +201,16 @@ interface MinistryDevotional {
   id: string;
   title: string;
   content: string;
+  author_name?: string;
+  /** True for a devotional from the stream this ministry follows (a `devotionals` row). */
+  from_stream?: boolean;
   scripture_reference: string;
   scripture_text?: string;
   reflection_questions?: any;
   prayer_focus?: string;
   featured_image?: string;
   audio_url?: string;
+  author_name?: string | null;
   scheduled_date?: string | null;
   is_published?: boolean;
   created_at: string;
@@ -267,17 +292,33 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Set by the small-group deep-link effect below; passed to DiscoverSmallGroups
   // so it auto-opens the shared group instead of just landing on Discover.
   const [deepLinkGroupId, setDeepLinkGroupId] = useState<string | null>(null);
+  // Small group chat: the chat a /messages/:id link opens, and the group page
+  // the chat's "Meetings, prayer requests and posts" link opens.
+  const [deepLinkChatId, setDeepLinkChatId] = useState<string | null>(null);
+  const [openGroupPageId, setOpenGroupPageId] = useState<string | null>(null);
   const [communitySubTab, setCommunitySubTab] = useState<'feed' | 'revelations' | 'qa' | 'challenges'>('feed');
   // Two-level nav: The Word / Prayers sub-views are driven by the secondary nav.
   const [wordSubTab, setWordSubTab] = useState<'devotionals' | 'reading' | 'scripture' | 'books'>('devotionals');
   const [prayerSubTab, setPrayerSubTab] = useState<'ministry' | 'library' | 'journal' | 'wall'>('ministry');
-  const [settingsSection, setSettingsSection] = useViewHistory<SettingsSectionId>(
+  const [rawSettingsSection, setSettingsSection] = useViewHistory<SettingsSectionId>(
     `ministry-settings-section-${ministry.id}`,
     'overview'
   );
+  // A remembered view may still hold a pre-split id ('people', 'general', …).
+  const settingsSection = normalizeSettingsSection(rawSettingsSection);
+  // The open tool inside a Settings section (MinistrySettingsHub SECTION_TOOLS).
+  const [settingsTool, setSettingsTool] = useViewHistory<string>(
+    `ministry-settings-tool-${ministry.id}`,
+    ''
+  );
+  const openSettingsTool = (section: SettingsSectionId, tool: string) => {
+    setActiveTab('settings');
+    setSettingsSection(section);
+    setSettingsTool(tool, { replace: true });
+  };
   const navigate = useNavigate();
 
-  // Restore Settings > Finance & Billing after a full external redirect
+  // Restore Settings > Finance > Payment gateways after a full external redirect
   // round-trip (Stripe Connect onboarding) — activeTab/settingsSection live
   // only in browser history.state via useViewHistory, which a real
   // navigation away and back (not an in-app view change) does not preserve,
@@ -287,7 +328,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     const params = new URLSearchParams(window.location.search);
     if (params.get('connect') === 'return' || params.get('connect') === 'refresh') {
       setActiveTab('settings', { replace: true });
-      setSettingsSection('finance-billing', { replace: true });
+      setSettingsSection('finance', { replace: true });
+      setSettingsTool('payment-gateways', { replace: true });
       params.delete('connect');
       const query = params.toString();
       window.history.replaceState(
@@ -555,10 +597,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         // homepage renderer expects.
         setDevotionals((streamDevs || []).map((d: any) => ({
           id: d.id,
+          from_stream: true,
           title: d.title,
+          author_name: d.author || d.author_name || '',
           content: d.message || d.content || '',
           scripture_reference: d.scripture_reference || d.scripture || '',
           scripture_text: d.scripture_text || '',
+          // The player builds the Scripture slides from these, and the long
+          // "Bible Passage" slide from bible_passage_*; dropping them here hid
+          // those slides for ministries that follow a stream.
+          scripture_references: d.scripture_references,
+          bible_passage_reference: d.bible_passage_reference || '',
+          bible_passage_text: d.bible_passage_text || '',
+          background_music_id: d.background_music_id,
           reflection_questions: d.reflection_questions,
           prayer_focus: d.prayer || d.prayer_focus || '',
           featured_image: d.image_url || d.cover_image_url || '',
@@ -695,9 +746,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       })();
     }
 
+    // A shared devotional link opens that devotional in the reader (it may be
+    // an older one, not today's), over the Devotionals tab.
     const dlDev = consumeDeepLink('ministry-devotional');
     if (dlDev?.id) {
       setActiveTab('devotionals');
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from('ministry_devotionals')
+            .select('*')
+            .eq('id', dlDev.id)
+            .eq('ministry_id', ministry.id)
+            .maybeSingle();
+          if (data) {
+            handleStartDevotional(data as MinistryDevotional);
+            recordSharedDevotionalOpen(user?.id, 'ministry', data.id, 'ministry');
+          }
+        } catch (err) {
+          console.error('Error opening shared devotional:', err);
+        }
+      })();
     }
 
     const dlPrayer = consumeDeepLink('ministry-prayer');
@@ -714,6 +783,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     if (dlGroup?.id) {
       setActiveTab('discover-groups');
       setDeepLinkGroupId(dlGroup.id);
+    }
+
+    const dlChat = consumeDeepLink('messages');
+    if (dlChat?.id) {
+      setActiveTab('group-chats');
+      setDeepLinkChatId(dlChat.id);
     }
   }, [ministry.id]);
 
@@ -868,6 +943,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     }
   };
 
+  // Same branded message as the consumer home's share button: ministry name,
+  // author, title, and a public preview link.
+  const handleShareDevotional = async (devotional: MinistryDevotional) => {
+    const url = ministryDevotionalShareUrl(devotional);
+    const result = await shareDevotional({ ministryName: ministry.name, author: devotional.author_name, title: devotional.title, url });
+    if (result.method === 'clipboard') {
+      toast({ title: t('devotionals', 'copiedToShare', 'Copied to share!'), description: t('devotionals', 'copiedToShareDesc', 'The devotional message is on your clipboard — paste it anywhere to invite someone.') });
+    } else if (result.method === 'none' && !canNativeShare()) {
+      toast({ title: t('ministrySpace', 'share', 'Share'), description: url });
+    }
+  };
+
   const handleStartDevotional = (devotional: MinistryDevotional) => {
     // Count opening a devotional toward the member's faithfulness streak.
     void recordDailyActivity(user?.id, 'daily_devotional');
@@ -890,6 +977,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       prayer:              (devotional as any).prayer || (devotional as any).prayer_focus || '',
       cover_image_url:     (devotional as any).image_url || (devotional as any).featured_image || '',
       audio_url:           devotional.audio_url || '',
+      author_name:         devotional.author_name || null,
     };
 
     setSelectedDevotional(formattedEntry);
@@ -978,6 +1066,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'challenges', label: 'Challenges', icon: Trophy },
     ] },
     ...(moduleOn('smallGroups') ? [{ id: 'groups', label: 'Small Groups', icon: Users, gradient: 'from-cyan-500 to-blue-600', children: [
+      { id: 'group-chats', label: 'Chats', icon: MessageSquare },
       { id: 'discover-groups', label: 'Discover', icon: Search },
       { id: 'my-groups', label: 'My Groups', icon: Users },
       // Create/edit/delete groups and assign leaders. It only lived in
@@ -1022,6 +1111,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       { id: 'requests', label: 'Prayer Requests', icon: MessageSquare },
       { id: 'testimonies', label: 'Testimonies', icon: Star },
       { id: 'donations', label: 'Donations', icon: Gift },
+      // Gift Aid claims, declarations and reports for UK ministries. It only
+      // lived in MinistryManagement, which nothing renders any more (the
+      // settings half moved to Settings > Finance & Billing), so leaders had
+      // no way to reach it.
+      ...(canManageMinistry && isUkCountryCode(ministry.country_code) ? [{ id: 'gift-aid', label: 'Gift Aid', icon: HandCoins }] : []),
       { id: 'meetings', label: 'Meetings', icon: Video },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
@@ -1032,11 +1126,12 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       gradient: 'from-gray-500 to-gray-600',
       children: [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        { id: 'general', label: 'General', icon: Settings },
-        { id: 'people', label: 'People', icon: Users },
+        { id: 'members', label: 'Members', icon: Users },
+        { id: 'events', label: 'Events', icon: Calendar },
         { id: 'content', label: 'Content', icon: BookOpen },
-        { id: 'engagement', label: 'Engagement', icon: MessageSquare },
-        { id: 'finance-billing', label: 'Finance & Billing', icon: CreditCard },
+        { id: 'messages', label: 'Messages', icon: MessageSquare },
+        { id: 'finance', label: 'Finance', icon: CreditCard },
+        { id: 'profile', label: 'Ministry profile', icon: Settings },
       ]
     }] : []),
   ];
@@ -1095,6 +1190,22 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     window.addEventListener('rk:ministry-go', handler);
     return () => window.removeEventListener('rk:ministry-go', handler);
   }, []);
+
+  // Guided tours (../tutorials): the page they see, and how they open one.
+  // Groups that switch a sub-view report it too, e.g. "word/reading".
+  const tourPage = ownsSubtab(activeTab) ? `${activeTab}/${SUBTAB[activeTab].value}` : activeTab;
+  const tourNavigate = (nav: TutorialNav) => {
+    if (nav.kind !== 'ministry') return;
+    const g = GROUPS.find((x) => x.id === nav.group);
+    if (!g) return;
+    setNavMenuOpen(false);
+    const child = typeof nav.child === 'string' ? nav.child : null;
+    if (child && g.children?.some((c) => c.id === child)) {
+      if (!isChildActive(g, child)) goToChild(g, child);
+    } else if (activeTab !== g.id) {
+      goToGroup(g);
+    }
+  };
 
   // Deterministic daily pick: prefer is_daily rows, rotate by day so it varies.
   const pickDaily = (list: any[]): any | null => {
@@ -1324,6 +1435,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
   return (
     <TakeDeclarationContext.Provider value={goToDeclaration}>
+    <MinistryTutorialProvider
+      userId={user?.id}
+      currentPage={tourPage}
+      navigate={tourNavigate}
+      suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule}
+      groups={GROUPS}
+    >
     <Suspense fallback={<TabFallback />}>
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Pastor's Video Message player overlay */}
@@ -1364,7 +1482,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             {/* Back to the ministries list — always visible, not buried in a menu. */}
             <button
               onClick={onExit}
-              className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white"
+              className="mb-2 flex min-h-[44px] sm:min-h-0 items-center gap-1.5 text-sm font-medium text-white/80 hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
               {t('ministrySpace', 'allMinistries', 'All Ministries')}
@@ -1390,16 +1508,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   always visible on both web and mobile. */}
               <div className="flex flex-col items-end gap-2 shrink-0">
                 <div className="flex items-center gap-2">
+                  <MinistryHelpMenu className="h-11 w-11 sm:h-8 sm:w-8 rounded-lg bg-white/20 text-white hover:bg-white/30 hover:text-white" />
                   {/* My Profile — the member's own registration details plus the
                       Leave Ministry / Delete My Data Danger Zone
                       (MemberMinistryProfile.tsx). Previously only reachable by
                       typing /my-membership/:slug directly. */}
                   <button
+                    data-tour="ministry-my-profile"
                     onClick={() => mySlug && navigate(`/my-membership/${mySlug}`)}
                     disabled={!mySlug}
                     title={t('ministrySpace', 'myProfile', 'My Profile')}
                     aria-label={t('ministrySpace', 'myProfile', 'My Profile')}
-                    className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors disabled:opacity-50"
+                    className="h-11 w-11 sm:h-8 sm:w-8 flex items-center justify-center rounded-lg bg-white/20 text-white hover:bg-white/30 transition-colors disabled:opacity-50"
                   >
                     <User className="h-4 w-4" />
                   </button>
@@ -1429,6 +1549,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             <div className="relative w-full">
               {/* Full-width mobile navigation trigger */}
               <button
+                data-tour="ministry-nav"
                 onClick={() => setNavMenuOpen((o) => !o)}
                 aria-label={t('ministrySpace', 'openNavMenu', 'Open navigation menu')}
                 aria-expanded={navMenuOpen}
@@ -1456,7 +1577,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               {/* Full-width mobile dropdown list */}
               {navMenuOpen && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setNavMenuOpen(false)} />
+                  <div className="fixed inset-0 z-40" aria-hidden="true" onClick={() => setNavMenuOpen(false)} />
                   <div className="absolute left-0 right-0 top-full mt-1 z-50 w-full max-h-[75vh] overflow-y-auto rounded-xl border bg-white shadow-xl py-1.5">
                     {GROUPS.map((g) => {
                       const GIcon = g.icon;
@@ -1465,7 +1586,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         <div key={g.id}>
                           <button
                             onClick={() => { goToGroup(g); if (!g.children) setNavMenuOpen(false); }}
-                            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                            className={`flex w-full min-h-[44px] items-center gap-3 px-4 py-2.5 text-left text-sm ${gActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
                             style={gActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : {}}
                           >
                             <GIcon className="h-4 w-4 shrink-0" />
@@ -1478,7 +1599,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               <button
                                 key={c.id}
                                 onClick={() => { goToChild(g, c.id); setNavMenuOpen(false); }}
-                                className={`flex w-full items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
+                                className={`flex w-full min-h-[44px] items-center gap-3 pl-11 pr-4 py-2 text-left text-sm ${cActive ? 'font-semibold' : 'text-gray-600 hover:bg-gray-50'}`}
                                 style={cActive ? { color: themeColor } : {}}
                               >
                                 <CIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1494,14 +1615,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <button
                       onClick={() => { setNavMenuOpen(false); if (mySlug) navigate(`/my-membership/${mySlug}`); }}
                       disabled={!mySlug}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="flex w-full min-h-[44px] items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
                       <User className="h-4 w-4 shrink-0" />
                       {t('ministrySpace', 'myProfile', 'My Profile')}
                     </button>
                     <button
                       onClick={() => { setNavMenuOpen(false); onExit(); }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      className="flex w-full min-h-[44px] items-center gap-3 px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50"
                     >
                       <ArrowLeft className="h-4 w-4 shrink-0" />
                       {t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
@@ -1555,7 +1676,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 ? <img src={ministry.logo_url} alt={ministry.name} className="h-10 w-10 rounded-xl object-cover" />
                 : <Building2 className="h-5 w-5" style={{ color: themeColor }} />}
             </div>
-            <nav className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
+            <nav data-tour="ministry-nav" className="flex flex-col items-center gap-1" aria-label={t('ministrySpace', 'ministryNavigation', '{name} navigation').replace('{name}', ministry.name)}>
               {GROUPS.map((g) => {
                 const GIcon = g.icon;
                 const gActive = isGroupActive(g);
@@ -1564,7 +1685,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     key={g.id}
                     onClick={() => goToGroup(g)}
                     aria-current={gActive ? 'page' : undefined}
-                    className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                    className={`group flex w-16 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-xs font-semibold leading-tight transition-colors ${gActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
                   >
                     <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br ${g.gradient} text-white shadow-md transition-transform ${gActive ? 'scale-105 ring-2 ring-offset-2 ring-gray-300' : 'group-hover:scale-105'}`}>
                       <GIcon className="h-5 w-5" />
@@ -1577,6 +1698,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             <button
               onClick={onExit}
               title={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
+              aria-label={t('ministrySpace', 'backToRekindle', 'Back to Rekindle')}
               className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1587,7 +1709,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           {activeGroup.children && (
             <aside className="flex w-52 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
               <div className="border-b border-gray-100 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('ministrySpace', 'module', 'Module')}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('ministrySpace', 'module', 'Module')}</p>
                 <h2 className="text-base font-semibold text-gray-900 truncate">{navLabel(activeGroup)}</h2>
               </div>
               <nav className="flex flex-col gap-1 p-3" aria-label={`${navLabel(activeGroup)} navigation`}>
@@ -1613,7 +1735,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         </div>
 
         {/* Main content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" data-tour="ministry-page">
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <Suspense fallback={<TabFallback />}>
         {/* Live Tab - MLiveChannel */}
@@ -1643,13 +1765,26 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           />
         )}
 
+        {/* Gift Aid (UK ministries, leaders/admins) */}
+        {activeTab === 'gift-aid' && canManageMinistry && isUkCountryCode(ministry.country_code) && (
+          <MinistryGiftAidDashboard
+            ministryId={ministry.id}
+            ministryName={ministry.name}
+            themeColor={themeColor}
+            countryCode={ministry.country_code}
+            onGoToSettings={() => openSettingsTool('finance', 'gift-aid-settings')}
+          />
+        )}
+
         {/* Settings Hub (leaders/admins) */}
         {activeTab === 'settings' && canManageMinistry && (
           <MinistrySettingsHub
             ministry={ministry}
             onUpdate={loadMinistryData}
             activeSection={settingsSection}
-            onNavigateSection={(sec) => setSettingsSection(sec)}
+            onNavigateSection={(sec, opts) => setSettingsSection(sec, opts)}
+            activeTool={settingsTool}
+            onNavigateTool={(tool, opts) => setSettingsTool(tool, opts)}
           />
         )}
 
@@ -1681,6 +1816,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               const firstName = (profile?.full_name || '').trim().split(' ')[0];
               return (
                 <div
+                  data-tour="ministry-welcome"
                   className="relative overflow-hidden rounded-3xl p-6 sm:p-8 text-white shadow-lg"
                   style={{ background: `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}cc 100%)`, boxShadow: `0 12px 40px ${themeColor}40` }}
                 >
@@ -1716,8 +1852,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
             </button>
 
+            {/* Guided tour of this ministry space, until it's finished or skipped */}
+            <MinistryTourCard userId={user?.id} suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule} />
+
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
-            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide" data-tour="ministry-quick-links">
               {GROUPS.filter(g => g.id !== 'home').map(g => {
                 const GIcon = g.icon;
                 return (
@@ -1764,9 +1903,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               })}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Today's Devotional */}
-              <div className="lg:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Today's Devotional: one column, the same width as the consumer home's card */}
+              <div data-tour="ministry-home-devotional">
                 {(() => {
                   const today = getLocalDateString();
                   const available = devotionals.filter(dev =>
@@ -1843,22 +1982,34 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <div className="flex items-center gap-2 text-sm opacity-70">
                         <Clock className="h-4 w-4" /><span>{t('ministrySpace', 'about8Minutes', '~8 minutes')}</span>
                       </div>
-                      <Button
-                        className="w-full bg-white font-semibold"
-                        style={{ color: themeColor }}
-                        onClick={() => handleStartDevotional(todaysDev)}
-                      >
-                        <Play className="h-4 w-4 mr-2" />
-                        {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
-                        <ChevronRight className="h-4 w-4 ml-2" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1 bg-white font-semibold"
+                          style={{ color: themeColor }}
+                          onClick={() => handleStartDevotional(todaysDev)}
+                        >
+                          <Play className="h-4 w-4 mr-2" />
+                          {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                        <Button
+                          onClick={() => handleShareDevotional(todaysDev)}
+                          variant="outline"
+                          size="icon"
+                          title={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                          aria-label={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                          className="shrink-0 bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white"
+                        >
+                          <Share2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <Card className="h-full flex items-center justify-center p-8 text-center">
                       <div>
                         <BookOpen className="h-10 w-10 mx-auto text-gray-300 mb-3" />
                         <p className="font-medium text-gray-600">{t('ministrySpace', 'noDevotionalToday', 'No devotional today')}</p>
-                        <p className="text-sm text-gray-400 mt-1">{t('ministrySpace', 'checkBackTomorrow', 'Check back tomorrow')}</p>
+                        <p className="text-sm text-gray-500 mt-1">{t('ministrySpace', 'checkBackTomorrow', 'Check back tomorrow')}</p>
                       </div>
                     </Card>
                   );
@@ -1866,7 +2017,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               </div>
 
               {/* Latest Announcements — now beside the devotional (swapped with Prayer Requests) */}
-              <Card>
+              <Card className="lg:col-span-2" data-tour="ministry-home-announcements">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
                     <Megaphone className="h-5 w-5" style={{ color: themeColor }} />
@@ -1892,7 +2043,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               </div>
                               <p className="text-gray-600 mt-1 text-xs line-clamp-2">{ann.content}</p>
                             </div>
-                            <span className="text-[10px] text-gray-400 shrink-0">{new Date(ann.created_at).toLocaleDateString()}</span>
+                            <span className="text-xs text-gray-500 shrink-0">{new Date(ann.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                       ))}
@@ -1927,10 +2078,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <Button
                         size="sm"
                         style={{ backgroundColor: themeColor }}
-                        onClick={() => {
-                          setActiveTab('settings');
-                          setSettingsSection('content');
-                        }}
+                        onClick={() => openSettingsTool('content', 'video-messages')}
                       >
                         <Plus className="h-4 w-4 mr-1.5" />
                         {t('ministrySpace', 'addVideoMessage', 'Add Video Message')}
@@ -1959,7 +2107,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         </div>
                       </div>
                       {latest.duration_seconds ? (
-                        <span className="absolute bottom-2 right-2 text-[11px] bg-black/70 text-white px-1.5 py-0.5 rounded">
+                        <span className="absolute bottom-2 right-2 text-xs bg-black/70 text-white px-1.5 py-0.5 rounded">
                           {Math.floor(latest.duration_seconds / 60)}:{String(Math.round(latest.duration_seconds % 60)).padStart(2, '0')}
                         </span>
                       ) : null}
@@ -2019,15 +2167,14 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             </div>
                             <p className="text-xs font-medium mt-1 line-clamp-2">{video.title}</p>
                             {video.speaker_name && (
-                              <p className="text-[11px] text-gray-500 truncate mt-0.5">{video.speaker_name}</p>
+                              <p className="text-xs text-gray-500 truncate mt-0.5">{video.speaker_name}</p>
                             )}
                           </button>
                         ))}
                         <button
                           onClick={() => {
                             if (canManageMinistry) {
-                              setActiveTab('settings');
-                              setSettingsSection('content');
+                              openSettingsTool('content', 'video-messages');
                             } else {
                               setActiveTab('content');
                             }
@@ -2077,7 +2224,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
 
             {/* Prayer Requests — moved to full-width (swapped with Latest Announcements) */}
-            <Card>
+            <Card data-tour="ministry-home-requests">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <Heart className="h-5 w-5" style={{ color: themeColor }} />
@@ -2112,7 +2259,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             </Card>
 
             {/* Upcoming Events */}
-            <Card>
+            <Card data-tour="ministry-home-events">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="h-5 w-5" style={{ color: themeColor }} />
@@ -2260,15 +2407,27 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <div className="flex items-center gap-2 text-sm opacity-70">
                     <Clock className="h-4 w-4" /><span>{t('ministrySpace', 'about8Minutes', '~8 minutes')}</span>
                   </div>
-                  <Button
-                    className="w-full bg-white font-semibold"
-                    style={{ color: themeColor }}
-                    onClick={() => handleStartDevotional(todaysDev)}
-                  >
-                    <Play className="h-4 w-4 mr-2" />
-                    {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
-                    <ChevronRight className="h-4 w-4 ml-2" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1 bg-white font-semibold"
+                      style={{ color: themeColor }}
+                      onClick={() => handleStartDevotional(todaysDev)}
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      {t('ministrySpace', 'startTodaysDevotional', "Start Today's Devotional")}
+                      <ChevronRight className="h-4 w-4 ml-2" />
+                    </Button>
+                    <Button
+                      onClick={() => handleShareDevotional(todaysDev)}
+                      variant="outline"
+                      size="icon"
+                      title={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                      aria-label={t('ministrySpace', 'shareDevotional', 'Share devotional')}
+                      className="shrink-0 bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                   );
               })() : (
@@ -2297,7 +2456,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                   </p>
                                 )}
                                 {dev.scheduled_date && (
-                                  <span className="text-xs text-gray-400 ml-auto shrink-0">
+                                  <span className="text-xs text-gray-500 ml-auto shrink-0">
                                     {new Date(dev.scheduled_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                   </span>
                                 )}
@@ -2416,7 +2575,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                         />
                       </div>
                       <p className="text-gray-600 mt-3">{testimony.content}</p>
-                      <p className="text-xs text-gray-400 mt-4">
+                      <p className="text-xs text-gray-500 mt-4">
                         {new Date(testimony.created_at).toLocaleDateString()}
                       </p>
                     </CardContent>
@@ -2471,7 +2630,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             </div>
                             <p className="text-gray-600 mt-3">{ann.content}</p>
                           </div>
-                          <span className="text-sm text-gray-400 shrink-0 ml-4">
+                          <span className="text-sm text-gray-500 shrink-0 ml-4">
                             {new Date(ann.created_at).toLocaleDateString()}
                           </span>
                         </div>
@@ -2604,7 +2763,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       <Input
                         value={mRevTitle}
                         onChange={e => setMRevTitle(e.target.value)}
-                        placeholder={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')}
+                        aria-label={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')} placeholder={t('ministrySpace', 'revelationTitlePlaceholder', 'Title of your revelation…')}
                         className="bg-white"
                       />
                       {(() => {
@@ -2617,7 +2776,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                               onChange={e => {
                                 if (e.target.value.trim().split(/\s+/).filter(Boolean).length <= 150) setMRevContent(e.target.value);
                               }}
-                              placeholder={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')}
+                              aria-label={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')} placeholder={t('ministrySpace', 'revelationContentPlaceholder', 'Share what God revealed to you…')}
                               rows={4}
                               className="bg-white"
                             />
@@ -2645,7 +2804,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                     <Loader2 className="h-7 w-7 animate-spin" style={{ color: themeColor }} />
                   </div>
                 ) : mRevelations.length === 0 ? (
-                  <div className="text-center py-12 text-gray-400">
+                  <div className="text-center py-12 text-gray-500">
                     <Book className="h-10 w-10 mx-auto mb-3 opacity-40" />
                     <p className="font-medium">{t('ministrySpace', 'noRevelationsYet', 'No revelations yet.')}</p>
                     <p className="text-sm mt-1">{t('ministrySpace', 'beFirstShareRevealed', 'Be the first to share what God has revealed.')}</p>
@@ -2658,7 +2817,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <h4 className="font-semibold text-gray-900 break-words">{rev.title}</h4>
-                              <p className="text-xs text-gray-400 mt-0.5">{rev.author} · {new Date(rev.created_at).toLocaleDateString()}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{rev.author} · {new Date(rev.created_at).toLocaleDateString()}</p>
                             </div>
                             <ContentSafetyMenu
                               contentType="community_revelations"
@@ -2711,9 +2870,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                   <Card className="border-blue-200 bg-blue-50/40">
                     <CardContent className="p-4 space-y-3">
                       <h4 className="font-semibold text-blue-800">{t('ministrySpace', 'yourQuestion', 'Your Question')}</h4>
-                      <Input value={mQTitle} onChange={e => setMQTitle(e.target.value)} placeholder={t('ministrySpace', 'questionTitlePlaceholder', 'Short title for your question…')} className="bg-white" />
-                      <Textarea value={mQContent} onChange={e => setMQContent(e.target.value)} placeholder={t('ministrySpace', 'questionDetailPlaceholder', 'Describe your question in detail…')} rows={4} className="bg-white" />
-                      <Input value={mQScripture} onChange={e => setMQScripture(e.target.value)} placeholder={t('ministrySpace', 'relatedScripturePlaceholder', 'Related scripture (optional) e.g. Romans 8:28')} className="bg-white" />
+                      <Input value={mQTitle} onChange={e => setMQTitle(e.target.value)} aria-label={t('ministrySpace', 'questionTitlePlaceholder', 'Short title for your question…')} placeholder={t('ministrySpace', 'questionTitlePlaceholder', 'Short title for your question…')} className="bg-white" />
+                      <Textarea value={mQContent} onChange={e => setMQContent(e.target.value)} aria-label={t('ministrySpace', 'questionDetailPlaceholder', 'Describe your question in detail…')} placeholder={t('ministrySpace', 'questionDetailPlaceholder', 'Describe your question in detail…')} rows={4} className="bg-white" />
+                      <Input value={mQScripture} onChange={e => setMQScripture(e.target.value)} aria-label={t('ministrySpace', 'relatedScripturePlaceholder', 'Related scripture (optional) e.g. Romans 8:28')} placeholder={t('ministrySpace', 'relatedScripturePlaceholder', 'Related scripture (optional) e.g. Romans 8:28')} className="bg-white" />
                       <div className="flex gap-2 justify-end">
                         <Button variant="outline" size="sm" onClick={() => setShowMQForm(false)}>{t('ministrySpace', 'cancel', 'Cancel')}</Button>
                         <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handlePostMQuestion}>
@@ -2759,7 +2918,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                       {t('ministrySpace', 'resolved', 'Resolved')}
                                     </Badge>
                                   )}
-                                  <span className="text-xs text-gray-400">{q.author} · {new Date(q.created_at).toLocaleDateString()}</span>
+                                  <span className="text-xs text-gray-500">{q.author} · {new Date(q.created_at).toLocaleDateString()}</span>
                                 </div>
                                 <h4 className="font-semibold text-gray-900 break-words">{q.title}</h4>
                                 <p className="text-sm text-gray-600 mt-1 break-words">{q.content}</p>
@@ -2780,6 +2939,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             <div className="flex items-center gap-3 text-sm">
                               <button
                                 onClick={() => handleMUpvoteQuestion(q.id)}
+                                aria-label={`${t('ministrySpace', 'markHelpful', 'Mark as helpful')} (${q.upvotes})`}
+                                aria-pressed={!!q.upvoted}
                                 className={`flex items-center gap-1 transition-colors ${q.upvoted ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-blue-500'}`}
                               >
                                 <ThumbsUp className={`h-4 w-4 ${q.upvoted ? 'fill-current' : ''}`} />
@@ -2799,7 +2960,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                             {mExpandedQ === q.id && (
                               <div className="space-y-3 pt-2 border-t border-gray-100">
                                 {q.answers.length === 0 && (
-                                  <p className="text-sm text-gray-400 italic text-center py-2">{t('ministrySpace', 'noAnswersYet', 'No answers yet — be the first to share insight.')}</p>
+                                  <p className="text-sm text-gray-500 italic text-center py-2">{t('ministrySpace', 'noAnswersYet', 'No answers yet — be the first to share insight.')}</p>
                                 )}
                                 {filterBlocked(q.answers as any[], (a: any) => a.user_id)
                                   .slice()
@@ -2813,11 +2974,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                         </div>
                                       )}
                                       <p className="text-sm text-gray-800 break-words">{ans.content}</p>
-                                      <p className="text-xs text-gray-400">{ans.author} · {new Date(ans.created_at).toLocaleDateString()}</p>
+                                      <p className="text-xs text-gray-500">{ans.author} · {new Date(ans.created_at).toLocaleDateString()}</p>
                                       <div className="flex items-center gap-3">
                                         <button
                                           onClick={() => handleMUpvoteAnswer(q.id, ans.id)}
-                                          className={`flex items-center gap-1 text-xs transition-colors ${ans.upvoted ? 'text-blue-600 font-semibold' : 'text-gray-400 hover:text-blue-500'}`}
+                                          className={`flex items-center gap-1 text-xs transition-colors ${ans.upvoted ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-blue-500'}`}
                                         >
                                           <ThumbsUp className={`h-3 w-3 ${ans.upvoted ? 'fill-current' : ''}`} />
                                           {ans.upvotes} {t('ministrySpace', 'helpful', 'helpful')}
@@ -2848,11 +3009,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                     <Textarea
                                       value={mAnswerDrafts[q.id] || ''}
                                       onChange={e => setMAnswerDrafts(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                      placeholder={t('ministrySpace', 'answerInsightPlaceholder', 'Share your insight or understanding…')}
+                                      aria-label={t('ministrySpace', 'answerInsightPlaceholder', 'Share your insight or understanding…')} placeholder={t('ministrySpace', 'answerInsightPlaceholder', 'Share your insight or understanding…')}
                                       rows={2}
                                       className="flex-1 text-sm"
                                     />
-                                    <Button
+                                    <Button aria-label={t('ministrySpace', 'postAnswer', 'Post answer')}
                                       size="sm"
                                       className="bg-blue-600 hover:bg-blue-700 text-white self-end"
                                       onClick={() => handleMPostAnswer(q.id)}
@@ -2863,7 +3024,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                                   </div>
                                 )}
                                 {!user && (
-                                  <p className="text-xs text-gray-400 text-center py-1">{t('ministrySpace', 'signInToAnswer', 'Sign in to post an answer.')}</p>
+                                  <p className="text-xs text-gray-500 text-center py-1">{t('ministrySpace', 'signInToAnswer', 'Sign in to post an answer.')}</p>
                                 )}
                               </div>
                             )}
@@ -2872,7 +3033,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                       ))
                     }
                     {mQuestions.filter(q => mQaFilter === 'all' ? true : mQaFilter === 'open' ? !q.is_resolved : q.is_resolved).length === 0 && (
-                      <div className="text-center py-12 text-gray-400">
+                      <div className="text-center py-12 text-gray-500">
                         <HelpCircle className="h-10 w-10 mx-auto mb-3 opacity-40" />
                         <p className="font-medium">{t('ministrySpace', 'noQuestionsYet', 'No questions yet.')}</p>
                         <p className="text-sm mt-1">{t('ministrySpace', 'beFirstSeekClarity', 'Be the first to seek clarity from this community.')}</p>
@@ -2904,6 +3065,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           />
         )}
 
+        {/* Small Groups — Chats */}
+        {activeTab === 'group-chats' && (
+          <GroupChatInbox
+            ministryId={ministry.id}
+            initialGroupId={deepLinkChatId}
+            onFindGroups={() => setActiveTab('discover-groups')}
+            onOpenGroupPage={(groupId) => { setOpenGroupPageId(groupId); setActiveTab('my-groups'); }}
+          />
+        )}
+
         {/* Small Groups — Discover Tab */}
         {activeTab === 'discover-groups' && (
           <DiscoverSmallGroups ministryId={ministry.id} autoOpenGroupId={deepLinkGroupId} />
@@ -2911,7 +3082,11 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Small Groups — My Groups Tab */}
         {activeTab === 'my-groups' && (
-          <MySmallGroups ministryId={ministry.id} />
+          <MySmallGroups
+            ministryId={ministry.id}
+            autoOpenGroupId={openGroupPageId}
+            onAutoOpened={() => setOpenGroupPageId(null)}
+          />
         )}
 
         {/* Small Groups — Manage Tab (leaders/admins) */}
@@ -2928,7 +3103,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
               <h2 className="text-2xl font-bold">{t('ministrySpace', 'ministryPrayerLibrary', 'Ministry Prayer Library')}</h2>
               <div className="flex items-center gap-2">
                 <Input
-                  placeholder={t('ministrySpace', 'searchPrayersPlaceholder', 'Search prayers...')}
+                  aria-label={t('ministrySpace', 'searchPrayersPlaceholder', 'Search prayers...')} placeholder={t('ministrySpace', 'searchPrayersPlaceholder', 'Search prayers...')}
                   value={prayerSearchTerm}
                   onChange={(e) => setPrayerSearchTerm(e.target.value)}
                   className="w-64"
@@ -3020,10 +3195,21 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
                 ).map(prayer => (
                   <Card 
                     key={prayer.id} 
-                    className="cursor-pointer hover:shadow-lg transition-shadow"
+                    className="cursor-pointer hover:shadow-lg transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={prayer.title}
                     onClick={() => {
                       setSelectedPrayer(prayer);
                       setShowPrayerReader(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedPrayer(prayer);
+                        setShowPrayerReader(true);
+                      }
                     }}
                   >
                     <CardHeader>
@@ -3118,16 +3304,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
+              <Label htmlFor="ms-announcement-title">{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
               <Input
+                id="ms-announcement-title"
                 value={announcementForm.title}
                 onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
                 placeholder={t('ministrySpace', 'announcementTitlePlaceholder', 'Announcement title')}
               />
             </div>
             <div>
-              <Label>{t('ministrySpace', 'contentLabel', 'Content')}</Label>
+              <Label htmlFor="ms-announcement-content">{t('ministrySpace', 'contentLabel', 'Content')}</Label>
               <Textarea
+                id="ms-announcement-content"
                 value={announcementForm.content}
                 onChange={(e) => setAnnouncementForm({ ...announcementForm, content: e.target.value })}
                 placeholder={t('ministrySpace', 'announcementDetailsPlaceholder', 'Announcement details...')}
@@ -3162,16 +3350,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
+              <Label htmlFor="ms-prayer-title">{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
               <Input
+                id="ms-prayer-title"
                 value={prayerForm.title}
                 onChange={(e) => setPrayerForm({ ...prayerForm, title: e.target.value })}
                 placeholder={t('ministrySpace', 'prayerRequestTitlePlaceholder', 'Prayer request title')}
               />
             </div>
             <div>
-              <Label>{t('ministrySpace', 'detailsOptionalLabel', 'Details (optional)')}</Label>
+              <Label htmlFor="ms-prayer-content">{t('ministrySpace', 'detailsOptionalLabel', 'Details (optional)')}</Label>
               <Textarea
+                id="ms-prayer-content"
                 value={prayerForm.content}
                 onChange={(e) => setPrayerForm({ ...prayerForm, content: e.target.value })}
                 placeholder={t('ministrySpace', 'prayerRequestDetailsPlaceholder', 'Share more details about your prayer request...')}
@@ -3206,16 +3396,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
+              <Label htmlFor="ms-testimony-title">{t('ministrySpace', 'titleRequiredLabel', 'Title *')}</Label>
               <Input
+                id="ms-testimony-title"
                 value={testimonyForm.title}
                 onChange={(e) => setTestimonyForm({ ...testimonyForm, title: e.target.value })}
                 placeholder={t('ministrySpace', 'testimonyTitlePlaceholder', 'Give your testimony a title')}
               />
             </div>
             <div>
-              <Label>{t('ministrySpace', 'yourTestimonyRequiredLabel', 'Your Testimony *')}</Label>
+              <Label htmlFor="ms-testimony-content">{t('ministrySpace', 'yourTestimonyRequiredLabel', 'Your Testimony *')}</Label>
               <Textarea
+                id="ms-testimony-content"
                 value={testimonyForm.content}
                 onChange={(e) => setTestimonyForm({ ...testimonyForm, content: e.target.value })}
                 placeholder={t('ministrySpace', 'testimonyContentPlaceholder', 'Share what God has done in your life...')}
@@ -3292,6 +3484,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             series_id: selectedDevotional.series_id,
             day_number: selectedDevotional.day_number || 1,
             title: selectedDevotional.title,
+            author: selectedDevotional.author_name || selectedDevotional.author || '',
             scripture_reference: selectedDevotional.scripture_reference,
             scripture_text: selectedDevotional.scripture_text,
             bible_passage_reference: selectedDevotional.bible_passage_reference,
@@ -3307,8 +3500,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             is_bookmarked: false
           }}
           seriesTitle={ministry.name}
+          ministryName={ministry.name}
           totalDays={1}
-          shareUrl={`${publicWebOrigin()}/ministry-devotional/${selectedDevotional.id}`}
+          shareUrl={ministryDevotionalShareUrl(selectedDevotional)}
           onComplete={async () => {
             // Mark devotional as completed
             try {
@@ -3344,6 +3538,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       )}
     </div>
     </Suspense>
+    </MinistryTutorialProvider>
     </TakeDeclarationContext.Provider>
   );
 };

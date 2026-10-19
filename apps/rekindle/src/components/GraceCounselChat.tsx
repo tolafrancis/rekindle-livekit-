@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { SpiritualCompanionService } from '@/lib/AiSpiritualCompanion';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { randomId } from '@rekindle/ui/uuid';
 
 marked.setOptions({ breaks: true, gfm: true });
 const toHtml = (text: string) => marked.parse(text || '') as string;
@@ -42,6 +43,20 @@ export const GraceCounselChat: React.FC = () => {
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Narrow screens (phones, and the native apps) show the conversation list as
+  // a slide-over drawer instead of a fixed side column, so the chat keeps the
+  // full width. Wider screens keep the two-column layout.
+  const isNative = Capacitor.isNativePlatform();
+  const [isCompact, setIsCompact] = useState<boolean>(() =>
+    isNative || (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches));
+  useEffect(() => {
+    if (isNative || typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsCompact(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [isNative]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -142,7 +157,7 @@ export const GraceCounselChat: React.FC = () => {
 
   const addWelcomeMessage = async (id: string) => {
     const welcomeMsg: Message = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'ai',
       content: t('grace', 'welcomeMessage', "Welcome! I am GraceCounsel, your AI spiritual companion rooted in the Word of God. \"Come to me, all you who are weary and burdened, and I will give you rest\" (Matthew 11:28). How may I support you today?"),
       scripture: 'Matthew 11:28',
@@ -166,7 +181,7 @@ export const GraceCounselChat: React.FC = () => {
     if (!input.trim() || !spiritualCompanion || !sessionId) return;
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
@@ -193,7 +208,7 @@ export const GraceCounselChat: React.FC = () => {
       );
 
       const aiMessage: Message = {
-        id: crypto.randomUUID(),
+        id: randomId(),
         role: 'ai',
         content: response.content,
         scripture: response.scriptureReference,
@@ -221,7 +236,10 @@ export const GraceCounselChat: React.FC = () => {
       loadSessions();
     } catch (err: any) {
       console.error('Send message error:', err);
-      setError(err.message || t('grace', 'failedSend', "Failed to send message. Please try again."));
+      // Give the typed message back so nothing has to be retyped, and show a
+      // plain message rather than the raw service error.
+      setInput(prev => prev || userMessage.content);
+      setError(t('grace', 'failedSend', "Failed to send message. Please try again."));
     } finally {
       setIsLoading(false);
     }
@@ -243,7 +261,7 @@ export const GraceCounselChat: React.FC = () => {
   if (!spiritualCompanion) {
     return (
       <div className={`bg-white rounded-xl shadow-lg flex items-center justify-center ${
-        Capacitor.isNativePlatform() ? 'h-[calc(100vh-130px)]' : 'h-[600px]'
+        isNative ? 'h-[calc(100vh-200px)]' : isCompact ? 'h-[calc(100dvh-230px)] min-h-[380px]' : 'h-[600px]'
       }`}>
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
@@ -271,7 +289,7 @@ export const GraceCounselChat: React.FC = () => {
       `}</style>
 
       {/* Backdrop for mobile drawer */}
-      {Capacitor.isNativePlatform() && sidebarOpen && (
+      {isCompact && sidebarOpen && (
         <div 
           className="absolute inset-0 bg-black/40 z-20"
           onClick={() => setSidebarOpen(false)}
@@ -280,7 +298,7 @@ export const GraceCounselChat: React.FC = () => {
 
       {/* Sessions sidebar */}
       <div className={`border-r flex flex-col bg-gray-50 shrink-0 transition-all duration-300 ${
-        Capacitor.isNativePlatform()
+        isCompact
           ? `absolute inset-y-0 left-0 w-64 shadow-xl z-30 transform ${
               sidebarOpen ? 'translate-x-0' : '-translate-x-full'
             }`
@@ -289,7 +307,7 @@ export const GraceCounselChat: React.FC = () => {
         <div className="p-3 border-b space-y-2">
           <button
             onClick={startNewSession}
-            className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-purple-700 transition-colors"
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 bg-purple-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-purple-700 transition-colors"
           >
             <Plus className="w-4 h-4" /> {t('grace', 'newSession', "New Session")}
           </button>
@@ -299,31 +317,36 @@ export const GraceCounselChat: React.FC = () => {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t('grace', 'searchConversations', "Search conversations…")}
-              className="w-full pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+              aria-label={t('grace', 'searchConversations', "Search conversations…")}
+              className="w-full min-h-[44px] sm:min-h-0 pl-8 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
             />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {filteredSessions.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center mt-6">
+            <p className="text-xs text-gray-500 text-center mt-6">
               {search ? t('grace', 'noMatch', "No conversations match your search.") : t('grace', 'noConversations', "No conversations yet.")}
             </p>
           ) : (
             filteredSessions.map(s => (
               <button
                 key={s.id}
-                onClick={() => selectSession(s)}
+                onClick={() => { selectSession(s); if (isCompact) setSidebarOpen(false); }}
+                aria-current={s.id === sessionId ? 'true' : undefined}
                 className={`w-full text-left p-2 rounded-lg transition-colors ${
                   s.id === sessionId ? 'bg-purple-100 border border-purple-200' : 'hover:bg-gray-100'
                 }`}
               >
                 <p className="text-xs font-medium text-gray-800 truncate">{s.title || t('grace', 'conversation', "Conversation")}</p>
                 {s.last_message && (
-                  <p className="text-[11px] text-gray-500 truncate">{s.last_message}</p>
+                  <p className="text-xs text-gray-500 truncate">{s.last_message}</p>
                 )}
-                <p className="text-[10px] text-gray-400 mt-0.5">
-                  {new Date(s.updated_at || s.created_at).toLocaleDateString()}
-                </p>
+                {(() => {
+                  const d = new Date(s.updated_at || s.created_at);
+                  return Number.isNaN(d.getTime()) ? null : (
+                    <p className="text-xs text-gray-500 mt-0.5">{d.toLocaleDateString()}</p>
+                  );
+                })()}
               </button>
             ))
           )}
@@ -333,11 +356,12 @@ export const GraceCounselChat: React.FC = () => {
       {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-4 flex items-center gap-3">
-          {Capacitor.isNativePlatform() && (
+          {isCompact && (
             <button
               onClick={() => setSidebarOpen(prev => !prev)}
-              className="p-1 rounded hover:bg-white/10 shrink-0"
-              aria-label="Toggle chat history"
+              className="inline-flex items-center justify-center h-11 w-11 -m-1 rounded hover:bg-white/10 shrink-0"
+              aria-label={t('grace', 'toggleHistory', 'Show conversations')}
+              aria-expanded={sidebarOpen}
             >
               <Menu className="h-6 w-6" />
             </button>
@@ -394,30 +418,35 @@ export const GraceCounselChat: React.FC = () => {
           <div className="flex gap-2">
             <input
               type="text"
+              aria-label={t('grace', 'inputLabel', 'Message')}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={t('grace', 'inputPlaceholder', "Share what's on your heart...")}
               disabled={isLoading}
-              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex-1 min-w-0 min-h-[44px] border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
+              aria-label={t('common', 'send', 'Send')}
+              className="min-h-[44px] bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              {!Capacitor.isNativePlatform() && (
+              {!isCompact && (
                 <span>{isLoading ? t('grace', 'sending', "Sending") : t('common', 'send', 'Send')}</span>
               )}
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-2 text-center">
             {t('grace', 'poweredBy', "Powered by OpenAI • All conversations are private and secure")}
+          </p>
+          <p className="text-xs text-gray-600 mt-1 text-center">
+            {t('grace', 'crisisNote', "GraceCounsel is not a substitute for a counsellor or emergency help. If you or someone else is in danger, contact your local emergency number now.")}
           </p>
         </div>
       </div>

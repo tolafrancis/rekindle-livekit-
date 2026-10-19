@@ -486,7 +486,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     'journal.subtitle': 'Record your prayers and reflect on answered ones',
     'revelations.title': 'Revelations',
     'revelations.subtitle': 'Capture and share insights from the Word',
-    'community-feed.title': 'Community Feed',
+    'community-feed.title': 'Activity',
     'community-feed.subtitle': 'See what believers around you are sharing',
     'reading-plan.title': 'Reading Plan',
     'reading-plan.subtitle': 'Stay consistent in the Word, one day at a time',
@@ -2243,6 +2243,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "recordingIsOff": "Recording is off for this broadcast",
     "recording": "Recording",
     "notRecording": "Not recording",
+    "scripture": "Scripture",
     "invite": "Invite",
     "ai": "AI",
     "ending": "Ending...",
@@ -5424,7 +5425,7 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     "error": "Error",
     "fillRequiredFields": "Please fill all required fields",
     "bookingRequested": "Booking Requested",
-    "bookingRequestedDesc": "Session with {name} requested for {date} at {time}",
+    "bookingRequestedDesc": "Session with {name} requested for {date} at {time}. You'll be notified when the counsellor confirms.",
     "failedToBook": "Failed to book session",
     "newSessionBooking": "New Session Booking",
     "sessionRequestedBody": "{name} has requested a session on {date} at {time}",
@@ -8874,6 +8875,13 @@ export const DEFAULT_TRANSLATIONS: Translations = {
     gestureTipReadAloud: 'Double-tap to hear it read aloud · single tap to pause/resume',
     pausedTapResume: 'Paused — tap to resume',
     gotIt: 'Got it',
+  },
+  // Strings owned by the signed-in app shell (AppLayout). Kept in their own
+  // namespace so shell labels never borrow a key that means something else.
+  appShell: {
+    noCounsellorsTitle: 'No counsellors available',
+    noCounsellorsDesc: 'Check back later for available counsellors.',
+    nowPlaying: 'Now playing',
   },
   // @i18n-ns-default (merge anchor — do not remove)
 };

@@ -14,7 +14,8 @@ interface BackToTopProps {
  * Mounted once at the app root so it works on every scrollable page without any
  * page-specific wiring. It watches the window scroll position, fades/slides in
  * once the user has scrolled a reasonable distance, and smoothly scrolls back to
- * the top when tapped. It sits below full-screen overlays (z-40) so immersive
+ * the top when tapped. Hidden on phones, where the bottom bar sits here and
+ * tapping the current tab scrolls to the top. It sits below full-screen overlays (z-40) so immersive
  * viewers naturally hide it, and stays out of the way in the bottom-left corner.
  */
 export const BackToTop: React.FC<BackToTopProps> = ({ threshold = 300, className = '' }) => {
@@ -35,7 +36,7 @@ export const BackToTop: React.FC<BackToTopProps> = ({ threshold = 300, className
       onClick={scrollToTop}
       aria-label="Back to top"
       title="Back to top"
-      className={`fixed bottom-4 left-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-purple-600 shadow-lg backdrop-blur transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-white hover:text-purple-700 ${
+      className={`fixed bottom-4 left-4 z-40 hidden md:flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-purple-600 shadow-lg backdrop-blur transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-white hover:text-purple-700 ${
         visible
           ? 'translate-y-0 scale-100 opacity-100'
           : 'pointer-events-none translate-y-3 scale-90 opacity-0'

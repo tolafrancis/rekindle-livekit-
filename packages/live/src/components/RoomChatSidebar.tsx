@@ -25,6 +25,7 @@ import {
 import { ChatMessageType, ChatAttachment } from '@rekindle/types/liveChannelTypes';
 import { ContentSafetyMenu } from '@rekindle/features/components/ContentSafetyMenu';
 import { useModeration } from '@rekindle/features/ModerationContext';
+import { randomId } from '@rekindle/ui/uuid';
 
 interface ChatParticipant { sessionId: string; userName: string; isLocal?: boolean }
 
@@ -110,7 +111,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
     setUploading(true);
     try {
       const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `chat/${meetingId || 'meeting'}/${crypto.randomUUID()}-${safe}`;
+      const path = `chat/${meetingId || 'meeting'}/${randomId()}-${safe}`;
       const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
         contentType: file.type || 'application/octet-stream',
         upsert: false,
@@ -247,7 +248,7 @@ export const RoomChatSidebar: React.FC<RoomChatSidebarProps> = ({
             <FileText className="h-5 w-5 shrink-0 text-blue-200" />
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-white truncate">{message.attachment.name}</p>
-              <p className="text-[10px] text-gray-300">{formatSize(message.attachment.size)}</p>
+              <p className="text-xs text-gray-300">{formatSize(message.attachment.size)}</p>
             </div>
             <Download className="h-4 w-4 shrink-0 text-gray-300" />
           </div>

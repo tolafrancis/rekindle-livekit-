@@ -24,6 +24,7 @@ import {
   FileText, List, Grid, Save, X, Copy, CheckCircle
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryDevotionalsManagerProps {
   ministryId: string;
@@ -463,7 +464,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t('ministryDevotionalsManager2', 'confirmDeleteDevotional', 'Are you sure you want to delete this devotional?'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalsManager2', 'confirmDeleteDevotionalTitle', 'Delete this devotional?'), confirmLabel: t('ministryDevotionalsManager2', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       const { error } = await supabase
@@ -594,7 +595,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   };
 
   const handleDeleteSeries = async (id: string) => {
-    if (!confirm(t('ministryDevotionalsManager2', 'confirmDeleteSeries', 'Are you sure? This will remove the series association from all devotionals.'))) return;
+    if (!await confirmAction({ title: t('ministryDevotionalsManager2', 'confirmDeleteSeriesTitle', 'Delete this series?'), description: t('ministryDevotionalsManager2', 'confirmDeleteSeriesDesc', 'This will remove the series association from all devotionals.'), confirmLabel: t('ministryDevotionalsManager2', 'delete', 'Delete'), destructive: true })) return;
 
     try {
       await supabase
@@ -733,14 +734,14 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
         </div>
         <div className="flex gap-2">
           <div className="flex bg-gray-100 rounded-lg p-1">
-            <Button
+            <Button aria-label={t('ministryDevotionalsManager2', 'listView', 'List view')}
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('list')}
             >
               <List className="h-4 w-4" />
             </Button>
-            <Button
+            <Button aria-label={t('ministryDevotionalsManager2', 'gridView', 'Grid view')}
               variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('grid')}
@@ -925,10 +926,10 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
                       />
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(dev)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'editDevotional', 'Edit devotional')} variant="ghost" size="sm" onClick={() => handleEdit(dev)}>
                         <Edit className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDuplicate(dev)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'duplicateDevotional', 'Duplicate devotional')} variant="ghost" size="sm" onClick={() => handleDuplicate(dev)}>
                         <Copy className="h-3 w-3" />
                       </Button>
                       <TranslateNowButton
@@ -939,10 +940,10 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
                         variant="ghost"
                         showDropdown={false}
                       />
-                      <Button variant="ghost" size="sm" onClick={() => handleToggleFeatured(dev)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'toggleFeatured', 'Feature / unfeature')} variant="ghost" size="sm" onClick={() => handleToggleFeatured(dev)}>
                         <Star className={`h-3 w-3 ${dev.is_featured ? 'text-amber-500 fill-amber-500' : ''}`} />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(dev.id)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'deleteDevotional', 'Delete devotional')} variant="ghost" size="sm" onClick={() => handleDelete(dev.id)}>
                         <Trash2 className="h-3 w-3 text-red-500" />
                       </Button>
                     </div>
@@ -1025,16 +1026,16 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
                       <Button variant="outline" size="sm" onClick={() => handleTogglePublish(dev)}>
                         {dev.is_published ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(dev)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'editDevotional', 'Edit devotional')} variant="ghost" size="icon" onClick={() => handleEdit(dev)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDuplicate(dev)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'duplicateDevotional', 'Duplicate devotional')} variant="ghost" size="icon" onClick={() => handleDuplicate(dev)}>
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleToggleFeatured(dev)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'toggleFeatured', 'Feature / unfeature')} variant="ghost" size="icon" onClick={() => handleToggleFeatured(dev)}>
                         <Star className={`h-4 w-4 ${dev.is_featured ? 'text-amber-500 fill-amber-500' : ''}`} />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(dev.id)}>
+                      <Button aria-label={t('ministryDevotionalsManager2', 'deleteDevotional', 'Delete devotional')} variant="ghost" size="icon" onClick={() => handleDelete(dev.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>
@@ -1168,7 +1169,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
                         placeholder={t('ministryDevotionalsManager2', 'questionN', 'Question {n}').replace('{n}', String(i + 1))}
                       />
                       {formData.reflection_questions.length > 1 && (
-                        <Button
+                        <Button aria-label={t('ministryDevotionalsManager2', 'removeQuestion', 'Remove question')}
                           type="button"
                           variant="ghost"
                           size="icon"

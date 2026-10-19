@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
@@ -13,6 +13,7 @@ import { ActiveCallProvider } from "@rekindle/live/ActiveCallContext";
 import { GlobalAudioProvider } from "@rekindle/features/GlobalAudioContext";
 import { ActiveCallHost } from "@rekindle/live/components/ActiveCallHost";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { BrowserTranslationTip } from "@rekindle/features/components/BrowserTranslationTip";
 import Index from "./pages/Index";
 import { BackToTop } from "./components/BackToTop";
 import RouteFallback from "./components/RouteFallback";
@@ -24,6 +25,7 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const MetaWhatsAppCallback = lazy(() => import("./pages/MetaWhatsAppCallback"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const MeetingCodeRedirect = lazy(() => import("@rekindle/live/components/MeetingCodeRedirect"));
 const MinistryJoinLanding = lazy(() => import("@/components/registration/MinistryJoinLanding"));
 const MinistryKiosk = lazy(() => import("@/components/registration/MinistryKiosk"));
 const MemberMinistryProfile = lazy(() => import("@/components/registration/MemberMinistryProfile"));
@@ -112,7 +114,8 @@ const App = () => {
               <GlobalAudioProvider>
                 <ActiveCallProvider>
                 <Toaster />
-                <Sonner />
+                <ConfirmDialogHost />
+                <BrowserTranslationTip />
                 <BrowserRouter>
                   <PushNotificationNavHandler />
                   <Suspense fallback={<RouteFallback />}>
@@ -133,8 +136,12 @@ const App = () => {
                   <Route path="/ministry-prayer/:id" element={<Index />} />
                   <Route path="/ministry-videos/:id" element={<Index />} />
                   <Route path="/small-group/:id" element={<Index />} />
+                  <Route path="/messages/:id" element={<Index />} />
                   <Route path="/books/:id" element={<Index />} />
                   
+                  {/* Short meeting links (/m/abc-defg-hij) redirect to the full join route */}
+                  <Route path="/m/:code" element={<MeetingCodeRedirect />} />
+
                   {/* Meeting join routes - Channel meetings */}
                   <Route path="/channel/:channelId/meeting/:meetingId" element={<Skeleton />} />
                   

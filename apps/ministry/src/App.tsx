@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { toast } from '@rekindle/ui/use-toast';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@rekindle/features/AuthContext';
 import { ModerationProvider } from '@rekindle/features/ModerationContext';
 import { LanguageProvider } from '@rekindle/features/LanguageContext';
+import { BrowserTranslationTip } from '@rekindle/features/components/BrowserTranslationTip';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
 import { canShowPurchaseUI } from '@rekindle/features/platform';
@@ -13,6 +14,7 @@ import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher
 import MinistriesHub from '@rekindle/ministry/components/MinistriesHub';
 import MinistryJoinLanding from '@rekindle/ministry/components/MinistryJoinLanding';
 import MinistryKiosk from '@rekindle/ministry/components/MinistryKiosk';
+import GiftAidDeclarationPage from '@rekindle/ministry/components/GiftAidDeclarationPage';
 import MemberMinistryProfile from '@rekindle/ministry/components/MemberMinistryProfile';
 import CreateMinistryWizard from '@rekindle/ministry/components/CreateMinistryWizard';
 import CustomDomainSettings from '@rekindle/ministry/components/CustomDomainSettings';
@@ -29,9 +31,10 @@ import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rek
 import { User, CreditCard, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
-import { Toaster as Sonner } from '@rekindle/ui/sonner';
+import { ConfirmDialogHost } from '@rekindle/ui/confirm-dialog';
 import { ChannelWatchPage } from '@rekindle/live/components/ChannelWatchPage';
 import { MeetingJoinPage } from '@rekindle/live/components/MeetingJoinPage';
+import { MeetingCodeRedirect } from '@rekindle/live/components/MeetingCodeRedirect';
 import { WebinarJoinPage } from '@rekindle/live/webinar/WebinarJoinPage';
 import { WebinarSpeakerInvitePage } from '@rekindle/live/webinar/WebinarSpeakerInvitePage';
 import { TranslationDisplayPage } from '@rekindle/live/components/TranslationDisplayPage';
@@ -48,14 +51,31 @@ import { registerPush } from '@rekindle/features/usePushNotifications';
 import { ErrorBoundary } from '@rekindle/features/components/ErrorBoundary';
 import AuthScreen from './screens/AuthScreen';
 
+// Public preview for a shared ministry devotional (signed-out visitors only).
+const SharedContentPreview = lazy(() => import('@rekindle/features/components/SharedContentPreview'));
+
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
 // entry, an auth gate, self-onboarding for members with no ministry, and an authed
 // area (current-ministry context) hosting the hub + ministry settings.
 
+// Signed-out visitors on "/" get a dark first paint (public/boot.js) because
+// the landing page they're about to see is dark.
+const darkBoot = () => document.documentElement.classList.contains('rk-dark-boot');
+const endDarkBoot = () => document.documentElement.classList.remove('rk-dark-boot');
+
 function LoadingScreen() {
+  // "Loading…" only if loading actually takes a while: on a normal visit
+  // this screen lasts ~100ms, and flashing text for that long read as a
+  // flicker (2026-10-10).
+  const [showText, setShowText] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setShowText(true), 400);
+    return () => clearTimeout(id);
+  }, []);
+  if (darkBoot()) return <div className="min-h-screen" />;
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-      <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>
+      {showText && <p className="text-sm text-muted-foreground animate-pulse">Loading…</p>}
     </div>
   );
 }
@@ -184,6 +204,11 @@ function AuthedArea() {
   const { user, loading, initialized } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  // The dark first paint is only for the landing page.
+  const showingLanding = !loading && initialized && !user && location.pathname === '/';
+  useEffect(() => {
+    if (!loading && initialized && !showingLanding) endDarkBoot();
+  }, [loading, initialized, showingLanding]);
   if (loading || !initialized) return <LoadingScreen />;
   if (!user) {
     if (location.pathname === '/') {
@@ -193,6 +218,21 @@ function AuthedArea() {
           onSignIn={() => navigate('/auth')}
           onSignUp={() => navigate('/auth', { state: { mode: 'signup' } })}
         />
+      );
+    }
+    // A shared ministry devotional gets the same public preview the consumer
+    // app shows, with the choice to join the ministry or just read it on
+    // Rekindle. SharedContentDeepLinkHandler has already saved the link, so
+    // signing in from here still opens the devotional.
+    if (location.pathname.startsWith('/ministry-devotional/')) {
+      return (
+        <Suspense fallback={<LoadingScreen />}>
+          <SharedContentPreview
+            appContext="ministry"
+            onSignIn={() => navigate('/auth')}
+            onSignUp={() => navigate('/auth', { state: { mode: 'signup' } })}
+          />
+        </Suspense>
       );
     }
     return <Navigate to="/auth" replace />;
@@ -218,6 +258,7 @@ function AppRoutes() {
       <Route path="/join/:slug" element={<MinistryJoinLanding />} />
       <Route path="/register/:slug" element={<MinistryJoinLanding />} />
       <Route path="/kiosk/:slug" element={<MinistryKiosk />} />
+      <Route path="/gift-aid/:slug" element={<GiftAidDeclarationPage />} />
       <Route path="/my-membership/:slug" element={<MemberMinistryProfile />} />
       <Route path="/auth" element={<AuthRoute />} />
 
@@ -234,6 +275,7 @@ function AppRoutes() {
           app, so a shared ministry meeting link shows the guest join page (name
           entry + optional sign-in) instead of forcing sign-up. The join page then
           routes into the live room below. All OUTSIDE the auth gate. */}
+      <Route path="/m/:code" element={<MeetingCodeRedirect />} />
       <Route path="/ministry/:ministryId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/channel/:channelId/meeting/:meetingId" element={<MeetingJoinPage />} />
       <Route path="/ministry/:ministryId/webinar/:webinarId" element={<WebinarJoinPage />} />
@@ -275,6 +317,7 @@ function AppRoutes() {
         <Route path="/ministry-prayer/:id" element={<MinistriesHub />} />
         <Route path="/ministry-videos/:id" element={<MinistriesHub />} />
         <Route path="/small-group/:id" element={<MinistriesHub />} />
+        <Route path="/messages/:id" element={<MinistriesHub />} />
         <Route path="/books/:id" element={<MinistriesHub />} />
         <Route path="/guide" element={<RekindleTutorialPage />} />
         <Route path="/faq" element={<FaqPage />} />
@@ -344,8 +387,8 @@ export default function App() {
     return () => window.removeEventListener('nativePushReceived', handler);
   }, []);
 
-  // ThemeProvider MUST wrap the tree: the Sonner toaster calls useTheme(),
-  // which throws (blanking the whole app) when no provider is present.
+  // ThemeProvider MUST wrap the tree: components that call useTheme() throw
+  // (blanking the whole app) when no provider is present.
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
@@ -356,9 +399,11 @@ export default function App() {
               <ActiveCallProvider>
               {/* Toast renderers — without these mounted, every toast() call in the
                   ministry app (channel/meeting copy confirmations, etc.) is silent.
-                  Toaster reads @rekindle/ui/use-toast; Sonner renders sonner toasts. */}
+                  Toaster reads @rekindle/ui/use-toast; sonner-style calls go through
+                  @rekindle/ui/toast-compat, which renders here too. */}
               <Toaster />
-              <Sonner />
+              <ConfirmDialogHost />
+              <BrowserTranslationTip />
               <BrowserRouter>
                 <PushNotificationNavHandler />
                 <SharedContentDeepLinkHandler />

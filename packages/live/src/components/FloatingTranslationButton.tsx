@@ -1,3 +1,4 @@
+import { useActiveCallOptional } from '../ActiveCallContext';
 import React, { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
@@ -8,6 +9,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { updateCaptionPrefs, useCaptionPrefs } from '../captionPrefs';
 import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './ScripturePanel';
 import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
 import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
@@ -107,6 +109,11 @@ export interface ScriptureControlState {
   /** Only the host sees the manual-entry/hide controls (matches the old
    *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
   canControl: boolean;
+  /** The ministry's "Detect references automatically" or "Show confirmed
+   *  verses automatically" setting is off, so nothing shows on its own. */
+  autoOff: boolean;
+  /** Minimizes the meeting and opens Live Translation settings. */
+  onOpenSettings: () => void;
 }
 
 /** Live-translation language picker + status, styled to match the other
@@ -198,6 +205,26 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     setCaptionModeState(mode);
     try { localStorage.setItem(CAPTION_MODE_STORAGE_KEY, mode); } catch { /* private-browsing / quota — non-fatal */ }
   };
+  // Where the "Show Captions" row is hidden, original-language captions come
+  // from on-demand CC (CaptionsButton / captionPrefs) instead. Listeners
+  // looked for them here next to the translated languages and didn't find
+  // them, so "Original" sits in this list too and drives the same CC switch.
+  // Only one caption source shows at a time.
+  const captionPrefs = useCaptionPrefs();
+  const originalCcOn = !showCaptionsOption && captionPrefs.enabled;
+  const pickCaptionMode = (mode: CaptionMode) => {
+    if (captionPrefs.enabled) updateCaptionPrefs({ enabled: false });
+    setCaptionMode(mode);
+  };
+  const turnOnOriginalCc = () => {
+    setCaptionMode('off');
+    updateCaptionPrefs({ enabled: true });
+  };
+  // CC turned on from the separate CC button: drop any translated captions.
+  useEffect(() => {
+    if (originalCcOn && captionMode !== 'off') setCaptionMode('off');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalCcOn]);
   const [captionLines, setCaptionLines] = useState<CaptionLine[]>([]);
   // Near-real-time captions (2026-09-13) — the growing, not-yet-finalized
   // line, updated every ~150ms while the speaker is still talking (migration
@@ -341,7 +368,14 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureManualError, setScriptureManualError] = useState<string | null>(null);
   const [scriptureHiding, setScriptureHiding] = useState(false);
   const scriptureSettings = useScriptureSettings(ministryId);
-  const onScreenVerse = useCurrentScripture(scriptureSessionId ?? undefined);
+  const activeCall = useActiveCallOptional();
+  // Watching without the switch on: whoever hasn't turned Live Scripture on
+  // themselves (every participant, usually) still sees the verse the host
+  // puts up. Their switch is per device and off by default, and the overlay
+  // used to need it, so participants never saw any verse.
+  const [watchSessionId, setWatchSessionId] = useState<string | null>(null);
+  const displaySessionId = scriptureOn ? scriptureSessionId : watchSessionId;
+  const onScreenVerse = useCurrentScripture(displaySessionId ?? undefined);
   // Draggable (2026-09-29, real usability report: the fixed top position sat
   // right under the "Copy Link" / stream-config buttons every host layout
   // puts in the top-right corner — WebinarStage.tsx and
@@ -349,7 +383,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // Same pattern as captionOverlay above: default position clears that
   // button row, draggable anywhere afterward, resets on a fresh off → on.
   const scriptureOverlay = useDraggableOverlay({
-    resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
+    resetKey: displaySessionId ? 'on' : 'off',
     baseTransform: 'translateX(-50%)',
   });
 
@@ -411,6 +445,47 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId]);
+
+  // Find the room's Live Scripture session without starting one: the latest
+  // live session for this room now, then any session a verse is shown on
+  // later (the host may switch it on after this participant joined).
+  useEffect(() => {
+    if (scriptureOn || !ministryId) { setWatchSessionId(null); return; }
+    let cancelled = false;
+    const roomSessions = new Map<string, boolean>();
+    const inThisRoom = async (sessionId: string) => {
+      if (!roomSessions.has(sessionId)) {
+        const { data } = await supabase
+          .from('translation_sessions')
+          .select('id')
+          .eq('id', sessionId)
+          .eq('livekit_room_name', roomName)
+          .maybeSingle();
+        roomSessions.set(sessionId, !!data);
+      }
+      return roomSessions.get(sessionId)!;
+    };
+    supabase
+      .from('translation_sessions')
+      .select('id')
+      .eq('livekit_room_name', roomName)
+      .in('status', ['initialising', 'joining', 'active', 'paused'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled && data) setWatchSessionId((cur) => cur ?? data.id); }, () => {});
+    const channel = supabase
+      .channel(`scripture-watch-${roomName}-${Math.random().toString(36).slice(2, 10)}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'translation_scripture_events', filter: `ministry_id=eq.${ministryId}` },
+        (payload) => {
+          const sessionId = (payload.new as { session_id?: string }).session_id;
+          if (!sessionId) return;
+          void inThisRoom(sessionId).then((ok) => { if (ok && !cancelled) setWatchSessionId(sessionId); });
+        })
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [scriptureOn, ministryId, roomName]);
 
   // Auto-detect (2026-09-29) — the original workflow: put a confirmed
   // reference on screen the moment it's heard, no manual "Show" tap needed.
@@ -484,6 +559,29 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     else setScriptureManual('');
   };
 
+  // The ministry app's Live > Live Translation > Settings tab, reached with
+  // MinistrySpace's "rk:ministry-go" event (the meeting renders above the
+  // tab router, so it can't switch tabs itself). The sub-tab is seeded in
+  // history state for MinistryTranslationHub's useViewHistory, and the flag
+  // tells LiveScriptureSettingsCard to scroll itself into view. The meeting
+  // is minimized, not left: it keeps running in the mini player.
+  const openScriptureSettings = () => {
+    try {
+      window.history.replaceState({ ...(window.history.state ?? {}), 'vh:ministry-translation-tab': 'settings' }, '', window.location.href);
+      sessionStorage.setItem('rk-scroll-live-scripture', '1');
+    } catch { /* non-fatal */ }
+    const detail = { group: 'live', child: 'live-tech', handled: false };
+    window.dispatchEvent(new CustomEvent('rk:ministry-go', { detail }));
+    if (detail.handled) {
+      activeCall?.minimize();
+    } else {
+      toast({
+        title: 'Open Live Translation settings',
+        description: "In your ministry, go to Live > Live Translation > Settings and switch on both options in the Live Scripture card.",
+      });
+    }
+  };
+
   const hideVerse = async () => {
     if (!scriptureSessionId) return;
     setScriptureHiding(true);
@@ -507,9 +605,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       hiding: scriptureHiding,
       onHide: hideVerse,
       canControl: !!(scriptureOn && isHost && scriptureSessionId),
+      autoOff: !(scriptureSettings.auto_detect && scriptureSettings.auto_show),
+      onOpenSettings: openScriptureSettings,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId]);
+  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId, scriptureSettings.auto_detect, scriptureSettings.auto_show]);
 
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
@@ -764,7 +864,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           near any toolbar; still draggable anywhere afterward, same as the
           captions box below. Matches the same ScripturePanel "display" card
           /display renders (see TranslationDisplayPage.tsx). */}
-      {scriptureOn && scriptureSessionId && (
+      {displaySessionId && (
         <div
           ref={scriptureOverlay.ref}
           className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
@@ -778,7 +878,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
             title="Drag to move"
             className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           >
-            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+            <ScripturePanel sessionId={displaySessionId} variant="display" />
           </div>
         </div>
       )}
@@ -870,7 +970,8 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           <button
             type="button"
             title="Live Translation"
-            className={`flex h-10 items-center gap-1.5 rounded-full shadow-lg backdrop-blur-sm px-3 transition-colors ${
+            aria-label="Live Translation"
+            className={`flex h-11 items-center gap-1.5 rounded-full shadow-lg backdrop-blur-sm px-3 transition-colors ${
               currentLanguage || captionMode !== 'off' ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-900/70 text-white hover:bg-gray-800/80'
             }`}
           >
@@ -962,14 +1063,21 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               Also independent of Audio the same way it always was: keep the
               real voice and still read captions, or mute translated audio
               but read along, same idea as any video app's separate CC menu. */}
-          {(showCaptionsOption || realTranslationTracks.length > 0) && (<>
+          <>
           <p className="text-xs font-semibold text-gray-700 px-2.5 mb-1 mt-2 border-t pt-2">Captions</p>
           <div className="max-h-40 overflow-y-auto space-y-0.5">
-            <button type="button" onClick={() => setCaptionMode('off')} className={`${row} ${sel(captionMode === 'off')}`}>
+            <button type="button" onClick={() => pickCaptionMode('off')} className={`${row} ${sel(captionMode === 'off' && !originalCcOn)}`}>
               <X className="h-4 w-4" />
               <span className="flex-1">Off</span>
-              {captionMode === 'off' && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+              {captionMode === 'off' && !originalCcOn && <Check className="h-3.5 w-3.5 text-indigo-600" />}
             </button>
+            {!showCaptionsOption && (
+            <button type="button" onClick={turnOnOriginalCc} className={`${row} ${sel(originalCcOn)}`}>
+              <Captions className="h-4 w-4" />
+              <span className="flex-1">Original</span>
+              {originalCcOn && <Check className="h-3.5 w-3.5 text-indigo-600" />}
+            </button>
+            )}
             {showCaptionsOption && (
             <button
               type="button"
@@ -986,7 +1094,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               <button
                 key={`caption-${track.botIdentity}`}
                 type="button"
-                onClick={() => setCaptionMode(track.language)}
+                onClick={() => pickCaptionMode(track.language)}
                 className={`${row} ${sel(captionMode === track.language)}`}
               >
                 <Captions className="h-4 w-4" />
@@ -995,7 +1103,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
               </button>
             ))}
           </div>
-          </>)}
+          </>
 
           {/* Live Scripture — moved to its own control-bar button + side
               panel (2026-09-29, LiveScriptureSidebar), matching Chat/Host
@@ -1088,7 +1196,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           </div>
         )}
 
-        <p className="text-[10px] text-gray-400 px-2.5 pt-1.5">
+        <p className="text-xs text-gray-400 px-2.5 pt-1.5">
           Audio "Original" mutes the translation and restores the room's normal audio. Captions run independently of
           whichever audio you're listening to.
         </p>

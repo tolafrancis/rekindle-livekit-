@@ -31,15 +31,18 @@
 //   { action:'list-participants', meetingId, context } → { participants: [...], totalCount }  (host only)
 //   6A broadcast: { action:'start-hls', roomName, channelId, context } → { egressId, playbackUrl }
 //                 { action:'stop-hls',  channelId, context }
-//   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, rtmpUrl, context }
+//   6C simulcast: { action:'add-simulcast',    roomName, channelId, platform, serverUrl, streamKey, context }
+//                   (saves the destination; starts it now only if already live, else on start-hls)
 //                 { action:'remove-simulcast', channelId, platform, context }
 //                 { action:'list-simulcast',   channelId }
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, StreamOutput, StreamProtocol, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
+import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 import { AwsClient } from 'https://esm.sh/aws4fetch@1';
+import { bindRoomContext } from '../_shared/roomBinding.ts';
+import { simulcastTable, simulcastIdCol, isRoomNotFound, startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
 
 // The host's recording layout choices (packages/live/src/layout/meetingLayout.ts).
 // Every one but 'gallery' renders packages/live/src/components/RecordingTemplatePage.tsx.
@@ -413,22 +416,6 @@ serve(async (req) => {
       return json({ success: true });
     }
 
-    if (action === 'list-simulcast') {
-      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
-      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
-      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
-      const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
-      const { data } = await admin
-        .from(table)
-        .select('*')
-        .eq(idCol, targetId);
-      // Same shape as channel-simulcast (stream keys omitted; hasKey substitute).
-      return json({
-        success: true,
-        targets: (data ?? []).map((t: any) => ({ ...t, hasKey: !!t.egress_id, mux_target_id: t.mux_target_id ?? null })),
-      });
-    }
-
     // track-participant is a self-report (any current participant, including
     // guests with no Supabase auth session — see meeting_attendance's header
     // comment) — no host check, and no egress/roomService needed.
@@ -475,10 +462,71 @@ serve(async (req) => {
     });
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) return json({ error: 'Unauthorized' }, 401);
+
+    // Room binding (2026-10-10). Host status comes from body.context, but the
+    // egress actions run against body.roomName and the top-level ids. Keep only
+    // the part of the context that owns roomName, and make the top-level ids
+    // follow it, so hosting one meeting/channel can't record, stream or stop
+    // someone else's room.
+    let roomBound = false;
+    if (body.roomName) {
+      const bound = await bindRoomContext(admin, body.roomName, body.context);
+      if (!bound.ok) return json({ error: 'room_mismatch' }, 403);
+      roomBound = bound.bound;
+      body.context = bound.ctx;
+    } else {
+      // No room: the action is keyed on one resource id. Keep exactly one, so
+      // host of a channel can't pair it with somebody else's meeting id.
+      const c = body.context ?? {};
+      body.context = c.kind === 'channel' ? { kind: 'channel', channelId: c.channelId } : { kind: c.kind, meetingId: c.meetingId };
+    }
+    body.meetingId = body.context?.meetingId;
+    body.channelId = body.context?.channelId;
     if (!(await isDbHost(admin, user.id, body.context))) return json({ error: 'Only the host can record' }, 403);
+    const ROOM_ACTIONS = ['start-recording', 'stop-recording', 'start-hls', 'add-simulcast'];
+    if (ROOM_ACTIONS.includes(action) && !roomBound) return json({ error: 'context_required' }, 400);
 
     const egressClient = new EgressClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
     const roomService = new RoomServiceClient(httpUrl(LIVEKIT_URL), KEY, SECRET);
+
+    // A room can have a manual recording (filepath recordings/...) and the
+    // audience HLS (broadcasts/...) running at once, and both rows say
+    // kind 'meeting'/'channel'/'webinar'. Stops used to take "the newest
+    // recording row in the room" and could stop the wrong one, leaving the
+    // other billing (2026-10-10). Returns this room's rows of one purpose
+    // that LiveKit says are still running (all of them if LiveKit can't be
+    // asked).
+    const activeEgresses = async (room: string, purpose: 'recordings' | 'broadcasts') => {
+      const { data } = await admin.from('livekit_recordings')
+        .select('id, egress_id, playback_url')
+        .eq('room_name', room).eq('status', 'recording').like('filepath', `${purpose}/%`)
+        .order('started_at', { ascending: false });
+      const rows = (data ?? []) as { id: string; egress_id: string; playback_url: string | null }[];
+      if (rows.length === 0) return rows;
+      try {
+        const live = new Set((await egressClient.listEgress({ roomName: room, active: true })).map((e: any) => e.egressId));
+        return rows.filter((r) => live.has(r.egress_id));
+      } catch {
+        return rows;
+      }
+    };
+
+    // list-simulcast — host only (2026-10-10; it used to sit above the auth
+    // check and returned every column, stream_key included).
+    if (action === 'list-simulcast') {
+      const isMeeting = body.context?.kind !== 'channel';
+      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
+      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
+      const { data } = await admin
+        .from(table)
+        .select('*')
+        .eq(idCol, isMeeting ? body.meetingId : body.channelId);
+      // Same shape as channel-simulcast (stream keys omitted; hasKey substitute).
+      return json({
+        success: true,
+        targets: (data ?? []).map(({ stream_key, ...t }: any) => ({ ...t, hasKey: !!stream_key, mux_target_id: t.mux_target_id ?? null })),
+      });
+    }
 
     // list-participants — per-meeting attendance analytics. Host-only (auth
     // already checked above): names + join times are participant PII.
@@ -532,6 +580,11 @@ serve(async (req) => {
         const gate = await checkMinistryCanRecord(admin, startMinistryId, isChannelBroadcast || isWebinar ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
       }
+
+      // Idempotent: a double-click or a retry after a lost response must not
+      // start a second recording of the same room.
+      const [running] = await activeEgresses(body.roomName, 'recordings');
+      if (running) return json({ egressId: running.egress_id, recordingId: running.id, playbackUrl: running.playback_url, alreadyRunning: true });
 
       const ts = Date.now();
       const prefix = `recordings/${body.roomName}/${ts}`;
@@ -611,6 +664,13 @@ serve(async (req) => {
       if (hlsMinistryId) {
         const gate = await checkMinistryCanRecord(admin, hlsMinistryId, isChannel || isWebinarHls ? 'broadcast' : 'meeting');
         if (!gate.allowed) return json({ error: gate.reason }, 403);
+      }
+
+      // Never leave an earlier audience egress of this room running (a host
+      // reload or a retry used to orphan it, billing until the room closed).
+      for (const old of await activeEgresses(body.roomName, 'broadcasts')) {
+        await egressClient.stopEgress(old.egress_id).catch(() => {});
+        await admin.from('livekit_recordings').update({ status: 'processing', ended_at: new Date().toISOString() }).eq('egress_id', old.egress_id);
       }
 
       const ts = Date.now();
@@ -760,6 +820,8 @@ serve(async (req) => {
       } else {
         await admin.from(meetingTable).update({ hls_playback_url: livePlaybackUrl }).eq('id', meetingId);
       }
+      // Saved YouTube/Facebook destinations go live with the broadcast.
+      await startSimulcastEgresses(admin, egressClient, { isMeeting: !isChannel, targetId: isChannel ? channelId : meetingId }, body.roomName);
       return json({ egressId: info.egressId, playbackUrl: livePlaybackUrl });
     }
 
@@ -774,9 +836,11 @@ serve(async (req) => {
       if (isChannel && channelId) {
         const { data: cs } = await admin.from('channel_streams').select('hls_egress_id').eq('channel_id', channelId).maybeSingle();
         egressId = (cs as { hls_egress_id?: string } | null)?.hls_egress_id;
-      } else if (body.roomName) {
+      } else if (body.roomName && roomBound) {
+        // The audience HLS only, never the manual recording.
         const { data } = await admin.from('livekit_recordings')
           .select('egress_id').eq('room_name', body.roomName).eq('status', 'recording')
+          .like('filepath', 'broadcasts/%')
           .order('started_at', { ascending: false }).limit(1).maybeSingle();
         egressId = (data as { egress_id?: string } | null)?.egress_id;
       }
@@ -791,53 +855,99 @@ serve(async (req) => {
       } else if (meetingTable && meetingId) {
         // Leave hls_playback_url in place — it becomes the VOD link once Egress finalises.
       }
+      // The YouTube/Facebook restreams end with the broadcast.
+      if (isChannel && channelId) await stopSimulcastEgresses(admin, egressClient, { isMeeting: false, targetId: channelId });
+      else if (meetingTable && meetingId) await stopSimulcastEgresses(admin, egressClient, { isMeeting: true, targetId: meetingId });
       return json({ success: true });
     }
 
     // ── 6C · Simulcast-out → one RTMP Egress per destination ──────────────────
     if (action === 'add-simulcast') {
       const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
-      if (!body.roomName || !targetId || !body.rtmpUrl || !body.platform) {
-        return json({ error: 'roomName, targetId (channelId/meetingId), platform, rtmpUrl required' }, 400);
+      // serverUrl + streamKey separately; older clients send only the joined rtmpUrl.
+      let serverUrl = typeof body.serverUrl === 'string' ? body.serverUrl.trim() : '';
+      let streamKey = typeof body.streamKey === 'string' ? body.streamKey.trim() : '';
+      if ((!serverUrl || !streamKey) && typeof body.rtmpUrl === 'string') {
+        const cut = body.rtmpUrl.trim().lastIndexOf('/');
+        if (cut > 0) { serverUrl = body.rtmpUrl.trim().slice(0, cut); streamKey = body.rtmpUrl.trim().slice(cut + 1); }
       }
-      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
-      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
-      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
-      const stream = new StreamOutput({ protocol: StreamProtocol.RTMP, urls: [body.rtmpUrl] });
-      const info = await egressClient.startRoomCompositeEgress(body.roomName, { stream }, { layout: 'grid' });
-      await admin.from(table).upsert(
-        { [idCol]: targetId, platform: body.platform, enabled: true, egress_id: info.egressId },
+      serverUrl = serverUrl.replace(/\/+$/, '');
+      if (!body.roomName || !targetId || !serverUrl || !streamKey || !body.platform) {
+        return json({ error: 'roomName, targetId (channelId/meetingId), platform, serverUrl and streamKey required' }, 400);
+      }
+      if (!/^rtmps?:\/\//i.test(serverUrl)) {
+        return json({ error: 'invalid_server_url', message: 'The server URL should start with rtmp:// or rtmps://' }, 400);
+      }
+      const isMeeting = !!body.context?.kind && body.context.kind !== 'channel';
+      const table = simulcastTable(isMeeting);
+      const idCol = simulcastIdCol(isMeeting);
+
+      // Save the destination first. It used to start an egress straight away and
+      // upsert without server_url/stream_key (both NOT NULL), so before going
+      // live LiveKit failed with "room does not exist", and even a live save
+      // never stored a row (2026-10-10, "can't connect to YouTube").
+      const { error: saveErr } = await admin.from(table).upsert(
+        { [idCol]: targetId, platform: body.platform, server_url: serverUrl, stream_key: streamKey, enabled: true, status: 'idle', last_error: null, updated_at: new Date().toISOString() },
         { onConflict: `${idCol},platform` },
       );
-      return json({ success: true, egressId: info.egressId });
+      if (saveErr) {
+        console.error('[livekit-egress] add-simulcast save failed:', saveErr);
+        return json({ error: 'save_failed', message: saveErr.message }, 500);
+      }
+
+      // Already live: start this destination now. Otherwise the go-live path
+      // (start-hls, or the OBS ingress webhook) starts it.
+      let live = true;
+      if (!isMeeting) {
+        const { data: ch } = await admin.from('live_channels').select('is_live, is_hls_live').eq('id', targetId).maybeSingle();
+        const row = ch as { is_live?: boolean; is_hls_live?: boolean } | null;
+        live = !!row?.is_live || !!row?.is_hls_live;
+      }
+      if (!live) return json({ success: true, started: false });
+
+      const [result] = await startSimulcastEgresses(admin, egressClient, { isMeeting, targetId }, body.roomName, body.platform);
+      if (result && !result.ok) {
+        if (isRoomNotFound(result.error)) {
+          // Nobody is in the room yet; it starts when the broadcast does.
+          await admin.from(table).update({ status: 'idle', last_error: null }).eq(idCol, targetId).eq('platform', body.platform);
+          return json({ success: true, started: false });
+        }
+        return json({ success: false, error: 'start_failed', message: `Saved, but the restream could not start: ${result.error}` });
+      }
+      return json({ success: true, started: !!result?.ok });
     }
 
     if (action === 'remove-simulcast') {
       const targetId = body.meetingId ?? body.channelId ?? body.context?.meetingId ?? body.context?.channelId;
       if (!targetId || !body.platform) return json({ error: 'targetId + platform required' }, 400);
-      const isMeeting = body.context?.kind && body.context.kind !== 'channel';
-      const table = isMeeting ? 'meeting_simulcast_targets' : 'live_channel_simulcast_targets';
-      const idCol = isMeeting ? 'meeting_id' : 'channel_id';
+      const isMeeting = !!body.context?.kind && body.context.kind !== 'channel';
+      const table = simulcastTable(isMeeting);
+      const idCol = simulcastIdCol(isMeeting);
       const { data: tgt } = await admin
         .from(table)
         .select('egress_id')
         .eq(idCol, targetId).eq('platform', body.platform).maybeSingle();
       const egressId = (tgt as { egress_id?: string } | null)?.egress_id;
       if (egressId) await egressClient.stopEgress(egressId).catch(() => {});
-      await admin.from(table)
-        .update({ enabled: false, egress_id: null })
-        .eq(idCol, targetId).eq('platform', body.platform);
+      // Delete the row, stream key included (the client treats a removed
+      // destination as gone, and a kept key would show it as still connected).
+      await admin.from(table).delete().eq(idCol, targetId).eq('platform', body.platform);
       return json({ success: true });
     }
 
     if (action === 'stop-recording') {
       let egressId = body.egressId as string | undefined;
-      if (!egressId) {
+      if (egressId) {
+        const { data: rec } = await admin.from('livekit_recordings').select('room_name').eq('egress_id', egressId).maybeSingle();
+        if ((rec as { room_name?: string } | null)?.room_name !== body.roomName) return json({ error: 'room_mismatch' }, 403);
+      } else {
         const { data } = await admin
           .from('livekit_recordings')
           .select('egress_id')
           .eq('room_name', body.roomName)
           .eq('status', 'recording')
+          // The manual recording only, never the audience HLS.
+          .like('filepath', 'recordings/%')
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();

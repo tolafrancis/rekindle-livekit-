@@ -127,8 +127,10 @@ interface CSVImportRow {
   date_of_birth?: string;
   membership_status?: string;
   rowNumber: number;
-  status: 'pending' | 'valid' | 'invalid' | 'duplicate' | 'imported';
+  status: 'pending' | 'valid' | 'invalid' | 'duplicate' | 'imported' | 'updated';
   errors: string[];
+  // Set when the email matches an existing member profile, so the row can update it.
+  existingProfileId?: string;
 }
 
 interface BroadcastMessage {
@@ -238,9 +240,12 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
   const [csvImportProgress, setCSVImportProgress] = useState(0);
   const [csvImportResults, setCSVImportResults] = useState<{
     successful: number;
+    updated: number;
     failed: number;
     duplicates: number;
-  }>({ successful: 0, failed: 0, duplicates: 0 });
+  }>({ successful: 0, updated: 0, failed: 0, duplicates: 0 });
+  // When on, rows whose email matches an existing member update that member instead of being skipped.
+  const [csvUpdateExisting, setCSVUpdateExisting] = useState(false);
 
   // Broadcast messaging state
   const [broadcastForm, setBroadcastForm] = useState<BroadcastMessage>({
@@ -524,11 +529,11 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
     // Existing emails across BOTH stores: auth members (view) and member profiles
     const { data: existingView } = await supabase
       .from('ministry_members_with_profiles')
-      .select('user_email')
+      .select('user_id, user_email')
       .eq('ministry_id', ministryId);
     const { data: existingProfiles } = await supabase
       .from('ministry_member_profiles')
-      .select('email')
+      .select('id, email, user_id')
       .eq('ministry_id', ministryId);
 
     const existingEmails = new Set(
@@ -537,6 +542,22 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         ...(existingProfiles?.map((m: any) => m.email?.toLowerCase()) || []),
       ].filter(Boolean)
     );
+
+    // email → member profile id, so a matching row can update that profile. App-account
+    // members are matched through their linked profile (user_id) when the profile has no email.
+    const profileIdByEmail = new Map<string, string>();
+    const profileIdByUser = new Map<string, string>();
+    (existingProfiles || []).forEach((p: any) => {
+      if (p.email) profileIdByEmail.set(p.email.toLowerCase(), p.id);
+      if (p.user_id) profileIdByUser.set(p.user_id, p.id);
+    });
+    (existingView || []).forEach((m: any) => {
+      const email = m.user_email?.toLowerCase();
+      const pid = m.user_id && profileIdByUser.get(m.user_id);
+      if (email && pid && !profileIdByEmail.has(email)) profileIdByEmail.set(email, pid);
+    });
+
+    const firstRowByEmail = new Map<string, number>();
 
     const updatedData = data.map(row => {
       const errors: string[] = [];
@@ -555,9 +576,14 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
       } else if (!emailRegex.test(row.email)) {
         errors.push('Invalid email format');
         status = 'invalid';
-      } else if (existingEmails.has(row.email.toLowerCase())) {
-        errors.push('Email already exists in ministry');
+      } else if (firstRowByEmail.has(row.email.toLowerCase())) {
+        errors.push(`Same email as row ${firstRowByEmail.get(row.email.toLowerCase())} in this file`);
         status = 'duplicate';
+      } else if (existingEmails.has(row.email.toLowerCase())) {
+        status = 'duplicate';
+      }
+      if (row.email && !firstRowByEmail.has(row.email.toLowerCase())) {
+        firstRowByEmail.set(row.email.toLowerCase(), row.rowNumber);
       }
 
       // Validate phone (if provided)
@@ -566,14 +592,32 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         status = 'invalid';
       }
 
-      return { ...row, status, errors };
+      const existingProfileId = status === 'duplicate' && errors.length === 0
+        ? profileIdByEmail.get(row.email.toLowerCase())
+        : undefined;
+      if (status === 'duplicate' && errors.length === 0 && !existingProfileId) {
+        errors.push('Already in ministry (app account with no member profile to update)');
+      }
+
+      return { ...row, status, errors, existingProfileId };
     });
 
     setCSVData(updatedData);
   };
 
+  // Existing members this file can update: a matching email, no other problems.
+  const isUpdatableRow = (row: CSVImportRow) =>
+    row.status === 'duplicate' && !!row.existingProfileId;
+
+  const csvRowLabel = (row: CSVImportRow) => {
+    if (row.status !== 'duplicate') return row.status;
+    if (!isUpdatableRow(row)) return 'duplicate';
+    return csvUpdateExisting ? 'will update' : 'exists (skipped)';
+  };
+
   const importCSVMembers = async () => {
-    const validRows = csvData.filter(row => row.status === 'valid');
+    const validRows = csvData.filter(row =>
+      row.status === 'valid' || (csvUpdateExisting && isUpdatableRow(row)));
     
     if (validRows.length === 0) {
       toast({
@@ -588,13 +632,44 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
     setCSVImportProgress(0);
     
     let successful = 0;
+    let updated = 0;
     let failed = 0;
-    const duplicates = csvData.filter(row => row.status === 'duplicate').length;
+    const duplicates = csvData.filter(row =>
+      row.status === 'duplicate' && !(csvUpdateExisting && isUpdatableRow(row))).length;
 
     for (let i = 0; i < validRows.length; i++) {
       const row = validRows[i];
       
       try {
+        if (row.existingProfileId) {
+          // Update the existing member with the file's values. Blank cells keep what's on file.
+          const parts = row.name.trim().split(/\s+/);
+          const changes: Record<string, any> = {
+            first_name: parts.shift() || row.name.trim(),
+            last_name: parts.join(' '),
+          };
+          if (row.phone) changes.mobile_number = row.phone;
+          if (row.city) changes.city = row.city;
+          if (row.country) changes.country = row.country;
+          if (row.gender) changes.gender = row.gender;
+          if (row.date_of_birth) changes.date_of_birth = row.date_of_birth;
+          if (row.membership_status) changes.membership_status = row.membership_status;
+
+          const { error: updateError } = await supabase
+            .from('ministry_member_profiles')
+            .update(changes)
+            .eq('id', row.existingProfileId)
+            .eq('ministry_id', ministryId);
+
+          if (updateError) throw updateError;
+
+          updated++;
+          setCSVData(prev => prev.map(r =>
+            r.rowNumber === row.rowNumber ? { ...r, status: 'updated' } : r));
+          setCSVImportProgress(Math.round(((i + 1) / validRows.length) * 100));
+          continue;
+        }
+
         // Create a church-member profile (same store as QR registration), marked active
         // so it shows in the member list. No auth account is created — imported people are
         // contact records and can link an account later by signing in with this email.
@@ -629,37 +704,32 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         successful++;
         
         // Update row status
-        const updatedData = [...csvData];
-        const rowIndex = updatedData.findIndex(r => r.rowNumber === row.rowNumber);
-        if (rowIndex !== -1) {
-          updatedData[rowIndex].status = 'imported';
-        }
-        setCSVData(updatedData);
+        setCSVData(prev => prev.map(r =>
+          r.rowNumber === row.rowNumber ? { ...r, status: 'imported' } : r));
 
       } catch (error: any) {
         console.error('Error importing member:', error);
         failed++;
         
         // Update row status to failed
-        const updatedData = [...csvData];
-        const rowIndex = updatedData.findIndex(r => r.rowNumber === row.rowNumber);
-        if (rowIndex !== -1) {
-          updatedData[rowIndex].status = 'invalid';
-          updatedData[rowIndex].errors.push(error.message || 'Failed to import');
-        }
-        setCSVData(updatedData);
+        setCSVData(prev => prev.map(r =>
+          r.rowNumber === row.rowNumber
+            ? { ...r, status: 'invalid', errors: [...r.errors, error.message || 'Failed to import'] }
+            : r));
       }
 
       setCSVImportProgress(Math.round(((i + 1) / validRows.length) * 100));
     }
 
-    setCSVImportResults({ successful, failed, duplicates });
+    setCSVImportResults({ successful, updated, failed, duplicates });
     setCSVImporting(false);
 
-    if (successful > 0) {
+    if (successful > 0 || updated > 0) {
       toast({
         title: t('ministryMembersManager', 'importCompleted', 'Import completed'),
-        description: t('ministryMembersManager', 'successfullyImportedX', 'Successfully imported {count} members').replace('{count}', String(successful)),
+        description: t('ministryMembersManager', 'importedAndUpdatedX', 'Added {added} new members, updated {updated} existing members')
+          .replace('{added}', String(successful))
+          .replace('{updated}', String(updated)),
       });
       loadMembers(); // Reload members list
     }
@@ -907,57 +977,16 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
     const uid = selectedMember.user_id;
     setSavingRole(true);
     try {
-      // Primary: ministry_group_members drives the member list view + this screen's
-      // permission checks. Create the row if the person has none yet (e.g. a QR
-      // registrant being promoted), otherwise update it.
-      const { data: existingGroup } = await supabase
-        .from('ministry_group_members')
-        .select('id')
-        .eq('ministry_id', ministryId)
-        .eq('user_id', uid)
-        .limit(1);
-      if (existingGroup && existingGroup.length > 0) {
-        const { error } = await supabase
-          .from('ministry_group_members')
-          .update({ role: cols.role, is_leader: cols.is_leader, group_id: ministryId })
-          .eq('id', existingGroup[0].id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('ministry_group_members')
-          .insert({
-            ministry_id: ministryId,
-            group_id: ministryId,
-            user_id: uid,
-            role: cols.role,
-            is_leader: cols.is_leader,
-            joined_at: new Date().toISOString(),
-          });
-        if (error) throw error;
-      }
-
-      // Mirror to ministry_members (used by some permission checks, e.g. Gift Aid).
-      // Best-effort so a stricter schema there can't fail the whole promotion.
-      try {
-        const { data: existingMember } = await supabase
-          .from('ministry_members')
-          .select('id')
-          .eq('ministry_id', ministryId)
-          .eq('user_id', uid)
-          .limit(1);
-        if (existingMember && existingMember.length > 0) {
-          await supabase
-            .from('ministry_members')
-            .update({ role: cols.role, is_leader: cols.is_leader })
-            .eq('id', existingMember[0].id);
-        } else {
-          await supabase
-            .from('ministry_members')
-            .insert({ ministry_id: ministryId, user_id: uid, role: cols.role, is_leader: cols.is_leader });
-        }
-      } catch (mirrorErr) {
-        console.warn('ministry_members mirror skipped:', mirrorErr);
-      }
+      // set_ministry_member_role (0407) upserts ministry_group_members — creating
+      // the row for e.g. a QR registrant being promoted — and mirrors to
+      // ministry_members. It's an RPC because table RLS only lets platform admins
+      // write other members' rows; the function applies the ministry role rules.
+      const { error } = await supabase.rpc('set_ministry_member_role', {
+        p_ministry_id: ministryId,
+        p_user_id: uid,
+        p_role: cols.role,
+      });
+      if (error) throw error;
 
       setMembers((prev) => prev.map((m) =>
         m.user_id === uid ? { ...m, role: cols.role, is_leader: cols.is_leader, is_registrant: false } : m,
@@ -998,6 +1027,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
       case 'duplicate':
         return 'bg-yellow-100 text-yellow-800';
       case 'imported':
+      case 'updated':
         return 'bg-blue-100 text-blue-800';
       default:
         return 'bg-gray-100 text-gray-800';
@@ -1013,6 +1043,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
       case 'duplicate':
         return <AlertCircle className="h-4 w-4 text-yellow-600" />;
       case 'imported':
+      case 'updated':
         return <CheckCircle className="h-4 w-4 text-blue-600" />;
       default:
         return <Clock className="h-4 w-4 text-gray-600" />;
@@ -1279,7 +1310,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                           <span>{[member.city, member.country].filter(Boolean).join(', ')}</span>
                         )}
                         {member.consent_gift_aid && (
-                          <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">
+                          <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">
                             {t('ministryMembersManager', 'giftAidCheck', 'Gift Aid ✓')}
                           </Badge>
                         )}
@@ -1289,7 +1320,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   {!member.is_leader && (
-                    <Button
+                    <Button aria-label={member.inbox_access ? t('ministryMembersManager', 'revokeInboxAccess', 'Revoke inbox access') : t('ministryMembersManager', 'grantInboxAccess', 'Grant inbox access')}
                       onClick={async () => {
                         const newVal = !member.inbox_access;
                         const { error } = await supabase
@@ -1321,7 +1352,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                     </Button>
                   )}
                   {canEditMemberRole(member) && (
-                    <Button
+                    <Button aria-label={t('ministryMembersManager', 'manageRoleTitle', 'Manage role')}
                       onClick={() => openRoleModal(member)}
                       variant="ghost"
                       size="sm"
@@ -1441,6 +1472,24 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
               </div>
             </div>
 
+            {/* Update existing members */}
+            <div className="flex items-start justify-between gap-4 p-4 border rounded-lg">
+              <div>
+                <Label htmlFor="csv-update-existing" className="font-semibold">
+                  {t('ministryMembersManager', 'updateExistingMembers', 'Update existing members')}
+                </Label>
+                <p className="text-sm text-gray-600">
+                  {t('ministryMembersManager', 'updateExistingMembersHelp', 'People already in your ministry (matched by email) get the details from this file. Blank cells keep what is already saved.')}
+                </p>
+              </div>
+              <Switch
+                id="csv-update-existing"
+                checked={csvUpdateExisting}
+                onCheckedChange={setCSVUpdateExisting}
+                disabled={csvImporting}
+              />
+            </div>
+
             {/* Validation Progress */}
             {csvValidating && (
               <div className="flex items-center justify-center gap-3 p-4 bg-gray-50 rounded-lg">
@@ -1466,8 +1515,8 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
             )}
 
             {/* Import Results */}
-            {csvImportResults.successful > 0 && !csvImporting && (
-              <div className="grid grid-cols-3 gap-4">
+            {(csvImportResults.successful > 0 || csvImportResults.updated > 0) && !csvImporting && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="p-4 bg-green-50 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <CheckCircle className="h-5 w-5 text-green-600" />
@@ -1475,6 +1524,15 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                   </div>
                   <p className="text-2xl font-bold text-green-600">
                     {csvImportResults.successful}
+                  </p>
+                </div>
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="h-5 w-5 text-blue-600" />
+                    <p className="font-semibold text-blue-900">{t('ministryMembersManager', 'updated', 'Updated')}</p>
+                  </div>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {csvImportResults.updated}
                   </p>
                 </div>
                 <div className="p-4 bg-red-50 rounded-lg">
@@ -1506,6 +1564,9 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                   <Badge variant="secondary">
                     {t('ministryMembersManager', 'validTotal', '{valid} valid / {total} total')
                       .replace('{valid}', String(csvData.filter(r => r.status === 'valid' || r.status === 'imported').length))
+                      .concat(csvData.some(isUpdatableRow) || csvData.some(r => r.status === 'updated')
+                        ? ` · ${t('ministryMembersManager', 'xExisting', '{count} existing').replace('{count}', String(csvData.filter(r => isUpdatableRow(r) || r.status === 'updated').length))}`
+                        : '')
                       .replace('{total}', String(csvData.length))}
                   </Badge>
                 </div>
@@ -1533,7 +1594,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                                   variant="secondary"
                                   className={getStatusBadgeColor(row.status)}
                                 >
-                                  {row.status}
+                                  {csvRowLabel(row)}
                                 </Badge>
                               </div>
                             </td>
@@ -1567,7 +1628,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                 setShowCSVImportModal(false);
                 setCSVFile(null);
                 setCSVData([]);
-                setCSVImportResults({ successful: 0, failed: 0, duplicates: 0 });
+                setCSVImportResults({ successful: 0, updated: 0, failed: 0, duplicates: 0 });
               }}
               variant="outline"
             >
@@ -1579,7 +1640,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
                 csvImporting ||
                 csvValidating ||
                 csvData.length === 0 ||
-                csvData.filter(r => r.status === 'valid').length === 0
+                csvData.filter(r => r.status === 'valid' || (csvUpdateExisting && isUpdatableRow(r))).length === 0
               }
               className="gap-2"
             >
@@ -1591,7 +1652,11 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
               ) : (
                 <>
                   <Upload className="h-4 w-4" />
-                  {t('ministryMembersManager', 'importXMembers', 'Import {count} Members').replace('{count}', String(csvData.filter(r => r.status === 'valid').length))}
+                  {csvUpdateExisting && csvData.some(isUpdatableRow)
+                    ? t('ministryMembersManager', 'importXUpdateY', 'Add {count} · Update {updates}')
+                        .replace('{count}', String(csvData.filter(r => r.status === 'valid').length))
+                        .replace('{updates}', String(csvData.filter(isUpdatableRow).length))
+                    : t('ministryMembersManager', 'importXMembers', 'Import {count} Members').replace('{count}', String(csvData.filter(r => r.status === 'valid').length))}
                 </>
               )}
             </Button>

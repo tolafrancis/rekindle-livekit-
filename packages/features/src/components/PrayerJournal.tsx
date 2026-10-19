@@ -162,6 +162,7 @@ export const PrayerJournal: React.FC = () => {
             setShowForm(!showForm);
           }}
           disabled={isAtLimit}
+          data-tour="journal-new"
           className="bg-purple-600 hover:bg-purple-700"
         >
           {isAtLimit && <Lock className="h-4 w-4 mr-2" />}

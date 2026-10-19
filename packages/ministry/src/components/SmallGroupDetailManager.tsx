@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
+import { Switch } from '@rekindle/ui/switch';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import {
@@ -22,6 +23,7 @@ import {
   resolveSmallGroupRole, smallGroupRoleCan, ASSIGNABLE_SMALL_GROUP_ROLES,
   SMALL_GROUP_ROLE_LABELS, type SmallGroupRole,
 } from '../lib/smallGroupPermissions';
+import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface SmallGroupDetailManagerProps {
   ministryId: string;
@@ -113,6 +115,8 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
         location_type: groupRes.data.location_type, location_address: groupRes.data.location_address || '',
         meeting_link: groupRes.data.meeting_link || '', max_members: groupRes.data.max_members ? String(groupRes.data.max_members) : '',
         cover_image_url: groupRes.data.cover_image_url || '', privacy: groupRes.data.privacy, status: groupRes.data.status,
+        chat_enabled: groupRes.data.chat_enabled !== false, members_can_invite: !!groupRes.data.members_can_invite,
+        welcome_message: groupRes.data.welcome_message || '', rules: groupRes.data.rules || '',
       } : null);
       setMembers(membersRes.data || []);
       setMeetings(meetingsRes.data || []);
@@ -233,7 +237,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   };
 
   const removeMember = async (m: any) => {
-    if (!window.confirm(t('smallGroupDetailManager', 'confirmRemoveMember', 'Remove this member from the group?'))) return;
+    if (!await confirmAction({ title: t('smallGroupDetailManager', 'confirmRemoveMember', 'Remove this member from the group?'), confirmLabel: t('smallGroupDetailManager', 'remove', 'Remove'), destructive: true })) return;
     try {
       const { error } = await supabase.from('small_group_members').delete().eq('id', m.id);
       if (error) throw error;
@@ -438,6 +442,10 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
         cover_image_url: settingsForm.cover_image_url || null,
         privacy: settingsForm.privacy,
         status: settingsForm.status,
+        chat_enabled: settingsForm.chat_enabled,
+        members_can_invite: settingsForm.members_can_invite,
+        welcome_message: settingsForm.welcome_message.trim() || null,
+        rules: settingsForm.rules.trim() || null,
       }).eq('id', groupId);
       if (error) throw error;
       toast({ title: t('smallGroupDetailManager', 'saved', 'Saved') });
@@ -450,7 +458,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
   };
 
   const deleteGroup = async () => {
-    if (!window.confirm(t('smallGroupDetailManager', 'confirmDeleteGroup', 'Permanently delete this group and all its members, meetings, attendance, and posts?'))) return;
+    if (!await confirmAction({ title: t('smallGroupDetailManager', 'confirmDeleteGroupTitle', 'Permanently delete this group?'), description: t('smallGroupDetailManager', 'confirmDeleteGroupDesc', 'All its members, meetings, attendance, and posts will be deleted.'), confirmLabel: t('smallGroupDetailManager', 'delete', 'Delete'), destructive: true })) return;
     try {
       const { error } = await supabase.from('small_groups').delete().eq('id', groupId);
       if (error) throw error;
@@ -498,8 +506,8 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                   <div key={m.id} className="flex items-center justify-between border rounded-md px-3 py-2">
                     <span className="text-sm">{nameFor(m.user_id)}</span>
                     <div className="flex gap-1">
-                      <Button size="sm" onClick={() => approveMember(m)}><Check className="h-4 w-4" /></Button>
-                      <Button size="sm" variant="outline" onClick={() => declineMember(m)}><X className="h-4 w-4" /></Button>
+                      <Button aria-label={t('smallGroupDetailManager', 'approveMember', 'Approve member')} size="sm" onClick={() => approveMember(m)}><Check className="h-4 w-4" /></Button>
+                      <Button aria-label={t('smallGroupDetailManager', 'declineMember', 'Decline member')} size="sm" variant="outline" onClick={() => declineMember(m)}><X className="h-4 w-4" /></Button>
                     </div>
                   </div>
                 ))}
@@ -528,7 +536,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                   {canManageMembers && m.user_id !== user?.id && (
                     <div className="flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => openRoleModal(m)}>{t('smallGroupDetailManager', 'changeRole', 'Change Role')}</Button>
-                      <Button size="sm" variant="ghost" onClick={() => removeMember(m)}><UserMinus className="h-4 w-4 text-destructive" /></Button>
+                      <Button aria-label={t('smallGroupDetailManager', 'removeMember', 'Remove member')} size="sm" variant="ghost" onClick={() => removeMember(m)}><UserMinus className="h-4 w-4 text-destructive" /></Button>
                     </div>
                   )}
                 </div>
@@ -598,7 +606,7 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                     {(canManageMembers || p.author_id === user?.id) && (
                       <div className="flex gap-1">
                         {canPostAnnouncement && <Button size="sm" variant="ghost" onClick={() => togglePin(p)}>{p.is_pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</Button>}
-                        <Button size="sm" variant="ghost" onClick={() => deletePost(p)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        <Button aria-label={t('smallGroupDetailManager', 'deletePost', 'Delete post')} size="sm" variant="ghost" onClick={() => deletePost(p)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
                     )}
                   </div>
@@ -632,6 +640,35 @@ export const SmallGroupDetailManager: React.FC<SmallGroupDetailManagerProps> = (
                         <SelectItem value="invite_only">{t('smallGroupDetailManager', 'privacyInviteOnly', 'Invite Only')}</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-3 border-t pt-3">
+                    <p className="text-sm font-semibold">{t('smallGroupDetailManager', 'chatSettings', 'Group chat')}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Label htmlFor="sg-chat-enabled">{t('smallGroupDetailManager', 'chatEnabled', 'Chat is on')}</Label>
+                        <p className="text-xs text-muted-foreground">{t('smallGroupDetailManager', 'chatEnabledDesc', 'When off, members can still read past messages but no one can send.')}</p>
+                      </div>
+                      <Switch id="sg-chat-enabled" checked={settingsForm.chat_enabled} onCheckedChange={(v) => setSettingsForm({ ...settingsForm, chat_enabled: v })} />
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <Label htmlFor="sg-members-invite">{t('smallGroupDetailManager', 'membersCanInvite', 'Members can invite people')}</Label>
+                        <p className="text-xs text-muted-foreground">{t('smallGroupDetailManager', 'membersCanInviteDesc', 'Otherwise only leaders can invite.')}</p>
+                      </div>
+                      <Switch id="sg-members-invite" checked={settingsForm.members_can_invite} onCheckedChange={(v) => setSettingsForm({ ...settingsForm, members_can_invite: v })} />
+                    </div>
+                    <div>
+                      <Label>{t('smallGroupDetailManager', 'welcomeMessage', 'Welcome message')}</Label>
+                      <Textarea maxLength={1000} rows={3} value={settingsForm.welcome_message}
+                        placeholder={t('smallGroupDetailManager', 'welcomePlaceholder', 'Shown at the top of the chat for new members')}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, welcome_message: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>{t('smallGroupDetailManager', 'groupRules', 'Group guidelines')}</Label>
+                      <Textarea maxLength={2000} rows={4} value={settingsForm.rules}
+                        placeholder={t('smallGroupDetailManager', 'rulesPlaceholder', 'e.g. Keep prayer requests confidential. Be kind.')}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, rules: e.target.value })} />
+                    </div>
                   </div>
                   <Button onClick={saveSettings} disabled={savingSettings}>{savingSettings ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{t('smallGroupDetailManager', 'saveChanges', 'Save Changes')}</Button>
                 </CardContent>

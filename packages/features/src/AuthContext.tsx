@@ -38,7 +38,10 @@ async function nativeGoogleSignIn(): Promise<{ error?: string }> {
       mode: 'popup',
     });
     const idToken = result.credential?.idToken;
-    if (!idToken) return { error: 'No ID token received from Google' };
+    if (!idToken) {
+      console.warn('[AUTH] Native Google sign-in returned no ID token; using the browser instead');
+      return await nativeOAuthSignIn('google');
+    }
     const { error } = await supabase.auth.signInWithIdToken({
       provider: 'google',
       token: idToken,
@@ -46,7 +49,16 @@ async function nativeGoogleSignIn(): Promise<{ error?: string }> {
     if (error) return { error: error.message };
     return {};
   } catch (err: any) {
-    return { error: err.message || 'Google Sign-In failed' };
+    const message: string = err?.message || '';
+    // The person closed the account picker: respect that, don't reopen
+    // sign-in in a browser.
+    if (/cancel/i.test(message)) return { error: 'Google sign-in was cancelled' };
+    // Anything else ("No credentials available" when the installed app's
+    // signing key isn't registered in Firebase, no Google account on the
+    // device, Play services issues): fall back to Google sign-in in a
+    // browser tab, the same path Facebook uses, which needs none of that.
+    console.warn('[AUTH] Native Google sign-in failed; using the browser instead:', message);
+    return await nativeOAuthSignIn('google');
   }
 }
 

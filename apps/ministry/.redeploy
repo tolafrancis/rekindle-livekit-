@@ -15,3 +15,42 @@
 2026-10-04 captions permission fix + caption style options (packages/live)
 2026-10-04 live translation ducks the original instead of muting it (packages/live)
 2026-10-04 meeting mode tip + Presentation renamed to Broadcast (packages/ministry)
+2026-10-06 translation display: Listen moved into header menu, captions default (packages/live)
+2026-10-07 devotional read aloud reads the title, not the ministry/series name (packages/features)
+2026-10-07 daily devotional audio prewarm + shared narration builder (packages/features)
+2026-10-07 devotional share text: stream/ministry name + author; ministry home share button (packages/ministry)
+2026-10-07 shared devotional link: join the ministry or just read on Rekindle; link opens that devotional
+2026-10-07 devotional preview: store links under each choice
+2026-10-07 devotional closing screen: get the app card (web only)
+2026-10-07 record shared devotional opens for next-day email
+2026-10-07 guide: go live camera picker
+2026-10-07 landing page: new features
+2026-10-06 DOM translation guard for Sentry NotFoundError (packages/features, packages/live)
+2026-10-06 browser translation tip (packages/features)
+2026-10-06: show devotional author in the ministry player
+2026-10-07 merge main into devotional sharing work
+2026-10-07 original-language captions in the translation menu
+2026-10-07 captions off by default, fullscreen button above spotlight badges
+2026-10-07 captions delivered as data on rekindle.captions (packages/live)
+2026-10-07 Live Scripture verse visible to participants without their own switch (packages/live)
+2026-10-07 removed the "You've joined muted" toast on joining a meeting (packages/live)
+2026-10-07 Live Scripture tip + Open settings link from a meeting; settings re-read mid-meeting (packages/live, packages/ministry)
+2026-10-07 meeting Background picker no longer closes the Meeting Controls menu (packages/live)
+2026-10-07: Bible Passage slide for stream devotionals in ministry spaces (packages/ministry)
+2026-10-07 reload once when a lazy screen's chunk fails to load after a deploy (packages/features ErrorBoundary)
+2026-10-08 rebuild: previous rekindle-livekit Pages build failed on Cloudflare (builds locally)
+2026-10-08: devotional player no longer steps past the last slide (packages/features)
+2026-10-08: share links for stream devotionals in ministry spaces (packages/ministry)
+2026-10-08 Google sign-in falls back to the browser when native sign-in fails (packages/features)
+2026-10-09 Gift Aid dashboard back in the ministry nav (Ministry > Gift Aid, UK ministries) (packages/ministry)
+2026-10-09 Gift Aid CSV import for donations and paper declarations (packages/ministry)
+2026-10-10 Gift Aid: public declaration page + QR, registration declarations, Help/FAQ tab (packages/ministry)
+2026-10-10 meeting video: explicit receive quality (host sharp for participants) (packages/live)
+2026-10-10 meeting video quality: gallery/screen tiles, resubscribe resend, off-screen unsubscribe; Sentry NegotiationError filter (packages/live, packages/features)
+2026-10-10 room binding + control-message gate
+2026-10-10 step 2 meeting fixes
+2026-10-10 step 3 attach rendering
+2026-10-10 step 4 reliability
+2026-10-10 guest android screen share
+2026-10-12 ReKindle Windows download link
+2026-10-12 Ministry Windows download link

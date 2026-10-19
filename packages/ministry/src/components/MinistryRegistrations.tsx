@@ -299,11 +299,11 @@ const MinistryRegistrations: React.FC<Props> = ({ ministryId, ministryName }) =>
                       {r.membership_status ? ` · ${r.membership_status.replace(/_/g, ' ')}` : ''}
                     </p>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => openViewer(r)}><Eye className="h-4 w-4" /></Button>
+                  <Button aria-label={t('ministryRegistrations', 'viewDetails', 'View details')} size="sm" variant="ghost" onClick={() => openViewer(r)}><Eye className="h-4 w-4" /></Button>
                   {tab === 'pending' && (
                     <>
-                      <Button size="sm" variant="ghost" className="text-green-600" disabled={busy} onClick={() => approve(r)}><Check className="h-4 w-4" /></Button>
-                      <Button size="sm" variant="ghost" className="text-red-600" disabled={busy} onClick={() => reject(r)}><X className="h-4 w-4" /></Button>
+                      <Button aria-label={t('ministryRegistrations', 'approve', 'Approve')} size="sm" variant="ghost" className="text-green-600" disabled={busy} onClick={() => approve(r)}><Check className="h-4 w-4" /></Button>
+                      <Button aria-label={t('ministryRegistrations', 'reject', 'Reject')} size="sm" variant="ghost" className="text-red-600" disabled={busy} onClick={() => reject(r)}><X className="h-4 w-4" /></Button>
                     </>
                   )}
                 </div>
@@ -330,7 +330,7 @@ const MinistryRegistrations: React.FC<Props> = ({ ministryId, ministryName }) =>
                 ) : (
                   <Button size="sm" disabled={busy} onClick={saveEdit}><Save className="h-4 w-4 mr-1" /> {t('ministryRegistrations', 'save', 'Save')}</Button>
                 )}
-                <button onClick={() => setViewing(null)} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
+                <button aria-label={t('ministryRegistrations', 'close', 'Close')} onClick={() => setViewing(null)} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
               </div>
             </div>
             <div className="p-4 space-y-3">

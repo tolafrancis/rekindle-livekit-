@@ -9,6 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@rekindle/ui/alert-dialog';
+import {
   ScrollText, Sparkles, Plus, Trash2, Loader2, Globe, Building2, Layers,
 } from 'lucide-react';
 import {
@@ -60,6 +64,8 @@ function FeatureEditor({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ text: '', title: '', scripture_reference: '' });
+  // Item awaiting delete confirmation (null = dialog closed).
+  const [pendingDelete, setPendingDelete] = useState<ContentItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,17 +164,20 @@ function FeatureEditor({
             </p>
             <div className="space-y-2">
               <Input
+                aria-label="Title (optional)"
                 placeholder="Title (optional)"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
               />
               <Textarea
+                aria-label={`${noun[0].toUpperCase()}${noun.slice(1)} text`}
                 placeholder={`${noun[0].toUpperCase()}${noun.slice(1)} text…`}
                 rows={3}
                 value={form.text}
                 onChange={(e) => setForm({ ...form, text: e.target.value })}
               />
               <Input
+                aria-label="Scripture reference (optional)"
                 placeholder="Scripture reference (optional, e.g. Philippians 4:13)"
                 value={form.scripture_reference}
                 onChange={(e) => setForm({ ...form, scripture_reference: e.target.value })}
@@ -195,11 +204,17 @@ function FeatureEditor({
                     {it.title && <p className="text-sm font-medium truncate">{it.title}</p>}
                     <p className="text-sm text-gray-700 line-clamp-2">{it.text}</p>
                     {it.scripture_reference && (
-                      <p className="text-xs text-gray-400 mt-0.5">{it.scripture_reference}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{it.scripture_reference}</p>
                     )}
                   </div>
-                  <Button variant="ghost" size="icon" className="shrink-0 text-red-500 hover:text-red-600" onClick={() => remove(it.id)}>
-                    <Trash2 className="h-4 w-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 h-11 w-11 sm:h-10 sm:w-10 text-red-500 hover:text-red-600"
+                    aria-label={`Delete ${noun}${it.title ? `: ${it.title}` : ''}`}
+                    onClick={() => setPendingDelete(it)}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </li>
               ))}
@@ -212,6 +227,27 @@ function FeatureEditor({
           Showing ReKindle's {noun}s. Switch to <span className="font-medium">Our own</span> or <span className="font-medium">Both</span> to add your own.
         </div>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => { if (!o) setPendingDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this {noun}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.title ? `“${pendingDelete.title}” will be removed from your ministry. ` : `This ${noun} will be removed from your ministry. `}
+              This can’t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => { if (pendingDelete) void remove(pendingDelete.id); setPendingDelete(null); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

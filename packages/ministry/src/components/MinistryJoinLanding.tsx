@@ -4,12 +4,14 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { LoginForm } from '@rekindle/features/components/LoginForm';
 import { SignupForm } from '@rekindle/features/components/SignupForm';
+import { PasswordResetForm } from '@rekindle/features/components/PasswordResetForm';
 import { Button } from '@rekindle/ui/button';
 import { sha256Hex } from '@rekindle/features/qrCode';
 import { setDeepLink } from '@rekindle/features/deepLink';
 import MinistryMemberRegistration from './MinistryMemberRegistration';
 import {
   Loader2, AlertTriangle, CheckCircle2, UserCheck, ArrowRight, Building2, Monitor, RefreshCcw,
+  UserPlus, LogIn, Home, ArrowLeft,
 } from 'lucide-react';
 
 interface MinistryBranding {
@@ -52,10 +54,18 @@ const MinistryJoinLanding: React.FC = () => {
     if (groupId) setDeepLink({ type: 'small-group', id: groupId });
   }, [groupId]);
 
+  // Same for a shared ministry devotional (?devotional=, from the devotional
+  // preview's "Join the ministry" choice): it opens once they're in.
+  const devotionalId = sp.get('devotional') || '';
+  useEffect(() => {
+    if (devotionalId) setDeepLink({ type: 'ministry-devotional', id: devotionalId });
+  }, [devotionalId]);
+
   const [stage, setStage] = useState<'loading' | 'error' | 'branding'>('loading');
   const [ministry, setMinistry] = useState<MinistryBranding | null>(null);
   const [codeStatus, setCodeStatus] = useState('');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  // Start on a simple choice ("I'm new" / "I have an account") before showing a form.
+  const [authMode, setAuthMode] = useState<'choice' | 'login' | 'signup' | 'reset'>('choice');
   const [kioskMode, setKioskMode] = useState(false);
 
   const [identityLoading, setIdentityLoading] = useState(false);
@@ -189,6 +199,14 @@ const MinistryJoinLanding: React.FC = () => {
             {codeStatus === 'version_changed' ? 'Code updated' : codeStatus === 'invalid_code' ? 'Invalid code' : 'Not found'}
           </h2>
           <p className="text-sm text-gray-600">{msg}</p>
+          <div className="flex flex-col sm:flex-row gap-2 mt-5">
+            <Button variant="outline" className="flex-1 min-h-[44px]" onClick={() => { window.location.reload(); }}>
+              <RefreshCcw className="h-4 w-4 mr-1.5" /> Try again
+            </Button>
+            <Button className="flex-1 min-h-[44px]" onClick={() => { window.location.href = '/'; }}>
+              <Home className="h-4 w-4 mr-1.5" /> Go home
+            </Button>
+          </div>
         </div>
       </Shell>
     );
@@ -201,16 +219,56 @@ const MinistryJoinLanding: React.FC = () => {
         {ministry?.welcome_message && (
           <p className="text-sm text-gray-600 text-center mb-4">{ministry.welcome_message}</p>
         )}
-        <div className="bg-white rounded-xl border shadow-sm p-5">
-          <p className="text-center text-sm font-medium text-gray-700 mb-4">
-            {authMode === 'login' ? 'Already on Rekindle? Sign in to continue' : 'New here? Create your account'}
-          </p>
-          {authMode === 'login' ? (
-            <LoginForm compact onSwitchToSignup={() => setAuthMode('signup')} onSuccess={() => {}} />
-          ) : (
-            <SignupForm compact onSwitchToLogin={() => setAuthMode('login')} onSuccess={() => {}} />
-          )}
-        </div>
+        {authMode === 'choice' ? (
+          <div className="grid gap-3">
+            <button
+              type="button"
+              onClick={() => setAuthMode('signup')}
+              className="flex items-center gap-4 bg-white rounded-xl border shadow-sm p-5 min-h-[44px] text-left hover:border-purple-300 transition"
+            >
+              <UserPlus className="h-7 w-7 text-purple-600 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-semibold text-gray-900">I’m new</p>
+                <p className="text-sm text-gray-500">Create a Rekindle account to join</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthMode('login')}
+              className="flex items-center gap-4 bg-white rounded-xl border shadow-sm p-5 min-h-[44px] text-left hover:border-purple-300 transition"
+            >
+              <LogIn className="h-7 w-7 text-green-600 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-semibold text-gray-900">I have an account</p>
+                <p className="text-sm text-gray-500">Sign in to continue</p>
+              </div>
+            </button>
+          </div>
+        ) : (
+          <>
+            {authMode === 'reset' ? (
+              <PasswordResetForm onSwitchToLogin={() => setAuthMode('login')} />
+            ) : (
+              <div className="bg-white rounded-xl border shadow-sm p-5">
+                <p className="text-center text-sm font-medium text-gray-700 mb-4">
+                  {authMode === 'login' ? 'Already on Rekindle? Sign in to continue' : 'New here? Create your account'}
+                </p>
+                {authMode === 'login' ? (
+                  <LoginForm compact onSwitchToSignup={() => setAuthMode('signup')} onSwitchToReset={() => setAuthMode('reset')} onSuccess={() => {}} />
+                ) : (
+                  <SignupForm compact onSwitchToLogin={() => setAuthMode('login')} onSuccess={() => {}} />
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setAuthMode('choice')}
+              className="text-sm text-gray-500 hover:text-gray-700 mt-4 min-h-[44px] flex items-center gap-1 mx-auto"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back
+            </button>
+          </>
+        )}
       </Shell>
     );
   }
@@ -259,7 +317,7 @@ const MinistryJoinLanding: React.FC = () => {
               <div key={m.profile_id} className="flex items-center justify-between gap-3 border rounded-lg p-3">
                 <div className="min-w-0">
                   <p className="font-medium text-sm truncate">{m.display_name || 'Existing record'}</p>
-                  <p className="text-xs text-gray-400 capitalize">{m.registration_status}{m.source ? ` · ${m.source.replace(/_/g, ' ')}` : ''}</p>
+                  <p className="text-xs text-gray-500 capitalize">{m.registration_status}{m.source ? ` · ${m.source.replace(/_/g, ' ')}` : ''}</p>
                 </div>
                 <Button size="sm" disabled={claimingId === m.profile_id} onClick={() => claim(m.profile_id)}>
                   {claimingId === m.profile_id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'This is me'}
@@ -269,7 +327,7 @@ const MinistryJoinLanding: React.FC = () => {
           </div>
           <button
             onClick={() => setIdentityResolved(true)}
-            className="w-full text-center text-sm text-gray-500 hover:text-gray-700 mt-4"
+            className="w-full text-center text-sm text-gray-500 hover:text-gray-700 mt-4 min-h-[44px]"
           >
             None of these — register as new
           </button>
