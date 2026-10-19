@@ -308,7 +308,7 @@ export const MinistryWhatsAppOptIn: React.FC<MinistryWhatsAppOptInProps> = ({
   const loadState = async () => {
     // Members can't read ministry_whatsapp_configs (leaders only), so this
     // asks a narrow RPC whether the ministry sends WhatsApp at all — from its
-    // own number, or via Rekindle's (0410_ministry_whatsapp_shared_sender.sql).
+    // own number, or via Rekindle's (0411_ministry_whatsapp_shared_sender.sql).
     const { data: info } = await supabase
       .rpc('ministry_whatsapp_optin_info', { p_ministry_id: ministryId })
       .maybeSingle();

@@ -1,4 +1,4 @@
--- 0410_ministry_whatsapp_shared_sender.sql
+-- 0411_ministry_whatsapp_shared_sender.sql
 --
 -- "Send via Rekindle": a ministry can broadcast WhatsApp messages from
 -- Rekindle's own shared number, paid per message from wallet credits,

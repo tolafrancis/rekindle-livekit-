@@ -45,7 +45,7 @@ export interface MinistryWABAConfig {
   plan_status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'pending' | 'none';
   setup_fee_paid: boolean;
   stripe_subscription_id?: string | null;
-  // "Send via Rekindle" switched on (0410_ministry_whatsapp_shared_sender.sql)
+  // "Send via Rekindle" switched on (0411_ministry_whatsapp_shared_sender.sql)
   shared_sender_enabled?: boolean;
   // Small Group notifications (0336_small_group_whatsapp_notify.sql)
   notify_template_name?: string | null;
