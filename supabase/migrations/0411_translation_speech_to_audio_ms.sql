@@ -1,5 +1,5 @@
 -- =============================================================================
--- 0410 — translation_logs.speech_to_audio_ms
+-- 0411 — translation_logs.speech_to_audio_ms
 -- -----------------------------------------------------------------------------
 -- The latency a listener actually feels: from the moment the speaker's last
 -- word ended (Deepgram's own word timing) to the moment the first translated
@@ -13,10 +13,12 @@
 -- has several overloads, and adding a parameter risks ambiguous RPC calls.
 -- Null for older rows, captions-only (same-language) sessions, and engines
 -- that don't measure it (GeminiLiveEngine).
+-- (Renumbered from 0410 on 2026-10-19: 0410 is the WhatsApp shared-sender
+-- migration in PR #82. Already applied in production; the SQL is unchanged.)
 -- =============================================================================
 
 alter table public.translation_logs
   add column if not exists speech_to_audio_ms integer;
 
 comment on column public.translation_logs.speech_to_audio_ms is
-  'ms from the end of the speaker''s last word (Deepgram word timing) to the first translated audio chunk; see migration 0410.';
+  'ms from the end of the speaker''s last word (Deepgram word timing) to the first translated audio chunk; see migration 0411.';
