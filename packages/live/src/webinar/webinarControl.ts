@@ -1,5 +1,4 @@
 import { supabase } from '@rekindle/supabase';
-import { FREE_TIER_MEETING_LIMITS } from '@rekindle/auth/subscriptionEnforcement';
 import { stopMeetingBroadcast } from '../meetingStreamControl';
 
 // Data layer for the Webinar meeting type (packages/live/src/webinar) — a
@@ -99,37 +98,6 @@ export async function listWebinarSpeakers(webinarId: string): Promise<WebinarSpe
     .from('webinar_speakers').select('*').eq('webinar_id', webinarId).order('invited_at', { ascending: true });
   if (error) { console.error('[webinarControl] listWebinarSpeakers failed:', error.message); return []; }
   return (data ?? []) as WebinarSpeaker[];
-}
-
-/** Same shape as checkMinistryMeetingQuota (packages/auth/src/ministryEntitlements.ts)
- *  but against ministry_webinars, which has no is_active column — 'live' status is
- *  the equivalent "currently running" signal there. Kept as its own function rather
- *  than widening the shared one, since that function's type is a closed union other
- *  callers rely on and its is_active-based query wouldn't apply here unmodified. */
-export async function checkWebinarQuota(ministryId: string): Promise<{ allowed: boolean; used: number; limit: number }> {
-  const limitMinutes = FREE_TIER_MEETING_LIMITS.monthlyHours * 60;
-  const startOfMonth = new Date();
-  startOfMonth.setUTCDate(1);
-  startOfMonth.setUTCHours(0, 0, 0, 0);
-
-  const { data } = await supabase
-    .from('ministry_webinars')
-    .select('duration_minutes')
-    .eq('ministry_id', ministryId)
-    .gte('created_at', startOfMonth.toISOString());
-  const used = (data ?? []).reduce((sum: number, r: { duration_minutes?: number }) => sum + (r.duration_minutes ?? 0), 0);
-  if (used >= limitMinutes) return { allowed: false, used, limit: limitMinutes };
-
-  const { count: liveCount } = await supabase
-    .from('ministry_webinars')
-    .select('id', { count: 'exact', head: true })
-    .eq('ministry_id', ministryId)
-    .in('status', ['backstage', 'live']);
-  if ((liveCount ?? 0) >= FREE_TIER_MEETING_LIMITS.maxConcurrentActive) {
-    return { allowed: false, used, limit: limitMinutes };
-  }
-
-  return { allowed: true, used, limit: limitMinutes };
 }
 
 export async function updateWebinarStatus(webinarId: string, status: WebinarStatus): Promise<void> {

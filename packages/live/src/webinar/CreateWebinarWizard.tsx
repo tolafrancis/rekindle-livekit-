@@ -17,8 +17,7 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { zonedWallTimeToUtcISO, utcISOToZonedInputValue, guessUserTimeZone, commonTimeZones } from '@rekindle/features/meetingTime';
 import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
-import { FREE_TIER_MEETING_LIMITS } from '@rekindle/auth/subscriptionEnforcement';
-import { checkWebinarQuota, createWebinarSpeaker, type MinistryWebinar } from './webinarControl';
+import { createWebinarSpeaker, type MinistryWebinar } from './webinarControl';
 import { CAPTION_LANGUAGES } from '../captionLanguages';
 
 interface CreateWebinarWizardProps {
@@ -51,7 +50,6 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
   const isEditing = !!webinar;
   const [isLoading, setIsLoading] = useState(false);
   const [accessReason, setAccessReason] = useState<string | undefined>();
-  const [isFreeTier, setIsFreeTier] = useState(false);
 
   // 'now' just skips the date/time fields (saves as an unscheduled draft,
   // start it whenever from Manage Webinar); 'schedule' requires picking one
@@ -89,23 +87,11 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     (async () => {
       try {
         const entitlements = await getMinistryEntitlements(ministryId);
-        const freePlan = entitlements.tierSlug === 'free';
-        setIsFreeTier(freePlan);
-        if (!entitlements.caps.interactiveMeetings) {
-          setAccessReason("This ministry's plan doesn't include live sessions — upgrade to enable webinars.");
+        // Webinars are a paid-plan feature (caps.webinars) with no free
+        // allowance, unlike Interactive Meetings.
+        if (!entitlements.caps.webinars) {
+          setAccessReason('Webinars are included on paid plans. Upgrade this ministry\'s plan to host webinars.');
           return;
-        }
-        // Quota only gates NEW webinars — re-checking it on every edit could
-        // block editing something that already exists just because the
-        // ministry has since used up its monthly free minutes elsewhere.
-        if (freePlan && !isEditing) {
-          const quota = await checkWebinarQuota(ministryId);
-          if (!quota.allowed) {
-            setAccessReason(`This ministry has used its free webinar time this month. Upgrade for more, or wait until next month.`);
-            return;
-          }
-          setMaxAttendees((m) => Math.min(m, FREE_TIER_MEETING_LIMITS.maxParticipants));
-          setDurationMinutes((d) => Math.min(d, FREE_TIER_MEETING_LIMITS.maxDurationMinutes));
         }
         setAccessReason(undefined);
       } catch (e) {
@@ -186,7 +172,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         reminder_offsets: reminderOffsets,
         is_public: isPublic,
         access_level: isPublic ? 'public' : 'members',
-        enable_recording: isFreeTier ? false : enableRecording,
+        enable_recording: enableRecording,
         enable_captions: enableCaptions,
         enable_translation: enableTranslation,
         enable_chat: enableChat,
@@ -332,7 +318,6 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
               <Label htmlFor="webinar-duration">Duration (minutes)</Label>
               <Input
                 id="webinar-duration" type="number" min={5}
-                max={isFreeTier ? FREE_TIER_MEETING_LIMITS.maxDurationMinutes : undefined}
                 value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))}
               />
             </div>
@@ -340,7 +325,6 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
               <Label htmlFor="webinar-max">Max attendees</Label>
               <Input
                 id="webinar-max" type="number" min={1}
-                max={isFreeTier ? FREE_TIER_MEETING_LIMITS.maxParticipants : undefined}
                 value={maxAttendees} onChange={(e) => setMaxAttendees(Number(e.target.value))}
               />
             </div>
@@ -365,7 +349,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center justify-between rounded-md border p-3">
               <Label className="text-sm">Recording</Label>
-              <Switch checked={enableRecording} onCheckedChange={setEnableRecording} disabled={isFreeTier} />
+              <Switch checked={enableRecording} onCheckedChange={setEnableRecording} />
             </div>
             {enableRecording && (
               <div className="space-y-1">
