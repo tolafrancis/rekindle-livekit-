@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 // Supabase Edge Function: whatsapp-webhook
 // =====================================================================
 // Meta Cloud API webhook receiver for a ministry's own connected WhatsApp
@@ -39,6 +38,12 @@
 // now that a manually-connected ministry has somewhere to store its own
 // secret. Only when NEITHER secret is configured at all (misconfiguration)
 // does it fall through and process unverified, logging a warning.
+//
+// Opt-outs: a reply of STOP (or UNSUBSCRIBE) turns the sender's ministry
+// WhatsApp subscription off — for that ministry when it arrives on a
+// ministry's own number, and for every ministry that sends via Rekindle when
+// it arrives on Rekindle's shared number (WHATSAPP_PHONE_ID, "Send via
+// Rekindle"). Messages to the shared number aren't saved to any inbox.
 //
 // Required secrets:
 //   WHATSAPP_VERIFY_TOKEN   the string entered in Meta's webhook setup —
@@ -175,6 +180,53 @@ async function saveMessage(
   });
 }
 
+const STOP_WORDS = new Set(['stop', 'unsubscribe', 'stop all']);
+
+function isStopMessage(text: string): boolean {
+  return STOP_WORDS.has(text.trim().toLowerCase());
+}
+
+// Subscriber numbers are stored as typed (usually "+234…"); Meta sends
+// digits only.
+function phoneVariants(waId: string): string[] {
+  const digits = waId.replace(/[^\d]/g, '');
+  return [digits, `+${digits}`];
+}
+
+async function optOutSubscriber(
+  supabase: ReturnType<typeof createClient>,
+  waId: string,
+  scope: { ministryId: string } | 'shared-number',
+) {
+  let query = supabase
+    .from('ministry_whatsapp_subscribers')
+    .select('id, ministry_id')
+    .in('phone_number', phoneVariants(waId))
+    .eq('opted_in', true);
+  if (scope !== 'shared-number') query = query.eq('ministry_id', scope.ministryId);
+  const { data: subs } = await query;
+  let rows = subs ?? [];
+
+  if (scope === 'shared-number' && rows.length > 0) {
+    // Ministries with their own connected number keep their subscribers —
+    // the person can reply STOP to that number instead.
+    const { data: own } = await supabase
+      .from('ministry_whatsapp_configs')
+      .select('ministry_id')
+      .in('ministry_id', rows.map((r: any) => r.ministry_id))
+      .eq('connection_status', 'connected');
+    const ownIds = new Set((own ?? []).map((c: any) => c.ministry_id));
+    rows = rows.filter((r: any) => !ownIds.has(r.ministry_id));
+  }
+  if (rows.length === 0) return;
+
+  await supabase
+    .from('ministry_whatsapp_subscribers')
+    .update({ opted_in: false, opted_out_at: new Date().toISOString() })
+    .in('id', rows.map((r: any) => r.id));
+  console.log(`[whatsapp-webhook] opted out ${rows.length} subscription(s) for a STOP reply`);
+}
+
 // Cloud API message types carry the body under a type-named key instead of
 // a single universal field — pull out something readable for every kind
 // this webhook might realistically receive rather than only 'text'.
@@ -205,19 +257,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   // ── Meta webhook verification (GET hub.challenge) ─────────────────────────
-=======
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-
-const VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN') ?? 'rekindle_meta_webhook_2026';
-
-serve(async (req) => {
->>>>>>> Stashed changes
   if (req.method === 'GET') {
     const url = new URL(req.url);
     const mode = url.searchParams.get('hub.mode');
     const token = url.searchParams.get('hub.verify_token');
     const challenge = url.searchParams.get('hub.challenge');
-<<<<<<< Updated upstream
     const expected = Deno.env.get('WHATSAPP_VERIFY_TOKEN');
     if (!expected) {
       console.error('[whatsapp-webhook] WHATSAPP_VERIFY_TOKEN is not set — refusing to verify');
@@ -294,6 +338,16 @@ serve(async (req) => {
         const messages = value.messages ?? [];
         if (!phoneNumberId || messages.length === 0) continue; // e.g. a 'statuses' (delivery receipt) change — nothing to save
 
+        // Rekindle's own shared number ("Send via Rekindle"): only opt-outs.
+        if (phoneNumberId === Deno.env.get('WHATSAPP_PHONE_ID')) {
+          for (const message of messages) {
+            if (message.from && isStopMessage(extractBody(message).text)) {
+              await optOutSubscriber(supabase, message.from, 'shared-number');
+            }
+          }
+          continue;
+        }
+
         // Reuse the already-resolved ministry when this is the same phone
         // number the signature check ran against (the common case: one
         // ministry per delivery) — otherwise resolve it fresh.
@@ -315,6 +369,7 @@ serve(async (req) => {
           if (!from) continue;
           const displayName = contactsByWaId.get(from) ?? from;
           const { text, mediaUrl } = extractBody(message);
+          if (isStopMessage(text)) await optOutSubscriber(supabase, from, { ministryId });
 
           const contactId = await upsertContact(supabase, ministryId, from, displayName, from, text);
           await saveMessage(supabase, contactId, ministryId, text, message.id, mediaUrl);
@@ -327,17 +382,4 @@ serve(async (req) => {
     console.error('[whatsapp-webhook] error:', err);
     return json({ error: err.message ?? 'Internal error' }, 500);
   }
-=======
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      return new Response(challenge, { status: 200 });
-    }
-    return new Response('Forbidden', { status: 403 });
-  }
-  if (req.method === 'POST') {
-    const body = await req.json();
-    console.log('[whatsapp-webhook]', JSON.stringify(body));
-    return new Response('OK', { status: 200 });
-  }
-  return new Response('Method not allowed', { status: 405 });
->>>>>>> Stashed changes
 });

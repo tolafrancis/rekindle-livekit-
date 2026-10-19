@@ -8,6 +8,17 @@
 // set during Meta business verification. This is by design: verified sender
 // names are what make WhatsApp messages trustworthy.
 // Each ministry gets its own identity by having its own WABA.
+//
+// SEND VIA REKINDLE (sender: 'rekindle'):
+// A ministry without a WABA of its own can broadcast from Rekindle's shared
+// number instead (WHATSAPP_PHONE_ID / WHATSAPP_ACCESS_TOKEN). Recipients see
+// "Rekindle" as the sender, so the message always goes out as one approved
+// template on Rekindle's WABA (SHARED_WHATSAPP_TEMPLATE, body
+// {{1}} = ministry name, {{2}} = title, {{3}} = message) that names the
+// ministry. Only opted-in members receive it, every delivered message costs
+// one wallet credit (no plan allowance), and each ministry is capped at
+// SHARED_WHATSAPP_DAILY_LIMIT messages per 24 hours to protect the shared
+// number's quality rating.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -21,8 +32,11 @@ const WHATSAPP_API_VERSION = 'v20.0';
 const WHATSAPP_BASE_URL    = `https://graph.facebook.com/${WHATSAPP_API_VERSION}`;
 const COST_PER_MESSAGE_USD = 0.03; // Platform rate charged to ministry
 
+const SHARED_DAILY_LIMIT_DEFAULT = 1000;
+
 interface BroadcastRequest {
   ministryId:      string;
+  sender?:         'ministry' | 'rekindle';  // default 'ministry' (own WABA)
   userId:          string;      // wallet owner
   messageType:     'text' | 'template';
   title:           string;
@@ -48,6 +62,7 @@ serve(async (req) => {
       templateName, templateParams, language,
       targetType, groupId, smallGroupId, scheduledAt,
     } = body;
+    const sender = body.sender === 'rekindle' ? 'rekindle' : 'ministry';
 
     if (!ministryId || !userId) {
       return jsonError('ministryId and userId are required', 400);
@@ -89,6 +104,12 @@ serve(async (req) => {
       if (!isLeader) {
         return jsonError('Not authorized to broadcast to this small group', 403);
       }
+    }
+
+    if (sender === 'rekindle') {
+      return await sendViaRekindle(supabase, {
+        ministryId, userId, title, message, targetType, groupId, smallGroupId, scheduledAt,
+      });
     }
 
     // ── 1. Load this ministry's WABA config ──────────────────────────────
@@ -146,45 +167,7 @@ serve(async (req) => {
     }
 
     // ── 3. Resolve recipient phone numbers ───────────────────────────────
-    let phones: string[] = [];
-
-    if (targetType === 'all') {
-      const { data: subs } = await supabase
-        .from('ministry_whatsapp_subscribers')
-        .select('phone_number')
-        .eq('ministry_id', ministryId)
-        .eq('opted_in', true);
-      phones = (subs ?? []).map((s: any) => s.phone_number).filter(Boolean);
-    } else if (targetType === 'group' && groupId) {
-      const { data: members } = await supabase
-        .from('ministry_group_members')
-        .select('user_profiles!inner(phone)')
-        .eq('group_id', groupId);
-      phones = (members ?? []).map((m: any) => m.user_profiles?.phone).filter(Boolean);
-    } else if (targetType === 'small_group' && smallGroupId) {
-      // Unlike the whole-ministry 'group' target above (messages every
-      // member unconditionally), this respects whatsapp_notify — the same
-      // per-member opt-in flag send-small-group-whatsapp-notify uses — since
-      // this is a purpose-built consent signal for exactly this. Also:
-      // small_group_members.user_id references auth.users(id), not
-      // user_profiles directly, so there's no FK PostgREST can embed through
-      // in one query (unlike the ministry_group_members branch above) —
-      // resolve members first, then look up their phones separately.
-      const { data: members } = await supabase
-        .from('small_group_members')
-        .select('user_id')
-        .eq('group_id', smallGroupId)
-        .eq('status', 'active')
-        .eq('whatsapp_notify', true);
-      const userIds = (members ?? []).map((m: any) => m.user_id).filter(Boolean);
-      if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('phone')
-          .in('user_id', userIds);
-        phones = (profiles ?? []).map((p: any) => p.phone).filter(Boolean);
-      }
-    }
+    const phones = await resolveRecipientPhones(supabase, ministryId, targetType, groupId, smallGroupId);
 
     if (phones.length === 0) {
       return jsonOk({ sent: 0, failed: 0, cost_usd: 0, message: 'No opted-in recipients found' });
@@ -195,6 +178,7 @@ serve(async (req) => {
       .from('ministry_whatsapp_broadcasts')
       .select('successful_sends')
       .eq('ministry_id', ministryId)
+      .eq('sender', 'ministry')
       .gte('sent_at', startOfMonth());
 
     const monthlyUsed    = (planUsage ?? []).reduce((s: number, r: any) => s + (r.successful_sends ?? 0), 0);
@@ -353,7 +337,7 @@ serve(async (req) => {
     );
 
     if (creditsToDeduct > 0) {
-      await deductWalletCredits(supabase, userId, creditsToDeduct, overageCost, title, broadcastRow?.id);
+      await deductWalletCredits(supabase, userId, creditsToDeduct, overageCost, `WhatsApp overage: "${title}"`, broadcastRow?.id);
     }
 
     console.log(`Broadcast complete: ${results.successful} sent, ${results.failed} failed. Cost: $${costUsd.toFixed(2)}`);
@@ -373,6 +357,231 @@ serve(async (req) => {
     return jsonError(err.message ?? 'Unexpected error', 500);
   }
 });
+
+
+// ── Recipients ────────────────────────────────────────────────────────────────
+
+// Phone numbers of the people a broadcast may go to — only members who opted
+// in. 'all' and 'group' use the ministry's WhatsApp subscriber list (the
+// "WhatsApp Updates" card in the ministry space); 'small_group' uses that
+// group's own WhatsApp reminders opt-in (small_group_members.whatsapp_notify).
+async function resolveRecipientPhones(
+  supabase: ReturnType<typeof createClient>,
+  ministryId: string,
+  targetType: string,
+  groupId?: string,
+  smallGroupId?: string,
+): Promise<string[]> {
+  let phones: string[] = [];
+
+  if (targetType === 'all') {
+    const { data: subs } = await supabase
+      .from('ministry_whatsapp_subscribers')
+      .select('phone_number')
+      .eq('ministry_id', ministryId)
+      .eq('opted_in', true);
+    phones = (subs ?? []).map((s: any) => s.phone_number);
+  } else if (targetType === 'group' && groupId) {
+    // Previously every member of the group with a phone on their profile,
+    // opted in or not — WhatsApp only allows messaging people who agreed to
+    // it, so this is now limited to the group's opted-in subscribers.
+    const { data: members } = await supabase
+      .from('ministry_group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+    const userIds = (members ?? []).map((m: any) => m.user_id).filter(Boolean);
+    if (userIds.length > 0) {
+      const { data: subs } = await supabase
+        .from('ministry_whatsapp_subscribers')
+        .select('phone_number')
+        .eq('ministry_id', ministryId)
+        .eq('opted_in', true)
+        .in('user_id', userIds);
+      phones = (subs ?? []).map((s: any) => s.phone_number);
+    }
+  } else if (targetType === 'small_group' && smallGroupId) {
+    // small_group_members.user_id references auth.users(id), not
+    // user_profiles directly, so there's no FK PostgREST can embed through —
+    // resolve members first, then look up their phones separately.
+    const { data: members } = await supabase
+      .from('small_group_members')
+      .select('user_id')
+      .eq('group_id', smallGroupId)
+      .eq('status', 'active')
+      .eq('whatsapp_notify', true);
+    const userIds = (members ?? []).map((m: any) => m.user_id).filter(Boolean);
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('phone')
+        .in('user_id', userIds);
+      phones = (profiles ?? []).map((p: any) => p.phone);
+    }
+  }
+
+  // One message per number, even if two members share one.
+  const seen = new Set<string>();
+  return phones.filter((p): p is string => {
+    if (!p) return false;
+    const key = p.replace(/[^\d]/g, '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// ── Send via Rekindle (shared number) ─────────────────────────────────────────
+
+async function sendViaRekindle(
+  supabase: ReturnType<typeof createClient>,
+  req: {
+    ministryId: string;
+    userId: string;
+    title: string;
+    message?: string;
+    targetType: string;
+    groupId?: string;
+    smallGroupId?: string;
+    scheduledAt?: string;
+  },
+): Promise<Response> {
+  const accessToken  = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  const phoneId      = Deno.env.get('WHATSAPP_PHONE_ID');
+  const templateName = Deno.env.get('SHARED_WHATSAPP_TEMPLATE');
+  const templateLang = Deno.env.get('SHARED_WHATSAPP_TEMPLATE_LANG') || 'en_US';
+  const dailyLimit   = Number(Deno.env.get('SHARED_WHATSAPP_DAILY_LIMIT')) || SHARED_DAILY_LIMIT_DEFAULT;
+
+  if (!accessToken || !phoneId || !templateName) {
+    return jsonError("Sending via Rekindle isn't switched on yet. Please try again later.", 503);
+  }
+  if (req.scheduledAt) {
+    return jsonError("Scheduling isn't available when sending via Rekindle yet. Send it now instead.", 400);
+  }
+
+  const title   = cleanTemplateParam(req.title ?? '');
+  const message = cleanTemplateParam(req.message ?? '');
+  if (!title || !message) return jsonError('Title and message are required', 400);
+  if (title.length > 60)    return jsonError('Title must be 60 characters or fewer', 400);
+  if (message.length > 700) return jsonError('Message must be 700 characters or fewer', 400);
+
+  const { data: ministry } = await supabase
+    .from('ministries')
+    .select('name')
+    .eq('id', req.ministryId)
+    .maybeSingle();
+  const ministryName = cleanTemplateParam(ministry?.name ?? '') || 'Your ministry';
+
+  const phones = await resolveRecipientPhones(supabase, req.ministryId, req.targetType, req.groupId, req.smallGroupId);
+  if (phones.length === 0) {
+    return jsonOk({ sent: 0, failed: 0, cost_usd: 0, message: 'No opted-in recipients found' });
+  }
+
+  // Per-ministry cap over the last 24 hours on the shared number.
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: recent } = await supabase
+    .from('ministry_whatsapp_broadcasts')
+    .select('successful_sends')
+    .eq('ministry_id', req.ministryId)
+    .eq('sender', 'rekindle')
+    .gte('sent_at', since);
+  const usedToday = (recent ?? []).reduce((s: number, r: any) => s + (r.successful_sends ?? 0), 0);
+  if (usedToday + phones.length > dailyLimit) {
+    return jsonError(
+      `Sending via Rekindle is limited to ${dailyLimit.toLocaleString()} messages per day per ministry. ` +
+      `${Math.max(0, dailyLimit - usedToday).toLocaleString()} left today; this broadcast needs ${phones.length.toLocaleString()}.`,
+      429,
+    );
+  }
+
+  // Every message costs one credit — there is no plan allowance here.
+  const { data: wallet } = await supabase
+    .from('broadcast_wallets')
+    .select('balance_credits')
+    .eq('user_id', req.userId)
+    .maybeSingle();
+  if (!wallet || wallet.balance_credits < phones.length) {
+    return jsonError(
+      `Insufficient credits: need ${phones.length}, have ${wallet?.balance_credits ?? 0}`,
+      402,
+    );
+  }
+
+  console.log(`Sending ${phones.length} msgs via Rekindle's number for ministry ${req.ministryId}`);
+  const results = { successful: 0, failed: 0, errors: [] as string[] };
+
+  for (const phone of phones) {
+    try {
+      const to = phone.replace(/[^\d+]/g, '').replace(/^\+/, '');
+      const payload = buildMessagePayload(to, 'template', undefined, templateName, [ministryName, title, message], templateLang);
+      const res = await fetch(`${WHATSAPP_BASE_URL}/${phoneId}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok && data.messages?.[0]?.id) {
+        results.successful++;
+      } else {
+        results.failed++;
+        const errMsg = data.error?.message ?? `HTTP ${res.status}`;
+        results.errors.push(`${phone}: ${errMsg}`);
+        console.error(`Rekindle-number send failed for ${phone}:`, errMsg);
+      }
+    } catch (err: any) {
+      results.failed++;
+      results.errors.push(`${phone}: ${err.message}`);
+    }
+  }
+
+  const costUsd = results.successful * COST_PER_MESSAGE_USD;
+  const now = new Date().toISOString();
+
+  const { data: broadcastRow } = await supabase
+    .from('ministry_whatsapp_broadcasts')
+    .insert({
+      ministry_id:      req.ministryId,
+      created_by:       req.userId,
+      sender:           'rekindle',
+      title,
+      message,
+      message_type:     'template',
+      template_name:    templateName,
+      target_type:      req.targetType,
+      group_id:         req.targetType === 'small_group' ? req.smallGroupId : req.groupId,
+      recipient_count:  phones.length,
+      successful_sends: results.successful,
+      failed_sends:     results.failed,
+      cost_usd:         costUsd,
+      overage_cost_usd: costUsd,
+      status:           'sent',
+      sent_at:          now,
+      created_at:       now,
+    })
+    .select('id')
+    .single();
+
+  if (results.successful > 0) {
+    await deductWalletCredits(
+      supabase, req.userId, results.successful, costUsd,
+      `WhatsApp via Rekindle: "${title}"`, broadcastRow?.id,
+    );
+  }
+
+  return jsonOk({
+    sent:         results.successful,
+    failed:       results.failed,
+    total:        phones.length,
+    cost_usd:     costUsd,
+    broadcast_id: broadcastRow?.id,
+    errors:       results.errors.length > 0 ? results.errors.slice(0, 10) : undefined,
+  });
+}
+
+// Meta rejects template parameters containing new lines, tabs or more than
+// four spaces in a row.
+function cleanTemplateParam(v: string): string {
+  return String(v).replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim();
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -458,7 +667,7 @@ async function deductWalletCredits(
       type:             'deduction',
       credits:          -credits,
       usd_amount:       usdAmount,
-      description:      `WhatsApp overage: "${description}"`,
+      description,
       broadcast_id:     broadcastId,
       recipients_count: credits,
       status:           'completed',
@@ -515,6 +724,10 @@ DEPLOYMENT:
 
 ENVIRONMENT SECRETS:
   ENCRYPTION_KEY   32-byte hex key for AES-256-GCM (generate with: openssl rand -hex 32)
+  WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_ID — Rekindle's own number (sender 'rekindle')
+  SHARED_WHATSAPP_TEMPLATE       approved template on Rekindle's WABA: {{1}} ministry, {{2}} title, {{3}} message
+  SHARED_WHATSAPP_TEMPLATE_LANG  its language code (default en_US)
+  SHARED_WHATSAPP_DAILY_LIMIT    per-ministry messages per 24h on Rekindle's number (default 1000)
   SUPABASE_ANON_KEY — for the caller-identity check (userClient.auth.getUser())
 
 DATABASE TABLES REQUIRED:

@@ -1,12 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
-import { Alert, AlertDescription } from '@rekindle/ui/alert';
-import { MessageSquare, Send, BarChart3, AlertTriangle } from 'lucide-react';
-import { MinistryWhatsAppConnect } from './MinistryWhatsAppConnect';
+import { MessageSquare, Send, BarChart3, FileText, Settings } from 'lucide-react';
+import { MinistryWhatsAppConnect, hasActiveWhatsAppPlan } from './MinistryWhatsAppConnect';
 import { MinistryWhatsAppBroadcast } from './MinistryWhatsAppBroadcast';
 import { MinistryWhatsAppUsage } from './MinistryWhatsAppUsage';
 import { supabase } from '@rekindle/supabase';
-import type { MinistryWABAConfig } from './MinistryWhatsAppConnect';
+import type { MinistryWABAConfig, WhatsAppConnectSection } from './MinistryWhatsAppConnect';
 import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 
 interface MinistryWhatsAppHubProps {
@@ -14,45 +13,42 @@ interface MinistryWhatsAppHubProps {
   ministryName: string;
 }
 
+type HubTab = 'connect' | 'templates' | 'broadcast' | 'usage' | 'settings';
+
 export const MinistryWhatsAppHub: React.FC<MinistryWhatsAppHubProps> = ({
   ministryId,
   ministryName,
 }) => {
   // Sub-tab kept in history state so a remount or Back keeps the tab the user was on.
-  const [tab, setTab] = useViewHistory<string>('ministry-whatsapp-tab', 'connect');
+  const [tab, setTab] = useViewHistory<HubTab>('ministry-whatsapp-tab', 'connect');
   const [wabaConfig, setWabaConfig] = useState<MinistryWABAConfig | null>(null);
-  const [connectionStatus, setConnectionStatus] =
-    useState<MinistryWABAConfig['connection_status']>('pending');
 
-  // Load config on mount so Broadcast tab is enabled if already connected
-  useEffect(() => {
+  const loadConfig = useCallback(() => {
     supabase
       .from('ministry_whatsapp_configs')
       .select('*')
       .eq('ministry_id', ministryId)
       .maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          setWabaConfig(data);
-          setConnectionStatus(data.connection_status);
-        }
-      });
+      .then(({ data }) => setWabaConfig(data ?? null));
   }, [ministryId]);
 
-  const handleStatusChange = useCallback(
-    (status: MinistryWABAConfig['connection_status']) => {
-      setConnectionStatus(status);
-      supabase
-        .from('ministry_whatsapp_configs')
-        .select('*')
-        .eq('ministry_id', ministryId)
-        .single()
-        .then(({ data }) => { if (data) setWabaConfig(data); });
-    },
-    [ministryId],
-  );
+  useEffect(() => { loadConfig(); }, [loadConfig]);
 
-  const isConnected = connectionStatus === 'connected' && wabaConfig != null;
+  // Templates and Settings belong to the ministry's own WhatsApp Business
+  // Account, so they only appear once a plan for it is paid for. Broadcast is
+  // always there: without a connected account it sends via Rekindle's number.
+  const hasPlan = hasActiveWhatsAppPlan(wabaConfig);
+  const activeTab: HubTab = !hasPlan && (tab === 'templates' || tab === 'settings') ? 'connect' : tab;
+
+  const connectSection = (section: WhatsAppConnectSection) => (
+    <MinistryWhatsAppConnect
+      ministryId={ministryId}
+      ministryName={ministryName}
+      section={section}
+      onConfigChange={setWabaConfig}
+      onOpenBroadcast={() => setTab('broadcast')}
+    />
+  );
 
   return (
     <div className="space-y-4">
@@ -63,17 +59,25 @@ export const MinistryWhatsAppHub: React.FC<MinistryWhatsAppHubProps> = ({
           WhatsApp Broadcasts
         </h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Send messages from <strong>{ministryName}</strong>'s own verified WhatsApp Business Account.
+          Message <strong>{ministryName}</strong>'s members on WhatsApp, from your own verified number or via Rekindle's.
         </p>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="w-full md:w-auto">
+      {/* One tab row for the whole feature — the Connection tab used to hold a
+          second row (Connection / Templates / Settings) of its own. */}
+      <Tabs value={activeTab} onValueChange={(v) => setTab(v as HubTab)}>
+        <TabsList className="w-full md:w-auto flex-wrap h-auto">
           <TabsTrigger value="connect" className="gap-2">
             <MessageSquare className="h-4 w-4" />
-            Connection
+            Your Number
           </TabsTrigger>
-          <TabsTrigger value="broadcast" className="gap-2" disabled={!isConnected}>
+          {hasPlan && (
+            <TabsTrigger value="templates" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Templates
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="broadcast" className="gap-2">
             <Send className="h-4 w-4" />
             Broadcast
           </TabsTrigger>
@@ -81,33 +85,32 @@ export const MinistryWhatsAppHub: React.FC<MinistryWhatsAppHubProps> = ({
             <BarChart3 className="h-4 w-4" />
             Usage & Credits
           </TabsTrigger>
+          {hasPlan && (
+            <TabsTrigger value="settings" className="gap-2">
+              <Settings className="h-4 w-4" />
+              Settings
+            </TabsTrigger>
+          )}
         </TabsList>
 
-        {/* Connection tab */}
         <TabsContent value="connect" className="mt-5">
-          <MinistryWhatsAppConnect
-            ministryId={ministryId}
-            ministryName={ministryName}
-            onStatusChange={handleStatusChange}
-          />
+          {connectSection('connect')}
         </TabsContent>
 
-        {/* Broadcast tab */}
+        {hasPlan && (
+          <TabsContent value="templates" className="mt-5">
+            {connectSection('templates')}
+          </TabsContent>
+        )}
+
         <TabsContent value="broadcast" className="mt-5">
-          {!isConnected ? (
-            <Alert className="border-amber-200 bg-amber-50">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <AlertDescription className="text-amber-800">
-                Connect your WhatsApp Business Account first in the <strong>Connection</strong> tab.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <MinistryWhatsAppBroadcast
-              ministryId={ministryId}
-              ministryName={ministryName}
-              wabaConfig={wabaConfig!}
-            />
-          )}
+          <MinistryWhatsAppBroadcast
+            ministryId={ministryId}
+            ministryName={ministryName}
+            wabaConfig={wabaConfig}
+            onConfigChange={loadConfig}
+            onOpenCredits={() => setTab('usage')}
+          />
         </TabsContent>
 
         {/* Usage & Credits tab — always accessible */}
@@ -117,6 +120,12 @@ export const MinistryWhatsAppHub: React.FC<MinistryWhatsAppHubProps> = ({
             wabaConfig={wabaConfig}
           />
         </TabsContent>
+
+        {hasPlan && (
+          <TabsContent value="settings" className="mt-5">
+            {connectSection('settings')}
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

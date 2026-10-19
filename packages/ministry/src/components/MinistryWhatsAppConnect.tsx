@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useViewHistory } from '@rekindle/features/hooks/useViewHistory';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Badge } from '@rekindle/ui/badge';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
@@ -43,8 +41,12 @@ export interface MinistryWABAConfig {
   verification_status: 'unverified' | 'pending' | 'verified';
   // Subscription
   whatsapp_plan: 'none' | 'basic' | 'growth' | 'premium';
-  plan_status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'none';
+  // 'pending' = checkout opened but Stripe hasn't confirmed payment.
+  plan_status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'pending' | 'none';
   setup_fee_paid: boolean;
+  stripe_subscription_id?: string | null;
+  // "Send via Rekindle" switched on (0411_ministry_whatsapp_shared_sender.sql)
+  shared_sender_enabled?: boolean;
   // Small Group notifications (0336_small_group_whatsapp_notify.sql)
   notify_template_name?: string | null;
   notify_template_language?: string | null;
@@ -64,11 +66,22 @@ interface WABATemplate {
   content_sid?: string | null;
 }
 
+export type WhatsAppConnectSection = 'connect' | 'templates' | 'settings';
+
 interface MinistryWhatsAppConnectProps {
   ministryId: string;
   ministryName: string;
-  onStatusChange?: (status: MinistryWABAConfig['connection_status']) => void;
+  // Which part of the setup to show — the hub's tab row picks it.
+  section: WhatsAppConnectSection;
+  onConfigChange?: (config: MinistryWABAConfig | null) => void;
+  // "Send via Rekindle" on the plan screen jumps to the Broadcast tab.
+  onOpenBroadcast?: () => void;
 }
+
+// A plan the ministry has actually paid for (or is in the grace period of).
+// A 'pending' row only means checkout was opened.
+export const hasActiveWhatsAppPlan = (c: MinistryWABAConfig | null | undefined): boolean =>
+  !!c && c.whatsapp_plan !== 'none' && ['active', 'trialing', 'past_due'].includes(c.plan_status);
 
 // ─── Plan config ──────────────────────────────────────────────────────────────
 
@@ -132,7 +145,9 @@ const WHATSAPP_PLANS = [
 export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = ({
   ministryId,
   ministryName,
-  onStatusChange,
+  section,
+  onConfigChange,
+  onOpenBroadcast,
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -141,7 +156,6 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   const [loading, setLoading]       = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [verifying, setVerifying]   = useState(false);
-  const [activeTab, setActiveTab]   = useViewHistory<'connect' | 'templates' | 'settings'>('ministry-whatsapp-connect', 'connect');
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [selectedPlan, setSelectedPlan]   = useState<typeof WHATSAPP_PLANS[0] | null>(null);
   const [checkingOut, setCheckingOut]     = useState(false);
@@ -164,7 +178,9 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   const [notifyTemplateLanguage, setNotifyTemplateLanguage] = useState('en_US');
   const [savingNotifyTemplate, setSavingNotifyTemplate] = useState(false);
 
-  const fbWindowRef = useRef<Window | null>(null);
+  // Embedded Signup reports the new WABA / phone number ids by postMessage,
+  // separately from the OAuth code FB.login hands its callback.
+  const signupInfoRef = useRef<{ wabaId: string; phoneNumberId: string } | null>(null);
 
   // ── Load existing WABA config ───────────────────────────────────────────
   const loadConfig = useCallback(async () => {
@@ -177,8 +193,8 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
         .maybeSingle();
 
       setConfig(data ?? null);
+      onConfigChange?.(data ?? null);
       if (data) {
-        onStatusChange?.(data.connection_status);
         setNotifyTemplateName(data.notify_template_name || '');
         setNotifyTemplateLanguage(data.notify_template_language || 'en_US');
       }
@@ -187,7 +203,7 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     } finally {
       setLoading(false);
     }
-  }, [ministryId, onStatusChange]);
+  }, [ministryId, onConfigChange]);
 
   const loadTemplates = useCallback(async () => {
     if (!config?.waba_id) return;
@@ -205,8 +221,8 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   useEffect(() => {
     // Settings needs the template list too, to populate the Small Group
     // Notifications picker below.
-    if (activeTab === 'templates' || activeTab === 'settings') loadTemplates();
-  }, [activeTab, loadTemplates]);
+    if (section === 'templates' || section === 'settings') loadTemplates();
+  }, [section, loadTemplates]);
 
   // Load Facebook JS SDK on mount
   useEffect(() => {
@@ -229,11 +245,12 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   const saveNotifyTemplate = async () => {
     setSavingNotifyTemplate(true);
     try {
-      const { error } = await supabase
-        .from('ministry_whatsapp_configs')
-        .update({ notify_template_name: notifyTemplateName || null, notify_template_language: notifyTemplateLanguage })
-        .eq('ministry_id', ministryId);
-      if (error) throw error;
+      // Leaders can't write ministry_whatsapp_configs directly (RLS), so this
+      // used to "save" nothing.
+      const { data, error } = await supabase.functions.invoke('whatsapp-config-update', {
+        body: { ministryId, action: 'set_notify_template', templateName: notifyTemplateName, templateLanguage: notifyTemplateLanguage },
+      });
+      if (error || data?.error) throw new Error(data?.error ?? error?.message);
       toast({ title: t('ministryWhatsAppConnect', 'notifyTemplateSaved', 'Notification template saved') });
       loadConfig();
     } catch (err: any) {
@@ -244,18 +261,49 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   };
 
   // ── Meta Embedded Signup ────────────────────────────────────────────────
+  // FB.login opens Meta's popup and hands its callback an OAuth code; the
+  // popup separately posts the new WABA / phone number ids. Both go to
+  // whatsapp-embedded-signup-complete from here. (This used to navigate to
+  // /api/meta-whatsapp-callback, a route only the consumer app has — in the
+  // ministry app it fell through to the home page and the signup was lost.)
+  const completeEmbeddedSignup = async (code: string) => {
+    try {
+      // The ids usually arrive just before the code; give them a moment.
+      for (let i = 0; i < 15 && !signupInfoRef.current; i++) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+      const info = signupInfoRef.current;
+      const { data, error } = await supabase.functions.invoke('whatsapp-embedded-signup-complete', {
+        body: {
+          ministryId,
+          code,
+          wabaId:        info?.wabaId ?? '',
+          phoneNumberId: info?.phoneNumberId ?? '',
+        },
+      });
+      if (error || !data?.ok) throw new Error(data?.error ?? error?.message ?? 'Could not finish connecting');
+
+      toast({ title: t('ministryWhatsAppConnect', 'whatsappConnected', 'WhatsApp connected!'), description: t('ministryWhatsAppConnect', 'ministryNowConnected', '{name} is now connected via its own WhatsApp Business Account.').replace('{name}', String(ministryName)) });
+      loadConfig();
+    } catch (err: any) {
+      toast({ title: t('ministryWhatsAppConnect', 'connectionFailed', 'Connection failed'), description: err.message, variant: 'destructive' });
+    } finally {
+      signupInfoRef.current = null;
+      setConnecting(false);
+    }
+  };
+
   const launchEmbeddedSignup = () => {
     if (!window.FB) {
       toast({ title: 'Facebook SDK not loaded', description: 'Please try again in a moment.', variant: 'destructive' });
       return;
     }
+    signupInfoRef.current = null;
     setConnecting(true);
     window.FB.login((response: any) => {
-      if (response.authResponse?.code) {
-        const code = response.authResponse.code;
-        const state = btoa(JSON.stringify({ ministryId, userId: user?.id, ts: Date.now() }));
-        // Navigate popup to callback route to process
-        window.location.href = `/api/meta-whatsapp-callback?code=${code}&state=${state}`;
+      const code = response?.authResponse?.code;
+      if (code) {
+        completeEmbeddedSignup(code);
       } else {
         setConnecting(false);
         toast({ title: 'Connection cancelled', variant: 'destructive' });
@@ -272,52 +320,23 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     });
   };
 
-  // Handle postMessage from the Embedded Signup popup (Meta sends session_info)
+  // Session info from the Embedded Signup popup (the new WABA + phone ids).
   useEffect(() => {
-    const handler = async (e: MessageEvent) => {
-      if (e.origin !== 'https://www.facebook.com') return;
-      if (e.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
-
-      const { data } = e.data;
-      if (!data?.phone_number_id || !data?.waba_id) return;
-
-      // Cache Meta WABA credentials in sessionStorage for the callback route
-      try {
-        sessionStorage.setItem('wa_signup_info', JSON.stringify({
-          wabaId: data.waba_id,
-          phoneNumberId: data.phone_number_id,
-        }));
-      } catch (err) {
-        console.warn('Could not save wa_signup_info to sessionStorage', err);
+    const handler = (e: MessageEvent) => {
+      if (!/^https:\/\/([a-z0-9-]+\.)?facebook\.com$/.test(e.origin)) return;
+      let payload: any = e.data;
+      if (typeof payload === 'string') {
+        try { payload = JSON.parse(payload); } catch { return; }
       }
-
-      fbWindowRef.current?.close();
-      setConnecting(true);
-
-      try {
-        const { error } = await supabase.functions.invoke('whatsapp-embedded-signup-complete', {
-          body: {
-            ministryId,
-            wabaId:          data.waba_id,
-            phoneNumberId:   data.phone_number_id,
-            code:            data.code,
-          },
-        });
-
-        if (error) throw new Error(error.message);
-
-        toast({ title: t('ministryWhatsAppConnect', 'whatsappConnected', 'WhatsApp connected!'), description: t('ministryWhatsAppConnect', 'ministryNowConnected', '{name} is now connected via its own WhatsApp Business Account.').replace('{name}', String(ministryName)) });
-        loadConfig();
-      } catch (err: any) {
-        toast({ title: t('ministryWhatsAppConnect', 'connectionFailed', 'Connection failed'), description: err.message, variant: 'destructive' });
-      } finally {
-        setConnecting(false);
+      if (payload?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      const d = payload.data ?? {};
+      if (d.waba_id || d.phone_number_id) {
+        signupInfoRef.current = { wabaId: d.waba_id ?? '', phoneNumberId: d.phone_number_id ?? '' };
       }
     };
-
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [ministryId, ministryName, loadConfig]);
+  }, []);
 
   // ── Manual credential save ──────────────────────────────────────────────
   const saveManualCredentials = async () => {
@@ -367,13 +386,20 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
           ministryId,
           plan:       plan.id,
           monthlyUsd: plan.monthlyUsd,
-          setupUsd:   plan.setupUsd,
-          setupAlreadyPaid: config?.setup_fee_paid ?? false,
           successUrl: `${window.location.origin}?wa_plan_success=1&ministry=${ministryId}`,
           cancelUrl:  `${window.location.origin}?wa_plan_cancel=1`,
         },
       });
-      if (error || !data?.checkoutUrl) throw new Error(error?.message ?? 'Could not create checkout');
+      if (error || data?.error) throw new Error(data?.error ?? error?.message ?? 'Could not create checkout');
+      if (data?.updated) {
+        // Existing Stripe subscription switched to the new plan in place.
+        toast({ title: t('ministryWhatsAppConnect', 'planChanged', 'Plan changed'), description: t('ministryWhatsAppConnect', 'planChangedDesc', "You're now on the {name} plan. The price difference shows on your next invoice.").replace('{name}', plan.name) });
+        setShowPlanModal(false);
+        setCheckingOut(false);
+        loadConfig();
+        return;
+      }
+      if (!data?.checkoutUrl) throw new Error('Could not create checkout');
       window.location.href = data.checkoutUrl;
     } catch (err: any) {
       toast({ title: t('ministryWhatsAppConnect', 'checkoutFailed', 'Checkout failed'), description: err.message, variant: 'destructive' });
@@ -401,11 +427,85 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
     );
   }
 
-  // ── No subscription yet ─────────────────────────────────────────────────
-  if (!config || config.whatsapp_plan === 'none') {
+  const activePlan = hasActiveWhatsAppPlan(config);
+  const currentPlan = WHATSAPP_PLANS.find(p => p.id === config?.whatsapp_plan);
+  // Changing plan on an existing Stripe subscription happens in place.
+  const switchesInPlace = activePlan && !!config?.stripe_subscription_id;
+  const hasCredentials = !!config?.phone_number_id;
+
+  // Plan confirmation modal — used by the plan picker and by "Change plan"
+  // in Settings (which used to open nothing: this only rendered on the
+  // no-plan screen).
+  const planModal = (
+    <Dialog open={showPlanModal} onOpenChange={setShowPlanModal}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{t('ministryWhatsAppConnect', 'confirmPlanX', 'Confirm Plan — {name}').replace('{name}', String(selectedPlan?.name))}</DialogTitle>
+        </DialogHeader>
+        {selectedPlan && (
+          <div className="space-y-4 py-2">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('ministryWhatsAppConnect', 'monthlySubscription', 'Monthly subscription')}</span>
+                <span className="font-semibold">${selectedPlan.monthlyUsd}/mo</span>
+              </div>
+              {!config?.setup_fee_paid && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('ministryWhatsAppConnect', 'oneTimeSetupFee', 'One-time setup fee')}</span>
+                  <span className="font-semibold">${selectedPlan.setupUsd}</span>
+                </div>
+              )}
+              {!switchesInPlace && (
+                <div className="flex justify-between border-t pt-2 font-semibold">
+                  <span>{t('ministryWhatsAppConnect', 'dueToday', 'Due today')}</span>
+                  <span>${(selectedPlan.monthlyUsd + (config?.setup_fee_paid ? 0 : selectedPlan.setupUsd)).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground bg-gray-50 rounded-lg p-3">
+              {switchesInPlace
+                ? t('ministryWhatsAppConnect', 'switchPlanGuidance', 'Your subscription switches to the new plan straight away. Stripe adds or credits the price difference on your next invoice.')
+                : activePlan
+                ? t('ministryWhatsAppConnect', 'newPlanGuidance', 'Your current plan stays on until this payment goes through.')
+                : t('ministryWhatsAppConnect', 'afterPaymentGuidance', "After payment you'll be guided through connecting your WhatsApp Business Account via Meta Embedded Signup. Your ministry's own verified name will appear on all messages.")}
+            </p>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowPlanModal(false)}>{t('ministryWhatsAppConnect', 'cancel', 'Cancel')}</Button>
+          <Button
+            onClick={() => selectedPlan && startSubscription(selectedPlan)}
+            disabled={checkingOut}
+            className="gap-2"
+          >
+            {checkingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {switchesInPlace
+              ? t('ministryWhatsAppConnect', 'switchPlan', 'Switch Plan')
+              : t('ministryWhatsAppConnect', 'payAndContinue', 'Pay & Continue')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Templates and Settings only exist once a plan is paid for.
+  if (section !== 'connect' && !activePlan) return null;
+
+  // ── No paid plan yet ────────────────────────────────────────────────────
+  // (Includes a plan whose checkout was opened but never paid — that used to
+  // show "Basic Plan" and the connection screen as if it were active.)
+  if (!activePlan) {
     return (
       <>
         <div className="space-y-6 max-w-3xl">
+          {config?.plan_status === 'pending' && config.whatsapp_plan !== 'none' && (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800 text-sm">
+                {t('ministryWhatsAppConnect', 'paymentNotCompleted', "Payment for the {name} plan wasn't completed. Pick a plan below to try again.").replace('{name}', String(currentPlan?.name ?? config.whatsapp_plan))}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* ── How would you like to send? tooltip ── */}
           <div className="rounded-xl border-2 border-dashed border-green-200 bg-white p-4 space-y-3">
@@ -448,8 +548,14 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
                       </p>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2.5 italic">
-                      {t('ministryWhatsAppConnect', 'creditsSenderShared', "Sender shown as the platform's shared number")}
+                      {t('ministryWhatsAppConnect', 'creditsSenderShared', "Sender shown as Rekindle's shared number")}
                     </p>
+                    {onOpenBroadcast && (
+                      <Button size="sm" className="mt-3 gap-1.5 bg-green-600 hover:bg-green-700 text-white" onClick={onOpenBroadcast}>
+                        <Zap className="h-3.5 w-3.5" />
+                        {t('ministryWhatsAppConnect', 'sendViaRekindle', 'Send via Rekindle')}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -576,56 +682,223 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
           </div>
         </div>
 
-        {/* Plan confirmation modal */}
-        <Dialog open={showPlanModal} onOpenChange={setShowPlanModal}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>{t('ministryWhatsAppConnect', 'confirmPlanX', 'Confirm Plan — {name}').replace('{name}', String(selectedPlan?.name))}</DialogTitle>
-            </DialogHeader>
-            {selectedPlan && (
-              <div className="space-y-4 py-2">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('ministryWhatsAppConnect', 'monthlySubscription', 'Monthly subscription')}</span>
-                    <span className="font-semibold">${selectedPlan.monthlyUsd}/mo</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('ministryWhatsAppConnect', 'oneTimeSetupFee', 'One-time setup fee')}</span>
-                    <span className="font-semibold">${selectedPlan.setupUsd}</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2 font-semibold">
-                    <span>{t('ministryWhatsAppConnect', 'dueToday', 'Due today')}</span>
-                    <span>${(selectedPlan.monthlyUsd + selectedPlan.setupUsd).toFixed(2)}</span>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground bg-gray-50 rounded-lg p-3">
-                  {t('ministryWhatsAppConnect', 'afterPaymentGuidance', "After payment you'll be guided through connecting your WhatsApp Business Account via Meta Embedded Signup. Your ministry's own verified name will appear on all messages.")}
-                </p>
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowPlanModal(false)}>{t('ministryWhatsAppConnect', 'cancel', 'Cancel')}</Button>
-              <Button
-                onClick={() => selectedPlan && startSubscription(selectedPlan)}
-                disabled={checkingOut}
-                className="gap-2"
-              >
-                {checkingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {t('ministryWhatsAppConnect', 'payAndContinue', 'Pay & Continue')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {planModal}
       </>
     );
   }
 
-  // ── Has a plan — show connection management ─────────────────────────────
+  // ── Paid plan: Connection / Templates / Settings ───────────────────────
+  if (section === 'templates') {
+    return (
+      <div className="space-y-4 max-w-3xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">{t('ministryWhatsAppConnect', 'messageTemplates', 'Message Templates')}</p>
+          <p className="text-xs text-muted-foreground">
+            {t('ministryWhatsAppConnect', 'templatesRequireApproval', 'WhatsApp requires pre-approved templates for certain message types.')}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={loadTemplates}
+          className="gap-1.5"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t('ministryWhatsAppConnect', 'refresh', 'Refresh')}
+        </Button>
+      </div>
+
+      {templates.length === 0 ? (
+        <div className="text-center py-10 border rounded-xl bg-gray-50">
+          <FileText className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">{t('ministryWhatsAppConnect', 'noTemplatesYet', 'No templates yet.')}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t('ministryWhatsAppConnect', 'createTemplatesHint', "Create templates in your Meta Business Manager and they'll appear here once approved.")}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 gap-2"
+            onClick={() => window.open('https://business.facebook.com/wa/manage/message-templates/', '_blank')}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('ministryWhatsAppConnect', 'openMetaBusinessManager', 'Open Meta Business Manager')}
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {templates.map(tpl => (
+            <div key={tpl.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium">{tpl.name}</p>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${
+                      tpl.status === 'APPROVED' ? 'text-green-700 border-green-200 bg-green-50'
+                      : tpl.status === 'REJECTED' ? 'text-red-700 border-red-200 bg-red-50'
+                      : 'text-amber-700 border-amber-200 bg-amber-50'
+                    }`}
+                  >
+                    {tpl.status}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {tpl.category} · {tpl.language}
+                </p>
+                <p className="text-xs text-muted-foreground truncate max-w-md mt-0.5">{tpl.body_text}</p>
+              </div>
+              <Button aria-label={t('ministryWhatsAppConnect', 'copyTemplateName', 'Copy template name')}
+                variant="ghost"
+                size="sm"
+                onClick={() => { navigator.clipboard.writeText(tpl.name); toast({ title: t('ministryWhatsAppConnect', 'copiedTemplateName', 'Copied template name') }); }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      </div>
+    );
+  }
+
+  if (section === 'settings') {
+    return (
+      <div className="space-y-4 max-w-3xl">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('ministryWhatsAppConnect', 'planAndBilling', 'Plan & Billing')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">{t('ministryWhatsAppConnect', 'currentPlan', 'Current Plan')}</p>
+              <p className="text-xs text-muted-foreground">
+                {WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.name} ·{' '}
+                ${WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.monthlyUsd}/mo
+              </p>
+            </div>
+            <Badge variant="outline" className="capitalize">{config.plan_status}</Badge>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {WHATSAPP_PLANS.filter(p => p.id !== config.whatsapp_plan).map(p => (
+              <Button
+                key={p.id}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={checkingOut}
+                onClick={() => { setSelectedPlan(p); setShowPlanModal(true); }}
+              >
+                <Zap className="h-3.5 w-3.5" />
+                {t('ministryWhatsAppConnect', 'switchToX', 'Switch to {name} · ${price}/mo').replace('{name}', p.name).replace('{price}', String(p.monthlyUsd))}
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-purple-600" />
+            {t('ministryWhatsAppConnect', 'smallGroupNotifications', 'Small Group Notifications')}
+          </CardTitle>
+          <CardDescription>
+            {t('ministryWhatsAppConnect', 'smallGroupNotificationsDesc', "When a leader schedules a meeting or posts an announcement, members who've opted in get it on their own WhatsApp too — sent from this ministry's verified number using the template below.")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Alert className="border-amber-200 bg-amber-50 py-2">
+            <Info className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800 text-xs">
+              {t('ministryWhatsAppConnect', 'notifyTemplateRequirement', 'WhatsApp requires an APPROVED template for any message a business sends first — pick one from the Templates tab that takes exactly 2 body variables: {{1}} = a short title, {{2}} = the details.')}
+            </AlertDescription>
+          </Alert>
+          {config.connection_status !== 'connected' ? (
+            <p className="text-sm text-muted-foreground">{t('ministryWhatsAppConnect', 'connectFirstForNotify', 'Connect a WhatsApp Business Account in the Connection tab first.')}</p>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-sm">{t('ministryWhatsAppConnect', 'notificationTemplate', 'Notification template')}</Label>
+                {templates.filter(tp => tp.status === 'APPROVED').length > 0 ? (
+                  <Select value={notifyTemplateName} onValueChange={(v) => {
+                    setNotifyTemplateName(v);
+                    const tpl = templates.find(tp => tp.name === v);
+                    if (tpl?.language) setNotifyTemplateLanguage(tpl.language);
+                  }}>
+                    <SelectTrigger><SelectValue placeholder={t('ministryWhatsAppConnect', 'chooseATemplate', 'Choose a template')} /></SelectTrigger>
+                    <SelectContent>
+                      {templates.filter(tp => tp.status === 'APPROVED').map(tp => (
+                        <SelectItem key={tp.id} value={tp.name}>{tp.name} ({tp.language})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t('ministryWhatsAppConnect', 'noApprovedTemplatesYet', 'No approved templates yet — create one in the Templates tab or Meta Business Manager first.')}
+                  </p>
+                )}
+              </div>
+              <Button size="sm" onClick={saveNotifyTemplate} disabled={savingNotifyTemplate} className="gap-2">
+                {savingNotifyTemplate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {t('ministryWhatsAppConnect', 'saveTemplate', 'Save')}
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-red-100">
+        <CardHeader>
+          <CardTitle className="text-base text-red-700">{t('ministryWhatsAppConnect', 'dangerZone', 'Danger Zone')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-200 text-red-600 hover:bg-red-50 gap-2"
+            onClick={async () => {
+              if (!await confirmAction({ title: t('ministryWhatsAppConnect', 'disconnectConfirmTitle', 'Disconnect your WhatsApp Business Account?'), description: t('ministryWhatsAppConnect', 'disconnectConfirmDesc', 'You can reconnect later.'), confirmLabel: t('ministryWhatsAppConnect', 'disconnect', 'Disconnect'), destructive: true })) return;
+              // Goes through the server: leaders can't write this row
+              // directly (RLS), so this used to disconnect nothing.
+              const { data, error } = await supabase.functions.invoke('whatsapp-config-update', {
+                body: { ministryId, action: 'disconnect' },
+              });
+              if (error || data?.error) {
+                toast({ title: t('ministryWhatsAppConnect', 'disconnectFailed', 'Could not disconnect'), description: data?.error ?? error?.message, variant: 'destructive' });
+                return;
+              }
+              loadConfig();
+              toast({ title: t('ministryWhatsAppConnect', 'disconnected', 'Disconnected'), description: t('ministryWhatsAppConnect', 'reconnectAnyTime', 'You can reconnect any time.') });
+            }}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            {t('ministryWhatsAppConnect', 'disconnectWhatsapp', 'Disconnect WhatsApp')}
+          </Button>
+        </CardContent>
+      </Card>
+        {planModal}
+      </div>
+    );
+  }
+
+  const isConnected = config.connection_status === 'connected';
+  const nextStep = isConnected
+    ? null
+    : !hasCredentials
+    ? t('ministryWhatsAppConnect', 'nextStepConnect', 'Next step: connect your WhatsApp Business Account below.')
+    : config.connection_status === 'error'
+    ? t('ministryWhatsAppConnect', 'nextStepFixCredentials', 'Meta rejected the saved details. Check them, then press Verify again.')
+    : t('ministryWhatsAppConnect', 'nextStepVerify', 'Press Verify to check your details with Meta.');
+
   return (
     <div className="space-y-5 max-w-3xl">
       {/* Status banner */}
       <div className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
-        config.connection_status === 'connected'
+        isConnected
           ? 'bg-green-50 border-green-200'
           : config.connection_status === 'error'
           ? 'bg-red-50 border-red-200'
@@ -633,308 +906,131 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
       }`}>
         <div className="flex items-center gap-3">
           <MessageSquare className={`h-5 w-5 ${
-            config.connection_status === 'connected' ? 'text-green-600'
+            isConnected ? 'text-green-600'
             : config.connection_status === 'error' ? 'text-red-500' : 'text-amber-600'
           }`} />
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <p className="text-sm font-semibold">
-                {config.connection_status === 'connected'
+                {isConnected
                   ? config.business_display_name
                   : t('ministryWhatsAppConnect', 'whatsappNotConnected', 'WhatsApp Not Connected')}
               </p>
               <StatusBadge status={config.connection_status} />
               <Badge variant="outline" className="text-xs">
-                {WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.name ?? config.whatsapp_plan} {t('ministryWhatsAppConnect', 'planSuffix', 'Plan')}
+                {currentPlan?.name ?? config.whatsapp_plan} {t('ministryWhatsAppConnect', 'planSuffix', 'Plan')}
               </Badge>
             </div>
-            {config.connection_status === 'connected' && (
+            {isConnected ? (
               <p className="text-xs text-muted-foreground mt-0.5">
                 {config.phone_number_display} · WABA: {config.waba_id}
               </p>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-0.5">{nextStep}</p>
             )}
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={verifyConnection}
-          disabled={verifying}
-          className="gap-1.5 shrink-0"
-        >
-          {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          {t('ministryWhatsAppConnect', 'verify', 'Verify')}
-        </Button>
+        {/* Verify re-checks saved details with Meta — nothing to check until
+            some are saved, so it's hidden rather than failing. */}
+        {hasCredentials && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={verifyConnection}
+            disabled={verifying}
+            className="gap-1.5 shrink-0"
+          >
+            {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {t('ministryWhatsAppConnect', 'verify', 'Verify')}
+          </Button>
+        )}
       </div>
 
       {/* Sender name notice */}
-      <Alert className="border-blue-200 bg-blue-50">
-        <Shield className="h-4 w-4 text-blue-600" />
-        <AlertDescription className="text-blue-800 text-xs">
-          <strong>{t('ministryWhatsAppConnect', 'aboutYourSenderName', 'About your sender name:')}</strong> {t('ministryWhatsAppConnect', 'recipientsSee', 'Recipients see')} <strong>{config.business_display_name || ministryName}</strong> {t('ministryWhatsAppConnect', 'senderNameNotice', 'as the sender — this is your verified WhatsApp Business name. It cannot be changed per message by design; it is permanently tied to your verified WABA and is what makes your messages trusted and recognisable.')}
-        </AlertDescription>
-      </Alert>
+      {isConnected && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Shield className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800 text-xs">
+            <strong>{t('ministryWhatsAppConnect', 'aboutYourSenderName', 'About your sender name:')}</strong> {t('ministryWhatsAppConnect', 'recipientsSee', 'Recipients see')} <strong>{config.business_display_name || ministryName}</strong> {t('ministryWhatsAppConnect', 'senderNameNotice', 'as the sender — this is your verified WhatsApp Business name. It cannot be changed per message by design; it is permanently tied to your verified WABA and is what makes your messages trusted and recognisable.')}
+          </AlertDescription>
+        </Alert>
+      )}
 
-      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
-        <TabsList>
-          <TabsTrigger value="connect">{t('ministryWhatsAppConnect', 'tabConnection', 'Connection')}</TabsTrigger>
-          <TabsTrigger value="templates">{t('ministryWhatsAppConnect', 'tabTemplates', 'Templates')}</TabsTrigger>
-          <TabsTrigger value="settings">{t('ministryWhatsAppConnect', 'tabSettings', 'Settings')}</TabsTrigger>
-        </TabsList>
-
-        {/* ── Connection tab ── */}
-        <TabsContent value="connect" className="space-y-4 mt-4">
-          {config.connection_status !== 'connected' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-purple-600" />
-                  {t('ministryWhatsAppConnect', 'connectYourWaba', 'Connect Your WhatsApp Business Account')}
-                </CardTitle>
-                <CardDescription>
-                  {t('ministryWhatsAppConnect', 'useEmbeddedSignupOrManual', 'Use Meta Embedded Signup to link your WABA, or enter credentials manually.')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button
-                  onClick={launchEmbeddedSignup}
-                  disabled={connecting}
-                  className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white gap-2"
-                >
-                  {connecting
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <ExternalLink className="h-4 w-4" />}
-                  {t('ministryWhatsAppConnect', 'connectViaEmbeddedSignup', 'Connect via Meta Embedded Signup')}
-                </Button>
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                  <div className="relative flex justify-center text-xs text-muted-foreground"><span className="bg-white px-2">{t('ministryWhatsAppConnect', 'or', 'or')}</span></div>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowManualModal(true)}
-                  className="w-full gap-2"
-                >
-                  <Settings className="h-4 w-4" />
-                  {t('ministryWhatsAppConnect', 'enterCredentialsManually', 'Enter Credentials Manually')}
-                </Button>
-
-                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                  <p className="text-xs font-medium">{t('ministryWhatsAppConnect', 'whatEmbeddedSignupDoes', 'What Meta Embedded Signup does:')}</p>
-                  {[
-                    t('ministryWhatsAppConnect', 'signupStep1', 'Creates or links your WhatsApp Business Account (WABA)'),
-                    t('ministryWhatsAppConnect', 'signupStep2', 'Registers and verifies your dedicated phone number'),
-                    t('ministryWhatsAppConnect', 'signupStep3', 'Grants this platform permission to send on your behalf'),
-                    t('ministryWhatsAppConnect', 'signupStep4', 'Keeps credentials isolated — your number is only used for your ministry'),
-                  ].map(s => (
-                    <div key={s} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />
-                      {s}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="pt-5 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { label: t('ministryWhatsAppConnect', 'businessDisplayName', 'Business Display Name'), value: config.business_display_name, note: t('ministryWhatsAppConnect', 'verifiedCannotChange', 'Verified — cannot be changed per message') },
-                    { label: t('ministryWhatsAppConnect', 'phoneNumber', 'Phone Number'), value: config.phone_number_display, note: t('ministryWhatsAppConnect', 'dedicatedToMinistry', 'Dedicated to your ministry') },
-                    { label: t('ministryWhatsAppConnect', 'wabaId', 'WABA ID'), value: config.waba_id, note: t('ministryWhatsAppConnect', 'yourWabaNote', 'Your WhatsApp Business Account') },
-                    { label: t('ministryWhatsAppConnect', 'phoneNumberId', 'Phone Number ID'), value: config.phone_number_id, note: t('ministryWhatsAppConnect', 'usedForApiCalls', 'Used for API calls') },
-                  ].map(({ label, value, note }) => (
-                    <div key={label} className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground">{label}</p>
-                      <p className="text-sm font-medium mt-0.5 break-all">{value}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{note}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  {t('ministryWhatsAppConnect', 'connectedOnX', 'Connected {date}').replace('{date}', new Date(config.updated_at).toLocaleDateString())}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* ── Templates tab ── */}
-        <TabsContent value="templates" className="mt-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{t('ministryWhatsAppConnect', 'messageTemplates', 'Message Templates')}</p>
-              <p className="text-xs text-muted-foreground">
-                {t('ministryWhatsAppConnect', 'templatesRequireApproval', 'WhatsApp requires pre-approved templates for certain message types.')}
-              </p>
+      {config.connection_status !== 'connected' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Zap className="h-4 w-4 text-purple-600" />
+              {t('ministryWhatsAppConnect', 'connectYourWaba', 'Connect Your WhatsApp Business Account')}
+            </CardTitle>
+            <CardDescription>
+              {t('ministryWhatsAppConnect', 'useEmbeddedSignupOrManual', 'Use Meta Embedded Signup to link your WABA, or enter credentials manually.')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              onClick={launchEmbeddedSignup}
+              disabled={connecting}
+              className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white gap-2"
+            >
+              {connecting
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <ExternalLink className="h-4 w-4" />}
+              {t('ministryWhatsAppConnect', 'connectViaEmbeddedSignup', 'Connect via Meta Embedded Signup')}
+            </Button>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+              <div className="relative flex justify-center text-xs text-muted-foreground"><span className="bg-white px-2">{t('ministryWhatsAppConnect', 'or', 'or')}</span></div>
             </div>
             <Button
               variant="outline"
-              size="sm"
-              onClick={loadTemplates}
-              className="gap-1.5"
+              onClick={() => setShowManualModal(true)}
+              className="w-full gap-2"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t('ministryWhatsAppConnect', 'refresh', 'Refresh')}
+              <Settings className="h-4 w-4" />
+              {t('ministryWhatsAppConnect', 'enterCredentialsManually', 'Enter Credentials Manually')}
             </Button>
-          </div>
 
-          {templates.length === 0 ? (
-            <div className="text-center py-10 border rounded-xl bg-gray-50">
-              <FileText className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">{t('ministryWhatsAppConnect', 'noTemplatesYet', 'No templates yet.')}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('ministryWhatsAppConnect', 'createTemplatesHint', "Create templates in your Meta Business Manager and they'll appear here once approved.")}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3 gap-2"
-                onClick={() => window.open('https://business.facebook.com/wa/manage/message-templates/', '_blank')}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                {t('ministryWhatsAppConnect', 'openMetaBusinessManager', 'Open Meta Business Manager')}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {templates.map(tpl => (
-                <div key={tpl.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{tpl.name}</p>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${
-                          tpl.status === 'APPROVED' ? 'text-green-700 border-green-200 bg-green-50'
-                          : tpl.status === 'REJECTED' ? 'text-red-700 border-red-200 bg-red-50'
-                          : 'text-amber-700 border-amber-200 bg-amber-50'
-                        }`}
-                      >
-                        {tpl.status}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {tpl.category} · {tpl.language}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate max-w-md mt-0.5">{tpl.body_text}</p>
-                  </div>
-                  <Button aria-label={t('ministryWhatsAppConnect', 'copyTemplateName', 'Copy template name')}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => { navigator.clipboard.writeText(tpl.name); toast({ title: t('ministryWhatsAppConnect', 'copiedTemplateName', 'Copied template name') }); }}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-medium">{t('ministryWhatsAppConnect', 'whatEmbeddedSignupDoes', 'What Meta Embedded Signup does:')}</p>
+              {[
+                t('ministryWhatsAppConnect', 'signupStep1', 'Creates or links your WhatsApp Business Account (WABA)'),
+                t('ministryWhatsAppConnect', 'signupStep2', 'Registers and verifies your dedicated phone number'),
+                t('ministryWhatsAppConnect', 'signupStep3', 'Grants this platform permission to send on your behalf'),
+                t('ministryWhatsAppConnect', 'signupStep4', 'Keeps credentials isolated — your number is only used for your ministry'),
+              ].map(s => (
+                <div key={s} className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />
+                  {s}
                 </div>
               ))}
             </div>
-          )}
-        </TabsContent>
-
-        {/* ── Settings tab ── */}
-        <TabsContent value="settings" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('ministryWhatsAppConnect', 'planAndBilling', 'Plan & Billing')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">{t('ministryWhatsAppConnect', 'currentPlan', 'Current Plan')}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.name} ·{' '}
-                    ${WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.monthlyUsd}/mo
-                  </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { label: t('ministryWhatsAppConnect', 'businessDisplayName', 'Business Display Name'), value: config.business_display_name, note: t('ministryWhatsAppConnect', 'verifiedCannotChange', 'Verified — cannot be changed per message') },
+                { label: t('ministryWhatsAppConnect', 'phoneNumber', 'Phone Number'), value: config.phone_number_display, note: t('ministryWhatsAppConnect', 'dedicatedToMinistry', 'Dedicated to your ministry') },
+                { label: t('ministryWhatsAppConnect', 'wabaId', 'WABA ID'), value: config.waba_id, note: t('ministryWhatsAppConnect', 'yourWabaNote', 'Your WhatsApp Business Account') },
+                { label: t('ministryWhatsAppConnect', 'phoneNumberId', 'Phone Number ID'), value: config.phone_number_id, note: t('ministryWhatsAppConnect', 'usedForApiCalls', 'Used for API calls') },
+              ].map(({ label, value, note }) => (
+                <div key={label} className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-sm font-medium mt-0.5 break-all">{value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{note}</p>
                 </div>
-                <Badge variant="outline" className="capitalize">{config.plan_status}</Badge>
-              </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowPlanModal(true)}>
-                <Zap className="h-3.5 w-3.5" />
-                {t('ministryWhatsAppConnect', 'upgradePlan', 'Upgrade Plan')}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-purple-600" />
-                {t('ministryWhatsAppConnect', 'smallGroupNotifications', 'Small Group Notifications')}
-              </CardTitle>
-              <CardDescription>
-                {t('ministryWhatsAppConnect', 'smallGroupNotificationsDesc', "When a leader schedules a meeting or posts an announcement, members who've opted in get it on their own WhatsApp too — sent from this ministry's verified number using the template below.")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Alert className="border-amber-200 bg-amber-50 py-2">
-                <Info className="h-4 w-4 text-amber-600" />
-                <AlertDescription className="text-amber-800 text-xs">
-                  {t('ministryWhatsAppConnect', 'notifyTemplateRequirement', 'WhatsApp requires an APPROVED template for any message a business sends first — pick one from the Templates tab that takes exactly 2 body variables: {{1}} = a short title, {{2}} = the details.')}
-                </AlertDescription>
-              </Alert>
-              {config.connection_status !== 'connected' ? (
-                <p className="text-sm text-muted-foreground">{t('ministryWhatsAppConnect', 'connectFirstForNotify', 'Connect a WhatsApp Business Account above first.')}</p>
-              ) : (
-                <>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">{t('ministryWhatsAppConnect', 'notificationTemplate', 'Notification template')}</Label>
-                    {templates.filter(tp => tp.status === 'APPROVED').length > 0 ? (
-                      <Select value={notifyTemplateName} onValueChange={(v) => {
-                        setNotifyTemplateName(v);
-                        const tpl = templates.find(tp => tp.name === v);
-                        if (tpl?.language) setNotifyTemplateLanguage(tpl.language);
-                      }}>
-                        <SelectTrigger><SelectValue placeholder={t('ministryWhatsAppConnect', 'chooseATemplate', 'Choose a template')} /></SelectTrigger>
-                        <SelectContent>
-                          {templates.filter(tp => tp.status === 'APPROVED').map(tp => (
-                            <SelectItem key={tp.id} value={tp.name}>{tp.name} ({tp.language})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        {t('ministryWhatsAppConnect', 'noApprovedTemplatesYet', 'No approved templates yet — create one in the Templates tab or Meta Business Manager first.')}
-                      </p>
-                    )}
-                  </div>
-                  <Button size="sm" onClick={saveNotifyTemplate} disabled={savingNotifyTemplate} className="gap-2">
-                    {savingNotifyTemplate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    {t('ministryWhatsAppConnect', 'saveTemplate', 'Save')}
-                  </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-red-100">
-            <CardHeader>
-              <CardTitle className="text-base text-red-700">{t('ministryWhatsAppConnect', 'dangerZone', 'Danger Zone')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-red-200 text-red-600 hover:bg-red-50 gap-2"
-                onClick={async () => {
-                  if (!await confirmAction({ title: t('ministryWhatsAppConnect', 'disconnectConfirmTitle', 'Disconnect your WhatsApp Business Account?'), description: t('ministryWhatsAppConnect', 'disconnectConfirmDesc', 'You can reconnect later.'), confirmLabel: t('ministryWhatsAppConnect', 'disconnect', 'Disconnect'), destructive: true })) return;
-                  await supabase
-                    .from('ministry_whatsapp_configs')
-                    .update({ connection_status: 'pending', phone_number_id: '', waba_id: '' })
-                    .eq('ministry_id', ministryId);
-                  loadConfig();
-                  toast({ title: t('ministryWhatsAppConnect', 'disconnected', 'Disconnected'), description: t('ministryWhatsAppConnect', 'reconnectAnyTime', 'You can reconnect any time.') });
-                }}
-              >
-                <XCircle className="h-3.5 w-3.5" />
-                {t('ministryWhatsAppConnect', 'disconnectWhatsapp', 'Disconnect WhatsApp')}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              {t('ministryWhatsAppConnect', 'connectedOnX', 'Connected {date}').replace('{date}', new Date(config.updated_at).toLocaleDateString())}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Manual credentials modal */}
       <Dialog open={showManualModal} onOpenChange={setShowManualModal}>
@@ -988,8 +1084,6 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Twilio credentials modal — removed: admin provisions Twilio numbers centrally */}
     </div>
   );
 };

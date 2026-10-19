@@ -18,6 +18,7 @@ import {
 
 export const WHATSAPP_COST_PER_MESSAGE = 0.03; // USD
 
+// Prices must match PACKAGES in supabase/functions/create-wallet-topup.
 const TOP_UP_PACKAGES = [
   { credits: 100,  usd: 3.00,  label: '100 messages',  popular: false },
   { credits: 500,  usd: 15.00, label: '500 messages',  popular: false },
@@ -189,10 +190,9 @@ export const BroadcastWallet: React.FC<BroadcastWalletProps> = ({
     try {
       const { data, error } = await supabase.functions.invoke('create-wallet-topup', {
         body: {
-          userId:       user.id,
+          // The server prices the package itself and always tops up the
+          // signed-in user's own wallet.
           credits:      selectedPackage.credits,
-          usdAmount:    selectedPackage.usd,
-          packageLabel: selectedPackage.label,
           successUrl:   `${window.location.origin}${window.location.pathname}?wallet_topup=success&credits=${selectedPackage.credits}`,
           cancelUrl:    `${window.location.origin}${window.location.pathname}?wallet_topup=cancelled`,
         },

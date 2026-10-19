@@ -15,7 +15,7 @@ import { toast } from '@rekindle/ui/use-toast';
 import {
   Send, MessageSquare, Users, Calendar, Loader2,
   CheckCircle2, AlertTriangle, Info, Clock, Shield,
-  ChevronDown, ChevronUp, XCircle,
+  ChevronDown, ChevronUp, XCircle, Zap,
 } from 'lucide-react';
 import type { MinistryWABAConfig } from './MinistryWhatsAppConnect';
 
@@ -32,6 +32,11 @@ const PLAN_INCLUDED: Record<string, number | null> = {
   growth:  5000,
   premium: null,
 };
+
+// Send via Rekindle: one wallet credit per delivered message, no allowance.
+const REKINDLE_MSG_RATE = 0.03;
+const REKINDLE_TITLE_MAX = 60;
+const REKINDLE_MESSAGE_MAX = 700;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,8 +60,14 @@ interface BroadcastContact {
 interface MinistryWABroadcastProps {
   ministryId: string;
   ministryName: string;
-  wabaConfig: MinistryWABAConfig;
+  // null when the ministry has never set anything up — it can still send
+  // via Rekindle's number.
+  wabaConfig: MinistryWABAConfig | null;
+  onConfigChange?: () => void;
+  onOpenCredits?: () => void;
 }
+
+type Sender = 'ministry' | 'rekindle';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -64,9 +75,22 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
   ministryId,
   ministryName,
   wabaConfig,
+  onConfigChange,
+  onOpenCredits,
 }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
+
+  // Which number sends: the ministry's own WABA once connected, otherwise
+  // Rekindle's shared number.
+  const ownConnected = wabaConfig?.connection_status === 'connected';
+  const [senderChoice, setSenderChoice] = useState<Sender | null>(null);
+  const sender: Sender = senderChoice === 'ministry' && ownConnected
+    ? 'ministry'
+    : senderChoice ?? (ownConnected ? 'ministry' : 'rekindle');
+  const viaRekindle = sender === 'rekindle';
+  const sharedEnabled = !!wabaConfig?.shared_sender_enabled;
+  const [togglingShared, setTogglingShared] = useState(false);
 
   // Form state
   const [messageType, setMessageType] = useState<'text' | 'template'>('text');
@@ -98,6 +122,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
 
   // ── Load data ─────────────────────────────────────────────────────────
   const loadTemplates = useCallback(async () => {
+    if (!ownConnected) return;
     try {
       const { data } = await supabase.functions.invoke('whatsapp-get-templates', {
         body: { ministryId },
@@ -106,7 +131,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
     } catch (err) {
       console.error('Template load error:', err);
     }
-  }, [ministryId]);
+  }, [ministryId, ownConnected]);
 
   const loadGroups = useCallback(async () => {
     const { data } = await supabase
@@ -143,6 +168,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
       .from('ministry_whatsapp_broadcasts')
       .select('successful_sends')
       .eq('ministry_id', ministryId)
+      .eq('sender', 'ministry')   // sends via Rekindle don't use the plan allowance
       .gte('sent_at', startOfMonth.toISOString());
     const total = (data ?? []).reduce((s: number, r: any) => s + (r.successful_sends ?? 0), 0);
     setMonthlyUsed(total);
@@ -170,11 +196,24 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
           .eq('opted_in', true);
         setRecipientCount(count ?? 0);
       } else if (targetType === 'group' && groupId) {
-        const { count } = await supabase
+        // Matches the edge function: the group's members who opted in to
+        // the ministry's WhatsApp updates, not every member.
+        const { data: members } = await supabase
           .from('ministry_group_members')
-          .select('*', { count: 'exact', head: true })
+          .select('user_id')
           .eq('group_id', groupId);
-        setRecipientCount(count ?? 0);
+        const userIds = (members ?? []).map((m: any) => m.user_id).filter(Boolean);
+        if (userIds.length === 0) {
+          setRecipientCount(0);
+        } else {
+          const { count } = await supabase
+            .from('ministry_whatsapp_subscribers')
+            .select('*', { count: 'exact', head: true })
+            .eq('ministry_id', ministryId)
+            .eq('opted_in', true)
+            .in('user_id', userIds);
+          setRecipientCount(count ?? 0);
+        }
       } else if (targetType === 'small_group' && smallGroupId) {
         // Matches the edge function's filter exactly — only members opted
         // in to WhatsApp reminders for this group, not every member.
@@ -205,9 +244,11 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
   useEffect(() => { if (showHistory) loadHistory(); }, [showHistory, loadHistory]);
 
   // ── Cost calculation ──────────────────────────────────────────────────
-  const msgRate     = PLAN_MSG_RATES[wabaConfig.whatsapp_plan] ?? 0.03;
-  const included    = PLAN_INCLUDED[wabaConfig.whatsapp_plan] ?? 0;
-  const overageCount = Math.max(0, (monthlyUsed + recipientCount) - (included ?? 0));
+  const plan        = wabaConfig?.whatsapp_plan ?? 'none';
+  const msgRate     = viaRekindle ? REKINDLE_MSG_RATE : (PLAN_MSG_RATES[plan] ?? 0.03);
+  // premium (null) = unlimited; via Rekindle nothing is included.
+  const included    = viaRekindle ? 0 : (PLAN_INCLUDED[plan] === null ? Infinity : (PLAN_INCLUDED[plan] ?? 0));
+  const overageCount = Math.max(0, (monthlyUsed + recipientCount) - included);
   const includedUsed = recipientCount - overageCount;
   const overageCost  = overageCount * msgRate;
   const creditsNeeded = overageCount; // 1 credit = 1 msg for overage
@@ -218,11 +259,12 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
     if (sending) return;
 
     // Validation
-    if (messageType === 'text' && (!title.trim() || !message.trim())) {
+    const effectiveType = viaRekindle ? 'text' : messageType;
+    if (effectiveType === 'text' && (!title.trim() || !message.trim())) {
       toast({ title: t('ministryWhatsAppBroadcast', 'titleAndMessageRequired', 'Title and message required'), variant: 'destructive' });
       return;
     }
-    if (messageType === 'template' && !selectedTemplate) {
+    if (effectiveType === 'template' && !selectedTemplate) {
       toast({ title: t('ministryWhatsAppBroadcast', 'selectATemplate', 'Select a template'), variant: 'destructive' });
       return;
     }
@@ -230,7 +272,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
       toast({ title: t('ministryWhatsAppBroadcast', 'noRecipientsFound', 'No recipients found'), variant: 'destructive' });
       return;
     }
-    if (!canAfford && !isScheduled) {
+    if (!canAfford && !(isScheduled && !viaRekindle)) {
       toast({
         title: t('ministryWhatsAppBroadcast', 'insufficientCreditsForOverage', 'Insufficient credits for overage'),
         description: t('ministryWhatsAppBroadcast', 'topUpAtLeastX', 'Top up at least {count} credits to send.').replace('{count}', String(creditsNeeded)),
@@ -244,9 +286,20 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
 
     try {
       const { data, error } = await supabase.functions.invoke('ministry-whatsapp-broadcast', {
-        body: {
+        body: viaRekindle ? {
+          ministryId,
+          userId:       user?.id,
+          sender:       'rekindle',
+          messageType:  'text',
+          title:        title.trim(),
+          message:      message.trim(),
+          targetType,
+          groupId:      targetType === 'group' ? groupId : undefined,
+          smallGroupId: targetType === 'small_group' ? smallGroupId : undefined,
+        } : {
           ministryId,
           userId:          user?.id,
+          sender:          'ministry',
           messageType,
           title:           messageType === 'text' ? title : selectedTemplate?.name,
           message:         messageType === 'text' ? message : selectedTemplate?.body_text,
@@ -266,7 +319,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
 
       if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Send failed');
 
-      if (isScheduled) {
+      if (isScheduled && !viaRekindle) {
         toast({ title: t('ministryWhatsAppBroadcast', 'broadcastScheduled', 'Broadcast scheduled'), description: t('ministryWhatsAppBroadcast', 'scheduledForX', 'Scheduled for {time}').replace('{time}', new Date(scheduledAt).toLocaleString()) });
       } else {
         const result = { sent: data.sent ?? 0, failed: data.failed ?? 0, cost: data.cost_usd ?? 0 };
@@ -289,21 +342,96 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────
-  if (wabaConfig.connection_status !== 'connected') {
-    return (
-      <Alert className="border-amber-200 bg-amber-50">
-        <AlertTriangle className="h-4 w-4 text-amber-600" />
-        <AlertDescription className="text-amber-800">
-          {t('ministryWhatsAppBroadcast', 'notConnectedYet', 'Your WhatsApp Business Account is not connected yet. Go to the Connection tab to set it up first.')}
-        </AlertDescription>
-      </Alert>
-    );
-  }
+  // Members only see the "WhatsApp Updates" subscribe card on the ministry
+  // page once the ministry sends WhatsApp — its own number, or this switch.
+  const setSharedSender = async (enabled: boolean) => {
+    setTogglingShared(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('whatsapp-config-update', {
+        body: { ministryId, action: 'set_shared_sender', enabled },
+      });
+      if (error || data?.error) throw new Error(data?.error ?? error?.message);
+      toast({
+        title: enabled
+          ? t('ministryWhatsAppBroadcast', 'sharedOnTitle', 'Members can now subscribe')
+          : t('ministryWhatsAppBroadcast', 'sharedOffTitle', 'WhatsApp updates via Rekindle turned off'),
+      });
+      onConfigChange?.();
+    } catch (err: any) {
+      toast({ title: t('ministryWhatsAppBroadcast', 'saveFailed', 'Could not save'), description: err.message, variant: 'destructive' });
+    } finally {
+      setTogglingShared(false);
+    }
+  };
 
+  // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5 max-w-2xl">
+      {/* Which number sends */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => setSenderChoice('ministry')}
+          disabled={!ownConnected}
+          className={`text-left rounded-xl border-2 p-3 transition-all ${
+            sender === 'ministry' ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white'
+          } ${!ownConnected ? 'opacity-60 cursor-not-allowed' : 'hover:border-green-300'}`}
+        >
+          <p className="text-sm font-semibold flex items-center gap-1.5">
+            <Shield className="h-4 w-4 text-green-700" />
+            {t('ministryWhatsAppBroadcast', 'senderOwn', 'Your own number')}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {ownConnected
+              ? t('ministryWhatsAppBroadcast', 'senderOwnDesc', 'Arrives from {name}, your verified sender.').replace('{name}', String(wabaConfig?.business_display_name || ministryName))
+              : t('ministryWhatsAppBroadcast', 'senderOwnNotConnected', 'Connect it in the Your Number tab first.')}
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSenderChoice('rekindle')}
+          className={`text-left rounded-xl border-2 p-3 transition-all hover:border-green-300 ${
+            sender === 'rekindle' ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white'
+          }`}
+        >
+          <p className="text-sm font-semibold flex items-center gap-1.5">
+            <Zap className="h-4 w-4 text-green-700" />
+            {t('ministryWhatsAppBroadcast', 'senderRekindle', "Via Rekindle's number")}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t('ministryWhatsAppBroadcast', 'senderRekindleDesc', 'No setup. ${rate} per message from your credits.').replace('{rate}', REKINDLE_MSG_RATE.toFixed(2))}
+          </p>
+        </button>
+      </div>
+
+      {viaRekindle && (
+        sharedEnabled ? (
+          <div className="flex items-start justify-between gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+            <p className="text-xs text-green-800">
+              {t('ministryWhatsAppBroadcast', 'sharedOnDesc', 'Members can subscribe to WhatsApp updates on your ministry page. Only subscribers receive your broadcasts, sent from Rekindle with your ministry\'s name in every message.')}
+            </p>
+            <Button variant="ghost" size="sm" className="shrink-0 text-xs h-7" disabled={togglingShared} onClick={() => setSharedSender(false)}>
+              {t('ministryWhatsAppBroadcast', 'turnOff', 'Turn off')}
+            </Button>
+          </div>
+        ) : (
+          <Card className="border-green-200">
+            <CardContent className="pt-5 space-y-3">
+              <p className="text-sm font-semibold">{t('ministryWhatsAppBroadcast', 'letMembersSubscribe', 'Let members subscribe to WhatsApp updates')}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('ministryWhatsAppBroadcast', 'letMembersSubscribeDesc', 'WhatsApp only allows messages to people who agreed to them. Turning this on shows members a "Subscribe to WhatsApp Updates" card on your ministry page, where they add their number. Your broadcasts then reach everyone who subscribed.')}
+              </p>
+              <Button size="sm" className="gap-2" disabled={togglingShared} onClick={() => setSharedSender(true)}>
+                {togglingShared && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {t('ministryWhatsAppBroadcast', 'turnOnSubscriptions', 'Turn on WhatsApp updates')}
+              </Button>
+            </CardContent>
+          </Card>
+        )
+      )}
+
       {/* Identity notice */}
+      {!viaRekindle && wabaConfig && (
       <div className="flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
         <div className="p-1.5 bg-green-100 rounded-lg">
           <Shield className="h-4 w-4 text-green-700" />
@@ -320,6 +448,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
           {wabaConfig.whatsapp_plan.charAt(0).toUpperCase() + wabaConfig.whatsapp_plan.slice(1)} {t('ministryWhatsAppBroadcast', 'plan', 'Plan')}
         </Badge>
       </div>
+      )}
 
       {/* Last result */}
       {lastResult && (
@@ -347,7 +476,9 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
         </CardHeader>
 
         <CardContent className="space-y-5">
-          {/* Message type toggle */}
+          {/* Message type toggle — via Rekindle always uses Rekindle's one
+              approved template, filled with your title and message. */}
+          {!viaRekindle && (
           <div className="flex gap-2">
             {(['text', 'template'] as const).map(type => (
               <button
@@ -363,15 +494,17 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
               </button>
             ))}
           </div>
+          )}
 
           {/* Text message fields */}
-          {messageType === 'text' && (
+          {(viaRekindle || messageType === 'text') && (
             <>
               <div className="space-y-1.5">
                 <Label>{t('ministryWhatsAppBroadcast', 'broadcastTitle', 'Broadcast Title')}</Label>
                 <Input
                   placeholder={t('ministryWhatsAppBroadcast', 'broadcastTitlePlaceholder', 'e.g., Sunday Service Reminder')}
                   value={title}
+                  maxLength={viaRekindle ? REKINDLE_TITLE_MAX : undefined}
                   onChange={e => setTitle(e.target.value)}
                 />
               </div>
@@ -381,18 +514,35 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
                   placeholder={t('ministryWhatsAppBroadcast', 'enterYourMessage', 'Enter your message…')}
                   rows={5}
                   value={message}
+                  maxLength={viaRekindle ? REKINDLE_MESSAGE_MAX : undefined}
                   onChange={e => setMessage(e.target.value)}
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{t('ministryWhatsAppBroadcast', 'plainTextNoHtml', 'Plain text — no HTML. Emojis are supported ✅')}</span>
-                  <span>{t('ministryWhatsAppBroadcast', 'xChars', '{count} chars').replace('{count}', String(message.length))}</span>
+                  <span>
+                    {viaRekindle
+                      ? t('ministryWhatsAppBroadcast', 'rekindleFormatNote', "Sent in Rekindle's approved message format with {name}'s name, your title and message. Line breaks become spaces.").replace('{name}', String(ministryName))
+                      : t('ministryWhatsAppBroadcast', 'plainTextNoHtml', 'Plain text — no HTML. Emojis are supported ✅')}
+                  </span>
+                  <span>
+                    {viaRekindle
+                      ? `${message.length}/${REKINDLE_MESSAGE_MAX}`
+                      : t('ministryWhatsAppBroadcast', 'xChars', '{count} chars').replace('{count}', String(message.length))}
+                  </span>
                 </div>
               </div>
+              {!viaRekindle && (
+                <Alert className="border-amber-200 bg-amber-50 py-2">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-amber-800 text-xs">
+                    {t('ministryWhatsAppBroadcast', 'freeFormWindowNote', 'WhatsApp only delivers free-form text to people who messaged your number in the last 24 hours. For everyone else, use an approved template.')}
+                  </AlertDescription>
+                </Alert>
+              )}
             </>
           )}
 
           {/* Template picker */}
-          {messageType === 'template' && (
+          {!viaRekindle && messageType === 'template' && (
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>{t('ministryWhatsAppBroadcast', 'selectTemplate', 'Select Template')}</Label>
@@ -530,13 +680,13 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
                 </p>
               </div>
               <div className="bg-white rounded-lg p-2 border border-green-100">
-                <p className="text-xs text-muted-foreground">{t('ministryWhatsAppBroadcast', 'overageMsgs', 'Overage msgs')}</p>
+                <p className="text-xs text-muted-foreground">{viaRekindle ? t('ministryWhatsAppBroadcast', 'paidMsgs', 'Paid msgs') : t('ministryWhatsAppBroadcast', 'overageMsgs', 'Overage msgs')}</p>
                 <p className={`font-bold text-lg ${overageCount > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                   {overageCount.toLocaleString()}
                 </p>
               </div>
               <div className="bg-white rounded-lg p-2 border border-green-100">
-                <p className="text-xs text-muted-foreground">{t('ministryWhatsAppBroadcast', 'overageCost', 'Overage cost')}</p>
+                <p className="text-xs text-muted-foreground">{viaRekindle ? t('ministryWhatsAppBroadcast', 'cost', 'Cost') : t('ministryWhatsAppBroadcast', 'overageCost', 'Overage cost')}</p>
                 <p className={`font-bold text-lg ${!canAfford ? 'text-red-600' : 'text-green-700'}`}>
                   ${overageCost.toFixed(2)}
                 </p>
@@ -545,10 +695,12 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
 
             {showCostBreakdown && (
               <div className="text-xs space-y-1 pt-1 border-t border-green-200">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{t('ministryWhatsAppBroadcast', 'monthlyIncludedX', 'Monthly included ({count} msgs/mo)').replace('{count}', (included ?? 0).toLocaleString())}</span>
-                  <span>{t('ministryWhatsAppBroadcast', 'xUsedSoFar', '{count} used so far').replace('{count}', monthlyUsed.toLocaleString())}</span>
-                </div>
+                {!viaRekindle && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{t('ministryWhatsAppBroadcast', 'monthlyIncludedX', 'Monthly included ({count} msgs/mo)').replace('{count}', Number.isFinite(included) ? included.toLocaleString() : '∞')}</span>
+                    <span>{t('ministryWhatsAppBroadcast', 'xUsedSoFar', '{count} used so far').replace('{count}', monthlyUsed.toLocaleString())}</span>
+                  </div>
+                )}
                 {includedUsed > 0 && (
                   <div className="flex justify-between text-green-700">
                     <span>{t('ministryWhatsAppBroadcast', 'includedThisBroadcast', 'Included this broadcast')}</span>
@@ -574,13 +726,24 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
               <Alert className="border-red-300 bg-red-100 py-2">
                 <AlertTriangle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-700 text-xs">
-                  {t('ministryWhatsAppBroadcast', 'needXCreditsWalletHasY', 'Need {needed} credits for overage but wallet has {have}. Top up in the Wallet tab before sending.').replace('{needed}', String(creditsNeeded)).replace('{have}', String(walletBalance))}
+                  {t('ministryWhatsAppBroadcast', 'needXCreditsWalletHasYCredits', 'Need {needed} credits but your wallet has {have}.').replace('{needed}', String(creditsNeeded)).replace('{have}', String(walletBalance))}
+                  {onOpenCredits && (
+                    <Button variant="link" size="sm" className="h-auto p-0 ml-1 text-xs text-red-700 underline" onClick={onOpenCredits}>
+                      {t('ministryWhatsAppBroadcast', 'topUpCredits', 'Top up credits')}
+                    </Button>
+                  )}
                 </AlertDescription>
               </Alert>
             )}
+            {recipientCount === 0 && !loadingCount && (
+              <p className="text-xs text-muted-foreground">
+                {t('ministryWhatsAppBroadcast', 'noSubscribersHint', 'Nobody has subscribed yet. Members subscribe with the "WhatsApp Updates" card on your ministry page (small groups: in their WhatsApp reminder settings).')}
+              </p>
+            )}
           </div>
 
-          {/* Schedule */}
+          {/* Schedule — not available via Rekindle yet */}
+          {!viaRekindle && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Switch checked={isScheduled} onCheckedChange={setIsScheduled} />
@@ -595,19 +758,20 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
               />
             )}
           </div>
+          )}
 
           {/* Send button */}
           <Button
             onClick={handleSend}
-            disabled={sending || (!canAfford && !isScheduled) || recipientCount === 0}
+            disabled={sending || (!canAfford && !(isScheduled && !viaRekindle)) || recipientCount === 0}
             className="w-full gap-2"
             size="lg"
           >
             {sending ? (
               <><Loader2 className="h-5 w-5 animate-spin" />{t('ministryWhatsAppBroadcast', 'sending', 'Sending…')}</>
-            ) : !canAfford && !isScheduled ? (
+            ) : !canAfford && !(isScheduled && !viaRekindle) ? (
               <><AlertTriangle className="h-5 w-5" />{t('ministryWhatsAppBroadcast', 'insufficientCredits', 'Insufficient Credits')}</>
-            ) : isScheduled ? (
+            ) : isScheduled && !viaRekindle ? (
               <><Calendar className="h-5 w-5" />{t('ministryWhatsAppBroadcast', 'scheduleBroadcast', 'Schedule Broadcast')}</>
             ) : (
               <><Send className="h-5 w-5" />{t('ministryWhatsAppBroadcast', 'sendToXRecipients', 'Send to {count} Recipients').replace('{count}', recipientCount.toLocaleString())}</>
@@ -637,6 +801,7 @@ export const MinistryWhatsAppBroadcast: React.FC<MinistryWABroadcastProps> = ({
                   <p className="font-medium">{b.title || t('ministryWhatsAppBroadcast', 'noTitle', '(no title)')}</p>
                   <p className="text-xs text-muted-foreground">
                     {new Date(b.created_at).toLocaleString()} · {b.target_type}
+                    {b.sender === 'rekindle' && ` · ${t('ministryWhatsAppBroadcast', 'viaRekindle', 'via Rekindle')}`}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
