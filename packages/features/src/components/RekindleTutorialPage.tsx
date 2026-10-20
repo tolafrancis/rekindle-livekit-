@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { usePageMeta } from '../usePageMeta';
 
 const COMPANY = 'ReKindle BC';
 const WEBSITE = 'rekindlebc.com';
@@ -546,6 +547,10 @@ const TutorialContent: React.FC = () => (
 );
 
 const RekindleTutorialPage: React.FC = () => {
+  usePageMeta({
+    title: 'The Rekindle Guide: Using Rekindle Step by Step',
+    description: 'Step-by-step guide to ReKindle BC for members and ministry leaders: devotionals, prayer, live services, meetings, small groups, giving and Gift Aid.',
+  });
   const navigate = useNavigate();
 
   return (

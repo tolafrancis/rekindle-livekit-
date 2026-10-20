@@ -4,11 +4,16 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@rekindle/ui/button';
 import { useLanguage } from '../LanguageContext';
 import { FaqList } from './FaqList';
+import { usePageMeta } from '../usePageMeta';
 
 /** /faq — the full FAQ, reachable from the Ministries hub (and by link). */
 const FaqPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  usePageMeta({
+    title: 'Frequently Asked Questions',
+    description: 'Answers about ReKindle BC for individual believers and ministry leaders: devotionals, prayer, live services, giving, Gift Aid and more.',
+  });
   const goBack = () => (window.history.length > 1 ? navigate(-1) : navigate('/'));
 
   return (
