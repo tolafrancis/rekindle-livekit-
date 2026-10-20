@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-// Light frame for public, crawlable pages (prayer topics and the like): the
+// Light frame for public, crawlable pages (prayers, devotionals): the
 // brand linking home, a sign-up link, the page, and a footer.
 export const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="min-h-screen bg-white">
@@ -11,6 +11,7 @@ export const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ child
           Re<span className="text-purple-600">Kindle</span> BC
         </Link>
         <nav className="flex items-center gap-4 text-sm font-medium">
+          <Link to="/devotionals" className="text-gray-600 hover:text-gray-900">Devotionals</Link>
           <Link to="/prayers" className="text-gray-600 hover:text-gray-900">Prayers</Link>
           <Link to="/" className="rounded-full bg-purple-600 px-4 py-1.5 text-white hover:bg-purple-700">Sign up free</Link>
         </nav>
