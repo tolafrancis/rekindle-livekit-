@@ -157,6 +157,16 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                   onMouseOut={e => (e.currentTarget.style.color = 'rgba(255,255,255,.65)')}
                 >{l}</button>
               ))}
+              {/* rekindlebc.com is the main site; people without a ministry
+                  belong in the individual app. A real link, so search
+                  engines follow it too. */}
+              {appContext === 'ministry' && (
+                <a href={CONSUMER_APP_URL}
+                  style={{ color: 'rgba(255,255,255,.65)', fontSize: '.9rem', fontWeight: 500, textDecoration: 'none' }}
+                  onMouseOver={e => (e.currentTarget.style.color = '#fff')}
+                  onMouseOut={e => (e.currentTarget.style.color = 'rgba(255,255,255,.65)')}
+                >{t('landing', 'navIndividuals', "For individuals")}</a>
+              )}
               {/* Prominent Sign In — visible from every part of the page */}
               <button onClick={onSignIn}
                 style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.85)', fontSize: '.9rem', fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}
@@ -207,6 +217,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                   style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.85)', fontSize: '1.1rem', fontWeight: 500, cursor: 'pointer', textAlign: 'left', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}
                 >{l}</button>
               ))}
+              {appContext === 'ministry' && (
+                <a href={CONSUMER_APP_URL}
+                  style={{ color: 'rgba(255,255,255,.85)', fontSize: '1.1rem', fontWeight: 500, textDecoration: 'none', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}
+                >{t('landing', 'navIndividuals', "For individuals")}</a>
+              )}
               <button onClick={() => { onSignIn(); setMobileMenuOpen(false); }}
                 style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.85)', fontSize: '1.1rem', fontWeight: 500, cursor: 'pointer', textAlign: 'left', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}
               >{t('landing', 'signIn', "Sign In")}</button>
@@ -375,14 +390,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                     goes to the right place. */}
                 {appContext === 'ministry' && (
                   <div style={{ marginTop: 28 }}>
-                    <button onClick={() => { window.location.href = CONSUMER_APP_URL; }} style={{
+                    <a href={CONSUMER_APP_URL} style={{
+                      display: 'inline-block', textDecoration: 'none',
                       background: 'rgba(255,255,255,.08)', color: '#fff', padding: '11px 22px', borderRadius: 100,
                       fontSize: '.88rem', fontWeight: 600, border: '1.5px solid rgba(255,255,255,.25)', cursor: 'pointer',
                       fontFamily: 'DM Sans, sans-serif', transition: 'all .2s',
                     }}
                       onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,.16)'; }}
                       onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,.08)'; }}
-                    >{t('landing', 'indivNotMinistryCta', "Not part of a ministry? Go to the ReKindle app")} →</button>
+                    >{t('landing', 'indivNotMinistryCta', "Not part of a ministry? Go to the ReKindle app")} →</a>
                   </div>
                 )}
               </div>
