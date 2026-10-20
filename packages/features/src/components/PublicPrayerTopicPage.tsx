@@ -2,16 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { supabase } from '@rekindle/supabase';
 import { Button } from '@rekindle/ui/button';
-import { BookOpen, Loader2, Lock } from 'lucide-react';
+import { BookOpen, Loader2 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { usePageMeta } from '../usePageMeta';
 import { prayerTopicPath } from '../prayerTopicLinks';
 import { PublicPageShell } from './PublicPageShell';
 
 // /prayers/:id/:slug — a prayer topic as a public page search engines can index.
-// Everyone sees the description, the Scripture and every prayer point's
-// heading and verse; the first point is open in full and the rest unlock with
-// a free account, matching the shared-link preview (SharedContentPreview).
+// Everything is open to read: the description, the Scripture and every
+// prayer point in full. Signing up adds reminders, the journal and progress.
 // Signed-in people go straight to the topic in the app.
 
 interface PrayerPoint { title?: string; content?: string; scripture?: string; scriptureText?: string }
@@ -129,12 +128,7 @@ const PublicPrayerTopicPage: React.FC = () => {
                       {p.scriptureText && <span className="whitespace-pre-line">: {p.scriptureText}</span>}
                     </p>
                   )}
-                  {i === 0 && p.content && <p className="mt-3 whitespace-pre-line leading-relaxed text-gray-800">{p.content}</p>}
-                  {i > 0 && p.content && (
-                    <Link to={appPath} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 hover:underline">
-                      <Lock className="h-3.5 w-3.5" /> Pray this point in full, free
-                    </Link>
-                  )}
+                  {p.content && <p className="mt-3 whitespace-pre-line leading-relaxed text-gray-800">{p.content}</p>}
                 </li>
               ))}
             </ol>
@@ -156,7 +150,7 @@ const PublicPrayerTopicPage: React.FC = () => {
 
         <section className="rounded-2xl bg-gradient-to-br from-purple-700 to-purple-900 p-6 text-white">
           <h2 className="text-xl font-semibold">Pray this every day</h2>
-          <p className="mt-1 text-purple-100">Get every prayer point in full, daily reminders and a prayer journal. Free on ReKindle.</p>
+          <p className="mt-1 text-purple-100">Get daily reminders, keep a prayer journal and track your streak. Free on ReKindle.</p>
           <Button asChild className="mt-4 bg-white text-purple-800 hover:bg-purple-50">
             <Link to={appPath}>Start praying, free</Link>
           </Button>
