@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { supabase } from '@/lib/supabase';
 import { toast } from './ui/use-toast';
 import { BookOpen, Plus, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
+import { usePageMeta } from '@rekindle/features/usePageMeta';
 
 type ContentType = 'book' | 'daily_devotional' | 'devotional_series' | 'prayer_series';
 
@@ -67,6 +68,10 @@ const toList = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean)
  * in a series.
  */
 export const SubmitContentPage: React.FC = () => {
+  usePageMeta({
+    title: 'Write for Us: Share Devotionals and Prayers',
+    description: 'Submit a book, daily devotional, devotional series or prayer series to be published on ReKindle BC.',
+  });
   const [contentType, setContentType] = useState<ContentType>('daily_devotional');
   const [title, setTitle] = useState('');
   const [authorName, setAuthorName] = useState('');
