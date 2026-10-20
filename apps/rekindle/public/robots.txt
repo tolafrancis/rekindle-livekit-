@@ -1,2 +1,14 @@
+# Public pages (landing, guide, FAQ, devotionals, channels, ministry join
+# pages) are crawlable; signed-in, one-off and utility routes are not.
 User-agent: *
-Disallow: /
+Disallow: /admin
+Disallow: /messages/
+Disallow: /kiosk/
+Disallow: /my-membership/
+Disallow: /obs-captions/
+Disallow: /recording-template
+Disallow: /unsubscribe
+Disallow: /webinar-invite/
+Disallow: /api/
+
+Sitemap: https://app.rekindlebc.com/sitemap.xml
