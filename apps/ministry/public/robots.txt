@@ -1,4 +1,15 @@
+# rekindlebc.com is the main site for search. Signed-in, one-off and utility
+# routes stay out of the index.
 User-agent: *
-Allow: /
+Disallow: /auth
+Disallow: /settings/
+Disallow: /messages/
+Disallow: /kiosk/
+Disallow: /my-membership/
+Disallow: /obs-captions/
+Disallow: /display/
+Disallow: /speak/
+Disallow: /webinar-invite/
+Disallow: /unsubscribe
 
 Sitemap: https://rekindlebc.com/sitemap.xml

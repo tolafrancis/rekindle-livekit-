@@ -17,6 +17,7 @@ import { BrowserTranslationTip } from "@rekindle/features/components/BrowserTran
 import Index from "./pages/Index";
 import { BackToTop } from "./components/BackToTop";
 import RouteFallback from "./components/RouteFallback";
+import { CanonicalLink } from "@rekindle/features/components/CanonicalLink";
 
 // Every route other than the main app shell is code-split: a visitor opening
 // /join/:slug or /privacy shouldn't download (and parse) the whole app, and the
@@ -118,6 +119,7 @@ const App = () => {
                 <BrowserTranslationTip />
                 <BrowserRouter>
                   <PushNotificationNavHandler />
+                  <CanonicalLink appContext="consumer" />
                   <Suspense fallback={<RouteFallback />}>
                   <Routes>
                   {/* Main routes */}

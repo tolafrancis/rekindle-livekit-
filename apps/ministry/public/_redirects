@@ -1,4 +1,9 @@
 # SPA history-routing fallback for Cloudflare Pages: serve index.html for any path
 # so react-router client routes (/join/:slug, /kiosk/:slug, /auth, …) resolve on
 # direct load / refresh. Vite copies public/ into dist/, so this lands at dist/_redirects.
+# rekindlebc.com/app is the shareable way into the individual (consumer) app;
+# deeper paths carry over, e.g. /app/guide → app.rekindlebc.com/guide.
+/app      https://app.rekindlebc.com/         301
+/app/*    https://app.rekindlebc.com/:splat   301
+
 /*  /index.html  200

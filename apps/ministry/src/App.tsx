@@ -47,6 +47,7 @@ import { GlobalAudioProvider } from '@rekindle/features/GlobalAudioContext';
 import { ActiveCallHost } from '@rekindle/live/components/ActiveCallHost';
 import MinistryLiveWrapper from '@rekindle/ministry/components/MinistryLiveWrapper';
 import LandingPage from '@rekindle/features/components/LandingPage';
+import { CanonicalLink } from '@rekindle/features/components/CanonicalLink';
 import { registerPush } from '@rekindle/features/usePushNotifications';
 import { ErrorBoundary } from '@rekindle/features/components/ErrorBoundary';
 import AuthScreen from './screens/AuthScreen';
@@ -407,6 +408,7 @@ export default function App() {
               <BrowserRouter>
                 <PushNotificationNavHandler />
                 <SharedContentDeepLinkHandler />
+                <CanonicalLink appContext="ministry" />
                 <AppRoutes />
                 {/* Persistent meeting layer — keeps a live call mounted across
                     navigation and shows the minimized mini-player. */}
