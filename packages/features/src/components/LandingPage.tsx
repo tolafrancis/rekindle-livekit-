@@ -109,7 +109,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   ].filter(a => a.play || a.apple || a.windows || a.mac);
   const hasStoreLinks = showStores && appCards.length > 0;
   const hasMobileStoreLinks = showStores && appCards.some(a => a.play || a.apple);
-  const ANDROID_APK_URL = links.androidApk;
+  // Never inside the native apps: Play policy bans pointing users at an APK.
+  const ANDROID_APK_URL = showStores ? links.androidApk : '';
   const windowsCaption = t('landing', 'windowsGetIt', "DOWNLOAD FOR");
 
   return (
