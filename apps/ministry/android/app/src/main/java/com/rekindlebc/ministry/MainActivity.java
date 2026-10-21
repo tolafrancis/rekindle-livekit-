@@ -118,6 +118,12 @@ public class MainActivity extends BridgeActivity {
       public void setCallActive(boolean active) {
         isInCall = active;
         android.util.Log.d("MainActivity", "Call active: " + active);
+        // Keep the meeting alive in the background (see MeetingForegroundService).
+        if (active) {
+          MeetingForegroundService.Companion.start(MainActivity.this);
+        } else {
+          MeetingForegroundService.Companion.stop(MainActivity.this);
+        }
       }
 
       @android.webkit.JavascriptInterface
@@ -285,6 +291,7 @@ public class MainActivity extends BridgeActivity {
 
   @Override
   public void onDestroy() {
+    MeetingForegroundService.Companion.stop(this);
     if (mediaSession != null) {
       mediaSession.setActive(false);
       mediaSession.release();
