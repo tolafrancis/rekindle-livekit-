@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@reki
 import { Label } from '@rekindle/ui/label';
 import { Switch } from '@rekindle/ui/switch';
 import { Globe, BookOpen, Bell, ChevronRight, Check, Loader2 } from 'lucide-react';
+import { NavFocusPicker } from './NavFocusPicker';
+import { ALL_NAV_FOCUS, saveNavFocus } from '../navFocus';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -28,7 +30,7 @@ const spiritualLevels = [
 ];
 
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, user } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({
@@ -39,9 +41,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
     consent_reminders: true,
     consent_marketing: false,
   });
+  // Step 2: what the main menu shows first (navFocus.ts).
+  const [focus, setFocus] = useState<string[]>([]);
 
   const handleComplete = async () => {
     setLoading(true);
+    // Picking nothing means "show me everything".
+    if (user?.id) await saveNavFocus(user.id, focus.length ? focus : ALL_NAV_FOCUS);
     await completeOnboarding(data);
     setLoading(false);
     onComplete();
@@ -52,19 +58,21 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
       <Card className="w-full max-w-lg shadow-2xl">
         <CardHeader className="text-center">
           <div className="flex justify-center gap-2 mb-4">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div key={s} className={`w-3 h-3 rounded-full ${step >= s ? 'bg-purple-600' : 'bg-gray-200'}`} />
             ))}
           </div>
           <CardTitle className="text-2xl font-serif">
             {step === 1 && 'Choose Your Language'}
-            {step === 2 && 'Your Spiritual Journey'}
-            {step === 3 && 'Notification Preferences'}
+            {step === 2 && 'What would you like help with?'}
+            {step === 3 && 'Your Spiritual Journey'}
+            {step === 4 && 'Notification Preferences'}
           </CardTitle>
           <CardDescription>
             {step === 1 && 'Select your preferred language for devotionals and content'}
-            {step === 2 && 'Help us personalize your experience'}
-            {step === 3 && 'Control how we communicate with you'}
+            {step === 2 && 'Pick as many as you like. We\'ll put these first, and everything else stays under More.'}
+            {step === 3 && 'Help us personalize your experience'}
+            {step === 4 && 'Control how we communicate with you'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -79,7 +87,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
               ))}
             </div>
           )}
-          {step === 2 && (
+          {step === 2 && <NavFocusPicker value={focus} onChange={setFocus} />}
+          {step === 3 && (
             <div className="space-y-3">
               {spiritualLevels.map((level) => (
                 <button key={level.id} onClick={() => setData({ ...data, spiritual_level: level.id })}
@@ -95,7 +104,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
               ))}
             </div>
           )}
-          {step === 3 && (
+          {step === 4 && (
             <div className="space-y-4">
               {[
                 { key: 'consent_devotionals', label: 'Daily Devotionals', desc: 'Receive daily scripture and reflections' },
@@ -115,7 +124,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
           )}
           <div className="flex gap-3 pt-4">
             {step > 1 && <Button variant="outline" onClick={() => setStep(step - 1)} className="flex-1">Back</Button>}
-            {step < 3 ? (
+            {step < 4 ? (
               <Button onClick={() => setStep(step + 1)} className="flex-1 bg-purple-600 hover:bg-purple-700">
                 Continue <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
