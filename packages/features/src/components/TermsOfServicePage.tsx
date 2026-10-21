@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 
-const EFFECTIVE_DATE = 'May 10, 2026';
+const EFFECTIVE_DATE = 'October 22, 2026';
 const COMPANY = 'ReKindle BC';
 const EMAIL = 'legal@rekindlebc.com';
 const WEBSITE = 'rekindlebc.com';
@@ -64,19 +64,22 @@ const TermsOfServicePage: React.FC = () => {
 
           <h2>4. Subscription Plans and Payments</h2>
           <h3>4.1 Individual Plans</h3>
-          <p>Free, Premium ($9.99/month), and Premium Plus ($19.99/month) individual subscription tiers.</p>
+          <p>Free, Premium and Premium Plus individual subscription tiers.</p>
           <h3>4.2 Ministry Plans</h3>
-          <p>Starter ($49/month), Growth ($149/month), and Enterprise ($299/month). The White-Label add-on ($2,000/year) is available exclusively on Enterprise and requires a separate written agreement.</p>
-          <h3>4.3 Billing</h3>
+          <p>Starter, Growth Partner, Ministry Partner and Ministry Plus, plus optional add-ons such as extra storage, extra members, Live Translation hours and Gift Aid claims. White-label branding is included with Ministry Plus.</p>
+          <p>The current price, member limit and included features of every plan and add-on are shown on our pricing page and at checkout. The price shown at checkout is the price you pay.</p>
+          <h3>4.3 Launch Offers</h3>
+          <p>From time to time we may offer a reduced introductory price for a limited period, for example to the first ministries that subscribe. The terms of each offer, including how long the introductory price lasts, are shown at checkout. When the introductory period ends, your subscription continues at the plan's normal price, and we will remind you before that happens. Each ministry may use an introductory offer once.</p>
+          <h3>4.4 Billing</h3>
           <ul>
             <li>Subscriptions are billed monthly or annually in advance.</li>
-            <li>Payments are processed by Stripe or Paystack. By providing payment details you authorise recurring charges.</li>
-            <li>All prices are in USD unless otherwise stated.</li>
+            <li>Payments are processed by Stripe, Paystack or PayPal. By providing payment details you authorise recurring charges.</li>
+            <li>Prices are in US dollars, except for ministries in Nigeria, which are billed in Naira through Paystack.</li>
             <li>Failed payments result in a 7-day grace period before access is downgraded.</li>
           </ul>
-          <h3>4.4 Refund Policy</h3>
+          <h3>4.5 Refund Policy</h3>
           <p>If you are not satisfied within the first 7 days of a new paid subscription, contact us for a full refund. After 7 days, subscriptions are non-refundable for the current billing period.</p>
-          <h3>4.5 Changes to Pricing</h3>
+          <h3>4.6 Changes to Pricing</h3>
           <p>We will provide at least 30 days' notice before increasing subscription prices.</p>
 
           <h2>5. Acceptable Use</h2>
