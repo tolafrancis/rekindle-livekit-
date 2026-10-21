@@ -975,6 +975,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       title:               devotional.title,
       scripture_reference: devotional.scripture_reference || '',
       scripture_text:      devotional.scripture_text || '',
+      // The reader builds the Scripture slides from scripture_references and the
+      // long "Bible Passage" slide from bible_passage_*; leaving them out here
+      // made the player jump from Scripture Passage straight to the Devotional.
+      scripture_references: (devotional as any).scripture_references,
+      bible_passage_reference: (devotional as any).bible_passage_reference || '',
+      bible_passage_text:  (devotional as any).bible_passage_text || '',
+      background_music_id: (devotional as any).background_music_id,
       content:             devotional.content || '',
       reflection_questions: parseQuestions((devotional as any).reflection_questions),
       prayer:              (devotional as any).prayer || (devotional as any).prayer_focus || '',

@@ -494,7 +494,7 @@ export const DevotionalModule: React.FC<Props> = ({
       utterance.onend = () => {
         setIsSpeaking(false);
         // Auto-advance to next slide when narration ends (if auto-advance is on)
-        if (autoAdvance && currentSlide < slides.length - 1) {
+        if (autoAdvance && currentSlide < slides.length - 1 && !isSpiritSlideIndex(currentSlideRef.current)) {
           setTimeout(() => goToNextSlide(), 1000);
         }
       };
@@ -584,6 +584,39 @@ export const DevotionalModule: React.FC<Props> = ({
     };
   }, [isPaused, isPlaying, spiritPrayerMode]);
 
+  // "Pray in the Spirit" is open-ended: the user stays as long as they like and
+  // ends it themselves, so nothing (slide timer, narration ending) may move on
+  // from it automatically.
+  const isSpiritSlideIndex = (index: number) => slides[index]?.type === 'spirit';
+
+  // Leaving the slide ends prayer time, so its clock doesn't keep running.
+  useEffect(() => {
+    if (!isSpiritSlideIndex(currentSlide)) setSpiritPrayerMode(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSlide]);
+
+  // Keep the screen on during prayer time: a phone that sleeps mid-prayer
+  // suspends the page and the music stops with it.
+  useEffect(() => {
+    if (!spiritPrayerMode || !('wakeLock' in navigator)) return;
+    let lock: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const acquire = () => {
+      (navigator as any).wakeLock.request('screen')
+        .then((l: any) => { if (cancelled) l.release().catch(() => {}); else lock = l; })
+        .catch(() => {});
+    };
+    // The lock drops whenever the page is hidden; take it again on return.
+    const onVisible = () => { if (document.visibilityState === 'visible') acquire(); };
+    acquire();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [spiritPrayerMode]);
+
   // Spirit prayer timer
   useEffect(() => {
     let spiritTimer: NodeJS.Timeout;
@@ -623,7 +656,7 @@ export const DevotionalModule: React.FC<Props> = ({
   useEffect(() => {
     // isScrollDriven: a scrollable slide advances when its scroll reaches the bottom
     // and dwells there — not on a countdown that knows nothing about the content length.
-    if (autoAdvance && !isPaused && !spiritPrayerMode && !isScrollDriven && currentSlide < slides.length - 1 && !isSpeaking && !isAudioActive && !isAudioLoading) {
+    if (autoAdvance && !isPaused && !spiritPrayerMode && !isSpiritSlideIndex(currentSlide) && !isScrollDriven && currentSlide < slides.length - 1 && !isSpeaking && !isAudioActive && !isAudioLoading) {
       const duration = currentSlideData?.duration || 30;
       setSlideTimeRemaining(duration);
       
@@ -737,7 +770,7 @@ export const DevotionalModule: React.FC<Props> = ({
       if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
 
       const atBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 20;
-      if (atBottom && autoAdvance && currentSlide < slides.length - 1) {
+      if (atBottom && autoAdvance && currentSlide < slides.length - 1 && !isSpiritSlideIndex(currentSlide)) {
         userScrollTimeoutRef.current = setTimeout(() => {
           setIsUserScrolling(false);
           isUserScrollingRef.current = false;
@@ -933,8 +966,11 @@ export const DevotionalModule: React.FC<Props> = ({
               console.log('🎯 [DevotionalModule] onComplete called - Current slide from ref:', currentSlideValue);
               console.log('   Total slides:', slides.length);
               
-              // Auto-advance to next slide after a brief pause
+              // Auto-advance to next slide after a brief pause — except from
+              // "Pray in the Spirit", which only the user ends (the narration
+              // finishing used to cut prayer time off partway through).
               setTimeout(() => {
+                if (isSpiritSlideIndex(currentSlideRef.current)) return;
                 if (currentSlideValue < slides.length - 1) {
                   console.log('⏭️ [DevotionalModule] Advancing to next slide:', currentSlideValue + 1);
                   goToNextSlide();
@@ -1105,7 +1141,16 @@ export const DevotionalModule: React.FC<Props> = ({
                   </div>
                 )}
                 <Button
-                  onClick={() => setSpiritPrayerMode(!spiritPrayerMode)}
+                  onClick={() => {
+                    if (spiritPrayerMode) {
+                      // Ending prayer time moves on to the closing blessing.
+                      setSpiritPrayerMode(false);
+                      goToNextSlide();
+                    } else {
+                      setSpiritPrayerTime(0);
+                      setSpiritPrayerMode(true);
+                    }
+                  }}
                   className={
                     spiritPrayerMode
                       ? "bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-900/30"
