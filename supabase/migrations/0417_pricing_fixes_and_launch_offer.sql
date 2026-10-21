@@ -110,10 +110,10 @@ alter table public.ministry_partner_plans
   add column if not exists stripe_intro_coupon_id text,
   add column if not exists paystack_intro_plan_code text;
 
-update public.ministry_partner_plans set intro_usd_price_monthly = 2,  intro_ngn_price_monthly = 2000  where slug = 'starter';
-update public.ministry_partner_plans set intro_usd_price_monthly = 5,  intro_ngn_price_monthly = 5000  where slug = 'growth_partner';
-update public.ministry_partner_plans set intro_usd_price_monthly = 10, intro_ngn_price_monthly = 10000 where slug = 'ministry_partner';
-update public.ministry_partner_plans set intro_usd_price_monthly = 25, intro_ngn_price_monthly = 20000 where slug = 'ministry_plus';
+update public.ministry_partner_plans set intro_usd_price_monthly = 5,  intro_ngn_price_monthly = 4000  where slug = 'starter';
+update public.ministry_partner_plans set intro_usd_price_monthly = 10, intro_ngn_price_monthly = 8500  where slug = 'growth_partner';
+update public.ministry_partner_plans set intro_usd_price_monthly = 20, intro_ngn_price_monthly = 17000 where slug = 'ministry_partner';
+update public.ministry_partner_plans set intro_usd_price_monthly = 50, intro_ngn_price_monthly = 42000 where slug = 'ministry_plus';
 
 alter table public.ministry_subscriptions
   add column if not exists intro_offer_applied boolean not null default false,
