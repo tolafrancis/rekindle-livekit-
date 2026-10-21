@@ -18,7 +18,7 @@ import {
 
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
-import { normalizeSettingsSection, SECTIONS, SECTION_TOOLS, type SettingsSectionId } from './ministrySettingsSections';
+import { normalizeSettingsSection, SECTIONS, toolsForSection, type SettingsSectionId } from './ministrySettingsSections';
 
 // Each settings section's managers are their own chunks, fetched when that
 // section is opened. They used to all ship in one ~490 KB file that had to
@@ -77,7 +77,7 @@ interface Ministry {
 
 // Section and tool ids live in their own small module so MinistrySpace can
 // use them without pulling this lazily loaded file into its own chunk.
-export { normalizeSettingsSection, SECTIONS, SECTION_TOOLS } from './ministrySettingsSections';
+export { normalizeSettingsSection, SECTIONS, SECTION_TOOLS, toolsForSection } from './ministrySettingsSections';
 export type { SettingsSectionId } from './ministrySettingsSections';
 
 interface MinistrySettingsHubProps {
@@ -114,7 +114,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   };
 
   const [ownTool, setOwnTool] = useViewHistory<string>(`ministry-settings-tool-${ministry.id}`, '');
-  const tools = SECTION_TOOLS[currentSection] ?? [];
+  const tools = toolsForSection(currentSection, ministry.country_code);
   const requestedTool = propActiveTool ?? ownTool;
   const currentTool = tools.some((tool) => tool.id === requestedTool) ? requestedTool : (tools[0]?.id ?? '');
   const setCurrentTool = (tool: string, opts?: { replace?: boolean }) => {

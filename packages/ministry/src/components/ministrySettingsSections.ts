@@ -1,4 +1,5 @@
 import { LayoutDashboard, Settings, Users, BookOpen, MessageSquare, CreditCard, Calendar } from 'lucide-react';
+import { isUkCountryCode } from '../giftAid/countries';
 
 // Ministry Settings sections and the tools inside each one. Kept apart from
 // MinistrySettingsHub (a lazily loaded chunk) so MinistrySpace and the hub
@@ -81,3 +82,15 @@ export const SECTION_TOOLS: Record<SettingsSectionId, Array<{ id: string; label:
   ],
 };
 
+/** Tools that only apply to UK ministries (Gift Aid is a UK tax relief). */
+const UK_ONLY_TOOLS = new Set(['gift-aid-settings']);
+
+/** The tools a given ministry sees in a section. Gift Aid is left out for
+ *  ministries outside the UK rather than opening on an empty panel. */
+export const toolsForSection = (
+  section: SettingsSectionId,
+  countryCode: string | null | undefined,
+): Array<{ id: string; label: string }> => {
+  const tools = SECTION_TOOLS[section] ?? [];
+  return isUkCountryCode(countryCode) ? tools : tools.filter((tool) => !UK_ONLY_TOOLS.has(tool.id));
+};
