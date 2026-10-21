@@ -22,6 +22,7 @@ import BillingSettings from '@rekindle/ministry/components/BillingSettings';
 import MemberAccountSettings from '@rekindle/ministry/components/MemberAccountSettings';
 import RekindleTutorialPage from '@rekindle/features/components/RekindleTutorialPage';
 import FaqPage from '@rekindle/features/components/FaqPage';
+import TestimonialSubmitPage from '@rekindle/features/components/TestimonialSubmitPage';
 import PrivacyPolicyPage from '@rekindle/features/components/PrivacyPolicyPage';
 import TermsOfServicePage from '@rekindle/features/components/TermsOfServicePage';
 import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
@@ -270,6 +271,7 @@ function AppRoutes() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/terms" element={<TermsOfServicePage />} />
       <Route path="/unsubscribe" element={<UnsubscribePage />} />
+      <Route path="/testimonial" element={<TestimonialSubmitPage />} />
 
       {/* Public live-broadcast watch link (channel Share builds /channels/:id).
           Mounted OUTSIDE the auth gate so guests can watch without an account. */}

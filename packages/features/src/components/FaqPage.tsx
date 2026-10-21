@@ -7,10 +7,11 @@ import { FaqList } from './FaqList';
 import { usePageMeta } from '../usePageMeta';
 
 const SUPPORT_EMAIL = 'support@rekindlebc.com';
-// Optional: a WhatsApp number people can message for help. The button only
-// shows when it is set, so the devotional-delivery bot number is never used
-// for support by accident.
-const SUPPORT_WHATSAPP = (import.meta.env.VITE_SUPPORT_WHATSAPP_NUMBER ?? '').replace(/[^\d]/g, '');
+// WhatsApp number people can message for help, in international format with
+// no leading 0 after the country code (+84 0918… is 84918…). Kept separate
+// from the devotional-delivery bot number; VITE_SUPPORT_WHATSAPP_NUMBER
+// overrides it, and an empty value hides the button.
+const SUPPORT_WHATSAPP = (import.meta.env.VITE_SUPPORT_WHATSAPP_NUMBER ?? '84918316417').replace(/[^\d]/g, '');
 
 /** /faq and /help — how to reach us, then the full FAQ. Reachable from the
  *  Ministries hub, the ministry app header and the landing page footer. */
