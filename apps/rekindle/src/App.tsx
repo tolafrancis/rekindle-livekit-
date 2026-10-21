@@ -16,6 +16,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrowserTranslationTip } from "@rekindle/features/components/BrowserTranslationTip";
 import Index from "./pages/Index";
 import { BackToTop } from "./components/BackToTop";
+import { HelpAssistant } from "@rekindle/features/components/HelpAssistant";
 import RouteFallback from "./components/RouteFallback";
 import { CanonicalLink } from "@rekindle/features/components/CanonicalLink";
 
@@ -223,6 +224,8 @@ const App = () => {
                   </Suspense>
                 {/* Universal back-to-top — available on every route, no per-page wiring */}
                 <BackToTop />
+                {/* "Need help?" pop-up: FAQ tips + AI help, hands off to a support ticket */}
+                <HelpAssistant app="rekindle" />
                 {/* Persistent meeting layer — keeps a live call mounted across tab
                     navigation and shows the minimized mini-player. */}
                 <ActiveCallHost />

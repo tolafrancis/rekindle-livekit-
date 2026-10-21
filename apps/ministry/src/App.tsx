@@ -28,6 +28,7 @@ import TermsOfServicePage from '@rekindle/features/components/TermsOfServicePage
 import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
 import { setDeepLink, DEEP_LINK_TAB } from '@rekindle/features/deepLink';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
+import { HelpAssistant } from '@rekindle/features/components/HelpAssistant';
 import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
 import { User, CreditCard, LogOut, ArrowLeft, Home, Bell, HelpCircle } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
@@ -189,6 +190,7 @@ function AuthedShell() {
         <Outlet />
       </main>
       <ScrollToTopButton />
+      <HelpAssistant app="ministry" />
       {/* One-time welcome tips, titled with the ministry's own name. */}
       <OnboardingTips
         title={`Welcome to ${name ?? 'your ministry'}`}
