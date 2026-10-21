@@ -95,6 +95,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['find-your-way', 'Find your way around'],
     ['join-ministry', 'Join your ministry'],
     ['choose-notifications', 'Choose your notifications'],
+    ['get-help', 'Get help and support'],
   ]],
   ['For members', [
     ['member-stream', 'Choose your devotional stream'],
@@ -106,11 +107,14 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['member-conversation', 'Ask the speaker a question'],
     ['member-meeting', 'Join a video meeting'],
     ['member-groups', 'Join a small group'],
+    ['member-bible-study', 'Join your Bible study'],
     ['member-give', 'Give with Gift Aid'],
   ]],
   ['For ministry leaders', [
     ['leader-create', 'Create your ministry'],
+    ['leader-member-menu', 'Choose what your members see'],
     ['leader-people', 'Add and manage members'],
+    ['leader-new-people', 'Follow up new people'],
     ['leader-qr', 'Set up QR self-registration'],
     ['leader-kiosk', 'Turn a tablet into a check-in kiosk'],
     ['leader-devotional-source', 'Choose your devotional source'],
@@ -119,6 +123,8 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['leader-meetings', 'Schedule an interactive meeting'],
     ['leader-webinar', 'Host a webinar'],
     ['leader-groups', 'Create a small group'],
+    ['leader-bible-study', 'Set up a Bible study'],
+    ['leader-group-study', 'Run a Bible study in your small group'],
     ['leader-video', 'Send a pastoral video message'],
     ['leader-translation', 'Run live translation'],
     ['leader-conversation', 'Take questions from listeners'],
@@ -187,7 +193,10 @@ const TutorialContent: React.FC = () => (
         { text: <><strong>Live Broadcast</strong>: Discover, Events, Following, My Channels and Meetings.</> },
         { text: <><strong>Community</strong>: Feed, Revelations, Challenges and Music.</> },
         { text: <>Your <strong>profile icon</strong> in the top right opens your account: Profile (settings), Billing and Donate.</> },
+        { text: <>When you sign up, Rekindle asks <strong>What would you like help with?</strong> The areas you pick come first in the menu, and everything else is still there under <strong>More</strong>.</> },
+        { text: <>To change it, tap <strong>Change what I see</strong> at the bottom of the menu (on a phone, tap <strong>More</strong> first). Choose <strong>Show me everything</strong> to see the full menu again.</> },
       ]}
+      tip="Nothing is removed when you choose. It just decides what comes first."
     />
 
     <TutorialSection
@@ -212,6 +221,17 @@ const TutorialContent: React.FC = () => (
         { text: <>When your phone asks whether Rekindle may send notifications, tap <strong>Allow</strong>, otherwise push notifications can’t reach you.</> },
       ]}
       tip="You can change these at any time. Your choices are recorded as your consent, so your ministry only contacts you in the ways you’ve agreed to."
+    />
+
+    <TutorialSection
+      id="get-help" eyebrow="Getting started" title="Get help and support"
+      path={['Help']}
+      steps={[
+        { text: <>Tap the <strong>?</strong> at the top of the screen and choose <strong>Contact support</strong>. You’ll also find <strong>Help &amp; FAQ</strong> under <strong>More</strong> on a phone, in your <strong>profile icon</strong> menu on a computer, and as <strong>Help</strong> at the top of the ministry app.</> },
+        { text: <>Tap <strong>Message us on WhatsApp</strong> to reach our support team, or <strong>Email us</strong> if you prefer.</> },
+        { text: <>Below that are answers to the questions people ask most, and a link back to this Guide.</> },
+        { text: <>Inside your ministry, the <strong>?</strong> button in its header also replays the tour or explains the page you’re on.</> },
+      ]}
     />
 
     {/* ───────────────────────── Part 2 ───────────────────────── */}
@@ -331,6 +351,19 @@ const TutorialContent: React.FC = () => (
     />
 
     <TutorialSection
+      id="member-bible-study" eyebrow="Members" title="Join your Bible study"
+      path={['My Ministries', 'Ministry', 'Bible Study']}
+      steps={[
+        { text: <>Open your ministry’s space and go to <strong>Ministry › Bible Study</strong>. If your church runs more than one study, tap its name at the top.</> },
+        { text: <><strong>Next session</strong> shows when the study meets next.</> },
+        { text: <>When it’s time, tap <strong>Join the study</strong>. It opens the study’s Rekindle meeting, and the button says <strong>Join now (live)</strong> once it has started.</> },
+        { text: <>Under <strong>Study materials</strong>, open the notes, PDFs or videos your leaders shared.</> },
+        { text: <>Missed a week? <strong>Past sessions</strong> has the recordings.</> },
+        { text: <>In a small group? Its own Bible study is on the group’s page (<strong>Small Groups › My Groups</strong>, then open the group), just below the group chat.</> },
+      ]}
+    />
+
+    <TutorialSection
       id="member-give" eyebrow="Members" title="Give, with Gift Aid"
       path={['Profile icon', 'Donate']}
       steps={[
@@ -364,6 +397,19 @@ const TutorialContent: React.FC = () => (
     />
 
     <TutorialSection
+      id="leader-member-menu" eyebrow="Leaders" title="Choose what your members see"
+      path={['Manage', 'Settings', 'Ministry profile', 'Member menu']}
+      intro="A shorter menu is easier to use, especially for people who are new to apps. Nothing is deleted, and you can change it at any time."
+      steps={[
+        { text: <>The first time you open your ministry, Rekindle asks <strong>What does your ministry need?</strong> Tap a ready-made menu: <strong>Everything</strong>, <strong>Bible study group</strong> or <strong>Prayer group</strong>. The ministry tour then starts, showing only the screens you chose.</> },
+        { text: <>To change it later, open <strong>Settings › Ministry profile › Member menu</strong>.</> },
+        { text: <>Start from a ready-made menu, or switch individual screens on and off, for example Books, the Feed or Donations.</> },
+        { text: <>Tap <strong>Save menu</strong>. Members see the new menu straight away.</> },
+      ]}
+      tip="Settings is never hidden, so you can always get back here."
+    />
+
+    <TutorialSection
       id="leader-people" eyebrow="Leaders" title="Add and manage members"
       path={['Ministries', 'Manage', 'Settings', 'People']}
       steps={[
@@ -373,6 +419,19 @@ const TutorialContent: React.FC = () => (
         { text: <>Open a member to change their role: Leader, Admin, Content editor or Member.</> },
         { text: <>Use import to bring in an existing spreadsheet of members, or export to download everyone at any time.</> },
       ]}
+    />
+
+    <TutorialSection
+      id="leader-new-people" eyebrow="Leaders" title="Follow up new people"
+      path={['Manage', 'Settings', 'Members', 'New people']}
+      intro="Everyone who joined recently, in one list, so nobody slips through the cracks."
+      steps={[
+        { text: <>Open <strong>Settings › Members</strong> and tap <strong>New people</strong>.</> },
+        { text: <>Choose <strong>Last 30 days</strong> or <strong>Last 90 days</strong>. People nobody has contacted yet come first; the ones already contacted are listed below them.</> },
+        { text: <>Tap <strong>WhatsApp</strong>, <strong>Call</strong> or <strong>Email</strong> to reach someone.</> },
+        { text: <>Then tap <strong>Mark as contacted</strong> and add a short note, such as “Visiting on Sunday”, so other leaders know it’s done.</> },
+      ]}
+      tip="Every Monday, leaders get a reminder if anyone new still hasn’t been contacted."
     />
 
     <TutorialSection
@@ -473,6 +532,33 @@ const TutorialContent: React.FC = () => (
         { text: <>Choose the Location Type (Physical, Online or Hybrid) and add the address or an Online Meeting Link.</> },
         { text: <>Save, then use <strong>Assign a Small Group Coordinator</strong> to add the people who’ll run it.</> },
         { text: <>Approve join requests from inside the group, schedule meetings and post updates. Members are notified each time.</> },
+      ]}
+    />
+
+    <TutorialSection
+      id="leader-bible-study" eyebrow="Leaders" title="Set up a Bible study"
+      path={['Manage', 'Ministry', 'Bible Study']}
+      intro="One page per study, with when it meets, how to join, the materials and the recordings."
+      steps={[
+        { text: <>Open <strong>Ministry › Bible Study</strong> and tap <strong>Add a study</strong>.</> },
+        { text: <>Give it a name, say what you’re studying, and write when it meets, for example “Every Wednesday, 7pm”.</> },
+        { text: <>Choose its <strong>Rekindle meeting</strong>, or tap <strong>Create a new meeting</strong> to make one there and then. Members join from the study page, and the meeting’s recordings appear under Past sessions.</> },
+        { text: <>Add materials: a title and a link to a PDF, document or video, with the session date if you like.</> },
+        { text: <>Running the same study in every cell? Tap <strong>Share with small groups</strong>, tick the groups and tap <strong>Share</strong>. Each group gets the study and its materials, and its leaders add their own time and meeting.</> },
+        { text: <>The <strong>Small group studies</strong> card lists every group’s study and flags any that don’t have a time yet.</> },
+      ]}
+    />
+
+    <TutorialSection
+      id="leader-group-study" eyebrow="Leaders" title="Run a Bible study in your small group"
+      path={['Small Groups', 'My Groups', 'Your group']}
+      intro="For group leaders and assistant leaders. It’s optional: groups that just want to chat don’t need one."
+      steps={[
+        { text: <>Open your group from <strong>Small Groups › My Groups</strong>.</> },
+        { text: <>Below the group chat, tap <strong>Set it up</strong> on <strong>Set up a Bible study for this group</strong>.</> },
+        { text: <>To follow one of your ministry’s studies, pick it under <strong>Follow a study from your ministry</strong>. Your group sees its materials too.</> },
+        { text: <>Add when you meet and choose or create your group’s Rekindle meeting, then tap <strong>Save</strong>.</> },
+        { text: <>Your members now see the study on the group page, with the next session, a Join button, the materials and past recordings.</> },
       ]}
     />
 
