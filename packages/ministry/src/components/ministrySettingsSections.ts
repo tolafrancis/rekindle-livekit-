@@ -37,12 +37,12 @@ interface SectionDef {
 
 export const SECTIONS: SectionDef[] = [
   { id: 'overview', label: 'Overview',         icon: LayoutDashboard, description: 'Ministry stats & quick actions' },
-  { id: 'members',  label: 'Members',          icon: Users,           description: 'Members, registrations, join link, small groups & teams' },
+  { id: 'members',  label: 'Members',          icon: Users,           description: 'Members, new people, registrations, join link, small groups & teams' },
   { id: 'events',   label: 'Events',           icon: Calendar,        description: 'Services and events' },
   { id: 'content',  label: 'Content',          icon: BookOpen,        description: 'Devotionals, library, video, announcements & rules' },
   { id: 'messages', label: 'Messages',         icon: MessageSquare,   description: 'Prayer requests, inbox & WhatsApp' },
   { id: 'finance',  label: 'Finance',          icon: CreditCard,      description: 'Donations, gateways, Gift Aid & plan' },
-  { id: 'profile',  label: 'Ministry profile', icon: Settings,        description: 'Profile, branding, domain & birthdays' },
+  { id: 'profile',  label: 'Ministry profile', icon: Settings,        description: 'Profile, branding, member menu, domain & birthdays' },
 ];
 
 /** The tools inside each section. Each opens on its own; the first is the default. */
@@ -50,6 +50,7 @@ export const SECTION_TOOLS: Record<SettingsSectionId, Array<{ id: string; label:
   overview: [],
   members: [
     { id: 'members', label: 'Members' },
+    { id: 'new-people', label: 'New people' },
     { id: 'registrations', label: 'Registrations' },
     { id: 'join-link', label: 'Join link & QR' },
     { id: 'small-groups', label: 'Small groups' },
@@ -77,6 +78,7 @@ export const SECTION_TOOLS: Record<SettingsSectionId, Array<{ id: string; label:
   ],
   profile: [
     { id: 'profile', label: 'Profile & branding' },
+    { id: 'member-menu', label: 'Member menu' },
     { id: 'custom-domain', label: 'Custom domain' },
     { id: 'birthdays', label: 'Birthday wishes' },
   ],
