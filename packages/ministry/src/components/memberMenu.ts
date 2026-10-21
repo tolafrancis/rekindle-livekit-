@@ -50,6 +50,7 @@ export const MEMBER_MENU: MemberMenuGroup[] = [
     { key: 'live.webinars', label: 'Webinars' },
   ] },
   { id: 'admin', label: 'Ministry', description: 'News, care and giving', items: [
+    { key: 'admin.study', label: 'Bible Study' },
     { key: 'admin.announcements', label: 'Announcements' },
     { key: 'admin.rules', label: 'Rules & Guidelines' },
     { key: 'admin.requests', label: 'Prayer Requests' },
@@ -83,7 +84,7 @@ export const MEMBER_MENU_PRESETS: MemberMenuPreset[] = [
   {
     id: 'bible-study',
     label: 'Bible study group',
-    description: 'Devotionals, reading plan, prayer, Q&A, small groups and meetings.',
+    description: 'Bible study, devotionals, reading plan, prayer, Q&A, small groups and meetings.',
     hidden: ['word.books', 'prayer.library', 'prayer.journal', 'community.feed', 'community.revelations',
       'community.challenges', 'live.live', 'live.webinars', 'admin.testimonies', 'admin.donations'],
   },
@@ -91,7 +92,7 @@ export const MEMBER_MENU_PRESETS: MemberMenuPreset[] = [
     id: 'prayer-group',
     label: 'Prayer group',
     description: 'Prayers, the prayer wall, prayer requests and meetings.',
-    hidden: ['word.reading', 'word.scripture', 'word.books', 'community.feed', 'community.revelations',
+    hidden: ['admin.study', 'word.reading', 'word.scripture', 'word.books', 'community.feed', 'community.revelations',
       'community.qa', 'community.challenges', 'live.webinars', 'admin.donations'],
   },
 ];

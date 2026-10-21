@@ -40,6 +40,7 @@ const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m
 const DevotionalModule = lazy(() => import('@rekindle/features/components/DevotionalModule').then((m) => ({ default: m.DevotionalModule })));
 const MinistryInteractiveMeetings = lazy(() => import('./MinistryInteractiveMeetings').then((m) => ({ default: m.MinistryInteractiveMeetings })));
 const WebinarDashboard = lazy(() => import('@rekindle/live/webinar/WebinarDashboard').then((m) => ({ default: m.WebinarDashboard })));
+const MinistryBibleStudy = lazy(() => import('./MinistryBibleStudy').then((m) => ({ default: m.MinistryBibleStudy })));
 const MinistryRecordingsTab = lazy(() => import('./MinistryRecordingsTab').then((m) => ({ default: m.MinistryRecordingsTab })));
 const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default: m.MLiveChannel })));
 const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
@@ -1123,6 +1124,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ],
     },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
+      // Schedule, joining link, materials and recordings for each study in
+      // one place (0414). First, so the Ministry group opens on it.
+      { id: 'study', label: 'Bible Study', icon: BookOpen },
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
       ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
       { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
@@ -3133,6 +3137,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         )}
 
         {/* Interactive Meetings Tab */}
+        {activeTab === 'study' && (
+          <MinistryBibleStudy ministryId={ministry.id} canManage={canManageMinistry} />
+        )}
         {activeTab === 'meetings' && (
           <MinistryInteractiveMeetings
             ministryId={ministry.id}
