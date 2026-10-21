@@ -23,6 +23,8 @@ interface HelpMessage {
   confident?: boolean;
 }
 
+// Sits above the bottom-right stack (Pastoral Assistant / offline indicator /
+// scroll-to-top at bottom-20, up to 8.5rem tall) so it never covers them.
 // Full-screen and kiosk-style routes where a floating button would get in the way.
 const HIDDEN_ROUTES = [/\/meeting\//, /\/webinar/, /^\/m\//, /^\/kiosk\//, /^\/display/, /^\/obs-captions\//, /^\/speak\//, /^\/conversation\//, /^\/channels\//];
 
@@ -297,7 +299,7 @@ export const HelpAssistant: React.FC<{ app: HelpApp }> = ({ app }) => {
         <button
           type="button"
           onClick={() => { setShowTip(false); setOpen(true); }}
-          className="fixed bottom-48 right-4 z-50 max-w-[14rem] rounded-2xl rounded-br-sm bg-white px-3 py-2 text-left text-sm text-gray-700 shadow-lg ring-1 ring-black/5 md:bottom-36 dark:bg-gray-800 dark:text-gray-100"
+          className="fixed bottom-52 right-4 z-50 max-w-[14rem] rounded-2xl rounded-br-sm bg-white px-3 py-2 text-left text-sm text-gray-700 shadow-lg ring-1 ring-black/5 dark:bg-gray-800 dark:text-gray-100"
         >
           {t('helpAssistant', 'nudge', 'Have a question? Tap here and I can help.')}
         </button>
@@ -308,7 +310,7 @@ export const HelpAssistant: React.FC<{ app: HelpApp }> = ({ app }) => {
           type="button"
           onClick={() => { setShowTip(false); setOpen(true); }}
           aria-label={t('helpAssistant', 'open', 'Need help?')}
-          className="fixed bottom-32 right-4 z-50 flex h-12 items-center gap-1.5 rounded-full bg-white px-3 text-sm font-medium text-violet-700 shadow-lg ring-1 ring-violet-200 transition hover:scale-105 md:bottom-20 dark:bg-gray-800 dark:text-violet-300 dark:ring-violet-800"
+          className="fixed bottom-36 right-4 z-50 flex h-12 items-center gap-1.5 rounded-full bg-white px-3 text-sm font-medium text-violet-700 shadow-lg ring-1 ring-violet-200 transition hover:scale-105 dark:bg-gray-800 dark:text-violet-300 dark:ring-violet-800"
         >
           <HelpCircle className="h-5 w-5" />
           <span className="hidden sm:inline">{t('helpAssistant', 'open', 'Need help?')}</span>
