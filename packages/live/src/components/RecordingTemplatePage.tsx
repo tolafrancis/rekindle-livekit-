@@ -28,7 +28,13 @@ interface Tile {
   camera?: RemoteTrack;
   screen?: RemoteTrack;
   isSpeaking: boolean;
+  /** An OBS/encoder feed published through livekit-ingress. */
+  isIngress: boolean;
 }
+
+// livekit-ingress publishes the OBS feed as "host-<channel or meeting id>";
+// real participants are identified by their user id.
+const isIngressIdentity = (identity: string) => identity.startsWith('host-');
 
 const VideoEl: React.FC<{ track?: RemoteTrack; fit?: 'cover' | 'contain' }> = ({ track, fit = 'cover' }) => {
   const ref = useRef<HTMLVideoElement>(null);
@@ -71,6 +77,7 @@ function readTiles(room: Room): Tile[] {
       camera: camera?.track && !camera.isMuted ? (camera.track as RemoteTrack) : undefined,
       screen: screen?.track ? (screen.track as RemoteTrack) : undefined,
       isSpeaking: p.isSpeaking,
+      isIngress: isIngressIdentity(p.identity),
     });
   });
   // Native Android screen share comes from a "<identity>-screenshare" shadow
@@ -162,10 +169,15 @@ export default function RecordingTemplatePage() {
   const main = stage.main.map((id) => byId.get(id)).filter(Boolean) as Tile[];
   const thumbs = stage.thumbnails.map((id) => byId.get(id)).filter(Boolean) as Tile[];
   const sharer = stage.screenOf ? byId.get(stage.screenOf) : undefined;
+  // An OBS feed is already the producer's finished mix (a shared screen,
+  // slides, cameras), so it takes the whole frame, uncropped.
+  const obsFeed = tiles.find((t) => t.isIngress && (t.camera || t.screen));
 
   let body: React.ReactNode;
   if (tiles.length === 0) {
     body = <div className="flex h-full items-center justify-center text-2xl text-white/60">Waiting for participants…</div>;
+  } else if (obsFeed) {
+    body = <VideoEl track={obsFeed.camera ?? obsFeed.screen} fit="contain" />;
   } else if (stage.kind === 'screen' && sharer?.screen) {
     body = (
       <div className="flex h-full flex-col gap-3 p-3">
