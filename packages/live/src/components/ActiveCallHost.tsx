@@ -62,25 +62,26 @@ export const ActiveCallHost: React.FC = () => {
 
   if (!call) return null;
 
-  if (isSystemPiP) {
-    return (
-      <div className="fixed inset-0 z-[70] h-full w-full bg-black overflow-hidden">
-        <div className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-gray-900">
-          {call.node}
-        </div>
-      </div>
-    );
-  }
+  // Android system PiP (Home pressed mid-call) fills the whole tiny PiP window.
+  // It MUST stay the same element tree as the normal/minimized layout below,
+  // only with different classes (2026-10-21): it used to be a separate early
+  // return with a differently keyed wrapper, so entering PiP unmounted the
+  // meeting, which disconnected LiveKit and remounted it at the "Check your
+  // camera and mic" backstage, and leaving PiP did the same again.
+  const pip = isSystemPiP;
+  const showMiniChrome = minimized && !pip;
 
   return (
     <div
       ref={nodeRef}
-      style={minimized && pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : undefined}
+      style={showMiniChrome && pos ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : undefined}
       className={
+        pip
+          ? 'fixed inset-0 z-[70] h-full w-full bg-black overflow-hidden'
         // z-[70]: above the app sidebar/header (z-55/60) so the meeting covers the
         // app, but below Radix dialogs/popovers (z-80/90) so the in-meeting host
         // panel confirms, background picker and chat menus still layer on top.
-        minimized
+        : minimized
           ? 'fixed bottom-3 right-3 z-[70] aspect-video w-[min(22rem,90vw)] overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl'
           // h-[100dvh] (dynamic viewport) instead of inset-0 so on iOS Safari the
           // meeting fits the VISIBLE area — otherwise inset-0 extends behind the
@@ -97,7 +98,7 @@ export const ActiveCallHost: React.FC = () => {
           meeting B's title, chat and leave handler. */}
       <div key={call.id} className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-gray-900">{call.node}</div>
 
-      {minimized && (
+      {showMiniChrome && (
         <>
           {/* Drag handle across the top: grab here to reposition the mini-player.
               Pointer events on the buttons stop propagation so taps still fire. */}

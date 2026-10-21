@@ -1,6 +1,10 @@
 package com.rekindlebc.ministry;
 
+import android.Manifest;
 import android.app.PictureInPictureParams;
+import android.content.pm.PackageManager;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.media.AudioManager;
@@ -121,6 +125,14 @@ public class MainActivity extends BridgeActivity {
         // Keep the meeting alive in the background (see MeetingForegroundService).
         if (active) {
           MeetingForegroundService.Companion.start(MainActivity.this);
+          // Android 13+ hides the service's "You're in a meeting" notification
+          // unless notifications are allowed; ask once if they haven't been.
+          if (Build.VERSION.SDK_INT >= 33
+              && ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS)
+                  != PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread(() -> ActivityCompat.requestPermissions(
+                MainActivity.this, new String[] { Manifest.permission.POST_NOTIFICATIONS }, 7301));
+          }
         } else {
           MeetingForegroundService.Companion.stop(MainActivity.this);
         }
