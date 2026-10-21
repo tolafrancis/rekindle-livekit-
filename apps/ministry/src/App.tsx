@@ -55,6 +55,7 @@ import AuthScreen from './screens/AuthScreen';
 
 // Public preview for a shared ministry devotional (signed-out visitors only).
 const SharedContentPreview = lazy(() => import('@rekindle/features/components/SharedContentPreview'));
+const ForChurchesPage = lazy(() => import('@rekindle/features/components/ForChurchesPage'));
 
 // Phase 2/3/6 — standalone Ministry app: shared providers + routing. Public join/kiosk
 // entry, an auth gate, self-onboarding for members with no ministry, and an authed
@@ -271,6 +272,7 @@ function AppRoutes() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/terms" element={<TermsOfServicePage />} />
       <Route path="/unsubscribe" element={<UnsubscribePage />} />
+      <Route path="/for-churches" element={<Suspense fallback={<LoadingScreen />}><ForChurchesPage /></Suspense>} />
       <Route path="/testimonial" element={<TestimonialSubmitPage />} />
 
       {/* Public live-broadcast watch link (channel Share builds /channels/:id).
