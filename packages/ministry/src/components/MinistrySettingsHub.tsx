@@ -18,6 +18,7 @@ import {
 
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
+import { MinistryMemberMenuSettings } from './MinistryMemberMenuSettings';
 import { normalizeSettingsSection, SECTIONS, toolsForSection, type SettingsSectionId } from './ministrySettingsSections';
 
 // Each settings section's managers are their own chunks, fetched when that
@@ -227,7 +228,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
           is_public: formData.is_public,
           social_links: formData.social_links,
           brand_colors: formData.brand_colors,
-          settings: formData.settings,
+          // The member menu is saved from its own tool; keep the stored
+          // choice rather than this form's copy, which may predate it.
+          settings: { ...formData.settings, member_menu: (ministry.settings as any)?.member_menu },
           updated_at: new Date().toISOString()
         })
         .eq('id', ministry.id);
@@ -752,6 +755,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
             </div>
 
           </div>
+        )}
+        {currentSection === 'profile' && currentTool === 'member-menu' && (
+          <MinistryMemberMenuSettings ministry={ministry} onUpdate={onUpdate} />
         )}
         {currentSection === 'profile' && currentTool === 'custom-domain' && (
           <CustomDomainSettings ministryId={ministry.id} />

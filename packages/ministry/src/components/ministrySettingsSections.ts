@@ -42,7 +42,7 @@ export const SECTIONS: SectionDef[] = [
   { id: 'content',  label: 'Content',          icon: BookOpen,        description: 'Devotionals, library, video, announcements & rules' },
   { id: 'messages', label: 'Messages',         icon: MessageSquare,   description: 'Prayer requests, inbox & WhatsApp' },
   { id: 'finance',  label: 'Finance',          icon: CreditCard,      description: 'Donations, gateways, Gift Aid & plan' },
-  { id: 'profile',  label: 'Ministry profile', icon: Settings,        description: 'Profile, branding, domain & birthdays' },
+  { id: 'profile',  label: 'Ministry profile', icon: Settings,        description: 'Profile, branding, member menu, domain & birthdays' },
 ];
 
 /** The tools inside each section. Each opens on its own; the first is the default. */
@@ -77,6 +77,7 @@ export const SECTION_TOOLS: Record<SettingsSectionId, Array<{ id: string; label:
   ],
   profile: [
     { id: 'profile', label: 'Profile & branding' },
+    { id: 'member-menu', label: 'Member menu' },
     { id: 'custom-domain', label: 'Custom domain' },
     { id: 'birthdays', label: 'Birthday wishes' },
   ],
