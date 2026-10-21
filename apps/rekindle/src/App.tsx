@@ -34,6 +34,7 @@ const PrivacyPolicyPage = lazy(() => import("@rekindle/features/components/Priva
 const TermsOfServicePage = lazy(() => import("@rekindle/features/components/TermsOfServicePage"));
 const RekindleTutorialPage = lazy(() => import("@rekindle/features/components/RekindleTutorialPage"));
 const FaqPage = lazy(() => import("@rekindle/features/components/FaqPage"));
+const TestimonialSubmitPage = lazy(() => import("@rekindle/features/components/TestimonialSubmitPage"));
 const PublicPrayerIndexPage = lazy(() => import("@rekindle/features/components/PublicPrayerIndexPage"));
 const PublicPrayerTopicPage = lazy(() => import("@rekindle/features/components/PublicPrayerTopicPage"));
 const SubmitContentPage = lazy(() => import("./components/SubmitContentPage"));
@@ -199,6 +200,8 @@ const App = () => {
                   <Route path="/terms" element={<TermsOfServicePage />} />
                   <Route path="/guide" element={<RekindleTutorialPage />} />
                   <Route path="/faq" element={<FaqPage />} />
+                  <Route path="/help" element={<FaqPage />} />
+                  <Route path="/testimonial" element={<TestimonialSubmitPage />} />
                   {/* Public, crawlable prayer topics (signed-in visitors are sent to the in-app topic). */}
                   <Route path="/prayers" element={<PublicPrayerIndexPage />} />
                   <Route path="/prayers/:id/:slug?" element={<PublicPrayerTopicPage />} />

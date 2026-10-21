@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaqList } from './FaqList';
+import { TestimonialsSection } from './TestimonialsSection';
 import { Menu, X } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 import { isNativeApp, isDesktopApp } from '../platform';
@@ -597,6 +598,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
             </div>
           </section>
         )}
+
+        {/* Testimonials — published app_testimonials; renders nothing if none. */}
+        <TestimonialsSection />
 
         {/* FAQ — admin-managed (faq_items); FaqList renders nothing if empty. */}
         <section id="faq" style={{ background: '#fff', padding: '100px 0' }}>
