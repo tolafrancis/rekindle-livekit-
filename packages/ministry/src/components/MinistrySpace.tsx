@@ -351,7 +351,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     const tab = params.get('tab');
     if (tab) {
       setActiveTab(tab, { replace: true });
+      // ?tab=settings&section=members&tool=new-people opens one Settings
+      // tool (the weekly "new people" reminder links here).
+      const section = params.get('section');
+      if (tab === 'settings' && section) {
+        setSettingsSection(normalizeSettingsSection(section), { replace: true });
+        setSettingsTool(params.get('tool') ?? '', { replace: true });
+      }
       params.delete('tab');
+      params.delete('section');
+      params.delete('tool');
       const query = params.toString();
       window.history.replaceState(
         window.history.state,

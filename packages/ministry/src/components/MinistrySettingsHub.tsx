@@ -19,6 +19,7 @@ import {
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
 import { MinistryMemberMenuSettings } from './MinistryMemberMenuSettings';
+import { MinistryNewPeople } from './MinistryNewPeople';
 import { normalizeSettingsSection, SECTIONS, toolsForSection, type SettingsSectionId } from './ministrySettingsSections';
 
 // Each settings section's managers are their own chunks, fetched when that
@@ -768,6 +769,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
 
         {/* Members */}
         {currentSection === 'members' && currentTool === 'members' && <MinistryMembersManager ministryId={ministry.id} />}
+        {currentSection === 'members' && currentTool === 'new-people' && <MinistryNewPeople ministryId={ministry.id} />}
         {currentSection === 'members' && currentTool === 'registrations' && (
           <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
         )}

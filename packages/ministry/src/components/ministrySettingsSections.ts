@@ -37,7 +37,7 @@ interface SectionDef {
 
 export const SECTIONS: SectionDef[] = [
   { id: 'overview', label: 'Overview',         icon: LayoutDashboard, description: 'Ministry stats & quick actions' },
-  { id: 'members',  label: 'Members',          icon: Users,           description: 'Members, registrations, join link, small groups & teams' },
+  { id: 'members',  label: 'Members',          icon: Users,           description: 'Members, new people, registrations, join link, small groups & teams' },
   { id: 'events',   label: 'Events',           icon: Calendar,        description: 'Services and events' },
   { id: 'content',  label: 'Content',          icon: BookOpen,        description: 'Devotionals, library, video, announcements & rules' },
   { id: 'messages', label: 'Messages',         icon: MessageSquare,   description: 'Prayer requests, inbox & WhatsApp' },
@@ -50,6 +50,7 @@ export const SECTION_TOOLS: Record<SettingsSectionId, Array<{ id: string; label:
   overview: [],
   members: [
     { id: 'members', label: 'Members' },
+    { id: 'new-people', label: 'New people' },
     { id: 'registrations', label: 'Registrations' },
     { id: 'join-link', label: 'Join link & QR' },
     { id: 'small-groups', label: 'Small groups' },
