@@ -18,7 +18,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { WebhookReceiver, EgressStatus, EgressClient, RoomServiceClient, SegmentedFileOutput, S3Upload } from 'https://esm.sh/livekit-server-sdk@2';
-import { startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
+import { liveCompositeOpts, startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
 
 const httpUrl = (wsUrl: string) => wsUrl.replace(/^ws/, 'http');
 
@@ -115,7 +115,9 @@ async function autoStartHlsBroadcast(
     output: { case: 's3', value: s3 },
   });
 
-  const info = await egressClient.startRoomCompositeEgress(roomName, { segments: output }, { layout: 'grid' });
+  // The template shows the OBS feed full frame; 'grid' split it with anyone
+  // else in the room.
+  const info = await egressClient.startRoomCompositeEgress(roomName, { segments: output }, liveCompositeOpts());
   const playbackUrl = `${publicBase}/${prefix}/index.m3u8`;
   const livePlaybackUrl = `${publicBase}/${prefix}/live.m3u8`;
 

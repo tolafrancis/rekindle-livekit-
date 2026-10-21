@@ -42,7 +42,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { EgressClient, RoomServiceClient, SegmentedFileOutput, EncodedFileOutput, S3Upload, TrackSource } from 'https://esm.sh/livekit-server-sdk@2';
 import { AwsClient } from 'https://esm.sh/aws4fetch@1';
 import { bindRoomContext } from '../_shared/roomBinding.ts';
-import { simulcastTable, simulcastIdCol, isRoomNotFound, startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
+import { liveCompositeOpts, simulcastTable, simulcastIdCol, isRoomNotFound, startSimulcastEgresses, stopSimulcastEgresses } from '../_shared/simulcast.ts';
 
 // The host's recording layout choices (packages/live/src/layout/meetingLayout.ts).
 // Every one but 'gallery' renders packages/live/src/components/RecordingTemplatePage.tsx.
@@ -761,10 +761,7 @@ serve(async (req) => {
         // Its slower cold start now lands at Go live, after the host has
         // already checked everything backstage, and the attendee view shows
         // "Stream is starting…" until the first segment exists.
-        info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, {
-          layout: 'speaker',
-          customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
-        });
+        info = await egressClient.startRoomCompositeEgress(body.roomName, { segments: output }, liveCompositeOpts());
       } else if (isChannel) {
         const { audioTrackId, videoTrackId } = await resolveHostTracks(roomService, body.roomName, user!.id, expectVideo);
         const canUseTrackComposite = !!audioTrackId && (!expectVideo || !!videoTrackId);
