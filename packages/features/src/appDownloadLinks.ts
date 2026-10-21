@@ -38,8 +38,6 @@ export interface AppDownloadLinks {
   ministryMac: string;
   /** ReKindle Translator desktop app for Mac. */
   translatorMac: string;
-  /** Direct Android APK download. */
-  androidApk: string;
 }
 
 const BASE_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
@@ -58,14 +56,14 @@ const BASE_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
   consumerMac: '',
   ministryMac: '',
   translatorMac: '',
-  androidApk: import.meta.env.VITE_ANDROID_APK_URL || '',
 };
 
 /**
  * Inside the Android/iOS apps only the official store links survive. Google
  * Play's Device and Network Abuse policy forbids an app that leads people to
- * download or install apps from outside the store, which covers the direct
- * APK link and the Windows/Mac installers, whatever an admin saves.
+ * download or install apps from outside the store, which covers the
+ * Windows/Mac installers, whatever an admin saves. (Android is Play-only: there
+ * is no direct APK link anywhere.)
  */
 function forPlatform(links: AppDownloadLinks): AppDownloadLinks {
   if (!isNativeApp()) return links;
@@ -77,7 +75,6 @@ function forPlatform(links: AppDownloadLinks): AppDownloadLinks {
     consumerMac: '',
     ministryMac: '',
     translatorMac: '',
-    androidApk: '',
   };
 }
 
@@ -94,7 +91,6 @@ export const APP_DOWNLOAD_LINK_FIELDS: Array<{ key: keyof AppDownloadLinks; labe
   { key: 'consumerMac', label: 'ReKindle BC for Mac (desktop)', placeholder: 'https://…/ReKindle.dmg or Mac App Store link' },
   { key: 'ministryMac', label: 'ReKindle BC Ministry for Mac (desktop)', placeholder: 'https://…/Rekindle-Ministry.dmg or Mac App Store link' },
   { key: 'translatorMac', label: 'ReKindle Translator for Mac (desktop)', placeholder: 'https://…/ReKindle-Translator.dmg' },
-  { key: 'androidApk', label: 'Android APK (direct download)', placeholder: 'https://…/rekindle.apk' },
 ];
 
 export async function loadAppDownloadLinks(): Promise<AppDownloadLinks> {
