@@ -962,7 +962,7 @@ const EnhancedVideoCallWrapper = ({
 /* ======================================================
    CREATE MEETING MODAL
 ====================================================== */
-const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }: {
+export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, meeting }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (meeting: MinistryVideoMeeting) => void;

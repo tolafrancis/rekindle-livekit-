@@ -3138,7 +3138,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
         {/* Interactive Meetings Tab */}
         {activeTab === 'study' && (
-          <MinistryBibleStudy ministryId={ministry.id} canManage={canManageMinistry} onCreateMeeting={() => setActiveTab('meetings')} />
+          <MinistryBibleStudy ministryId={ministry.id} canManage={canManageMinistry} />
         )}
         {activeTab === 'meetings' && (
           <MinistryInteractiveMeetings
