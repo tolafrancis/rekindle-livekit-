@@ -142,6 +142,8 @@ const App = () => {
                   <Route path="/small-group/:id" element={<Index />} />
                   <Route path="/messages/:id" element={<Index />} />
                   <Route path="/books/:id" element={<Index />} />
+                  <Route path="/declarations/:id" element={<Index />} />
+                  <Route path="/affirmations/:id" element={<Index />} />
                   
                   {/* Short meeting links (/m/abc-defg-hij) redirect to the full join route */}
                   <Route path="/m/:code" element={<MeetingCodeRedirect />} />
