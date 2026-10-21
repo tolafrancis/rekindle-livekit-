@@ -1,4 +1,5 @@
 import { getPlatformSetting, setPlatformSetting } from './platformSettings';
+import { isNativeApp } from './platform';
 
 // Store / download links shown on the landing page, editable by platform
 // admins (Platform Admin → Settings → App download links). Stored as one JSON
@@ -41,7 +42,7 @@ export interface AppDownloadLinks {
   androidApk: string;
 }
 
-export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
+const BASE_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
   consumerPlayStore: import.meta.env.VITE_PLAY_STORE_APP_URL || 'https://play.google.com/store/apps/details?id=com.rekindlebc.app',
   ministryPlayStore: import.meta.env.VITE_PLAY_STORE_MINISTRY_URL || 'https://play.google.com/store/apps/details?id=com.rekindlebc.ministry',
   consumerAppStore: '',
@@ -59,6 +60,28 @@ export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = {
   translatorMac: '',
   androidApk: import.meta.env.VITE_ANDROID_APK_URL || '',
 };
+
+/**
+ * Inside the Android/iOS apps only the official store links survive. Google
+ * Play's Device and Network Abuse policy forbids an app that leads people to
+ * download or install apps from outside the store, which covers the direct
+ * APK link and the Windows/Mac installers, whatever an admin saves.
+ */
+function forPlatform(links: AppDownloadLinks): AppDownloadLinks {
+  if (!isNativeApp()) return links;
+  return {
+    ...links,
+    consumerWindows: '',
+    ministryWindows: '',
+    translatorWindows: '',
+    consumerMac: '',
+    ministryMac: '',
+    translatorMac: '',
+    androidApk: '',
+  };
+}
+
+export const DEFAULT_APP_DOWNLOAD_LINKS: AppDownloadLinks = forPlatform(BASE_APP_DOWNLOAD_LINKS);
 
 export const APP_DOWNLOAD_LINK_FIELDS: Array<{ key: keyof AppDownloadLinks; label: string; placeholder: string }> = [
   { key: 'consumerPlayStore', label: 'ReKindle BC on Google Play', placeholder: 'https://play.google.com/store/apps/details?id=…' },
@@ -78,11 +101,11 @@ export async function loadAppDownloadLinks(): Promise<AppDownloadLinks> {
   const saved = await getPlatformSetting<Partial<AppDownloadLinks> | null>(APP_DOWNLOAD_LINKS_KEY, null);
   if (!saved || typeof saved !== 'object') return DEFAULT_APP_DOWNLOAD_LINKS;
   // Once saved, an empty field means "hide it", so don't refill from defaults.
-  const out = { ...DEFAULT_APP_DOWNLOAD_LINKS };
+  const out = { ...BASE_APP_DOWNLOAD_LINKS };
   for (const f of APP_DOWNLOAD_LINK_FIELDS) {
     if (typeof saved[f.key] === 'string') out[f.key] = (saved[f.key] as string).trim();
   }
-  return out;
+  return forPlatform(out);
 }
 
 export async function saveAppDownloadLinks(links: AppDownloadLinks): Promise<{ error?: string }> {

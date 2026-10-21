@@ -98,6 +98,9 @@
     <!-- Native screen share (NativeScreenSharePlugin / ScreenShareForegroundService) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The app never installs other apps. Removed explicitly so no library
+         manifest can merge it in (Play's Device and Network Abuse policy). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
 
     <!-- Push notifications (Phase 4). Android 13+ requires the runtime prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
