@@ -12,6 +12,11 @@
 //     cycle:'monthly'|'annual', country, returnUrl }
 //        -> { url }   (redirect the admin to the provider's hosted checkout)
 //   { action:'portal', ministryId, returnUrl }  -> { url }   (Stripe billing portal)
+//   { action:'switch-annual', ministryId } -> { success, priceLockedUntil }
+//        (Stripe: move the monthly subscription onto annual in place)
+//
+// Launch offer (0417): a qualifying monthly checkout gets the plan's intro
+// price for its first months (Stripe coupon, or the Paystack intro plan).
 //
 // Secrets: STRIPE_SECRET_KEY, PAYSTACK_SECRET_KEY (shared with the existing
 // billing fns). Pricing is SERVER-AUTHORITATIVE here (never trust client
@@ -65,6 +70,31 @@ interface PlanRow {
   stripe_price_id_annual: string | null;
   paypal_billing_link_monthly: string | null;
   paypal_billing_link_annual: string | null;
+  stripe_intro_coupon_id: string | null;
+  paystack_intro_plan_code: string | null;
+}
+
+// Launch offer (0417): a ministry qualifies for the intro price on monthly
+// billing if the offer is open, it has never paid for a plan, and neither
+// it nor the admin checking out has used the offer before.
+// deno-lint-ignore no-explicit-any
+async function qualifiesForLaunchOffer(admin: any, ministryId: string, userId: string): Promise<boolean> {
+  const { data: status } = await admin.rpc('get_launch_offer_status');
+  const row = Array.isArray(status) ? status[0] : status;
+  if (!row?.is_open) return false;
+
+  const { data: paid } = await admin
+    .from('ministry_subscriptions').select('id')
+    .eq('ministry_id', ministryId)
+    .or('stripe_subscription_id.not.is.null,paystack_subscription_code.not.is.null')
+    .limit(1);
+  if (paid && paid.length > 0) return false;
+
+  const { data: used } = await admin
+    .from('ministry_launch_offer_redemptions').select('ministry_id')
+    .or(`ministry_id.eq.${ministryId},redeemed_by.eq.${userId}`)
+    .limit(1);
+  return !used || used.length === 0;
 }
 
 serve(async (req) => {
@@ -92,6 +122,76 @@ serve(async (req) => {
     if (!isAdmin) return json({ error: 'Not authorized to manage billing for this ministry' }, 403);
 
     const back = returnUrl || `${SUPABASE_URL}`;
+
+    // ── Switch to annual (Stripe) ────────────────────────────────────────
+    // Moves the existing monthly subscription onto the same plan's annual
+    // price in place (prorated, no second subscription). Done during the
+    // launch offer's intro period, it also locks the price for 12 months.
+    if (action === 'switch-annual') {
+      if (!STRIPE_KEY) return json({ error: 'Stripe not configured' }, 500);
+      const { data: subRow } = await admin
+        .from('ministry_subscriptions')
+        .select('id, plan_type, billing_cycle, payment_provider, stripe_subscription_id, intro_offer_applied, intro_ends_at')
+        .eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const sub = subRow as {
+        id: string; plan_type: string; billing_cycle: string | null; payment_provider: string | null;
+        stripe_subscription_id: string | null; intro_offer_applied: boolean; intro_ends_at: string | null;
+      } | null;
+      if (!sub?.stripe_subscription_id || sub.payment_provider !== 'stripe') {
+        return json({ error: 'Switching to annual here works for card (Stripe) subscriptions. Please contact support to switch.' }, 400);
+      }
+      if (sub.billing_cycle === 'annual' || sub.billing_cycle === 'yearly') return json({ error: 'You are already on annual billing.' }, 400);
+
+      const { data: planRow } = await admin
+        .from('ministry_partner_plans').select('*').eq('slug', sub.plan_type).maybeSingle();
+      const p = planRow as PlanRow | null;
+      if (!p) return json({ error: `Unknown plan: ${sub.plan_type}` }, 400);
+
+      const auth = { Authorization: `Bearer ${STRIPE_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' };
+      const g = await fetch(`https://api.stripe.com/v1/subscriptions/${sub.stripe_subscription_id}`, { headers: auth });
+      const stripeSub = await g.json();
+      if (!g.ok) return json({ error: stripeSub?.error?.message || 'Stripe error' }, 502);
+      // Stripe needs every item on a subscription to share one billing
+      // interval, and add-ons are monthly items on this same subscription.
+      const items = stripeSub?.items?.data ?? [];
+      if (items.length > 1) {
+        return json({ error: 'Your subscription has monthly add-ons, so it can\'t be switched to annual here yet. Please contact support to switch.' }, 400);
+      }
+      const item = items[0];
+      if (!item?.id) return json({ error: 'Could not find the subscription item to update' }, 502);
+
+      const body: Record<string, string> = {
+        'items[0][id]': item.id,
+        proration_behavior: 'create_prorations',
+        discounts: '', // the launch coupon is for monthly billing only
+        'metadata[cycle]': 'annual',
+      };
+      if (p.stripe_price_id_annual) {
+        body['items[0][price]'] = p.stripe_price_id_annual;
+      } else {
+        body['items[0][price_data][currency]'] = 'usd';
+        body['items[0][price_data][unit_amount]'] = String(Math.round(p.usd_price_annual * 100));
+        body['items[0][price_data][product]'] = typeof item.price?.product === 'string' ? item.price.product : item.price?.product?.id;
+        body['items[0][price_data][recurring][interval]'] = 'year';
+      }
+      const u = await fetch(`https://api.stripe.com/v1/subscriptions/${sub.stripe_subscription_id}`, {
+        method: 'POST', headers: auth, body: form(body),
+      });
+      const uj = await u.json();
+      if (!u.ok) return json({ error: uj?.error?.message || 'Stripe could not switch the subscription' }, 502);
+
+      const inIntro = sub.intro_offer_applied && !!sub.intro_ends_at && new Date(sub.intro_ends_at) > new Date();
+      const lockUntil = new Date();
+      lockUntil.setFullYear(lockUntil.getFullYear() + 1);
+      await admin.from('ministry_subscriptions').update({
+        billing_cycle: 'annual',
+        amount_cents: Math.round(p.usd_price_annual * 100),
+        ...(inIntro ? { price_locked_until: lockUntil.toISOString() } : {}),
+        updated_at: new Date().toISOString(),
+      }).eq('id', sub.id);
+
+      return json({ success: true, priceLockedUntil: inIntro ? lockUntil.toISOString() : null });
+    }
 
     // ── Billing portal (Stripe) ──────────────────────────────────────────
     if (action === 'portal') {
@@ -220,17 +320,25 @@ serve(async (req) => {
       return json({ error: 'Paystack is only available for Nigeria' }, 400);
     }
 
+    const intro = !isAnnual && provider !== 'paypal' && await qualifiesForLaunchOffer(admin, ministryId, user.id);
+
     if (provider === 'paystack') {
       if (!PAYSTACK_KEY) return json({ error: 'Paystack not configured' }, 500);
       if (!p.paystack_plan_code) return json({ error: 'This plan has no Paystack plan code configured yet' }, 400);
+      // The intro plan is only used once its Paystack plan exists; otherwise
+      // the ministry checks out at the normal price.
+      const useIntro = intro && !!p.paystack_intro_plan_code;
       const r = await fetch('https://api.paystack.co/transaction/initialize', {
         method: 'POST',
         headers: { Authorization: `Bearer ${PAYSTACK_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: user.email,
-          plan: p.paystack_plan_code, // Paystack derives the amount/currency from the Plan and creates a recurring subscription after first charge
+          plan: useIntro ? p.paystack_intro_plan_code : p.paystack_plan_code, // Paystack derives the amount/currency from the Plan and creates a recurring subscription after first charge
           callback_url: `${back}?billing=success`,
-          metadata: { ministry_id: ministryId, plan: p.slug, cycle: isAnnual ? 'annual' : 'monthly', country: countryCode },
+          metadata: {
+            ministry_id: ministryId, plan: p.slug, cycle: isAnnual ? 'annual' : 'monthly', country: countryCode,
+            ...(useIntro ? { intro: true, redeemed_by: user.id } : {}),
+          },
         }),
       });
       const j = await r.json();
@@ -257,6 +365,12 @@ serve(async (req) => {
         'subscription_data[metadata][cycle]': isAnnual ? 'annual' : 'monthly',
         'subscription_data[metadata][country]': countryCode,
       };
+      if (intro && p.stripe_intro_coupon_id) {
+        body['discounts[0][coupon]'] = p.stripe_intro_coupon_id;
+        body['metadata[intro]'] = 'true';
+        body['metadata[redeemed_by]'] = user.id;
+        body['subscription_data[metadata][intro]'] = 'true';
+      }
       if (priceId) {
         body['line_items[0][price]'] = priceId;
       } else {

@@ -44,6 +44,12 @@ export interface MinistryPartnerPlan {
    *  livekit-token/index.ts, same for every tier). Repurposes the
    *  webinar_audience_cap column (2026-09-21). null = not shown. */
   participantCap: number | null;
+  /** Launch offer (0417) intro monthly price; null = no intro price. */
+  introUsdPriceMonthly: number | null;
+  introNgnPriceMonthly: number | null;
+  /** The intro price is only charged once its provider object exists. */
+  hasStripeIntro: boolean;
+  hasPaystackIntro: boolean;
   features: string[];
   isActive: boolean;
   displayOrder: number;
@@ -72,6 +78,10 @@ function mapPlanRow(row: Record<string, unknown>): MinistryPartnerPlan {
     memberOveragePriceUsd: row.member_overage_price_usd != null ? Number(row.member_overage_price_usd) : null,
     giftAidAddonPriceUsd: row.gift_aid_addon_price_usd != null ? Number(row.gift_aid_addon_price_usd) : null,
     participantCap: row.webinar_audience_cap != null ? Number(row.webinar_audience_cap) : null,
+    introUsdPriceMonthly: row.intro_usd_price_monthly != null ? Number(row.intro_usd_price_monthly) : null,
+    introNgnPriceMonthly: row.intro_ngn_price_monthly != null ? Number(row.intro_ngn_price_monthly) : null,
+    hasStripeIntro: !!row.stripe_intro_coupon_id,
+    hasPaystackIntro: !!row.paystack_intro_plan_code,
     features: Array.isArray(row.features) ? (row.features as string[]) : [],
     isActive: Boolean(row.is_active),
     displayOrder: Number(row.display_order ?? 0),
@@ -98,6 +108,68 @@ export function resolvePlanPricing(plan: MinistryPartnerPlan, countryCode: strin
     : (cycle === 'annual' ? plan.usdPriceAnnual : plan.usdPriceMonthly);
   const suggestedProvider: BillingProvider = isNigeria ? 'paystack' : 'stripe';
   return { currency, amount, suggestedProvider };
+}
+
+// ── Launch offer (0417) ────────────────────────────────────────────────
+
+export interface LaunchOfferStatus {
+  isOpen: boolean;
+  placesLeft: number;
+  introMonths: number;
+  endsAt: string | null;
+}
+
+/** Whether the launch offer is open and how many places are left. Public read. */
+export async function fetchLaunchOfferStatus(): Promise<LaunchOfferStatus | null> {
+  const { data, error } = await supabase.rpc('get_launch_offer_status');
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { is_open: boolean; places_left: number; intro_months: number; ends_at: string | null }
+    | undefined;
+  if (error || !row) return null;
+  return { isOpen: !!row.is_open, placesLeft: row.places_left, introMonths: row.intro_months, endsAt: row.ends_at };
+}
+
+/** The intro price for a plan in the given country, or null when the plan
+ *  has none or its provider (Stripe coupon / Paystack intro plan) isn't set up. */
+export function resolveIntroPrice(plan: MinistryPartnerPlan, countryCode: string): number | null {
+  if (countryCode === 'NG') return plan.hasPaystackIntro ? plan.introNgnPriceMonthly : null;
+  return plan.hasStripeIntro ? plan.introUsdPriceMonthly : null;
+}
+
+export interface MinistryIntroState {
+  introOfferApplied: boolean;
+  introEndsAt: string | null;
+  priceLockedUntil: string | null;
+  billingCycle: string | null;
+  paymentProvider: string | null;
+}
+
+/** The ministry's current subscription as far as the launch offer goes. */
+export async function fetchMinistryIntroState(ministryId: string): Promise<MinistryIntroState | null> {
+  const { data } = await supabase
+    .from('ministry_subscriptions')
+    .select('intro_offer_applied, intro_ends_at, price_locked_until, billing_cycle, payment_provider')
+    .eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!data) return null;
+  const r = data as Record<string, unknown>;
+  return {
+    introOfferApplied: Boolean(r.intro_offer_applied),
+    introEndsAt: (r.intro_ends_at as string | null) ?? null,
+    priceLockedUntil: (r.price_locked_until as string | null) ?? null,
+    billingCycle: (r.billing_cycle as string | null) ?? null,
+    paymentProvider: (r.payment_provider as string | null) ?? null,
+  };
+}
+
+/** Move a monthly card (Stripe) subscription onto annual billing in place.
+ *  During the launch offer's intro period this also locks the price for 12 months. */
+export async function switchToAnnual(ministryId: string): Promise<{ success?: boolean; priceLockedUntil?: string | null; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('ministry-checkout', {
+    body: { action: 'switch-annual', ministryId },
+  });
+  if (error) return { error: error.message };
+  const d = data as { success?: boolean; priceLockedUntil?: string | null; error?: string };
+  return d;
 }
 
 /**

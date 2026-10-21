@@ -159,7 +159,13 @@ serve(async (req) => {
     );
     idx++;
 
-    if (!setupAlreadyPaid && finalSetup > 0) {
+    // Launch offer (0417): ministries that joined on the Founding Ministry
+    // offer don't pay the one-time setup fee.
+    const { data: launchRedemption } = await admin
+      .from('ministry_launch_offer_redemptions').select('ministry_id').eq('ministry_id', ministryId).maybeSingle();
+    const setupWaived = !!launchRedemption;
+
+    if (!setupAlreadyPaid && !setupWaived && finalSetup > 0) {
       lineItems.push(
         [`line_items[${idx}][price_data][currency]`, 'usd'],
         [`line_items[${idx}][price_data][unit_amount]`, String(Math.round(finalSetup * 100))],
