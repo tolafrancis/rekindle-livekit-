@@ -1,8 +1,9 @@
 // The Help (?) button in the app header: replay the app tour, learn about the
-// current screen, browse tutorials, read the FAQ, or search for a feature.
+// current screen, browse tutorials, read the FAQ, contact support, or search
+// for a feature.
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HelpCircle, PlayCircle, MapPin, Library, MessageCircleQuestion, Compass, BookOpenText } from 'lucide-react';
+import { HelpCircle, PlayCircle, MapPin, Library, MessageCircleQuestion, Compass, BookOpenText, LifeBuoy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -54,6 +55,9 @@ export const HelpMenu: React.FC<{ className?: string }> = ({ className }) => {
           </DropdownMenuItem>
           <DropdownMenuItem className="gap-2 py-2.5" onClick={() => setFaqOpen(true)}>
             <MessageCircleQuestion className="h-4 w-4 text-purple-600" />{h('faq', 'Frequently Asked Questions')}
+          </DropdownMenuItem>
+          <DropdownMenuItem className="gap-2 py-2.5" onClick={() => navigate('/help')}>
+            <LifeBuoy className="h-4 w-4 text-purple-600" />{h('support', 'Contact support (WhatsApp or email)')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="gap-2 py-2.5" onClick={() => window.dispatchEvent(new CustomEvent(FEATURE_FINDER_OPEN_EVENT))}>

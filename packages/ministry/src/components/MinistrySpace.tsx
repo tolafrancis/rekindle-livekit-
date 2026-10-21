@@ -1941,7 +1941,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             </button>
 
             {/* Guided tour of this ministry space, until it's finished or skipped */}
-            <MinistryTourCard userId={user?.id} suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule} />
+            <MinistryTourCard userId={user?.id} suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule || showMemberMenuSetup} />
 
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
             <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide" data-tour="ministry-quick-links">

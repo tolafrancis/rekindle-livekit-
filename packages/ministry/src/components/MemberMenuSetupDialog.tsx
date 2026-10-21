@@ -3,8 +3,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@rekindle/ui/button';
 import { toast } from '@rekindle/ui/use-toast';
 import { useLanguage } from '@rekindle/features/LanguageContext';
+import { useTutorials } from '@rekindle/features/tutorial/TutorialProvider';
 import { Loader2 } from 'lucide-react';
 import { MEMBER_MENU_PRESETS, saveHiddenMemberMenu } from './memberMenu';
+import { MINISTRY_INTRO_TUTORIAL_ID } from '../tutorials/ministryTourDefinitions';
 
 interface Props {
   ministryId: string;
@@ -18,10 +20,12 @@ interface Props {
 }
 
 /** Shown to a ministry's leaders until they pick a member menu (no
- *  settings.member_menu stored yet). One tap saves a ready-made menu. */
+ *  settings.member_menu stored yet). One tap saves a ready-made menu, then
+ *  the ministry tour starts, covering only the screens that menu shows. */
 export const MemberMenuSetupDialog: React.FC<Props> = ({ ministryId, open, onChosen, onCustomise, onLater }) => {
   const { t } = useLanguage();
   const [saving, setSaving] = useState<string | null>(null);
+  const { start } = useTutorials();
 
   const choose = async (presetId: string, hidden: string[]) => {
     setSaving(presetId);
@@ -33,6 +37,9 @@ export const MemberMenuSetupDialog: React.FC<Props> = ({ ministryId, open, onCho
     }
     toast({ title: t('memberMenu', 'saved', 'Menu saved'), description: t('memberMenu', 'changeLater', 'You can change it any time in Settings › Ministry profile › Member menu.') });
     onChosen(hidden);
+    // Once the dialog has closed and the new menu is on screen, show them
+    // around it.
+    window.setTimeout(() => start(MINISTRY_INTRO_TUTORIAL_ID, { restart: true }), 600);
   };
 
   return (
@@ -41,7 +48,7 @@ export const MemberMenuSetupDialog: React.FC<Props> = ({ ministryId, open, onCho
         <DialogHeader>
           <DialogTitle>{t('memberMenu', 'setupTitle', 'What does your ministry need?')}</DialogTitle>
           <DialogDescription>
-            {t('memberMenu', 'setupBody', 'Pick a menu for your members. A shorter menu is easier to use, especially for people who are new to apps. Nothing is deleted, and you can change it at any time.')}
+            {t('memberMenu', 'setupBody', 'Pick a menu for your members. A shorter menu is easier to use, especially for people who are new to apps. Nothing is deleted, and you can change it at any time. Then we\'ll give you a quick tour.')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

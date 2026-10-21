@@ -36,8 +36,8 @@ export const REKINDLE_TUTORIALS: TutorialDefinition[] = [
       {
         id: 'menu',
         title: 'Your main menu',
-        body: 'Rekindle is organised into a few main areas, such as The Word, Prayers and Community.',
-        instruction: 'You can tap any of them to explore later.',
+        body: 'Rekindle is organised into a few main areas, such as The Word, Prayers and Community. The ones you said you would like help with come first, and the rest are under More.',
+        instruction: 'You can tap any of them to explore later. Change what I see lets you pick again.',
         target: 'primary-nav',
         go: home,
         page: 'home',
@@ -86,7 +86,7 @@ export const REKINDLE_TUTORIALS: TutorialDefinition[] = [
       {
         id: 'help',
         title: 'Help is always here',
-        body: 'Tap the question mark any time to replay this tour, learn about the screen you are on, or browse all the tutorials.',
+        body: 'Tap the question mark any time to replay this tour, learn about the screen you are on, browse all the tutorials, or message our support team on WhatsApp.',
         target: 'help-button',
         go: home,
         page: 'home',
@@ -104,7 +104,7 @@ export const REKINDLE_TUTORIALS: TutorialDefinition[] = [
       {
         id: 'menu',
         title: 'The main menu',
-        body: 'Each icon opens one area of the app.',
+        body: 'Each icon opens one area of the app. Areas you did not pick are under More, and Change what I see puts them back in front.',
         target: 'primary-nav',
         go: home,
         page: 'home',
