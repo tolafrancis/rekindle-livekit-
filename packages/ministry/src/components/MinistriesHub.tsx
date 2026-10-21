@@ -726,7 +726,7 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
               onClick={() => navigate('/faq')}
             >
               <HelpCircle className="h-4 w-4 mr-2" />
-              {t('ministriesHub', 'faq', 'FAQ')}
+              {t('ministriesHub', 'helpFaq', 'Help & FAQ')}
             </Button>
           </div>
 

@@ -28,7 +28,7 @@ import UnsubscribePage from '@rekindle/features/components/UnsubscribePage';
 import { setDeepLink, DEEP_LINK_TAB } from '@rekindle/features/deepLink';
 import { ScrollToTopButton } from '@rekindle/features/components/ScrollToTopButton';
 import { OnboardingTips, MINISTRY_LEADER_TIPS, MINISTRY_MEMBER_TIPS } from '@rekindle/features/components/OnboardingTips';
-import { User, CreditCard, LogOut, ArrowLeft, Home, Bell } from 'lucide-react';
+import { User, CreditCard, LogOut, ArrowLeft, Home, Bell, HelpCircle } from 'lucide-react';
 import { ThemeProvider } from '@rekindle/ui/theme-provider';
 import { Toaster } from '@rekindle/ui/toaster';
 import { ConfirmDialogHost } from '@rekindle/ui/confirm-dialog';
@@ -140,6 +140,9 @@ function BrandedHeader() {
             topOffsetClassName="top-14"
           />
         </div>
+        <Link to="/help" aria-label="Help & support" title="Help & support" className={`${iconBtn} bg-gradient-to-br from-emerald-500 to-teal-600`}>
+          <HelpCircle className="h-4 w-4" />
+        </Link>
         <Link to="/settings/account" aria-label="Account" title="Account" className={`${iconBtn} bg-gradient-to-br from-indigo-500 to-purple-600`}>
           <User className="h-4 w-4" />
         </Link>
@@ -322,6 +325,7 @@ function AppRoutes() {
         <Route path="/books/:id" element={<MinistriesHub />} />
         <Route path="/guide" element={<RekindleTutorialPage />} />
         <Route path="/faq" element={<FaqPage />} />
+        <Route path="/help" element={<FaqPage />} />
         <Route path="/tutorial" element={<RekindleTutorialPage />} />
         <Route path="/settings/account" element={<MemberAccountSettings />} />
         {/* Billing is web-only: native builds ship without purchase surfaces

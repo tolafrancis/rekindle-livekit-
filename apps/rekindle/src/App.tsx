@@ -199,6 +199,7 @@ const App = () => {
                   <Route path="/terms" element={<TermsOfServicePage />} />
                   <Route path="/guide" element={<RekindleTutorialPage />} />
                   <Route path="/faq" element={<FaqPage />} />
+                  <Route path="/help" element={<FaqPage />} />
                   {/* Public, crawlable prayer topics (signed-in visitors are sent to the in-app topic). */}
                   <Route path="/prayers" element={<PublicPrayerIndexPage />} />
                   <Route path="/prayers/:id/:slug?" element={<PublicPrayerTopicPage />} />
