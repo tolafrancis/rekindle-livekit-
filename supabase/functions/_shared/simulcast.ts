@@ -38,6 +38,20 @@ export function isRoomNotFound(err: unknown): boolean {
   return /room does not exist|room not found|not_found/i.test(msg);
 }
 
+/**
+ * Room Composite options for anything the audience watches live: our
+ * recording template (packages/live RecordingTemplatePage) in Speaker layout,
+ * so a screen share or an OBS feed takes the frame. LiveKit's built-in 'grid'
+ * gave every participant an equal tile, so an OBS feed sharing the room with
+ * the host's camera reached YouTube as half a frame (real report 2026-10-21).
+ */
+export function liveCompositeOpts(): { layout: string; customBaseUrl: string } {
+  return {
+    layout: 'speaker',
+    customBaseUrl: Deno.env.get('RECORDING_TEMPLATE_URL') || 'https://app.rekindlebc.com/recording-template',
+  };
+}
+
 const errMessage = (err: unknown) => (err instanceof Error ? err.message : String(err ?? 'Unknown error'));
 
 /**
@@ -69,7 +83,7 @@ export async function startSimulcastEgresses(
     if (row.egress_id) await egressClient.stopEgress(row.egress_id).catch(() => {});
     try {
       const stream = new StreamOutput({ protocol: StreamProtocol.RTMP, urls: [joinRtmpUrl(row.server_url, row.stream_key)] });
-      const info = await egressClient.startRoomCompositeEgress(roomName, { stream }, { layout: 'grid' });
+      const info = await egressClient.startRoomCompositeEgress(roomName, { stream }, liveCompositeOpts());
       await admin.from(table)
         .update({ egress_id: info.egressId, status: 'active', last_error: null, updated_at: new Date().toISOString() })
         .eq(idCol, scope.targetId).eq('platform', row.platform);

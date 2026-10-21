@@ -40,6 +40,7 @@ const MinistryRulesManager = lazy(() => import('./MinistryRulesManager').then((m
 const DevotionalModule = lazy(() => import('@rekindle/features/components/DevotionalModule').then((m) => ({ default: m.DevotionalModule })));
 const MinistryInteractiveMeetings = lazy(() => import('./MinistryInteractiveMeetings').then((m) => ({ default: m.MinistryInteractiveMeetings })));
 const WebinarDashboard = lazy(() => import('@rekindle/live/webinar/WebinarDashboard').then((m) => ({ default: m.WebinarDashboard })));
+const MinistryBibleStudy = lazy(() => import('./MinistryBibleStudy').then((m) => ({ default: m.MinistryBibleStudy })));
 const MinistryRecordingsTab = lazy(() => import('./MinistryRecordingsTab').then((m) => ({ default: m.MinistryRecordingsTab })));
 const MLiveChannel = lazy(() => import('./MLiveChannel').then((m) => ({ default: m.MLiveChannel })));
 const MinistryDonationForm = lazy(() => import('./MinistryDonationForm').then((m) => ({ default: m.MinistryDonationForm })));
@@ -94,6 +95,8 @@ import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOpt
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
+import { groupKey, hiddenMemberMenu, MEMBER_MENU_SAVED_EVENT } from './memberMenu';
+import { MemberMenuSetupDialog } from './MemberMenuSetupDialog';
 import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
 
 const CONSUMER_APP_URL = (import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.rekindlebc.com').replace(/\/+$/, '');
@@ -350,7 +353,16 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     const tab = params.get('tab');
     if (tab) {
       setActiveTab(tab, { replace: true });
+      // ?tab=settings&section=members&tool=new-people opens one Settings
+      // tool (the weekly "new people" reminder links here).
+      const section = params.get('section');
+      if (tab === 'settings' && section) {
+        setSettingsSection(normalizeSettingsSection(section), { replace: true });
+        setSettingsTool(params.get('tool') ?? '', { replace: true });
+      }
       params.delete('tab');
+      params.delete('section');
+      params.delete('tool');
       const query = params.toString();
       window.history.replaceState(
         window.history.state,
@@ -975,6 +987,13 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       title:               devotional.title,
       scripture_reference: devotional.scripture_reference || '',
       scripture_text:      devotional.scripture_text || '',
+      // The reader builds the Scripture slides from scripture_references and the
+      // long "Bible Passage" slide from bible_passage_*; leaving them out here
+      // made the player jump from Scripture Passage straight to the Devotional.
+      scripture_references: (devotional as any).scripture_references,
+      bible_passage_reference: (devotional as any).bible_passage_reference || '',
+      bible_passage_text:  (devotional as any).bible_passage_text || '',
+      background_music_id: (devotional as any).background_music_id,
       content:             devotional.content || '',
       reflection_questions: parseQuestions((devotional as any).reflection_questions),
       prayer:              (devotional as any).prayer || (devotional as any).prayer_focus || '',
@@ -1105,6 +1124,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ],
     },
     { id: 'admin', label: 'Ministry', icon: Building2, gradient: 'from-sky-500 to-blue-600', children: [
+      // Schedule, joining link, materials and recordings for each study in
+      // one place (0414). First, so the Ministry group opens on it.
+      { id: 'study', label: 'Bible Study', icon: BookOpen },
       { id: 'announcements', label: 'Announcements', icon: Megaphone },
       ...(canManageMinistry && ministryEntitlements.caps.broadcastMessaging ? [{ id: 'broadcast', label: 'Broadcast', icon: Send }] : []),
       { id: 'rules', label: 'Rules & Guidelines', icon: ScrollText },
@@ -1135,9 +1157,42 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       ]
     }] : []),
   ];
+  // The leader's member menu (Settings › Ministry profile › Member menu)
+  // hides whole groups or single screens for this ministry. Settings itself
+  // is never hidden.
+  // A menu saved in this session (first-visit dialog or Settings) applies
+  // straight away, before the ministry row is reloaded.
+  const [chosenMemberMenu, setChosenMemberMenu] = useState<string[] | null>(null);
+  useEffect(() => {
+    const onSaved = (e: Event) => {
+      const detail = (e as CustomEvent<{ ministryId: string; hidden: string[] }>).detail;
+      if (detail?.ministryId === ministry.id) setChosenMemberMenu(detail.hidden);
+    };
+    window.addEventListener(MEMBER_MENU_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(MEMBER_MENU_SAVED_EVENT, onSaved);
+  }, [ministry.id]);
+  const memberMenuHidden = chosenMemberMenu ? new Set(chosenMemberMenu) : hiddenMemberMenu(ministry.settings);
+  // Leaders are asked to pick a member menu until they have one. "Not now"
+  // asks again next session.
+  const laterKey = `rk-member-menu-later-${ministry.id}`;
+  const [menuSetupLater, setMenuSetupLater] = useState(() => {
+    try { return sessionStorage.getItem(laterKey) === '1'; } catch { return false; }
+  });
+  const showMemberMenuSetup = canManageMinistry && !chosenMemberMenu && !menuSetupLater
+    && !((ministry.settings as any)?.member_menu);
+  const postponeMemberMenuSetup = () => {
+    try { sessionStorage.setItem(laterKey, '1'); } catch { /* storage blocked: ask again on reload */ }
+    setMenuSetupLater(true);
+  };
+  const isMenuItemHidden = (groupId: string, childId?: string) =>
+    groupId !== 'settings' && (memberMenuHidden.has(groupKey(groupId)) || (!!childId && memberMenuHidden.has(`${groupId}.${childId}`)));
+  const MENU_GROUPS: NavGroup[] = ALL_GROUPS
+    .filter((g) => !isMenuItemHidden(g.id))
+    .map((g) => (g.children ? { ...g, children: g.children.filter((c) => !isMenuItemHidden(g.id, c.id)) } : g));
   // A group whose children were all gated away (e.g. Live on the free plan,
-  // which has neither Live Channel nor Webinars) has nothing to open.
-  const GROUPS = ALL_GROUPS.filter((g) => isFeatureNavGroupOn('ministry', g.id) && (!g.children || g.children.length > 0));
+  // which has neither Live Channel nor Webinars, or every screen hidden from
+  // the member menu) has nothing to open.
+  const GROUPS = MENU_GROUPS.filter((g) => isFeatureNavGroupOn('ministry', g.id) && (!g.children || g.children.length > 0));
 
   // A switched-off group also closes its screens, so a remembered tab or a
   // deep link can't open it: fall back to Home.
@@ -1152,6 +1207,28 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     if (hiddenGroupTabs.split(',').includes(activeTab)) setActiveTab('home');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureTogglesLoaded, hiddenGroupTabs, activeTab]);
+
+  // Screens the leader hid from the member menu close the same way. These
+  // are known on first render (they come with the ministry row), so plan
+  // gating isn't involved. Most groups' children are their own tab; the
+  // word/prayer/community children are sub-views of their group's tab.
+  const menuHiddenKey = [...memberMenuHidden].sort().join(',');
+  useEffect(() => {
+    if (!menuHiddenKey) return;
+    const group = ALL_GROUPS.find((g) => g.id === activeTab)
+      ?? ALL_GROUPS.find((g) => !(g.id in SUBTAB) && g.children?.some((c) => c.id === activeTab));
+    if (!group || group.id === 'settings') return;
+    if (isMenuItemHidden(group.id) || (!(group.id in SUBTAB) && isMenuItemHidden(group.id, activeTab))) {
+      setActiveTab('home');
+      return;
+    }
+    const sub = SUBTAB[group.id];
+    if (sub && isMenuItemHidden(group.id, sub.value)) {
+      const firstVisible = group.children?.find((c) => !isMenuItemHidden(group.id, c.id));
+      if (firstVisible) sub.set(firstVisible.id); else setActiveTab('home');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuHiddenKey, activeTab, wordSubTab, prayerSubTab, communitySubTab]);
 
   // word/prayer/community children switch a sub-view; 'admin' children are their own activeTab.
   const SUBTAB: Record<string, { value: string; set: (v: any) => void }> = {
@@ -1443,11 +1520,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       userId={user?.id}
       currentPage={tourPage}
       navigate={tourNavigate}
-      suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule}
+      suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule || showMemberMenuSetup}
       groups={GROUPS}
     >
     <Suspense fallback={<TabFallback />}>
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      <MemberMenuSetupDialog
+        ministryId={ministry.id}
+        open={showMemberMenuSetup}
+        onChosen={() => loadMinistryData()}
+        onCustomise={() => { postponeMemberMenuSetup(); openSettingsTool('profile', 'member-menu'); }}
+        onLater={postponeMemberMenuSetup}
+      />
       {/* Pastor's Video Message player overlay */}
       {showVideoPlayer && activeVideoMessage && (
         <Suspense fallback={null}>
@@ -1857,7 +1941,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             </button>
 
             {/* Guided tour of this ministry space, until it's finished or skipped */}
-            <MinistryTourCard userId={user?.id} suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule} />
+            <MinistryTourCard userId={user?.id} suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule || showMemberMenuSetup} />
 
             {/* Quick Links — jump straight to any section, not just via the side rail/hamburger */}
             <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide" data-tour="ministry-quick-links">
@@ -2228,39 +2312,41 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             )}
 
             {/* Prayer Requests — moved to full-width (swapped with Latest Announcements) */}
-            <Card data-tour="ministry-home-requests">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Heart className="h-5 w-5" style={{ color: themeColor }} />
-                  {t('ministrySpace', 'prayerRequests', 'Prayer Requests')}
-                </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => setActiveTab('requests')}>
-                  {t('ministrySpace', 'viewAll', 'View All')}
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {prayerRequests.length > 0 ? (
-                  <div className="space-y-3">
-                    {prayerRequests.slice(0, 3).map(prayer => (
-                      <div key={prayer.id} className="p-4 bg-gray-50 rounded-lg">
-                        <p className="font-medium">{prayer.title}</p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-gray-500">
-                            {t('ministrySpace', 'prayersCount', '{count} prayers').replace('{count}', String(prayer.prayer_count))}
-                          </span>
-                          <Button size="sm" variant="ghost" onClick={() => handlePrayForRequest(prayer.id, prayer.prayer_count)}>
-                            <Heart className="h-3 w-3 mr-1" />
-                            {t('ministrySpace', 'pray', 'Pray')}
-                          </Button>
+            {!isMenuItemHidden('admin', 'requests') && (
+              <Card data-tour="ministry-home-requests">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Heart className="h-5 w-5" style={{ color: themeColor }} />
+                    {t('ministrySpace', 'prayerRequests', 'Prayer Requests')}
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => setActiveTab('requests')}>
+                    {t('ministrySpace', 'viewAll', 'View All')}
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {prayerRequests.length > 0 ? (
+                    <div className="space-y-3">
+                      {prayerRequests.slice(0, 3).map(prayer => (
+                        <div key={prayer.id} className="p-4 bg-gray-50 rounded-lg">
+                          <p className="font-medium">{prayer.title}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-gray-500">
+                              {t('ministrySpace', 'prayersCount', '{count} prayers').replace('{count}', String(prayer.prayer_count))}
+                            </span>
+                            <Button size="sm" variant="ghost" onClick={() => handlePrayForRequest(prayer.id, prayer.prayer_count)}>
+                              <Heart className="h-3 w-3 mr-1" />
+                              {t('ministrySpace', 'pray', 'Pray')}
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">{t('ministrySpace', 'noPrayerRequestsShort', 'No prayer requests')}</p>
-                )}
-              </CardContent>
-            </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-8">{t('ministrySpace', 'noPrayerRequestsShort', 'No prayer requests')}</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Upcoming Events */}
             <Card data-tour="ministry-home-events">
@@ -3051,6 +3137,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         )}
 
         {/* Interactive Meetings Tab */}
+        {activeTab === 'study' && (
+          <MinistryBibleStudy ministryId={ministry.id} canManage={canManageMinistry} />
+        )}
         {activeTab === 'meetings' && (
           <MinistryInteractiveMeetings
             ministryId={ministry.id}

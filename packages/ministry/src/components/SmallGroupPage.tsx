@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -16,6 +16,8 @@ import {
 import { groupChatApi, chatErrorText, type ChatMember } from '../lib/groupChatApi';
 import { useIsWide } from '../lib/useIsWide';
 import { GroupChatView } from './chat/GroupChatView';
+
+const MinistryBibleStudy = lazy(() => import('./MinistryBibleStudy').then((m) => ({ default: m.MinistryBibleStudy })));
 
 interface SmallGroupPageProps {
   groupId: string;
@@ -345,6 +347,18 @@ export const SmallGroupPage: React.FC<SmallGroupPageProps> = ({ groupId, onBack 
           </span>
           <ChevronRight className="h-5 w-5 text-muted-foreground" />
         </button>
+      )}
+
+      {/* The group's Bible study (0415). Members see it once their leaders set
+          one up; leaders and assistant leaders set it up here. */}
+      {isMember && (
+        <Suspense fallback={null}>
+          <MinistryBibleStudy
+            ministryId={group.ministry_id}
+            smallGroupId={group.id}
+            canManage={myMembership?.role === 'leader' || myMembership?.role === 'assistant_leader'}
+          />
+        </Suspense>
       )}
 
       {isMember && whatsappNotifyAvailable && (

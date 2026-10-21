@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaqList } from './FaqList';
+import { TestimonialsSection } from './TestimonialsSection';
 import { Menu, X } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 import { isNativeApp, isDesktopApp } from '../platform';
@@ -108,7 +109,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   ].filter(a => a.play || a.apple || a.windows || a.mac);
   const hasStoreLinks = showStores && appCards.length > 0;
   const hasMobileStoreLinks = showStores && appCards.some(a => a.play || a.apple);
-  const ANDROID_APK_URL = links.androidApk;
+  // Never inside the native apps: Play policy bans pointing users at an APK.
+  const ANDROID_APK_URL = showStores ? links.androidApk : '';
   const windowsCaption = t('landing', 'windowsGetIt', "DOWNLOAD FOR");
 
   return (
@@ -597,6 +599,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
             </div>
           </section>
         )}
+
+        {/* Testimonials — published app_testimonials; renders nothing if none. */}
+        <TestimonialsSection />
 
         {/* FAQ — admin-managed (faq_items); FaqList renders nothing if empty. */}
         <section id="faq" style={{ background: '#fff', padding: '100px 0' }}>

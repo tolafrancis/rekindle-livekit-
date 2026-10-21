@@ -18,7 +18,9 @@ import {
 
 // Section Components
 import { MinistryOverviewDashboard } from './MinistryOverviewDashboard';
-import { normalizeSettingsSection, SECTIONS, SECTION_TOOLS, type SettingsSectionId } from './ministrySettingsSections';
+import { MinistryMemberMenuSettings } from './MinistryMemberMenuSettings';
+import { MinistryNewPeople } from './MinistryNewPeople';
+import { normalizeSettingsSection, SECTIONS, toolsForSection, type SettingsSectionId } from './ministrySettingsSections';
 
 // Each settings section's managers are their own chunks, fetched when that
 // section is opened. They used to all ship in one ~490 KB file that had to
@@ -77,7 +79,7 @@ interface Ministry {
 
 // Section and tool ids live in their own small module so MinistrySpace can
 // use them without pulling this lazily loaded file into its own chunk.
-export { normalizeSettingsSection, SECTIONS, SECTION_TOOLS } from './ministrySettingsSections';
+export { normalizeSettingsSection, SECTIONS, SECTION_TOOLS, toolsForSection } from './ministrySettingsSections';
 export type { SettingsSectionId } from './ministrySettingsSections';
 
 interface MinistrySettingsHubProps {
@@ -114,7 +116,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
   };
 
   const [ownTool, setOwnTool] = useViewHistory<string>(`ministry-settings-tool-${ministry.id}`, '');
-  const tools = SECTION_TOOLS[currentSection] ?? [];
+  const tools = toolsForSection(currentSection, ministry.country_code);
   const requestedTool = propActiveTool ?? ownTool;
   const currentTool = tools.some((tool) => tool.id === requestedTool) ? requestedTool : (tools[0]?.id ?? '');
   const setCurrentTool = (tool: string, opts?: { replace?: boolean }) => {
@@ -227,7 +229,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
           is_public: formData.is_public,
           social_links: formData.social_links,
           brand_colors: formData.brand_colors,
-          settings: formData.settings,
+          // The member menu is saved from its own tool; keep the stored
+          // choice rather than this form's copy, which may predate it.
+          settings: { ...formData.settings, member_menu: (ministry.settings as any)?.member_menu },
           updated_at: new Date().toISOString()
         })
         .eq('id', ministry.id);
@@ -753,6 +757,9 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
 
           </div>
         )}
+        {currentSection === 'profile' && currentTool === 'member-menu' && (
+          <MinistryMemberMenuSettings ministry={ministry} onUpdate={onUpdate} />
+        )}
         {currentSection === 'profile' && currentTool === 'custom-domain' && (
           <CustomDomainSettings ministryId={ministry.id} />
         )}
@@ -762,6 +769,7 @@ export const MinistrySettingsHub: React.FC<MinistrySettingsHubProps> = ({
 
         {/* Members */}
         {currentSection === 'members' && currentTool === 'members' && <MinistryMembersManager ministryId={ministry.id} />}
+        {currentSection === 'members' && currentTool === 'new-people' && <MinistryNewPeople ministryId={ministry.id} />}
         {currentSection === 'members' && currentTool === 'registrations' && (
           <MinistryRegistrations ministryId={ministry.id} ministryName={ministry.name} />
         )}

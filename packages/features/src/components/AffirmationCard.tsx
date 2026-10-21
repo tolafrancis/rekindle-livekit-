@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { supabase } from '@rekindle/supabase';
@@ -7,7 +7,9 @@ import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { RefreshCw, Share2, Heart, BookOpen, Sparkles, Volume2, X } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
-import { canNativeShare } from '../webShare';
+import { consumeDeepLink, peekDeepLink } from '../deepLink';
+import { shareCardUrl, type ShareCardContent } from '../shareCard';
+import { ShareCardDialog } from './ShareCardDialog';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
 import { scopeBySource, type FeatureContentSource } from '../contentSource';
 
@@ -21,6 +23,7 @@ interface Affirmation {
   is_daily: boolean;
   is_published: boolean;
   translations?: Record<string, any>;
+  ministry_id?: string | null;
 }
 
 interface AffirmationCardProps {
@@ -48,6 +51,15 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
   const [loading, setLoading]               = useState(true);
   const [allAffirmations, setAllAffirmations] = useState<Affirmation[]>([]);
   const [showAudioPreview, setShowAudioPreview] = useState(false);
+  const [shareContent, setShareContent] = useState<ShareCardContent | null>(null);
+  // A shared link (/affirmations/:id) opens that affirmation here instead of today's.
+  const [sharedId] = useState<string | null>(() => {
+    const dl = showDaily && !source ? peekDeepLink() : null;
+    return dl?.type === 'affirmations' ? dl.id : null;
+  });
+  useEffect(() => { if (sharedId) consumeDeepLink('affirmations'); }, [sharedId]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const scrolledRef = useRef(false);
 
   useEffect(() => { loadAffirmations(); }, [category, profile?.affirmation_categories, ministryId, source]);
 
@@ -79,7 +91,15 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
 
       if (data && data.length > 0) {
         setAllAffirmations(data);
-        if (showDaily) {
+        const shared = sharedId && (data.find(d => d.id === sharedId)
+          || (await supabase.from('affirmations').select('*').eq('id', sharedId).eq('is_published', true).maybeSingle()).data);
+        if (shared) {
+          setAffirmation(shared);
+          if (!scrolledRef.current) {
+            scrolledRef.current = true;
+            setTimeout(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
+          }
+        } else if (showDaily) {
           const today = getLocalDateString();
           const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
           const dailyAffirmation = data.find(a => a.schedule_date === today) || data[dayOfYear % data.length];
@@ -115,17 +135,19 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
     }, 300);
   };
 
-  const shareAffirmation = async () => {
+  const shareAffirmation = () => {
     if (!affirmation) return;
     const lz = getLocalizedContent(affirmation, ['title', 'text', 'scripture_reference']);
-    const title = lz.title ? `${lz.title}\n\n` : '';
-    const text = `${title}${lz.text}${lz.scripture_reference ? `\n\n— ${lz.scripture_reference}` : ''}\n\nFrom ${brandName} Daily Affirmations`;
-    if (canNativeShare()) {
-      await navigator.share({ title: lz.title || t('cards', 'dailyAffirmation', 'Daily Affirmation'), text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      toast({ title: t('cards', 'copiedToClipboard', 'Copied to clipboard!'), description: t('cards', 'shareWithOthers', 'Share this with others') });
-    }
+    setShareContent({
+      kind: 'affirmations',
+      label: showDaily ? t('cards', 'dailyAffirmation', 'Daily Affirmation') : t('cards', 'affirmation', 'Affirmation'),
+      title: lz.title,
+      text: lz.text || '',
+      scripture: lz.scripture_reference,
+      category: affirmation.category,
+      url: shareCardUrl('affirmations', affirmation),
+      sharedBy: brandName !== 'ReKindle BC' ? brandName : undefined,
+    });
   };
 
   const saveAffirmation = async () => {
@@ -192,7 +214,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
   const paragraphs = (lz.text || '').split('\n').filter(p => p.trim());
 
   return (
-    <Card className={`overflow-hidden shadow-xl transition-all duration-300 ${isAnimating ? 'scale-95 opacity-50' : 'scale-100 opacity-100'}`}>
+    <Card ref={cardRef} className={`overflow-hidden shadow-xl transition-all duration-300 ${isAnimating ? 'scale-95 opacity-50' : 'scale-100 opacity-100'}`}>
       {/* Header */}
       <div className={`bg-gradient-to-br ${gradient} px-6 pt-6 pb-4 text-white`}>
         <div className="flex items-center justify-between mb-3">
@@ -273,6 +295,7 @@ export const AffirmationCard: React.FC<AffirmationCardProps> = ({
           </div>
         )}
       </CardContent>
+      <ShareCardDialog open={!!shareContent} onOpenChange={(o) => { if (!o) setShareContent(null); }} content={shareContent} />
     </Card>
   );
 };

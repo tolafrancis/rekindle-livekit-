@@ -115,8 +115,9 @@ import {
 // Same env vars LandingPage.tsx's homepage download buttons read — each
 // app's own .env supplies its own release URL at build time, so this
 // resolves correctly whether the page was bundled into rekindle or ministry.
-const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL || '';
-const WINDOWS_INSTALLER_URL = import.meta.env.VITE_WINDOWS_INSTALLER_URL || '';
+// Always empty inside the native apps (Play policy bans off-store installs).
+const ANDROID_APK_URL = isNativeApp() ? '' : (import.meta.env.VITE_ANDROID_APK_URL || '');
+const WINDOWS_INSTALLER_URL = isNativeApp() ? '' : (import.meta.env.VITE_WINDOWS_INSTALLER_URL || '');
 
 interface MeetingData {
   id: string;

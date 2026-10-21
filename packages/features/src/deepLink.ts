@@ -24,6 +24,9 @@ export const DEEP_LINK_TAB: Record<string, string> = {
   'ministry-prayer': 'ministries',
   'ministry-videos': 'ministries',
   'books': 'books',
+  // Declaration / affirmation share cards link here; both live on home.
+  'declarations': 'home',
+  'affirmations': 'home',
   'small-group': 'ministries',
   // Small group chat (notifications link to /messages/:groupId).
   'messages': 'messages',

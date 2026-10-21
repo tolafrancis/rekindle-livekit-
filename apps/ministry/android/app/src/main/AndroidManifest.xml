@@ -69,6 +69,16 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <!-- Keeps a live meeting connected while the app is in the background
+             (MeetingForegroundService, started by MainActivity.setCallActive).
+             Needs the Play Console foreground service declaration for
+             microphone. -->
+        <service
+            android:name=".MeetingForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 
     <!-- Permissions -->
@@ -85,19 +95,21 @@
     <!-- Network state: LiveKit reconnect logic reacts to connectivity changes. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Foreground services: only ScreenShareForegroundService (native screen
-         share) uses one. -->
+    <!-- Foreground services: ScreenShareForegroundService (native screen
+         share, mediaProjection) and MeetingForegroundService (live meetings,
+         microphone). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- No service in this app runs with foregroundServiceType camera or
-         microphone (the only one is ScreenShareForegroundService, type
-         mediaProjection), so these are not needed. Explicitly removed so a
-         library manifest can't merge them back in and re-trigger Play's
-         foreground service declaration for them. -->
+    <!-- No service runs with foregroundServiceType camera. Explicitly removed
+         so a library manifest can't merge it back in and re-trigger Play's
+         foreground service declaration for it. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" tools:node="remove" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Native screen share (NativeScreenSharePlugin / ScreenShareForegroundService) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The app never installs other apps. Removed explicitly so no library
+         manifest can merge it in (Play's Device and Network Abuse policy). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
 
     <!-- Push notifications (Phase 4). Android 13+ requires the runtime prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

@@ -13,7 +13,7 @@ import {
   Building2, Users, DollarSign, Shield, Settings, AlertTriangle,
   RefreshCw, BarChart3, Server, FileText, Flag, Activity,
   Crown, Loader2, TrendingUp, HardDrive, Clock, CheckCircle,
-  XCircle, Database, Zap, MessageSquare, Globe, HelpCircle
+  XCircle, Database, Zap, MessageSquare, Globe, HelpCircle, Quote
 } from 'lucide-react';
 
 import { MinistryTenantManager } from './MinistryTenantManager';
@@ -27,6 +27,7 @@ import { AuditLogsViewer } from './AuditLogsViewer';
 import { FlaggedContentManager } from './FlaggedContentManager';
 import { PlatformAnnouncementsManager } from './PlatformAnnouncementsManager';
 import { FaqManager } from './FaqManager';
+import { TestimonialsManager } from './TestimonialsManager';
 import { AppDownloadLinksManager } from './AppDownloadLinksManager';
 // LanguageManager moved to the main Admin dashboard (AdminDashboard "Languages" tab).
 
@@ -244,7 +245,7 @@ const PlatformAdminDashboard: React.FC = () => {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-[repeat(13,minmax(0,1fr))] gap-1 h-auto p-1 bg-gray-100">
+        <TabsList className="grid w-full grid-cols-5 lg:grid-cols-[repeat(14,minmax(0,1fr))] gap-1 h-auto p-1 bg-gray-100">
           <TabsTrigger value="overview" className="text-xs px-2 py-2">
             <BarChart3 className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabOverview', 'Overview')}
@@ -298,6 +299,10 @@ const PlatformAdminDashboard: React.FC = () => {
           <TabsTrigger value="faq" className="text-xs px-2 py-2">
             <HelpCircle className="h-4 w-4 mr-1" />
             {t('platformAdminDashboard', 'tabFaq', 'FAQ')}
+          </TabsTrigger>
+          <TabsTrigger value="testimonials" className="text-xs px-2 py-2">
+            <Quote className="h-4 w-4 mr-1" />
+            {t('platformAdminDashboard', 'tabTestimonials', 'Testimonials')}
           </TabsTrigger>
           <TabsTrigger value="settings" className="text-xs px-2 py-2">
             <Settings className="h-4 w-4 mr-1" />
@@ -505,6 +510,10 @@ const PlatformAdminDashboard: React.FC = () => {
 
         <TabsContent value="faq" className="mt-6">
           <FaqManager />
+        </TabsContent>
+
+        <TabsContent value="testimonials" className="mt-6">
+          <TestimonialsManager />
         </TabsContent>
 
         {/* Settings Tab — platform-wide feature toggles */}

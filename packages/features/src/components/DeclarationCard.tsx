@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { supabase } from '@rekindle/supabase';
@@ -7,7 +7,9 @@ import { useAuth } from '../AuthContext';
 import { useLanguage } from '../LanguageContext';
 import { RefreshCw, Share2, Heart, BookOpen, Shield, Volume2, X } from 'lucide-react';
 import { toast } from '@rekindle/ui/use-toast';
-import { canNativeShare } from '../webShare';
+import { consumeDeepLink, peekDeepLink } from '../deepLink';
+import { shareCardUrl, type ShareCardContent } from '../shareCard';
+import { ShareCardDialog } from './ShareCardDialog';
 import { HighQualityAudioPlayer } from './HighQualityAudioPlayer';
 import { scopeBySource, type FeatureContentSource } from '../contentSource';
 
@@ -22,6 +24,7 @@ interface Declaration {
   is_daily: boolean;
   is_published: boolean;
   translations?: Record<string, any>;
+  ministry_id?: string | null;
   language?: string;
 }
 
@@ -50,6 +53,15 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
   const [loading, setLoading]                 = useState(true);
   const [allDeclarations, setAllDeclarations] = useState<Declaration[]>([]);
   const [showAudioPreview, setShowAudioPreview] = useState(false);
+  const [shareContent, setShareContent] = useState<ShareCardContent | null>(null);
+  // A shared link (/declarations/:id) opens that declaration here instead of today's.
+  const [sharedId] = useState<string | null>(() => {
+    const dl = showDaily && !source ? peekDeepLink() : null;
+    return dl?.type === 'declarations' ? dl.id : null;
+  });
+  useEffect(() => { if (sharedId) consumeDeepLink('declarations'); }, [sharedId]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const scrolledRef = useRef(false);
 
   useEffect(() => { loadDeclarations(); }, [category, ministryId, source]);
 
@@ -68,7 +80,15 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
 
       if (data && data.length > 0) {
         setAllDeclarations(data);
-        if (showDaily) {
+        const shared = sharedId && (data.find(d => d.id === sharedId)
+          || (await supabase.from('declarations').select('*').eq('id', sharedId).eq('is_published', true).maybeSingle()).data);
+        if (shared) {
+          setDeclaration(shared);
+          if (!scrolledRef.current) {
+            scrolledRef.current = true;
+            setTimeout(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
+          }
+        } else if (showDaily) {
           const today = getLocalDateString();
           const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
           // A declaration scheduled for today wins; otherwise rotate through all published daily
@@ -106,17 +126,19 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
     }, 300);
   };
 
-  const shareDeclaration = async () => {
+  const shareDeclaration = () => {
     if (!declaration) return;
     const lz = getLocalizedContent(declaration, ['title', 'text', 'scripture_reference']);
-    const title = lz.title ? `${lz.title}\n\n` : '';
-    const text = `${title}${lz.text}${lz.scripture_reference ? `\n\n— ${lz.scripture_reference}` : ''}\n\nFrom ${brandName} Daily Declarations`;
-    if (canNativeShare()) {
-      await navigator.share({ title: lz.title || t('cards', 'dailyDeclaration', 'Daily Declaration'), text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      toast({ title: t('cards', 'copiedToClipboard', 'Copied to clipboard!'), description: t('cards', 'shareWithOthers', 'Share this with others') });
-    }
+    setShareContent({
+      kind: 'declarations',
+      label: showDaily ? t('cards', 'dailyDeclaration', 'Daily Declaration') : t('cards', 'declaration', 'Declaration'),
+      title: lz.title,
+      text: lz.text || '',
+      scripture: lz.scripture_reference,
+      category: declaration.category,
+      url: shareCardUrl('declarations', declaration),
+      sharedBy: brandName !== 'ReKindle BC' ? brandName : undefined,
+    });
   };
 
   const saveDeclaration = async () => {
@@ -179,7 +201,7 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
   const paragraphs = (lz.text || '').split('\n').filter(p => p.trim());
 
   return (
-    <Card className={`overflow-hidden shadow-xl transition-all duration-300 ${isAnimating ? 'scale-95 opacity-50' : 'scale-100 opacity-100'}`}>
+    <Card ref={cardRef} className={`overflow-hidden shadow-xl transition-all duration-300 ${isAnimating ? 'scale-95 opacity-50' : 'scale-100 opacity-100'}`}>
 
       {/* Category header */}
       <div className={`bg-gradient-to-br ${gradient} px-6 pt-5 pb-4 text-white`}>
@@ -260,6 +282,7 @@ export const DeclarationCard: React.FC<DeclarationCardProps> = ({
           </div>
         )}
       </CardContent>
+      <ShareCardDialog open={!!shareContent} onOpenChange={(o) => { if (!o) setShareContent(null); }} content={shareContent} />
     </Card>
   );
 };

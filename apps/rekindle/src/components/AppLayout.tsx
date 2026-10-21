@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useOnboardingTips } from '@/hooks/useOnboardingTips';
 import { useUserAnalytics } from '@/hooks/useUserAnalytics';
-import { Flame, Heart, Star, Users, ChevronUp, ChevronDown } from 'lucide-react';
+import { Flame, Heart, Star, Users, ChevronUp, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import {
   Home, LayoutDashboard, Library, FileText, Sparkles, CalendarDays, Book,
   BarChart3, Trophy, LayoutGrid, Quote, UserCheck, Calendar, Bot, Gift,
@@ -32,6 +32,8 @@ import { UpgradePromptModal } from './UpgradePromptModal';
 import { OfflineIndicator } from './OfflineIndicator';
 import { DailyDevotionalWidget } from './DailyDevotionalWidget';
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
+import { NavFocusDialog, NavFocusHomeCard } from '@rekindle/features/components/NavFocusDialog';
+import { navFocusFromProfile } from '@rekindle/features/navFocus';
 import { DevotionalSourceSettings } from './DevotionalSourceSettings';
 import { ErrorBoundary } from './ErrorBoundary';
 import RouteFallback from './RouteFallback';
@@ -350,6 +352,13 @@ const BOTTOM_TABS: { id: string; label: string; labelKey: string; icon: typeof H
   { id: 'prayer',     label: 'Prayer', labelKey: 'prayers',     icon: HandHeart, tab: 'prayer-library' },
   { id: 'ministries', label: 'Church', labelKey: 'bottomChurch', icon: Church,   tab: 'ministries' },
 ];
+// Live and Community can also take a bottom-bar slot when someone picked
+// them in "What would you like help with?" (navFocus).
+const FOCUS_BOTTOM_TABS: typeof BOTTOM_TABS = [
+  ...BOTTOM_TABS,
+  { id: 'live-channels', label: 'Live',      labelKey: 'bottomLive', icon: Radio,      tab: 'live-channels' },
+  { id: 'community',     label: 'Community', labelKey: 'community',  icon: UsersRound, tab: 'community-feed' },
+];
 const HOST_ONLY_LIVE_TABS: LiveChannelsTab[] = ['my-channels', 'meetings', 'analytics'];
 
 // Which sidebar group owns the current tab (the leaf itself, or its parent).
@@ -493,6 +502,12 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   // 0266/0394). Everything reads as shown while the switches load, so this
   // never causes a flash-of-missing-tab for the common case.
   const { isNavGroupOn: isFeatureNavGroupOn, loaded: featureTogglesLoaded } = useFeatureToggles();
+  // What the person said they want help with (navFocus.ts): those groups lead
+  // the menu and the rest sit under More. null (not chosen) shows everything.
+  const navFocus = navFocusFromProfile(profile);
+  const inNavFocus = (groupId: string) => !navFocus || groupId === 'home' || navFocus.includes(groupId);
+  const [showMoreGroups, setShowMoreGroups] = useState(false);
+  const [navFocusOpen, setNavFocusOpen] = useState(false);
 
   useEffect(() => {
     setSearchOpen(false);
@@ -1045,9 +1060,16 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const noCounsellorsDesc = t('appShell', 'noCounsellorsDesc', 'Check back later for available counsellors.');
   const nowPlayingTitle = t('appShell', 'nowPlaying', 'Now playing');
 
+  const shownNavGroups = NAV_GROUPS.filter((group) => isFeatureNavGroupOn('consumer', group.id));
+  const focusNavGroups = shownNavGroups.filter((group) => inNavFocus(group.id));
+  const otherNavGroups = shownNavGroups.filter((group) => !inNavFocus(group.id));
+  // Open "More" by itself when the current page lives there.
+  const moreGroupsOpen = showMoreGroups || otherNavGroups.some((group) => group.id === activeGroup?.id);
+  const railButtonClass = 'group flex shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-center text-[11px] font-semibold leading-tight transition-colors text-gray-500 hover:text-purple-700';
+  const railIconClass = 'flex h-10 w-10 items-center justify-center rounded-2xl transition-colors bg-gray-50 text-gray-600 group-hover:bg-purple-100';
   const renderPrimaryNavigation = (className: string) => (
     <nav className={className} aria-label="Primary navigation" data-tour="primary-nav">
-      {NAV_GROUPS.filter((group) => isFeatureNavGroupOn('consumer', group.id)).map((group) => {
+      {[...focusNavGroups, ...(moreGroupsOpen ? otherNavGroups : [])].map((group) => {
         const Icon = group.icon ?? List;
         const active = activeGroup?.id === group.id;
         return (
@@ -1075,6 +1097,25 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           </button>
         );
       })}
+      {otherNavGroups.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowMoreGroups(!moreGroupsOpen)}
+          aria-expanded={moreGroupsOpen}
+          className={railButtonClass}
+        >
+          <span className={railIconClass}>
+            {moreGroupsOpen ? <ChevronUp className="h-5 w-5" /> : <MoreHorizontal className="h-5 w-5" />}
+          </span>
+          <span>{moreGroupsOpen ? t('navigation', 'less', 'Less') : t('navigation', 'more', 'More')}</span>
+        </button>
+      )}
+      {navFocus && (
+        <button type="button" onClick={() => setNavFocusOpen(true)} className={railButtonClass}>
+          <span className={railIconClass}><SlidersHorizontal className="h-5 w-5" /></span>
+          <span>{t('navFocus', 'change', 'Change what I see')}</span>
+        </button>
+      )}
     </nav>
   );
 
@@ -1206,10 +1247,29 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   const openFeatureFinder = () => window.dispatchEvent(new CustomEvent(OPEN_FEATURE_FINDER_EVENT));
   const openHelp = () => navigate('/faq');
 
-  // Phone "More" sheet: Live and Community, then the account groups.
+  // Phone bottom bar. With a chosen focus it shows Home plus the first three
+  // chosen groups; otherwise Home, Word, Prayer and Church.
+  const bottomTabs = navFocus
+    ? [BOTTOM_TABS[0], ...FOCUS_BOTTOM_TABS.filter((b) => b.id !== 'home' && navFocus.includes(b.id) && isFeatureNavGroupOn('consumer', b.id))
+        .sort((a, b) => NAV_GROUPS.findIndex((g) => g.id === a.id) - NAV_GROUPS.findIndex((g) => g.id === b.id))
+        .slice(0, 3)]
+    : BOTTOM_TABS.filter((b) => b.id === 'home' || isFeatureNavGroupOn('consumer', b.id));
+  const inBottomBar = (groupId: string) => bottomTabs.some((b) => b.id === groupId);
+  const bottomActiveId = activeTab === 'home' ? 'home' : bottomTabs.some((b) => b.id === activeGroup?.id) ? activeGroup?.id : 'more';
+
+  // Phone "More" sheet: the main groups not in the bottom bar (usually Live
+  // and Community), then the account groups.
+  const moreGroupTiles = (['the-word', 'prayer', 'ministries'] as const)
+    .filter((id) => !inBottomBar(id) && isFeatureNavGroupOn('consumer', id))
+    .map((id) => {
+      const group = NAV_GROUPS.find((g) => g.id === id)!;
+      const tab = FOCUS_BOTTOM_TABS.find((b) => b.id === id)!.tab;
+      return { tab, label: groupLabel(group), icon: group.icon };
+    });
   const moreExploreItems: { tab: string; label: string; icon: React.ComponentType<{ className?: string }>; liveTab?: LiveChannelsTab }[] = [
-    ...(isFeatureNavGroupOn('consumer', 'live-channels') ? [{ tab: 'live-channels', label: t('navigation', 'bottomLive', 'Live'), icon: Radio }] : []),
-    ...(isFeatureNavGroupOn('consumer', 'community') ? (SECONDARY_NAV.community ?? []).map((item) => ({ tab: item.tab as string, label: itemLabel(item), icon: item.icon })) : []),
+    ...moreGroupTiles,
+    ...(isFeatureNavGroupOn('consumer', 'live-channels') && !inBottomBar('live-channels') ? [{ tab: 'live-channels', label: t('navigation', 'bottomLive', 'Live'), icon: Radio }] : []),
+    ...(isFeatureNavGroupOn('consumer', 'community') && !inBottomBar('community') ? (SECONDARY_NAV.community ?? []).map((item) => ({ tab: item.tab as string, label: itemLabel(item), icon: item.icon })) : []),
     { tab: 'ai', label: getTabLabel('ai'), icon: Bot },
     ...(groupChats.chats.length > 0 ? [{ tab: 'messages', label: getTabLabel('messages'), icon: MessagesSquare }] : []),
   ];
@@ -1227,9 +1287,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
       <span className="leading-tight">{label}</span>
     </button>
   );
-  const bottomTabs = BOTTOM_TABS.filter((b) => b.id === 'home' || isFeatureNavGroupOn('consumer', b.id));
-  const bottomActiveId = activeTab === 'home' ? 'home' : bottomTabs.some((b) => b.id === activeGroup?.id) ? activeGroup?.id : 'more';
-
   const shellClassName = secondaryItems.length > 0
     ? 'min-h-screen bg-gray-50 pb-16 md:pb-0 md:pl-80'
     : 'min-h-screen bg-gray-50 pb-16 md:pb-0 md:pl-24';
@@ -1528,6 +1585,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
                   <span className="text-sm font-medium opacity-90">{t('appShell', 'watch', 'Watch')}</span>
                 </button>
               )}
+              <NavFocusHomeCard />
               <div data-tour="home-streak">
                 <StreakWidget />
               </div>
@@ -1827,6 +1885,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
             <div className="grid grid-cols-3 gap-1 border-t border-gray-100 pt-3">
               {moreSheetTile('find', t('featureFinder', 'button', 'Find a feature'), Compass, openFeatureFinder)}
               {moreSheetTile('help', t('navigation', 'help', 'Help & FAQ'), HelpCircle, openHelp)}
+              {moreSheetTile('nav-focus', t('navFocus', 'change', 'Change what I see'), SlidersHorizontal, () => setNavFocusOpen(true))}
               {isAdmin && moreSheetTile('admin', getTabLabel('admin'), Shield, () => navigateTab('admin'), activeTab === 'admin')}
               {isAdmin && moreSheetTile('admin-health', getTabLabel('admin-health'), Activity, () => navigateTab('admin-health'), activeTab === 'admin-health')}
               {moreSheetTile('signout', t('auth', 'logout', 'Sign Out'), LogOut, handleSignOut)}
@@ -1834,6 +1893,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           </div>
         </SheetContent>
       </Sheet>
+
+      <NavFocusDialog open={navFocusOpen} onOpenChange={setNavFocusOpen} />
 
       {/* Global Search Modal */}
       {/* Mounted only while open (it renders nothing when closed) so its chunk

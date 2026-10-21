@@ -907,6 +907,39 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
     };
   }, [isPaused, isPlaying, spiritPrayerMode, view]);
 
+  // "Pray in the Spirit" is open-ended: the user stays as long as they like and
+  // ends it themselves, so nothing (slide timer, narration ending) may move on
+  // from it automatically.
+  const isSpiritSlideIndex = (index: number) => slides[index]?.type === 'spirit';
+
+  // Leaving the slide ends prayer time, so its clock doesn't keep running.
+  useEffect(() => {
+    if (!isSpiritSlideIndex(currentSlide)) setSpiritPrayerMode(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSlide]);
+
+  // Keep the screen on during prayer time: a phone that sleeps mid-prayer
+  // suspends the page and the music stops with it.
+  useEffect(() => {
+    if (!spiritPrayerMode || !('wakeLock' in navigator)) return;
+    let lock: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const acquire = () => {
+      (navigator as any).wakeLock.request('screen')
+        .then((l: any) => { if (cancelled) l.release().catch(() => {}); else lock = l; })
+        .catch(() => {});
+    };
+    // The lock drops whenever the page is hidden; take it again on return.
+    const onVisible = () => { if (document.visibilityState === 'visible') acquire(); };
+    acquire();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [spiritPrayerMode]);
+
   // Spirit prayer timer
   useEffect(() => {
     let spiritTimer: NodeJS.Timeout;
@@ -952,7 +985,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
   useEffect(() => { goToNextSlideRef.current = goToNextSlide; }, [goToNextSlide]);
 
   useEffect(() => {
-    if (autoAdvance && !isPaused && !spiritPrayerMode && currentSlide < slides.length - 1 && !isSpeaking && !isAudioActive && !isAudioLoading && view === 'reading') {
+    if (autoAdvance && !isPaused && !spiritPrayerMode && !isSpiritSlideIndex(currentSlide) && currentSlide < slides.length - 1 && !isSpeaking && !isAudioActive && !isAudioLoading && view === 'reading') {
       const duration = slides[currentSlide]?.duration || 30;
       setSlideTimeRemaining(duration);
 
@@ -1034,7 +1067,7 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
       if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
 
       const atBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 20;
-      if (atBottom && autoAdvance && currentSlide < slides.length - 1) {
+      if (atBottom && autoAdvance && currentSlide < slides.length - 1 && !isSpiritSlideIndex(currentSlide)) {
         userScrollTimeoutRef.current = setTimeout(() => {
           setIsUserScrolling(false);
           isUserScrollingRef.current = false;
@@ -1907,6 +1940,9 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
               onComplete={() => {
                 const cur = currentSlideRef.current;
                 setTimeout(() => {
+                  // Never move on from "Pray in the Spirit" — only the user
+                  // ends prayer time (the narration finishing used to cut it off).
+                  if (isSpiritSlideIndex(currentSlideRef.current)) return;
                   if (cur < slides.length - 1) {
                     goToNextSlide();
                   } else {
@@ -2101,7 +2137,16 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
                     </div>
                   )}
                   <Button
-                    onClick={() => setSpiritPrayerMode(!spiritPrayerMode)}
+                    onClick={() => {
+                      if (spiritPrayerMode) {
+                        // Ending prayer time moves on to the closing blessing.
+                        setSpiritPrayerMode(false);
+                        goToNextSlide();
+                      } else {
+                        setSpiritPrayerTime(0);
+                        setSpiritPrayerMode(true);
+                      }
+                    }}
                     variant={spiritPrayerMode ? "secondary" : "default"}
                     className={spiritPrayerMode ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-amber-500 hover:bg-amber-600 text-white border-2 border-amber-400 shadow-lg"}
                   >
