@@ -4,10 +4,10 @@
 -- when it meets, how to join, its materials and its past recordings.
 --
 --   ministry_study_series     a study (e.g. "Wednesday Bible Study",
---                             "Book of John"), with its schedule in words,
---                             an external join link (Zoom etc.) and/or an
---                             in-app meeting whose recordings become the
---                             study's past sessions.
+--                             "Book of John"), with its schedule in words
+--                             and the Rekindle meeting members join, whose
+--                             recordings become the study's past sessions.
+--                             (join_url is kept but not used by the app.)
 --   ministry_study_materials  links (PDFs, docs, videos) for a study,
 --                             optionally tied to a session date.
 --
@@ -21,7 +21,7 @@ create table if not exists public.ministry_study_series (
   title text not null check (char_length(title) between 1 and 120),
   description text check (description is null or char_length(description) <= 1000),
   schedule_text text check (schedule_text is null or char_length(schedule_text) <= 160),
-  join_url text check (join_url is null or join_url ~* '^https?://'),
+  join_url text check (join_url is null or join_url ~* '^https?://'), -- unused by the app; studies join through meeting_id
   meeting_id uuid references public.ministry_video_meetings (id) on delete set null,
   is_active boolean not null default true,
   display_order integer not null default 0,

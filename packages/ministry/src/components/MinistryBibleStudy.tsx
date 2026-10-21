@@ -15,7 +15,7 @@ import { BookOpen, Calendar, ExternalLink, FileText, Loader2, Pencil, Plus, Tras
 
 const MinistryRecordingsTab = lazy(() => import('./MinistryRecordingsTab').then((m) => ({ default: m.MinistryRecordingsTab })));
 
-// Ministry › Bible Study: one page per study with when it meets, how to join,
+// Ministry › Bible Study: one page per study with when it meets, its Rekindle meeting,
 // its materials and its past recordings (ministry_study_series and
 // ministry_study_materials, 0414). Members read it; leaders edit it here.
 
@@ -24,7 +24,6 @@ interface Series {
   title: string;
   description: string | null;
   schedule_text: string | null;
-  join_url: string | null;
   meeting_id: string | null;
   display_order: number;
 }
@@ -51,16 +50,16 @@ interface Meeting {
 interface Props {
   ministryId: string;
   canManage: boolean;
+  /** Opens Ministry › Meetings, where leaders schedule a meeting for a study. */
+  onCreateMeeting?: () => void;
 }
 
-type JoinMode = 'rekindle' | 'link';
-type SeriesDraft = Omit<Series, 'id' | 'display_order'> & { id?: string; joinMode: JoinMode };
-const emptySeries: SeriesDraft = { title: '', description: '', schedule_text: '', join_url: '', meeting_id: null, joinMode: 'rekindle' };
-const toDraft = (s: Series): SeriesDraft => ({ ...s, joinMode: s.join_url && !s.meeting_id ? 'link' : 'rekindle' });
+type SeriesDraft = Omit<Series, 'id' | 'display_order'> & { id?: string };
+const emptySeries: SeriesDraft = { title: '', description: '', schedule_text: '', meeting_id: null };
 
 const isHttpUrl = (u: string) => /^https?:\/\//i.test(u.trim());
 
-export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) => {
+export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage, onCreateMeeting }) => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -75,7 +74,7 @@ export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) =
   const load = async () => {
     setLoading(true);
     const [s, m, mt] = await Promise.all([
-      supabase.from('ministry_study_series').select('id, title, description, schedule_text, join_url, meeting_id, display_order')
+      supabase.from('ministry_study_series').select('id, title, description, schedule_text, meeting_id, display_order')
         .eq('ministry_id', ministryId).eq('is_active', true).order('display_order').order('created_at'),
       supabase.from('ministry_study_materials').select('id, series_id, title, url, session_date')
         .eq('ministry_id', ministryId).order('session_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
@@ -101,16 +100,13 @@ export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) =
   const saveSeries = async () => {
     if (!draft) return;
     if (!draft.title.trim()) return toast({ title: t('bibleStudy', 'titleRequired', 'Give the study a name'), variant: 'destructive' });
-    // One way to join: a Rekindle meeting or a Zoom (or other) link.
-    const useLink = draft.joinMode === 'link';
-    if (useLink && draft.join_url && !isHttpUrl(draft.join_url)) return toast({ title: t('bibleStudy', 'badLink', 'Links must start with https://'), variant: 'destructive' });
     setSaving(true);
     const row = {
       title: draft.title.trim(),
       description: draft.description?.trim() || null,
       schedule_text: draft.schedule_text?.trim() || null,
-      join_url: useLink ? draft.join_url?.trim() || null : null,
-      meeting_id: useLink ? null : draft.meeting_id || null,
+      // Members join through the study's Rekindle meeting.
+      meeting_id: draft.meeting_id || null,
       updated_at: new Date().toISOString(),
     };
     const res = draft.id
@@ -177,7 +173,7 @@ export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) =
             <p className="mt-3 font-medium">{t('bibleStudy', 'empty', 'No Bible studies yet')}</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {canManage
-                ? t('bibleStudy', 'emptyLeader', 'Add a study to give your members one place for its schedule, joining link, materials and recordings.')
+                ? t('bibleStudy', 'emptyLeader', 'Add a study to give your members one place for its schedule, meeting, materials and recordings.')
                 : t('bibleStudy', 'emptyMember', 'Your leaders haven\'t added a Bible study here yet.')}
             </p>
           </CardContent>
@@ -211,7 +207,7 @@ export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) =
                   </div>
                   {canManage && (
                     <div className="flex shrink-0 gap-1">
-                      <Button size="icon" variant="ghost" aria-label={t('bibleStudy', 'edit', 'Edit')} onClick={() => setDraft(toDraft(active))}><Pencil className="h-4 w-4" /></Button>
+                      <Button size="icon" variant="ghost" aria-label={t('bibleStudy', 'edit', 'Edit')} onClick={() => setDraft({ ...active })}><Pencil className="h-4 w-4" /></Button>
                       <Button size="icon" variant="ghost" aria-label={t('bibleStudy', 'delete', 'Delete')} onClick={() => removeSeries(active)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                     </div>
                   )}
@@ -233,13 +229,6 @@ export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) =
                     <Button size="lg" onClick={() => navigate(`/ministry/${ministryId}/meeting/${meeting.id}`)}>
                       <Video className="mr-2 h-5 w-5" />
                       {meeting.is_active ? t('bibleStudy', 'joinNow', 'Join now (live)') : t('bibleStudy', 'join', 'Join the study')}
-                    </Button>
-                  ) : active.join_url ? (
-                    <Button size="lg" asChild>
-                      <a href={active.join_url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="mr-2 h-5 w-5" />
-                        {/zoom\.us/i.test(active.join_url) ? t('bibleStudy', 'joinZoom', 'Join on Zoom') : t('bibleStudy', 'join', 'Join the study')}
-                      </a>
                     </Button>
                   ) : null}
                 </CardContent>
@@ -320,49 +309,31 @@ export const MinistryBibleStudy: React.FC<Props> = ({ ministryId, canManage }) =
                 <Input id="bs-when" value={draft.schedule_text ?? ''} maxLength={160} placeholder={t('bibleStudy', 'whenPlaceholder', 'e.g. Every Wednesday, 7pm')}
                   onChange={(e) => setDraft({ ...draft, schedule_text: e.target.value })} />
               </div>
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">{t('bibleStudy', 'howJoin', 'How do members join?')}</legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['rekindle', 'link'] as JoinMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      aria-pressed={draft.joinMode === mode}
-                      onClick={() => setDraft({ ...draft, joinMode: mode })}
-                      className={`rounded-lg border p-3 text-left text-sm ${draft.joinMode === mode ? 'border-purple-600 bg-purple-50 font-medium dark:bg-purple-950/30' : 'hover:bg-muted/60'}`}
-                    >
-                      {mode === 'rekindle' ? t('bibleStudy', 'modeRekindle', 'Rekindle meeting') : t('bibleStudy', 'modeLink', 'Zoom link')}
-                    </button>
+              <div className="space-y-1.5">
+                <Label htmlFor="bs-meeting">{t('bibleStudy', 'meeting', 'Rekindle meeting')}</Label>
+                <select
+                  id="bs-meeting"
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={draft.meeting_id ?? ''}
+                  onChange={(e) => setDraft({ ...draft, meeting_id: e.target.value || null })}
+                >
+                  <option value="">{t('bibleStudy', 'pickMeeting', 'Choose a meeting')}</option>
+                  {meetings.map((m) => (
+                    <option key={m.id} value={m.id}>{m.title}</option>
                   ))}
-                </div>
-                {draft.joinMode === 'rekindle' ? (
-                  <div className="space-y-1.5">
-                    <select
-                      id="bs-meeting"
-                      aria-label={t('bibleStudy', 'meeting', 'Rekindle meeting')}
-                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                      value={draft.meeting_id ?? ''}
-                      onChange={(e) => setDraft({ ...draft, meeting_id: e.target.value || null })}
-                    >
-                      <option value="">{t('bibleStudy', 'pickMeeting', 'Choose a meeting')}</option>
-                      {meetings.map((m) => (
-                        <option key={m.id} value={m.id}>{m.title}</option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-muted-foreground">
-                      {t('bibleStudy', 'meetingHint', 'Members join it from this page, it sends the meeting\'s reminders, and its recordings show under Past sessions. Create one under Ministry › Meetings.')}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Input id="bs-link" aria-label={t('bibleStudy', 'link', 'Zoom link')} value={draft.join_url ?? ''} placeholder="https://zoom.us/j/…"
-                      onChange={(e) => setDraft({ ...draft, join_url: e.target.value })} />
-                    <p className="text-xs text-muted-foreground">
-                      {t('bibleStudy', 'linkHint', 'Paste the Zoom invite link. Recordings can be added under Study materials.')}
-                    </p>
-                  </div>
-                )}
-              </fieldset>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {t('bibleStudy', 'meetingHint', 'Members join it from this page, it sends the meeting\'s reminders, and its recordings show under Past sessions.')}
+                  {onCreateMeeting && (
+                    <>
+                      {' '}
+                      <button type="button" className="font-medium text-purple-700 underline" onClick={() => { setDraft(null); onCreateMeeting(); }}>
+                        {t('bibleStudy', 'createMeeting', 'Create a new meeting')}
+                      </button>
+                    </>
+                  )}
+                </p>
+              </div>
             </div>
           )}
           <DialogFooter>
