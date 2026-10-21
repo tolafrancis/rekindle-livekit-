@@ -109,8 +109,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   ].filter(a => a.play || a.apple || a.windows || a.mac);
   const hasStoreLinks = showStores && appCards.length > 0;
   const hasMobileStoreLinks = showStores && appCards.some(a => a.play || a.apple);
-  // Never inside the native apps: Play policy bans pointing users at an APK.
-  const ANDROID_APK_URL = showStores ? links.androidApk : '';
   const windowsCaption = t('landing', 'windowsGetIt', "DOWNLOAD FOR");
 
   return (
@@ -279,28 +277,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
                 a.play && <StoreBadge key={a.play} href={a.play} caption={playCaption} label={a.name} />,
                 a.apple && <StoreBadge key={a.apple} href={a.apple} caption={appleCaption} label={a.name} store="apple" />,
               ])}
-            </div>
-          )}
-
-          {/* Native app downloads — each button is hidden independently until its
-              app-specific release URL is configured, so this row can show one,
-              both, or neither depending on what's been released. */}
-          {ANDROID_APK_URL && (
-            <div className="rk-a rk-d3" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginTop: 22 }}>
-              {ANDROID_APK_URL && (
-                <a href={ANDROID_APK_URL} download style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 10,
-                  background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)',
-                  color: '#fff', padding: '10px 22px', borderRadius: 100, fontSize: '.88rem', fontWeight: 500,
-                  textDecoration: 'none', transition: 'background .2s',
-                }}
-                  onMouseOver={e => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
-                  onMouseOut={e => (e.currentTarget.style.background = 'rgba(255,255,255,.06)')}
-                >
-                  <span aria-hidden style={{ fontSize: '1.1rem' }}>🤖</span>
-                  {t('landing', 'androidDownload', "Download for Android (APK)")}
-                </a>
-              )}
             </div>
           )}
 

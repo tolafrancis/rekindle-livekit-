@@ -116,7 +116,6 @@ import {
 // app's own .env supplies its own release URL at build time, so this
 // resolves correctly whether the page was bundled into rekindle or ministry.
 // Always empty inside the native apps (Play policy bans off-store installs).
-const ANDROID_APK_URL = isNativeApp() ? '' : (import.meta.env.VITE_ANDROID_APK_URL || '');
 const WINDOWS_INSTALLER_URL = isNativeApp() ? '' : (import.meta.env.VITE_WINDOWS_INSTALLER_URL || '');
 
 interface MeetingData {
@@ -675,21 +674,13 @@ const MeetingJoinPage: React.FC = () => {
               not that the handoff glitched — offer the actual install, same
               URLs as the homepage's download buttons, hidden independently
               until each is configured. */}
-          {(ANDROID_APK_URL || WINDOWS_INSTALLER_URL) && (
+          {WINDOWS_INSTALLER_URL && (
             <>
               {' · '}
               {t('skeleton', 'dontHaveApp', "don't have the app?")}{' '}
-              {ANDROID_APK_URL && (
-                <a href={ANDROID_APK_URL} download className="underline">
-                  {t('skeleton', 'downloadAndroid', 'download Android')}
-                </a>
-              )}
-              {ANDROID_APK_URL && WINDOWS_INSTALLER_URL && ' / '}
-              {WINDOWS_INSTALLER_URL && (
-                <a href={WINDOWS_INSTALLER_URL} download className="underline">
-                  {t('skeleton', 'downloadWindows', 'download Windows')}
-                </a>
-              )}
+              <a href={WINDOWS_INSTALLER_URL} download className="underline">
+                {t('skeleton', 'downloadWindows', 'download Windows')}
+              </a>
             </>
           )}
         </p>
