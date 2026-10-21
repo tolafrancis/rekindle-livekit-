@@ -218,6 +218,13 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
   }, [ministryId, config?.waba_id]);
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
+  // Ministries that joined on the launch offer don't pay the setup fee
+  // (create-whatsapp-subscription leaves it off the checkout).
+  const [setupWaived, setSetupWaived] = useState(false);
+  useEffect(() => {
+    supabase.rpc('ministry_has_launch_offer', { p_ministry_id: ministryId })
+      .then(({ data }) => setSetupWaived(data === true));
+  }, [ministryId]);
   useEffect(() => {
     // Settings needs the template list too, to populate the Small Group
     // Notifications picker below.
@@ -452,13 +459,15 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
               {!config?.setup_fee_paid && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t('ministryWhatsAppConnect', 'oneTimeSetupFee', 'One-time setup fee')}</span>
-                  <span className="font-semibold">${selectedPlan.setupUsd}</span>
+                  <span className="font-semibold">
+                    {setupWaived ? t('ministryWhatsAppConnect', 'setupFeeWaived', 'Waived (launch offer)') : `$${selectedPlan.setupUsd}`}
+                  </span>
                 </div>
               )}
               {!switchesInPlace && (
                 <div className="flex justify-between border-t pt-2 font-semibold">
                   <span>{t('ministryWhatsAppConnect', 'dueToday', 'Due today')}</span>
-                  <span>${(selectedPlan.monthlyUsd + (config?.setup_fee_paid ? 0 : selectedPlan.setupUsd)).toFixed(2)}</span>
+                  <span>${(selectedPlan.monthlyUsd + (config?.setup_fee_paid || setupWaived ? 0 : selectedPlan.setupUsd)).toFixed(2)}</span>
                 </div>
               )}
             </div>

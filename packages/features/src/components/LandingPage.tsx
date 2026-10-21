@@ -5,6 +5,7 @@ import { Menu, X } from 'lucide-react';
 import { useLanguage } from '../LanguageContext';
 import { isNativeApp, isDesktopApp } from '../platform';
 import { DEFAULT_APP_DOWNLOAD_LINKS, loadAppDownloadLinks, type AppDownloadLinks } from '../appDownloadLinks';
+import { fetchLaunchOfferStatus, type LaunchOfferStatus } from '../ministryBilling';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -98,6 +99,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
   const legalBaseUrl = appContext === 'ministry' ? CONSUMER_APP_URL : '';
   const [links, setLinks] = useState<AppDownloadLinks>(DEFAULT_APP_DOWNLOAD_LINKS);
   useEffect(() => { loadAppDownloadLinks().then(setLinks).catch(() => {}); }, []);
+  // Launch offer banner (0417). Not shown inside the store apps, which don't
+  // advertise prices paid outside the store.
+  const [launchOffer, setLaunchOffer] = useState<LaunchOfferStatus | null>(null);
+  useEffect(() => {
+    if (isNativeApp()) return;
+    fetchLaunchOfferStatus().then(setLaunchOffer).catch(() => {});
+  }, []);
   // Store buttons are for web visitors, not people already inside a native or desktop app.
   const showStores = !isNativeApp() && !isDesktopApp();
   const playCaption = t('landing', 'playGetItOn', "GET IT ON GOOGLE PLAY");
@@ -504,6 +512,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onSignUp, appContex
             <p className="rk-reveal" style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: 12 }}>{t('landing', 'pricingEyebrow', "Free for everyone")}</p>
             <h2 className="rk-reveal" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#0f0a1e' }}>{t('landing', 'pricingTitle', "Free to use. Powered by partners.")}</h2>
             <p className="rk-reveal" style={{ color: '#7c6fa0', fontSize: '1.05rem', maxWidth: 520, marginTop: 14 }}>{t('landing', 'pricingSubtitle', "ReKindle BC is completely free. If it blesses you, partner with us to help keep the mission growing and reaching more people.")}</p>
+            {launchOffer?.isOpen && (
+              <a href={ministryPartnerHref} className="rk-reveal" style={{ display: 'inline-block', marginTop: 24, padding: '14px 20px', borderRadius: 14, background: '#fff7e6', border: '1px solid #f5c66b', color: '#0f0a1e', textDecoration: 'none', fontSize: '.98rem' }}>
+                <strong>{t('landing', 'launchOfferTitle', "Founding Ministry offer:")}</strong>{' '}
+                {t('landing', 'launchOfferBody', "your first {months} months at a launch price.").replace('{months}', String(launchOffer.introMonths))}{' '}
+                {launchOffer.placesLeft > 0 && t('landing', 'launchOfferPlaces', "{n} places left.").replace('{n}', String(launchOffer.placesLeft))}
+              </a>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 20, marginTop: 56, alignItems: 'start' }}>
               {[
                 { name: t('landing', 'tierFreeName', "Free"),               price: '$0',      unit: t('landing', 'tierFreeUnit', "forever"),        desc: t('landing', 'tierFreeDesc', "Everything you need for your daily walk"),      popular: false, cta: t('landing', 'tierFreeCta', "Get Started"),          features: [t('landing', 'tierFree1', "Daily devotionals with audio"),t('landing', 'tierFree2', "Offline access to devotionals"),t('landing', 'tierFree3', "Community prayer wall"),t('landing', 'tierFree4', "Join live channels"),t('landing', 'tierFree8', "Free Ministry Meetings — 10 hrs/month, up to 15 participants"),t('landing', 'tierFree5', "GraceCounsel AI companion"),t('landing', 'tierFree6', "Prayer streaks & Scripture memory"),t('landing', 'tierFree7', "Book a counsellor")] },

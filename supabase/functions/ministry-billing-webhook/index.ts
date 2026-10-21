@@ -116,6 +116,48 @@ async function upsert(sub: {
   await db.from('ministry_groups').update({ subscription_status: sub.status }).eq('id', sub.ministryId);
 }
 
+// Launch offer (0417): record the redemption once and start the intro
+// period. Safe to call more than once for the same ministry (Stripe and
+// Paystack each send more than one event for a new subscription).
+async function recordIntro(i: {
+  ministryId: string; plan: string; provider: 'stripe' | 'paystack'; redeemedBy?: string | null;
+  paystackAuthCode?: string | null;
+}) {
+  const db = admin();
+  const { error: redErr } = await db.from('ministry_launch_offer_redemptions').upsert({
+    ministry_id: i.ministryId, plan: i.plan, provider: i.provider, redeemed_by: i.redeemedBy ?? null,
+  }, { onConflict: 'ministry_id', ignoreDuplicates: true });
+  if (redErr) console.error('[ministry-billing-webhook] launch offer redemption write failed:', redErr);
+
+  const { data: offer } = await db.from('ministry_launch_offer').select('intro_months').maybeSingle();
+  const months = (offer as { intro_months?: number } | null)?.intro_months ?? 3;
+  const { data: sub } = await db
+    .from('ministry_subscriptions').select('id, intro_ends_at')
+    .eq('ministry_id', i.ministryId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!sub) return;
+  const s = sub as { id: string; intro_ends_at: string | null };
+  const ends = new Date();
+  ends.setMonth(ends.getMonth() + months);
+  const { error } = await db.from('ministry_subscriptions').update({
+    intro_offer_applied: true,
+    ...(s.intro_ends_at ? {} : { intro_ends_at: ends.toISOString() }),
+    ...(i.paystackAuthCode ? { paystack_authorization_code: i.paystackAuthCode } : {}),
+  }).eq('id', s.id);
+  if (error) {
+    console.error('[ministry-billing-webhook] intro fields write failed:', error, { ministryId: i.ministryId });
+    Sentry.captureMessage(`ministry-billing-webhook: intro fields write failed for ${i.ministryId} — ${error.message}`, 'error');
+  }
+}
+
+// Paystack events for a subscription the rollover created (no checkout
+// metadata) are matched to the ministry by subscription code.
+async function ministryForPaystackSub(code: string | undefined): Promise<string | null> {
+  if (!code) return null;
+  const { data } = await admin()
+    .from('ministry_subscriptions').select('ministry_id').eq('paystack_subscription_code', code).maybeSingle();
+  return (data as { ministry_id: string } | null)?.ministry_id ?? null;
+}
+
 // Paystack add-on purchases (ministry-checkout's purchase-addon action) are
 // their own separate Paystack subscription per purchase — distinguished from
 // a base-plan event by metadata.addon, and upserted into ministry_addons
@@ -165,6 +207,9 @@ serve(async (req) => {
           stripeCustId: obj.customer,
           amount: obj.amount_total ?? null,
         });
+        if (meta.intro === 'true') {
+          await recordIntro({ ministryId, plan: meta.plan, provider: 'stripe', redeemedBy: meta.redeemed_by });
+        }
       } else if (event.type === 'customer.subscription.updated') {
         // Stripe subscription statuses: active, past_due, unpaid, canceled, trialing, incomplete...
         await upsert({
@@ -196,8 +241,10 @@ serve(async (req) => {
 
       const event = JSON.parse(raw);
       const meta = event.data?.metadata ?? {};
-      const ministryId = meta.ministry_id;
+      const subCode: string | undefined = event.data?.subscription_code ?? event.data?.subscription?.subscription_code;
+      const ministryId = meta.ministry_id ?? await ministryForPaystackSub(subCode);
       if (!ministryId) return new Response('ignored (not ministry)', { status: 200 });
+      const isIntro = meta.intro === true || meta.intro === 'true';
 
       const isAddon = meta.addon === true || meta.addon === 'true';
       if (isAddon) {
@@ -223,18 +270,41 @@ serve(async (req) => {
           paystackSubCode: event.data?.subscription_code,
           paystackCustCode: event.data?.customer?.customer_code,
         });
+        if (isIntro) {
+          await recordIntro({
+            ministryId, plan: meta.plan, provider: 'paystack', redeemedBy: meta.redeemed_by,
+            paystackAuthCode: event.data?.authorization?.authorization_code ?? null,
+          });
+        }
       } else if (event.event === 'charge.success') {
         await upsert({
           ministryId, plan: meta.plan, cycle: meta.cycle, country: meta.country, status: 'active', provider: 'paystack',
           paystackCustCode: event.data?.customer?.customer_code,
           amount: event.data?.amount ?? null,
         });
+        if (isIntro) {
+          // The first charge carries the card authorization the rollover
+          // needs to start the normal-price subscription later.
+          await recordIntro({
+            ministryId, plan: meta.plan, provider: 'paystack', redeemedBy: meta.redeemed_by,
+            paystackAuthCode: event.data?.authorization?.authorization_code ?? null,
+          });
+        }
       } else if (event.event === 'invoice.payment_failed') {
         await admin().from('ministry_subscriptions')
           .update({ status: 'past_due', updated_at: new Date().toISOString() })
           .eq('ministry_id', ministryId);
         await admin().from('ministry_groups').update({ subscription_status: 'past_due' }).eq('id', ministryId);
       } else if (event.event === 'subscription.disable') {
+        // The rollover disables the intro subscription after starting the
+        // normal one; that isn't the ministry cancelling.
+        const { data: current } = await admin()
+          .from('ministry_subscriptions').select('paystack_subscription_code')
+          .eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const currentCode = (current as { paystack_subscription_code: string | null } | null)?.paystack_subscription_code;
+        if (subCode && currentCode && subCode !== currentCode) {
+          return new Response('ignored (superseded subscription)', { status: 200 });
+        }
         await admin().from('ministry_subscriptions')
           .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
           .eq('ministry_id', ministryId);

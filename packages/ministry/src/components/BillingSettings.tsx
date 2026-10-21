@@ -13,6 +13,12 @@ import {
   fetchMinistryAddons,
   purchaseAddon,
   totalParticipantsPurchased,
+  fetchLaunchOfferStatus,
+  resolveIntroPrice,
+  fetchMinistryIntroState,
+  switchToAnnual,
+  type LaunchOfferStatus,
+  type MinistryIntroState,
   type MinistryPartnerPlan,
   type MinistryAddonCatalogItem,
   type MinistryAddon,
@@ -42,6 +48,8 @@ const money = (amount: number, currency: string) =>
 // simple threshold rather than a per-slug list, so it stays correct if the
 // underlying numbers move later without a code change.
 const formatParticipantCap = (cap: number) => (cap >= 300 ? `${cap.toLocaleString()}+` : cap.toLocaleString());
+
+const formatDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 
 // Recording retention is a storage_pack perk — everyone else stays on the
 // sweep's fixed 7/30-day defaults (see recordingRetention.ts). 'never' maps
@@ -74,6 +82,9 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
   const [myAddons, setMyAddons] = useState<MinistryAddon[]>([]);
   const [buyingAddonId, setBuyingAddonId] = useState<string | null>(null);
 
+  const [launchOffer, setLaunchOffer] = useState<LaunchOfferStatus | null>(null);
+  const [introState, setIntroState] = useState<MinistryIntroState | null>(null);
+
   // undefined = not loaded yet; null = "never delete"; number = custom days.
   const [retentionDays, setRetentionDays] = useState<number | null | undefined>(undefined);
   const [savingRetention, setSavingRetention] = useState(false);
@@ -86,6 +97,15 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
       setPlansLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    fetchLaunchOfferStatus().then(setLaunchOffer);
+  }, []);
+
+  useEffect(() => {
+    if (!currentMinistryId) return;
+    fetchMinistryIntroState(currentMinistryId).then(setIntroState);
+  }, [currentMinistryId]);
 
   useEffect(() => {
     (async () => {
@@ -162,6 +182,30 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
     ? currentPlan.participantCap + purchasedParticipants
     : null;
 
+  // Launch offer: shown to ministries without a paid plan on monthly
+  // billing. ministry-checkout makes the final eligibility check.
+  const introFor = (plan: MinistryPartnerPlan) =>
+    launchOffer?.isOpen && !isPaid && cycle === 'monthly' ? resolveIntroPrice(plan, country) : null;
+  const introMonths = launchOffer?.introMonths ?? 3;
+  const inIntro = !!introState?.introOfferApplied && !!introState.introEndsAt && new Date(introState.introEndsAt) > new Date();
+  const canSwitchAnnual = isPaid && introState?.paymentProvider === 'stripe'
+    && introState.billingCycle !== 'annual' && introState.billingCycle !== 'yearly';
+
+  const onSwitchAnnual = async () => {
+    if (!currentMinistryId) return;
+    setBusy(true);
+    const res = await switchToAnnual(currentMinistryId);
+    setBusy(false);
+    if (res.error || !res.success) {
+      return toast({ title: 'Could not switch to annual', description: res.error ?? '—', variant: 'destructive' });
+    }
+    toast({
+      title: 'Switched to annual billing',
+      description: res.priceLockedUntil ? `Your price is locked until ${formatDate(res.priceLockedUntil)}.` : undefined,
+    });
+    fetchMinistryIntroState(currentMinistryId).then(setIntroState);
+  };
+
   const selectPlan = (plan: MinistryPartnerPlan) => {
     setSelectedPlan(plan);
     setProvider(isNigeria ? 'paystack' : plan.stripePriceIdMonthly || !plan.paypalBillingLinkMonthly ? 'stripe' : 'paypal');
@@ -204,6 +248,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
   // ── Confirmation step ────────────────────────────────────────────────
   if (step === 'confirm' && selectedPlan) {
     const { currency, amount } = resolvePlanPricing(selectedPlan, country, cycle);
+    const intro = provider === 'paypal' ? null : introFor(selectedPlan);
     const availableProviders: BillingProvider[] = isNigeria
       ? ['paystack']
       : (['stripe', 'paypal'] as BillingProvider[]).filter((p) =>
@@ -246,9 +291,21 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
               }
             />
             <Row label="Plan" value={selectedPlan.name} />
-            <Row label="Billing" value={`${money(amount, currency)} / ${cycle === 'annual' ? 'year' : 'month'}`} />
+            <Row
+              label="Billing"
+              value={intro != null
+                ? `${money(intro, currency)} / month for ${introMonths} months, then ${money(amount, currency)} / month`
+                : `${money(amount, currency)} / ${cycle === 'annual' ? 'year' : 'month'}`}
+            />
           </CardContent>
         </Card>
+        {intro != null && (
+          <p className="text-xs text-muted-foreground">
+            Launch offer for new ministries: your card is charged the launch price for the first {introMonths} months,
+            then the normal price each month after that. We'll remind you 7 days before the price changes, and you can
+            cancel any time.
+          </p>
+        )}
         {provider === 'paypal' && (
           <p className="text-xs text-muted-foreground">
             You'll complete payment on PayPal. Your subscription is marked pending until our team confirms the
@@ -258,7 +315,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => setStep('select')} disabled={busy}>Back</Button>
           <Button className="flex-1" onClick={confirmAndPay} disabled={busy}>
-            {busy ? 'Redirecting…' : `Confirm & Pay ${money(amount, currency)}`}
+            {busy ? 'Redirecting…' : `Confirm & Pay ${money(intro ?? amount, currency)}`}
           </Button>
         </div>
       </div>
@@ -302,6 +359,46 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         </Select>
       </div>
 
+      {launchOffer?.isOpen && !isPaid && (
+        <Card className="border-amber-300 bg-amber-50/70 dark:bg-amber-950/20">
+          <CardContent className="pt-6 text-sm space-y-1">
+            <p className="font-semibold">Founding Ministry offer: your first {introMonths} months at a launch price</p>
+            <p className="text-muted-foreground">
+              Open to the first ministries to join, on monthly billing{launchOffer.placesLeft > 0 ? `. ${launchOffer.placesLeft} places left` : ''}.
+              {cycle === 'annual' && ' Switch the toggle to monthly to see launch prices.'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {isPaid && (inIntro || introState?.priceLockedUntil || canSwitchAnnual) && (
+        <Card>
+          <CardContent className="pt-6 text-sm flex flex-wrap items-center gap-3">
+            <div className="space-y-1">
+              {inIntro && currentPlan && (
+                <p>
+                  You're on the launch price until <span className="font-medium">{formatDate(introState!.introEndsAt!)}</span>,
+                  then {money(resolvePlanPricing(currentPlan, country, 'monthly').amount, resolvePlanPricing(currentPlan, country, 'monthly').currency)} a month.
+                </p>
+              )}
+              {introState?.priceLockedUntil && (
+                <p>Your price is locked until <span className="font-medium">{formatDate(introState.priceLockedUntil)}</span>.</p>
+              )}
+              {canSwitchAnnual && (
+                <p className="text-muted-foreground">
+                  Annual billing gives you 2 months free{inIntro ? ' and locks your price for 12 months' : ''}.
+                </p>
+              )}
+            </div>
+            {canSwitchAnnual && (
+              <Button size="sm" className="ml-auto" onClick={onSwitchAnnual} disabled={busy}>
+                {busy ? 'Switching…' : 'Switch to annual'}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Free plan info — not a purchasable row in ministry_partner_plans (that
           table is for paid plans only, priced/selected via checkout), so this
           is a static card rather than DB-driven like the plans grid below. */}
@@ -326,7 +423,10 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         {plans.map((plan) => {
           const { currency, amount } = resolvePlanPricing(plan, country, cycle);
           const isCurrent = plan.slug === currentSlug;
-          const memberRange = plan.maxMembers ? `${plan.minMembers}–${plan.maxMembers} members` : `${plan.minMembers}+ members`;
+          const intro = introFor(plan);
+          // A smaller church can pick any plan for its features, so show the
+          // ceiling rather than a range.
+          const memberRange = plan.maxMembers ? `Up to ${plan.maxMembers.toLocaleString()} members` : `${plan.minMembers}+ members`;
           return (
             <Card key={plan.slug} className={isCurrent ? 'border-primary' : undefined}>
               <CardHeader>
@@ -335,10 +435,22 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                   {isCurrent && <Badge>Current</Badge>}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">{memberRange}</p>
-                <div className="text-2xl font-semibold">
-                  {money(amount, currency)}
-                  <span className="text-sm font-normal text-muted-foreground">/{cycle === 'annual' ? 'yr' : 'mo'}</span>
-                </div>
+                {intro != null ? (
+                  <div>
+                    <div className="text-2xl font-semibold">
+                      {money(intro, currency)}
+                      <span className="text-sm font-normal text-muted-foreground">/mo</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      for {introMonths} months, then {money(amount, currency)}/mo
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-2xl font-semibold">
+                    {money(amount, currency)}
+                    <span className="text-sm font-normal text-muted-foreground">/{cycle === 'annual' ? 'yr' : 'mo'}</span>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
                 {plan.participantCap != null && (

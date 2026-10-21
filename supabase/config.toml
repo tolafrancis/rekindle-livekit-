@@ -285,6 +285,12 @@ enabled = true
 # function). Gateway JWT verification stays on.
 verify_jwt = true
 
+[functions.ministry-intro-rollover]
+enabled = true
+# Daily cron (service-role JWT, see 0417) moves Paystack launch-offer
+# subscriptions onto the normal plan. Checks the role inside the function.
+verify_jwt = true
+
 [functions.ministry-billing-webhook]
 enabled = true
 # Stripe and Paystack sign these requests themselves, not with a Supabase
