@@ -22,7 +22,7 @@ interface SharedContentPreviewProps {
 const CONSUMER_APP_URL = (import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.rekindlebc.com').replace(/\/+$/, '');
 const MINISTRY_APP_URL = (import.meta.env.VITE_MINISTRY_APP_URL || 'https://rekindlebc.com').replace(/\/+$/, '');
 
-type Kind = 'devotional-series' | 'prayer-series' | 'prayer-topics' | 'prayer-watch' | 'daily-devotional' | 'ministry-devotional' | 'ministry-prayer' | 'books';
+type Kind = 'devotional-series' | 'prayer-series' | 'prayer-topics' | 'prayer-watch' | 'daily-devotional' | 'ministry-devotional' | 'ministry-prayer' | 'books' | 'declarations' | 'affirmations';
 
 const KIND_LABEL: Record<string, string> = {
   'devotional-series': 'Devotional',
@@ -33,7 +33,12 @@ const KIND_LABEL: Record<string, string> = {
   'prayer-watch': 'Prayer Watch',
   'ministry-prayer': 'Prayer',
   'books': 'Book Summary',
+  'declarations': 'Declaration',
+  'affirmations': 'Affirmation',
 };
+
+// Declarations and affirmations are short, so the preview shows them whole.
+const isSpokenWord = (k: string) => k === 'declarations' || k === 'affirmations';
 
 // Prayer-watch entries live in the same prayer_topics table (is_prayer_watch),
 // so they share the topic preview treatment.
@@ -148,6 +153,11 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
             const { data: mn } = await supabase.rpc('get_ministry_name', { mid: data.ministry_id });
             if (active && mn) setMinistryName(typeof mn === 'string' ? mn : (mn as any));
           }
+        } else if (isSpokenWord(kind)) {
+          const { data, error: e1 } = await supabase
+            .from(kind).select('*').eq('id', id).single();
+          if (e1) throw e1;
+          if (active) setItem(data);
         } else if (kind === 'books') {
           const { data: book, error: e1 } = await supabase
             .from('book_summaries').select('*').eq('id', id).single();
@@ -185,6 +195,8 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
       </div>
       <h3 className="font-serif text-xl font-bold text-gray-900">
         {kind === 'books' ? 'Read the full summary — free'
+          : kind === 'declarations' ? 'Get a new declaration every day — free'
+          : kind === 'affirmations' ? 'Get a new affirmation every day — free'
           : (isPrayerTopic(kind) || kind === 'ministry-prayer') ? 'Begin praying — free'
           : isSingleDevotional(kind) ? "Finish today's devotional — free"
           : kind === 'prayer-series' ? 'Start this prayer journey — free'
@@ -467,6 +479,26 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
             </div>
           );
         })()}
+
+        {/* Declaration / affirmation — the whole thing, as it appears in the app */}
+        {isSpokenWord(kind) && item?.text && (
+          <div className="rounded-2xl border bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-purple-700">
+              <Quote className="h-4 w-4" /> {kind === 'declarations' ? 'Speak it over your day' : 'Say it with faith'}
+            </div>
+            <div className="space-y-4">
+              {String(item.text).split('\n').filter((p: string) => p.trim()).map((p: string, i: number) => (
+                <p key={i} className="text-justify text-lg leading-relaxed text-gray-800">{p}</p>
+              ))}
+            </div>
+            {item.scripture_reference && (
+              <div className="mt-5 flex items-center gap-2 border-t border-gray-100 pt-3 text-amber-700">
+                <BookOpen className="h-4 w-4 shrink-0" />
+                <span className="italic font-medium">— {item.scripture_reference}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Prayer series (metadata preview only) */}
         {kind === 'prayer-series' && !error && (
