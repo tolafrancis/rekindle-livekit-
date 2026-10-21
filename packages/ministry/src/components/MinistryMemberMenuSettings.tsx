@@ -22,7 +22,10 @@ interface Props {
  *  ministry's menu shows. See memberMenu.ts for how it is stored. */
 export const MinistryMemberMenuSettings: React.FC<Props> = ({ ministry, onUpdate }) => {
   const { t } = useLanguage();
-  const saved = useMemo(() => hiddenMemberMenu(ministry.settings), [ministry.settings]);
+  // What was last saved here, so the Save button settles even before the
+  // ministry row is reloaded.
+  const [savedHere, setSavedHere] = useState<Set<string> | null>(null);
+  const saved = useMemo(() => savedHere ?? hiddenMemberMenu(ministry.settings), [savedHere, ministry.settings]);
   const [hidden, setHidden] = useState<Set<string>>(saved);
   const [saving, setSaving] = useState(false);
   useEffect(() => setHidden(saved), [saved]);
@@ -46,6 +49,7 @@ export const MinistryMemberMenuSettings: React.FC<Props> = ({ ministry, onUpdate
       toast({ title: t('memberMenu', 'saveFailed', 'Could not save the menu'), description: error, variant: 'destructive' });
       return;
     }
+    setSavedHere(new Set(hidden));
     toast({ title: t('memberMenu', 'saved', 'Menu saved') });
     onUpdate();
   };

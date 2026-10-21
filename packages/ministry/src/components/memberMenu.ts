@@ -10,6 +10,9 @@ import { supabase } from '@rekindle/supabase';
 // This sits under the platform feature switches and plan caps: it can only
 // hide more, never bring back something those hide.
 
+/** Fired on window after a save: detail { ministryId, hidden }. */
+export const MEMBER_MENU_SAVED_EVENT = 'rk-member-menu-saved';
+
 export interface MemberMenuItem {
   key: string;
   label: string;
@@ -113,5 +116,8 @@ export async function saveHiddenMemberMenu(ministryId: string, hidden: string[])
     .from('ministry_groups')
     .update({ settings, updated_at: new Date().toISOString() })
     .eq('id', ministryId);
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+  // Lets an open MinistrySpace apply the new menu without a reload.
+  window.dispatchEvent(new CustomEvent(MEMBER_MENU_SAVED_EVENT, { detail: { ministryId, hidden } }));
+  return {};
 }

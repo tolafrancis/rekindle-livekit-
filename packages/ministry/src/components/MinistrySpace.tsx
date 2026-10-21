@@ -94,7 +94,8 @@ import { MinistryWhatsAppOptIn } from '@rekindle/features/components/WhatsAppOpt
 import MinistryContentManager from './MinistryContentManager';
 import { getFeatureSource, fetchFeatureContent } from '@rekindle/features/contentSource';
 import { useFeatureToggles } from '@rekindle/features/featureToggles';
-import { groupKey, hiddenMemberMenu } from './memberMenu';
+import { groupKey, hiddenMemberMenu, MEMBER_MENU_SAVED_EVENT } from './memberMenu';
+import { MemberMenuSetupDialog } from './MemberMenuSetupDialog';
 import { canShowPurchaseUI, publicWebOrigin } from '@rekindle/features/platform';
 
 const CONSUMER_APP_URL = (import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.rekindlebc.com').replace(/\/+$/, '');
@@ -1155,7 +1156,30 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // The leader's member menu (Settings › Ministry profile › Member menu)
   // hides whole groups or single screens for this ministry. Settings itself
   // is never hidden.
-  const memberMenuHidden = hiddenMemberMenu(ministry.settings);
+  // A menu saved in this session (first-visit dialog or Settings) applies
+  // straight away, before the ministry row is reloaded.
+  const [chosenMemberMenu, setChosenMemberMenu] = useState<string[] | null>(null);
+  useEffect(() => {
+    const onSaved = (e: Event) => {
+      const detail = (e as CustomEvent<{ ministryId: string; hidden: string[] }>).detail;
+      if (detail?.ministryId === ministry.id) setChosenMemberMenu(detail.hidden);
+    };
+    window.addEventListener(MEMBER_MENU_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(MEMBER_MENU_SAVED_EVENT, onSaved);
+  }, [ministry.id]);
+  const memberMenuHidden = chosenMemberMenu ? new Set(chosenMemberMenu) : hiddenMemberMenu(ministry.settings);
+  // Leaders are asked to pick a member menu until they have one. "Not now"
+  // asks again next session.
+  const laterKey = `rk-member-menu-later-${ministry.id}`;
+  const [menuSetupLater, setMenuSetupLater] = useState(() => {
+    try { return sessionStorage.getItem(laterKey) === '1'; } catch { return false; }
+  });
+  const showMemberMenuSetup = canManageMinistry && !chosenMemberMenu && !menuSetupLater
+    && !((ministry.settings as any)?.member_menu);
+  const postponeMemberMenuSetup = () => {
+    try { sessionStorage.setItem(laterKey, '1'); } catch { /* storage blocked: ask again on reload */ }
+    setMenuSetupLater(true);
+  };
   const isMenuItemHidden = (groupId: string, childId?: string) =>
     groupId !== 'settings' && (memberMenuHidden.has(groupKey(groupId)) || (!!childId && memberMenuHidden.has(`${groupId}.${childId}`)));
   const MENU_GROUPS: NavGroup[] = ALL_GROUPS
@@ -1492,11 +1516,18 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       userId={user?.id}
       currentPage={tourPage}
       navigate={tourNavigate}
-      suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule}
+      suspended={needsRulesAcceptance || showVideoPlayer || showDevotionalModule || showMemberMenuSetup}
       groups={GROUPS}
     >
     <Suspense fallback={<TabFallback />}>
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      <MemberMenuSetupDialog
+        ministryId={ministry.id}
+        open={showMemberMenuSetup}
+        onChosen={() => loadMinistryData()}
+        onCustomise={() => { postponeMemberMenuSetup(); openSettingsTool('profile', 'member-menu'); }}
+        onLater={postponeMemberMenuSetup}
+      />
       {/* Pastor's Video Message player overlay */}
       {showVideoPlayer && activeVideoMessage && (
         <Suspense fallback={null}>
