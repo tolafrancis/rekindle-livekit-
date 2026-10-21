@@ -1895,6 +1895,50 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
 
   useEffect(() => { if (isConnected) setWasEverConnected(true); }, [isConnected]);
 
+  // Background drop recovery (2026-10-21): minimizing the browser or app
+  // during a call often costs the connection. Mobile browsers suspend hidden
+  // tabs (iOS Safari always, Chrome when it freezes the page, and LiveKit
+  // disconnects itself on 'freeze'/'pagehide'), and Android can freeze a
+  // backgrounded app's process. Previously that left the "You've been
+  // disconnected — Rejoin" card waiting on return. Rejoin on our own instead,
+  // once per return to the page: either the drop happened while hidden, or it
+  // surfaced within a few seconds of coming back (a frozen page only notices
+  // the dead socket once it runs again). Removed / ended / joined-elsewhere
+  // drops are never auto-rejoined.
+  const droppedMidCall = wasEverConnected && !isConnected && !isConnecting && !isJoining && !meetingEnded
+    && !isExitingRef.current
+    && disconnectReason !== 'removed' && disconnectReason !== 'room_deleted' && disconnectReason !== 'duplicate_identity';
+  const lastResumedAtRef = useRef(0);
+  const autoRejoinedForRef = useRef(-1);
+  const handleJoinRoomRef = useRef(handleJoinRoom);
+  handleJoinRoomRef.current = handleJoinRoom;
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') lastResumedAtRef.current = Date.now(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+  useEffect(() => {
+    if (!droppedMidCall) return;
+    const rejoinOnce = () => {
+      const resumedAt = lastResumedAtRef.current;
+      if (autoRejoinedForRef.current === resumedAt) return;
+      autoRejoinedForRef.current = resumedAt;
+      console.log('[DailyVideoCall] Rejoining after the page came back from the background');
+      void handleJoinRoomRef.current();
+    };
+    if (document.visibilityState === 'visible') {
+      if (lastResumedAtRef.current && Date.now() - lastResumedAtRef.current < 15000) rejoinOnce();
+      return;
+    }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      lastResumedAtRef.current = Date.now();
+      rejoinOnce();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [droppedMidCall]);
+
   // Apply backstage's chosen initial mic/camera/background state once the
   // room actually connects — setVideoBackground needs the real LiveKit
   // wrapper, which useDailyRoom only creates inside joinRoom() itself, so
