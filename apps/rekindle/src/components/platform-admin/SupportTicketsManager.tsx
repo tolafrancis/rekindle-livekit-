@@ -19,7 +19,8 @@ import {
 interface SupportTicket {
   id: string;
   ministry_id: string;
-  user_id: string;
+  submitted_by: string;
+  source?: string;
   subject: string;
   description: string;
   category: string;
@@ -311,13 +312,18 @@ export const SupportTicketsManager: React.FC<SupportTicketsManagerProps> = ({ on
                         <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                           <span className="flex items-center gap-1">
                             <Building2 className="h-3 w-3" />
-                            {ministry?.name || t('supportTicketsManager', 'unknownMinistry', 'Unknown Ministry')}
+                            {ministry?.name || (ticket.ministry_id
+                              ? t('supportTicketsManager', 'unknownMinistry', 'Unknown Ministry')
+                              : t('supportTicketsManager', 'appUser', 'App user'))}
                           </span>
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {new Date(ticket.created_at).toLocaleDateString()}
                           </span>
                           <Badge variant="outline" className="text-xs">{ticket.category}</Badge>
+                          {ticket.source === 'help_assistant' && (
+                            <Badge className="bg-violet-100 text-violet-700 text-xs">{t('supportTicketsManager', 'fromHelpAssistant', 'From Rekindle Help')}</Badge>
+                          )}
                         </div>
                       </div>
                       {ticket.status === 'open' && (
