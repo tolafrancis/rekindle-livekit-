@@ -9,7 +9,7 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
-import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
+import { Loader2, Mic, Pause, Play, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
 import { publicWebOrigin } from '@rekindle/features/platform';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
@@ -54,6 +54,9 @@ const ERROR_COPY: Record<string, string> = {
 };
 
 const MIC_TIMEOUT_MS = 20000;
+/** Meter level (0–1) below which the room counts as quiet, and how long before suggesting Pause. */
+const QUIET_LEVEL = 0.08;
+const QUIET_NUDGE_MS = 45000;
 const CONNECT_TIMEOUT_MS = 20000;
 
 /** Rejects with Error(code) if `p` hasn't settled within `ms`. */
@@ -99,6 +102,12 @@ export const SpeakerPage: React.FC = () => {
   useSpeakerScripture(sessionId, speakerToken, phase === 'live');
   const [languages, setLanguages] = useState<{ source: string; target: string } | null>(null);
   const [muted, setMuted] = useState(false);
+  // "Pause" (2026-10-23): the speaker stays in the room (so the session
+  // never times out) but sends no audio, so songs, prayers and room noise
+  // during a break aren't translated. After QUIET_NUDGE_MS of silence while
+  // unpaused, suggest it.
+  const lastSoundAtRef = useRef(Date.now());
+  const [quietNudge, setQuietNudge] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Copy listener link');
   const [level, setLevel] = useState(0); // 0–1, simple mic-activity meter
 
@@ -154,7 +163,7 @@ export const SpeakerPage: React.FC = () => {
   // Full screen (2026-09-23, real report: speaker at a podium wants browser
   // chrome/notification bars out of the way so the caption text reads as
   // large as possible from a distance). Native Fullscreen API on the whole
-  // page container, not just the captions box, so Mute/Stop stay reachable
+  // page container, not just the captions box, so Pause/Stop stay reachable
   // too. Not every browser supports it (notably iOS Safari has none for
   // arbitrary elements, only <video>) — detect support up front and simply
   // don't render the button rather than offering something that'll silently
@@ -403,7 +412,9 @@ export const SpeakerPage: React.FC = () => {
       const { calculateVolume, cleanup } = createAudioAnalyser(track);
       analyserCleanupRef.current = cleanup;
       const tick = () => {
-        setLevel(Math.min(1, calculateVolume() * 4)); // scaled up — normal speech volume reads low otherwise
+        const v = Math.min(1, calculateVolume() * 4); // scaled up — normal speech volume reads low otherwise
+        if (v > QUIET_LEVEL) lastSoundAtRef.current = Date.now();
+        setLevel(v);
         levelRafRef.current = requestAnimationFrame(tick);
       };
       tick();
@@ -524,8 +535,19 @@ export const SpeakerPage: React.FC = () => {
     if (!roomRef.current) return;
     const next = !muted;
     await roomRef.current.localParticipant.setMicrophoneEnabled(!next);
+    lastSoundAtRef.current = Date.now();
+    setQuietNudge(false);
     setMuted(next);
   };
+
+  useEffect(() => {
+    if (phase !== 'live' || muted) { setQuietNudge(false); return; }
+    lastSoundAtRef.current = Date.now();
+    const interval = setInterval(() => {
+      setQuietNudge(Date.now() - lastSoundAtRef.current > QUIET_NUDGE_MS);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [phase, muted]);
 
   const stopSpeaking = async () => {
     if (!sessionId || !speakerToken) return;
@@ -622,10 +644,17 @@ export const SpeakerPage: React.FC = () => {
 
           {phase === 'live' && (
             <>
-              <div className="flex items-center justify-center gap-3">
-                <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-sm sm:text-base font-medium text-emerald-400">Live — you're being translated</span>
-              </div>
+              {muted ? (
+                <div className="flex items-center justify-center gap-3">
+                  <span className="flex h-3 w-3 rounded-full bg-amber-400" />
+                  <span className="text-sm sm:text-base font-medium text-amber-300">Paused — nothing is being translated</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-sm sm:text-base font-medium text-emerald-400">Live — you're being translated</span>
+                </div>
+              )}
 
               {/* Simple mic-activity meter — reassurance that audio is actually
                   reaching the room, not just that the button says "Live". */}
@@ -635,6 +664,33 @@ export const SpeakerPage: React.FC = () => {
                   style={{ width: `${Math.round(level * 100)}%` }}
                 />
               </div>
+
+              {/* Pause/Stop sit right under the meter (2026-10-23) so pausing
+                  for a song or prayer is one reach away, not a scroll. */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className={muted
+                    ? 'flex-1 text-white border-amber-400/60 bg-amber-400/15 hover:bg-amber-400/25 hover:text-white'
+                    : 'flex-1 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white'}
+                  onClick={toggleMute}
+                >
+                  {muted ? <Play className="h-4 w-4 mr-2" /> : <Pause className="h-4 w-4 mr-2" />}
+                  {muted ? 'Resume' : 'Pause'}
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={stopSpeaking}>
+                  <Square className="h-4 w-4 mr-2" /> Stop
+                </Button>
+              </div>
+              {muted ? (
+                <p className="text-xs text-amber-200/80 text-center">Listeners hear nothing while paused. Tap Resume when you speak again.</p>
+              ) : quietNudge ? (
+                <p className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 text-center">
+                  Not speaking right now? Tap <strong>Pause</strong> so music or room noise isn't translated.
+                </p>
+              ) : (
+                <p className="text-xs text-white/40 text-center">Tip: tap Pause during songs, prayers or breaks, and keep this screen open.</p>
+              )}
 
               {/* What the system is hearing — informational only. Nothing here
                   delays or changes translation, which keeps firing instantly
@@ -787,16 +843,6 @@ export const SpeakerPage: React.FC = () => {
                     )}
                   </div>
                 ))}
-              </div>
-
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white" onClick={toggleMute}>
-                  {muted ? <Mic className="h-4 w-4 mr-2" /> : <MicOff className="h-4 w-4 mr-2" />}
-                  {muted ? 'Unmute' : 'Mute'}
-                </Button>
-                <Button variant="destructive" className="flex-1" onClick={stopSpeaking}>
-                  <Square className="h-4 w-4 mr-2" /> Stop
-                </Button>
               </div>
 
               <div className="border-t border-white/10 pt-4 space-y-2">
