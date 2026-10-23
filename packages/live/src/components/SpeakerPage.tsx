@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Room, RoomEvent, createAudioAnalyser } from 'livekit-client';
+import { Room, RoomEvent, createAudioAnalyser, createLocalAudioTrack } from 'livekit-client';
 import type { LocalAudioTrack } from 'livekit-client';
 import { supabase } from '@rekindle/supabase';
 import { useSpeakerScripture } from './useSpeakerScripture';
@@ -47,8 +47,34 @@ const ERROR_COPY: Record<string, string> = {
   session_stopped: "Translation for this session was stopped, so listeners can't hear you any more. Ask the person who sent this link for a new one.",
   session_failed: 'Translation for this session stopped because of a problem on our side. Ask the person who sent this link for a new one.',
   mic_denied: 'Microphone access was denied — check your browser/site permissions and reload.',
+  mic_in_use: 'Your microphone is being used by another app or tab. Close it (or leave any call on this device) and try again.',
+  mic_timeout: "Your browser never answered the microphone request. If you opened this link inside WhatsApp, Facebook or another app, open it in Chrome or Safari instead, then allow the microphone.",
+  connect_timeout: 'Connecting took too long. Check your internet connection (try switching between Wi-Fi and mobile data) and try again.',
   connection_failed: 'Could not connect. Check your internet connection and try again.',
 };
+
+const MIC_TIMEOUT_MS = 20000;
+const CONNECT_TIMEOUT_MS = 20000;
+
+/** Rejects with Error(code) if `p` hasn't settled within `ms`. */
+function withTimeout<T>(p: Promise<T>, ms: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(code)), ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/** getUserMedia's failure → ERROR_COPY key. */
+function micErrorCode(err: unknown): string {
+  if (err instanceof Error && err.message === 'mic_timeout') return 'mic_timeout';
+  const name = (err as { name?: string })?.name;
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') return 'mic_denied';
+  if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') return 'mic_in_use';
+  return 'mic_denied';
+}
 
 /**
  * /speak/:sessionId?t=<speaker token> — "Speaker Link" (migration 0288),
@@ -364,12 +390,33 @@ export const SpeakerPage: React.FC = () => {
   const startSpeaking = async () => {
     if (!sessionId || !speakerToken) return;
     setErrorCode(null);
-    setPhase('requesting-mic');
 
+    // Real report (2026-10-23): the page sat on its spinner forever. Nothing
+    // here had a time limit, and the mic was only requested after joining
+    // the room, so a permission prompt that never showed (in-app browsers,
+    // a mic another app holds) left room.connect/setMicrophoneEnabled
+    // pending with no way out. Ask for the mic first, put a deadline on
+    // each step, and turn every hang into a message the speaker can act on.
+    setPhase('requesting-mic');
+    let micTrack: LocalAudioTrack;
+    const micRequest = createLocalAudioTrack();
+    try {
+      micTrack = await withTimeout(micRequest, MIC_TIMEOUT_MS, 'mic_timeout');
+    } catch (err) {
+      // A prompt answered after we gave up would otherwise leave the mic on.
+      micRequest.then((t) => t.stop(), () => {});
+      console.error('[SpeakerPage] microphone request failed:', err);
+      setErrorCode(micErrorCode(err));
+      setPhase('error');
+      return;
+    }
+
+    setPhase('connecting');
     const { data, error } = await supabase.functions.invoke('translation-speaker-token', {
       body: { sessionId, speakerToken },
     });
     if (error || !data?.token) {
+      micTrack.stop();
       setErrorCode((data as { error?: string })?.error ?? 'connection_failed');
       setPhase('error');
       return;
@@ -377,7 +424,6 @@ export const SpeakerPage: React.FC = () => {
     const { url, token, identity, sourceLanguage, targetLanguage } = data as SpeakerToken;
     setLanguages({ source: sourceLanguage, target: targetLanguage });
 
-    setPhase('connecting');
     const room = new Room();
     roomRef.current = room;
     room.on(RoomEvent.Disconnected, () => {
@@ -389,25 +435,19 @@ export const SpeakerPage: React.FC = () => {
     try {
       // Publish-only: this page never plays anything from the room, so don't
       // download every track in it (2026-10-10).
-      await room.connect(url, token, { autoSubscribe: false });
-      // setMicrophoneEnabled handles getUserMedia + publish in one call —
-      // if the visitor denies the permission prompt, it rejects here. Its
-      // own return value is the fresh publication, no separate lookup needed.
-      const micPub = await room.localParticipant.setMicrophoneEnabled(true);
-      if (micPub?.track) startLevelMeter(micPub.track as LocalAudioTrack);
+      await withTimeout(room.connect(url, token, { autoSubscribe: false }), CONNECT_TIMEOUT_MS, 'connect_timeout');
+      await withTimeout(room.localParticipant.publishTrack(micTrack), CONNECT_TIMEOUT_MS, 'connect_timeout');
+      startLevelMeter(micTrack);
       setPhase('live');
       startCaptions(sessionId);
       console.log('[SpeakerPage] publishing as', identity);
     } catch (err) {
       console.error('[SpeakerPage] connect/publish failed:', err);
-      await room.disconnect().catch(() => {});
+      micTrack.stop();
       roomRef.current = null;
-      setErrorCode(
-        err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
-          ? 'mic_denied'
-          : 'connection_failed',
-      );
+      setErrorCode(err instanceof Error && err.message === 'connect_timeout' ? 'connect_timeout' : 'connection_failed');
       setPhase('error');
+      await room.disconnect().catch(() => {});
     }
   };
 
