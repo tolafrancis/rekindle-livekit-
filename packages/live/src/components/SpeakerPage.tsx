@@ -196,6 +196,31 @@ export const SpeakerPage: React.FC = () => {
     if (el) el.scrollTop = el.scrollHeight;
   }, [captions]);
 
+  // Keep the screen on while live (2026-10-23, real report: translation
+  // "suddenly stopped" mid-service). With no wake lock the phone's screen
+  // timed out ~30s after the speaker paused, Chrome suspended the page, the
+  // speaker dropped out of the room, and the bot ends a session whose speaker
+  // is gone for 30s, so the link was dead from then on.
+  useEffect(() => {
+    if (phase !== 'live' || !('wakeLock' in navigator)) return;
+    let lock: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const acquire = () => {
+      (navigator as any).wakeLock.request('screen')
+        .then((l: any) => { if (cancelled) l.release().catch(() => {}); else lock = l; })
+        .catch(() => {});
+    };
+    // The lock drops whenever the page is hidden; take it again on return.
+    const onVisible = () => { if (document.visibilityState === 'visible') acquire(); };
+    acquire();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [phase]);
+
   useEffect(() => {
     if (!sessionId || !speakerToken) {
       setErrorCode('missing_link');
