@@ -46,14 +46,15 @@ const ERROR_COPY: Record<string, string> = {
   session_ended: 'This speaker session has already ended.',
   session_stopped: "Translation for this session was stopped, so listeners can't hear you any more. Ask the person who sent this link for a new one.",
   session_failed: 'Translation for this session stopped because of a problem on our side. Ask the person who sent this link for a new one.',
-  mic_denied: 'Microphone access was denied — check your browser/site permissions and reload.',
+  mic_denied: 'The microphone is blocked for this site. Click the icon at the left of the address bar (on a phone: browser menu → Site settings), set Microphone to Allow, then press Try again.',
+  mic_missing: 'No microphone was found. Plug one in or check your sound settings, then press Try again.',
   mic_in_use: 'Your microphone is being used by another app or tab. Close it (or leave any call on this device) and try again.',
-  mic_timeout: "Your browser never answered the microphone request. If you opened this link inside WhatsApp, Facebook or another app, open it in Chrome or Safari instead, then allow the microphone.",
+  mic_timeout: "The microphone request wasn't answered. Click the icon at the left of the address bar, set Microphone to Allow, then press Try again. If you opened this link inside WhatsApp or another app, open it in Chrome or Safari instead.",
   connect_timeout: 'Connecting took too long. Check your internet connection (try switching between Wi-Fi and mobile data) and try again.',
   connection_failed: 'Could not connect. Check your internet connection and try again.',
 };
 
-const MIC_TIMEOUT_MS = 20000;
+const MIC_TIMEOUT_MS = 60000; // long enough to find and answer the browser's permission popup
 /** Meter level (0–1) below which the room counts as quiet, and how long before suggesting Pause. */
 const QUIET_LEVEL = 0.08;
 const QUIET_NUDGE_MS = 45000;
@@ -75,6 +76,7 @@ function micErrorCode(err: unknown): string {
   if (err instanceof Error && err.message === 'mic_timeout') return 'mic_timeout';
   const name = (err as { name?: string })?.name;
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') return 'mic_denied';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') return 'mic_missing';
   if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') return 'mic_in_use';
   return 'mic_denied';
 }
@@ -433,6 +435,16 @@ export const SpeakerPage: React.FC = () => {
     // a mic another app holds) left room.connect/setMicrophoneEnabled
     // pending with no way out. Ask for the mic first, put a deadline on
     // each step, and turn every hang into a message the speaker can act on.
+    // Already blocked for this site: say so now instead of waiting on a
+    // prompt the browser will never show (2026-10-23, desktop Chrome).
+    try {
+      const status = await navigator.permissions?.query({ name: 'microphone' as PermissionName });
+      if (status?.state === 'denied') {
+        setErrorCode('mic_denied');
+        setPhase('error');
+        return;
+      }
+    } catch { /* Permissions API can't query the mic here (e.g. older Safari) — just ask */ }
     setPhase('requesting-mic');
     let micTrack: LocalAudioTrack;
     const micRequest = createLocalAudioTrack();
@@ -637,7 +649,9 @@ export const SpeakerPage: React.FC = () => {
             <div className="flex flex-col items-center gap-2 py-2">
               <Loader2 className="h-6 w-6 animate-spin text-white/60" />
               <p className="text-xs text-white/50">
-                {phase === 'requesting-mic' ? 'Requesting microphone access…' : 'Connecting…'}
+                {phase === 'requesting-mic'
+                  ? 'Allow the microphone in your browser’s popup (on a computer it appears near the address bar)…'
+                  : 'Connecting…'}
               </p>
             </div>
           )}
