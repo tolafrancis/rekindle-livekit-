@@ -13,7 +13,8 @@
 -- hasn't had speech for 60 minutes (or never had any, 60 minutes after it
 -- started), and tell the bot to leave. 60 minutes leaves room for a long
 -- worship set with no speech. 'scripture_only' sessions don't run the bot
--- and are left alone.
+-- and are left alone. The session is marked as ended at its last speech,
+-- so the idle time doesn't count against the ministry's hours.
 -- =====================================================================
 
 begin;
@@ -31,7 +32,9 @@ begin
   for v_session in
     update public.translation_sessions
        set status = 'ended',
-           ended_at = now(),
+           -- End it at the last speech, so the silent hour (or the whole
+           -- session, if no one ever spoke) doesn't use translation hours.
+           ended_at = coalesce(interim_updated_at, started_at, created_at),
            error_message = 'Stopped: no speech for 60 minutes.'
      where status in ('initialising', 'joining', 'active', 'paused')
        and session_kind in ('translate', 'captions', 'notes')
