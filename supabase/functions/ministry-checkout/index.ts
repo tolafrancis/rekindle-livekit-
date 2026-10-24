@@ -50,7 +50,7 @@ const form = (obj: Record<string, string>) =>
 function catalogRowLabel(addonType: string, unitGb: number | null, unitMembers: number | null, unitHours: number | null, unitParticipants: number | null): string {
   if (addonType === 'storage_pack') return `+${(unitGb ?? 0) >= 1024 ? `${(unitGb ?? 0) / 1024} TB` : `${unitGb} GB`} storage`;
   if (addonType === 'member_block') return `+${unitMembers ?? 0} members`;
-  if (addonType === 'live_translation') return `Live Translation — ${unitHours ?? 0} hours/month`;
+  if (addonType === 'live_translation') return `Live Translation, voice + captions, ${unitHours ?? 0} hours/month`;
   if (addonType === 'participant_block') return `+${unitParticipants ?? 0} participants`;
   return 'Gift Aid claims & HMRC submission';
 }
