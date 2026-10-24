@@ -63,7 +63,10 @@ as $$
 $$;
 
 -- Minutes used this calendar month. Replaces 0343's version, which also
--- counted captions and AI notes and had no per-session cap.
+-- counted captions and AI notes and had no per-session cap. Time more than
+-- 60 minutes after the last speech isn't counted: a session left open with
+-- nobody speaking is ended by 0420, but the bot stamps its own end time
+-- when it leaves, so ended_at alone would still bill the idle hours.
 create or replace function public.get_ministry_translation_minutes_used(p_ministry_id uuid)
 returns numeric
 language sql
@@ -71,9 +74,11 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce(sum(least(
-           extract(epoch from (coalesce(ended_at, now()) - greatest(started_at, date_trunc('month', now())))) / 60,
-           360)), 0)
+  select coalesce(sum(greatest(least(
+           extract(epoch from (
+             least(coalesce(ended_at, now()), coalesce(interim_updated_at, started_at) + interval '60 minutes')
+             - greatest(started_at, date_trunc('month', now())))) / 60,
+           360), 0)), 0)
     from public.translation_sessions
    where ministry_id = p_ministry_id
      and session_kind = 'translate'
