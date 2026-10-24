@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Room, RoomEvent, createAudioAnalyser } from 'livekit-client';
+import { Room, RoomEvent, createAudioAnalyser, createLocalAudioTrack } from 'livekit-client';
 import type { LocalAudioTrack } from 'livekit-client';
 import { supabase } from '@rekindle/supabase';
 import { useSpeakerScripture } from './useSpeakerScripture';
@@ -9,7 +9,7 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
-import { Loader2, Mic, MicOff, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
+import { Loader2, Mic, Pause, Play, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
 import { publicWebOrigin } from '@rekindle/features/platform';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
@@ -47,8 +47,37 @@ const ERROR_COPY: Record<string, string> = {
   session_stopped: "Translation for this session was stopped, so listeners can't hear you any more. Ask the person who sent this link for a new one.",
   session_failed: 'Translation for this session stopped because of a problem on our side. Ask the person who sent this link for a new one.',
   mic_denied: 'Microphone access was denied — check your browser/site permissions and reload.',
+  mic_in_use: 'Your microphone is being used by another app or tab. Close it (or leave any call on this device) and try again.',
+  mic_timeout: "Your browser never answered the microphone request. If you opened this link inside WhatsApp, Facebook or another app, open it in Chrome or Safari instead, then allow the microphone.",
+  connect_timeout: 'Connecting took too long. Check your internet connection (try switching between Wi-Fi and mobile data) and try again.',
   connection_failed: 'Could not connect. Check your internet connection and try again.',
 };
+
+const MIC_TIMEOUT_MS = 20000;
+/** Meter level (0–1) below which the room counts as quiet, and how long before suggesting Pause. */
+const QUIET_LEVEL = 0.08;
+const QUIET_NUDGE_MS = 45000;
+const CONNECT_TIMEOUT_MS = 20000;
+
+/** Rejects with Error(code) if `p` hasn't settled within `ms`. */
+function withTimeout<T>(p: Promise<T>, ms: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(code)), ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/** getUserMedia's failure → ERROR_COPY key. */
+function micErrorCode(err: unknown): string {
+  if (err instanceof Error && err.message === 'mic_timeout') return 'mic_timeout';
+  const name = (err as { name?: string })?.name;
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') return 'mic_denied';
+  if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') return 'mic_in_use';
+  return 'mic_denied';
+}
 
 /**
  * /speak/:sessionId?t=<speaker token> — "Speaker Link" (migration 0288),
@@ -73,6 +102,12 @@ export const SpeakerPage: React.FC = () => {
   useSpeakerScripture(sessionId, speakerToken, phase === 'live');
   const [languages, setLanguages] = useState<{ source: string; target: string } | null>(null);
   const [muted, setMuted] = useState(false);
+  // "Pause" (2026-10-23): the speaker stays in the room (so the session
+  // never times out) but sends no audio, so songs, prayers and room noise
+  // during a break aren't translated. After QUIET_NUDGE_MS of silence while
+  // unpaused, suggest it.
+  const lastSoundAtRef = useRef(Date.now());
+  const [quietNudge, setQuietNudge] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Copy listener link');
   const [level, setLevel] = useState(0); // 0–1, simple mic-activity meter
 
@@ -128,7 +163,7 @@ export const SpeakerPage: React.FC = () => {
   // Full screen (2026-09-23, real report: speaker at a podium wants browser
   // chrome/notification bars out of the way so the caption text reads as
   // large as possible from a distance). Native Fullscreen API on the whole
-  // page container, not just the captions box, so Mute/Stop stay reachable
+  // page container, not just the captions box, so Pause/Stop stay reachable
   // too. Not every browser supports it (notably iOS Safari has none for
   // arbitrary elements, only <video>) — detect support up front and simply
   // don't render the button rather than offering something that'll silently
@@ -169,6 +204,31 @@ export const SpeakerPage: React.FC = () => {
     const el = captionsScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [captions]);
+
+  // Keep the screen on while live (2026-10-23, real report: translation
+  // "suddenly stopped" mid-service). With no wake lock the phone's screen
+  // timed out ~30s after the speaker paused, Chrome suspended the page, the
+  // speaker dropped out of the room, and the bot ends a session whose speaker
+  // is gone for 30s, so the link was dead from then on.
+  useEffect(() => {
+    if (phase !== 'live' || !('wakeLock' in navigator)) return;
+    let lock: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const acquire = () => {
+      (navigator as any).wakeLock.request('screen')
+        .then((l: any) => { if (cancelled) l.release().catch(() => {}); else lock = l; })
+        .catch(() => {});
+    };
+    // The lock drops whenever the page is hidden; take it again on return.
+    const onVisible = () => { if (document.visibilityState === 'visible') acquire(); };
+    acquire();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [phase]);
 
   useEffect(() => {
     if (!sessionId || !speakerToken) {
@@ -352,7 +412,9 @@ export const SpeakerPage: React.FC = () => {
       const { calculateVolume, cleanup } = createAudioAnalyser(track);
       analyserCleanupRef.current = cleanup;
       const tick = () => {
-        setLevel(Math.min(1, calculateVolume() * 4)); // scaled up — normal speech volume reads low otherwise
+        const v = Math.min(1, calculateVolume() * 4); // scaled up — normal speech volume reads low otherwise
+        if (v > QUIET_LEVEL) lastSoundAtRef.current = Date.now();
+        setLevel(v);
         levelRafRef.current = requestAnimationFrame(tick);
       };
       tick();
@@ -364,12 +426,33 @@ export const SpeakerPage: React.FC = () => {
   const startSpeaking = async () => {
     if (!sessionId || !speakerToken) return;
     setErrorCode(null);
-    setPhase('requesting-mic');
 
+    // Real report (2026-10-23): the page sat on its spinner forever. Nothing
+    // here had a time limit, and the mic was only requested after joining
+    // the room, so a permission prompt that never showed (in-app browsers,
+    // a mic another app holds) left room.connect/setMicrophoneEnabled
+    // pending with no way out. Ask for the mic first, put a deadline on
+    // each step, and turn every hang into a message the speaker can act on.
+    setPhase('requesting-mic');
+    let micTrack: LocalAudioTrack;
+    const micRequest = createLocalAudioTrack();
+    try {
+      micTrack = await withTimeout(micRequest, MIC_TIMEOUT_MS, 'mic_timeout');
+    } catch (err) {
+      // A prompt answered after we gave up would otherwise leave the mic on.
+      micRequest.then((t) => t.stop(), () => {});
+      console.error('[SpeakerPage] microphone request failed:', err);
+      setErrorCode(micErrorCode(err));
+      setPhase('error');
+      return;
+    }
+
+    setPhase('connecting');
     const { data, error } = await supabase.functions.invoke('translation-speaker-token', {
       body: { sessionId, speakerToken },
     });
     if (error || !data?.token) {
+      micTrack.stop();
       setErrorCode((data as { error?: string })?.error ?? 'connection_failed');
       setPhase('error');
       return;
@@ -377,7 +460,6 @@ export const SpeakerPage: React.FC = () => {
     const { url, token, identity, sourceLanguage, targetLanguage } = data as SpeakerToken;
     setLanguages({ source: sourceLanguage, target: targetLanguage });
 
-    setPhase('connecting');
     const room = new Room();
     roomRef.current = room;
     room.on(RoomEvent.Disconnected, () => {
@@ -389,25 +471,19 @@ export const SpeakerPage: React.FC = () => {
     try {
       // Publish-only: this page never plays anything from the room, so don't
       // download every track in it (2026-10-10).
-      await room.connect(url, token, { autoSubscribe: false });
-      // setMicrophoneEnabled handles getUserMedia + publish in one call —
-      // if the visitor denies the permission prompt, it rejects here. Its
-      // own return value is the fresh publication, no separate lookup needed.
-      const micPub = await room.localParticipant.setMicrophoneEnabled(true);
-      if (micPub?.track) startLevelMeter(micPub.track as LocalAudioTrack);
+      await withTimeout(room.connect(url, token, { autoSubscribe: false }), CONNECT_TIMEOUT_MS, 'connect_timeout');
+      await withTimeout(room.localParticipant.publishTrack(micTrack), CONNECT_TIMEOUT_MS, 'connect_timeout');
+      startLevelMeter(micTrack);
       setPhase('live');
       startCaptions(sessionId);
       console.log('[SpeakerPage] publishing as', identity);
     } catch (err) {
       console.error('[SpeakerPage] connect/publish failed:', err);
-      await room.disconnect().catch(() => {});
+      micTrack.stop();
       roomRef.current = null;
-      setErrorCode(
-        err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
-          ? 'mic_denied'
-          : 'connection_failed',
-      );
+      setErrorCode(err instanceof Error && err.message === 'connect_timeout' ? 'connect_timeout' : 'connection_failed');
       setPhase('error');
+      await room.disconnect().catch(() => {});
     }
   };
 
@@ -459,8 +535,19 @@ export const SpeakerPage: React.FC = () => {
     if (!roomRef.current) return;
     const next = !muted;
     await roomRef.current.localParticipant.setMicrophoneEnabled(!next);
+    lastSoundAtRef.current = Date.now();
+    setQuietNudge(false);
     setMuted(next);
   };
+
+  useEffect(() => {
+    if (phase !== 'live' || muted) { setQuietNudge(false); return; }
+    lastSoundAtRef.current = Date.now();
+    const interval = setInterval(() => {
+      setQuietNudge(Date.now() - lastSoundAtRef.current > QUIET_NUDGE_MS);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [phase, muted]);
 
   const stopSpeaking = async () => {
     if (!sessionId || !speakerToken) return;
@@ -557,10 +644,17 @@ export const SpeakerPage: React.FC = () => {
 
           {phase === 'live' && (
             <>
-              <div className="flex items-center justify-center gap-3">
-                <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-sm sm:text-base font-medium text-emerald-400">Live — you're being translated</span>
-              </div>
+              {muted ? (
+                <div className="flex items-center justify-center gap-3">
+                  <span className="flex h-3 w-3 rounded-full bg-amber-400" />
+                  <span className="text-sm sm:text-base font-medium text-amber-300">Paused — nothing is being translated</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  <span className="flex h-3 w-3 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-sm sm:text-base font-medium text-emerald-400">Live — you're being translated</span>
+                </div>
+              )}
 
               {/* Simple mic-activity meter — reassurance that audio is actually
                   reaching the room, not just that the button says "Live". */}
@@ -570,6 +664,33 @@ export const SpeakerPage: React.FC = () => {
                   style={{ width: `${Math.round(level * 100)}%` }}
                 />
               </div>
+
+              {/* Pause/Stop sit right under the meter (2026-10-23) so pausing
+                  for a song or prayer is one reach away, not a scroll. */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className={muted
+                    ? 'flex-1 text-white border-amber-400/60 bg-amber-400/15 hover:bg-amber-400/25 hover:text-white'
+                    : 'flex-1 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white'}
+                  onClick={toggleMute}
+                >
+                  {muted ? <Play className="h-4 w-4 mr-2" /> : <Pause className="h-4 w-4 mr-2" />}
+                  {muted ? 'Resume' : 'Pause'}
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={stopSpeaking}>
+                  <Square className="h-4 w-4 mr-2" /> Stop
+                </Button>
+              </div>
+              {muted ? (
+                <p className="text-xs text-amber-200/80 text-center">Listeners hear nothing while paused. Tap Resume when you speak again.</p>
+              ) : quietNudge ? (
+                <p className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 text-center">
+                  Not speaking right now? Tap <strong>Pause</strong> so music or room noise isn't translated.
+                </p>
+              ) : (
+                <p className="text-xs text-white/40 text-center">Tip: tap Pause during songs, prayers or breaks, and keep this screen open.</p>
+              )}
 
               {/* What the system is hearing — informational only. Nothing here
                   delays or changes translation, which keeps firing instantly
@@ -722,16 +843,6 @@ export const SpeakerPage: React.FC = () => {
                     )}
                   </div>
                 ))}
-              </div>
-
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1 text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white" onClick={toggleMute}>
-                  {muted ? <Mic className="h-4 w-4 mr-2" /> : <MicOff className="h-4 w-4 mr-2" />}
-                  {muted ? 'Unmute' : 'Mute'}
-                </Button>
-                <Button variant="destructive" className="flex-1" onClick={stopSpeaking}>
-                  <Square className="h-4 w-4 mr-2" /> Stop
-                </Button>
               </div>
 
               <div className="border-t border-white/10 pt-4 space-y-2">
