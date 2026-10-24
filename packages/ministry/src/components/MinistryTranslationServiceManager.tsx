@@ -583,7 +583,22 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         <p className="text-xs text-muted-foreground">
           {(translationMinutesUsed / 60).toFixed(1)}h used this month
           {translationHoursIncluded !== null ? ` of ${translationHoursIncluded}h purchased` : ''}.
+          {' '}Hours count per language.
         </p>
+      )}
+
+      {/* Hours are enforced server-side (migration 0419): new services are
+          refused and running ones stop once the month's hours are used. */}
+      {hasActiveTranslationPlan === true && translationMinutesUsed !== null && !!translationHoursIncluded
+        && translationMinutesUsed >= translationHoursIncluded * 60 * 0.8 && (
+        <Alert variant={translationMinutesUsed >= translationHoursIncluded * 60 ? 'destructive' : 'default'}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            {translationMinutesUsed >= translationHoursIncluded * 60
+              ? 'This month\'s Live Translation hours are used up, so translation is stopped. Buy more hours in Billing settings → Add-ons to carry on.'
+              : 'Over 80% of this month\'s Live Translation hours are used. Translation stops when they run out, so buy more hours in Billing settings → Add-ons if you need them.'}
+          </AlertDescription>
+        </Alert>
       )}
 
       {supportedLanguages.length === 0 && (
