@@ -21,11 +21,30 @@
 --   - A once-a-minute job stops running translations that use up the last
 --     of the hours, and tells the ministry's admins at 80% and at 100%
 --     (once each per month).
+--   - Add-ons can now expire (expires_at). The three churches that were
+--     already translating without an add-on get a free 15-hour pack until
+--     30 November so they aren't cut off without warning (user's choice).
 -- =====================================================================
 
 begin;
 
 set local lock_timeout = '5s';
+
+alter table public.ministry_addons add column if not exists expires_at timestamptz;
+
+-- Free 15-hour packs to 30 November for the churches already using
+-- translation with no add-on: RCCG Cabo Verde, RCCG Cornerstone Parish,
+-- RCCG Vietnam.
+insert into public.ministry_addons (ministry_id, addon_type, quantity, unit_hours, price_usd, price_ngn, status, expires_at)
+select m.id, 'live_translation', 1, 15, 0, 0, 'active', '2026-12-01 00:00:00+00'
+  from public.ministry_groups m
+ where m.id in ('f3366ee1-04b1-4384-9e2e-7f7635ab5ffc',
+                'eee779a3-5d9e-4542-94b7-3cd04caa3ef9',
+                'a17204e6-1a36-4afa-9e15-e6c5b0613a7e')
+   and not exists (
+     select 1 from public.ministry_addons a
+      where a.ministry_id = m.id and a.addon_type = 'live_translation' and a.price_usd = 0
+   );
 
 -- Hours bought this month (sum of active add-ons).
 create or replace function public.ministry_translation_minutes_allowed(p_ministry_id uuid)
@@ -39,7 +58,8 @@ as $$
     from public.ministry_addons
    where ministry_id = p_ministry_id
      and addon_type = 'live_translation'
-     and status = 'active';
+     and status = 'active'
+     and (expires_at is null or expires_at > now());
 $$;
 
 -- Minutes used this calendar month. Replaces 0343's version, which also
@@ -127,6 +147,11 @@ declare
   v_period  date := date_trunc('month', now())::date;
   v_count   integer := 0;
 begin
+  -- Expired free packs drop off the billing page.
+  update public.ministry_addons
+     set status = 'cancelled', cancelled_at = now()
+   where status = 'active' and expires_at <= now();
+
   for v_org in
     select distinct t.ministry_id
       from public.translation_sessions t

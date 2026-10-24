@@ -164,7 +164,8 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         supabase.from('language_configs').select('source_language, supported_target_languages, speaker_identity').eq('ministry_id', ministryId).maybeSingle(),
         supabase.from('translation_services').select('id, name, started_at, ended_at, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(20),
         supabase.from('translation_sessions').select('id, service_id, source_type, source_language, target_language, status, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(100),
-        supabase.from('ministry_addons').select('quantity, unit_hours').eq('ministry_id', ministryId).eq('addon_type', 'live_translation').eq('status', 'active'),
+        supabase.from('ministry_addons').select('quantity, unit_hours').eq('ministry_id', ministryId).eq('addon_type', 'live_translation').eq('status', 'active')
+          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
         supabase.rpc('get_ministry_translation_minutes_used', { p_ministry_id: ministryId }),
         supabase.from('translation_questions').select('id, service_id, asker_name, speaker_text, original_text, status, created_at').eq('ministry_id', ministryId).eq('status', 'pending').order('created_at', { ascending: true }),
       ]);
