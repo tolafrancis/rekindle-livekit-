@@ -7,8 +7,8 @@
 -- our admins. The app's admin convention is user_profiles.role (is_content_admin).
 -- So UPDATE ... WHERE ministry_id IS NULL matched no policy and returned no rows.
 --
--- Add a global-row write policy keyed on is_content_admin, and a matching read so
--- admins can see unpublished global series (the update's RETURNING needs SELECT too).
+-- Add a global-row FOR ALL policy keyed on is_content_admin; it also lets admins read
+-- unpublished global series (the update's RETURNING needs SELECT too).
 -- Idempotent.
 -- =====================================================================
 
