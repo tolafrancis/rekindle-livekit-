@@ -13,13 +13,13 @@ import { DEFAULT_APP_DOWNLOAD_LINKS, loadAppDownloadLinks, type AppDownloadLinks
 const SNOOZE_KEY = 'rk_get_app_card_snoozed_until';
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 
-function isMinistryApp(): boolean {
+export function isMinistryApp(): boolean {
   if (import.meta.env.VITE_APP_TYPE === 'ministry') return true;
   const host = typeof window !== 'undefined' ? window.location.hostname : '';
   return host === 'rekindlebc.com' || host === 'www.rekindlebc.com';
 }
 
-function deviceOs(): 'android' | 'ios' | 'other' {
+export function deviceOs(): 'android' | 'ios' | 'other' {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   if (/android/i.test(ua)) return 'android';
   // iPadOS reports itself as a Mac; touch support tells them apart.

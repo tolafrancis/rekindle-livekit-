@@ -9,6 +9,7 @@ import { Button } from '@rekindle/ui/button';
 import { sha256Hex } from '@rekindle/features/qrCode';
 import { setDeepLink } from '@rekindle/features/deepLink';
 import MinistryMemberRegistration from './MinistryMemberRegistration';
+import { JoinGetTheApp } from '@rekindle/features/components/JoinGetTheApp';
 import {
   Loader2, AlertTriangle, CheckCircle2, UserCheck, ArrowRight, Building2, Monitor, RefreshCcw,
   UserPlus, LogIn, Home, ArrowLeft,
@@ -295,6 +296,7 @@ const MinistryJoinLanding: React.FC = () => {
           <Button className="w-full" onClick={() => { window.location.href = '/'; }}>
             Go to Rekindle <ArrowRight className="h-4 w-4 ml-1" />
           </Button>
+          {!kioskMode && <JoinGetTheApp />}
         </div>
       </Shell>
     );
