@@ -164,7 +164,7 @@ async function ministryForPaystackSub(code: string | undefined): Promise<string 
 // instead of ministry_subscriptions.
 async function upsertAddon(a: {
   ministryId: string; addonType: string; unitGb: number | null; unitMembers: number | null; unitHours: number | null;
-  priceUsd: number; paystackSubCode?: string;
+  unitParticipants: number | null; priceUsd: number; paystackSubCode?: string;
 }) {
   const db = admin();
   await db.from('ministry_addons').insert({
@@ -174,6 +174,7 @@ async function upsertAddon(a: {
     unit_gb: a.unitGb,
     unit_members: a.unitMembers,
     unit_hours: a.unitHours,
+    unit_participants: a.unitParticipants,
     price_usd: a.priceUsd,
     status: 'active',
     paystack_subscription_code: a.paystackSubCode ?? null,
@@ -251,7 +252,7 @@ serve(async (req) => {
         if (event.event === 'subscription.create') {
           await upsertAddon({
             ministryId, addonType: meta.addon_type, unitGb: meta.unit_gb ?? null, unitMembers: meta.unit_members ?? null,
-            unitHours: meta.unit_hours ?? null,
+            unitHours: meta.unit_hours ?? null, unitParticipants: meta.unit_participants ?? null,
             priceUsd: Number(meta.price_usd ?? 0), paystackSubCode: event.data?.subscription_code,
           });
         } else if (event.event === 'subscription.disable') {

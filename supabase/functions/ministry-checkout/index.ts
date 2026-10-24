@@ -45,12 +45,13 @@ const json = (b: unknown, s = 200) =>
 const form = (obj: Record<string, string>) =>
   Object.entries(obj).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 
-// Human-readable line-item name for Stripe's inline price_data fallback,
+// Human-readable product name for Stripe's inline price_data fallback,
 // when the catalog SKU has no pre-created stripe_price_id.
-function catalogRowLabel(addonType: string, unitGb: number | null, unitMembers: number | null, unitHours: number | null): string {
+function catalogRowLabel(addonType: string, unitGb: number | null, unitMembers: number | null, unitHours: number | null, unitParticipants: number | null): string {
   if (addonType === 'storage_pack') return `+${(unitGb ?? 0) >= 1024 ? `${(unitGb ?? 0) / 1024} TB` : `${unitGb} GB`} storage`;
   if (addonType === 'member_block') return `+${unitMembers ?? 0} members`;
-  if (addonType === 'live_translation') return `Live Translation — ${unitHours ?? 0} hours/month`;
+  if (addonType === 'live_translation') return `Live Translation, voice + captions, ${unitHours ?? 0} hours/month`;
+  if (addonType === 'participant_block') return `+${unitParticipants ?? 0} participants`;
   return 'Gift Aid claims & HMRC submission';
 }
 
@@ -229,7 +230,7 @@ serve(async (req) => {
       if (catalogErr || !catalogRow) return json({ error: 'Unknown or inactive add-on' }, 400);
       const c = catalogRow as {
         id: string; addon_type: string; unit_gb: number | null; unit_members: number | null; unit_hours: number | null;
-        price_usd: number; stripe_price_id: string | null; paystack_plan_code: string | null;
+        unit_participants: number | null; price_usd: number; stripe_price_id: string | null; paystack_plan_code: string | null;
       };
 
       const countryCode = typeof country === 'string' ? country.toUpperCase() : 'US';
@@ -249,7 +250,8 @@ serve(async (req) => {
             callback_url: `${back}?billing=success`,
             metadata: {
               ministry_id: ministryId, addon: true, catalog_id: c.id, addon_type: c.addon_type,
-              unit_gb: c.unit_gb, unit_members: c.unit_members, unit_hours: c.unit_hours, price_usd: c.price_usd, country: countryCode,
+              unit_gb: c.unit_gb, unit_members: c.unit_members, unit_hours: c.unit_hours, unit_participants: c.unit_participants,
+              price_usd: c.price_usd, country: countryCode,
             },
           }),
         });
@@ -270,10 +272,19 @@ serve(async (req) => {
         if (c.stripe_price_id) {
           body['price'] = c.stripe_price_id;
         } else {
+          // A subscription item's price_data needs an existing product (it
+          // has no product_data, unlike Checkout), so make one first.
+          const pr = await fetch('https://api.stripe.com/v1/products', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${STRIPE_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: form({ name: catalogRowLabel(c.addon_type, c.unit_gb, c.unit_members, c.unit_hours, c.unit_participants) }),
+          });
+          const pj = await pr.json();
+          if (!pr.ok) return json({ error: pj?.error?.message || 'Stripe add-on product error' }, 502);
           body['price_data[currency]'] = 'usd';
           body['price_data[unit_amount]'] = String(Math.round(c.price_usd * 100));
           body['price_data[recurring][interval]'] = 'month';
-          body['price_data[product_data][name]'] = catalogRowLabel(c.addon_type, c.unit_gb, c.unit_members, c.unit_hours);
+          body['price_data[product]'] = pj.id;
         }
         const r = await fetch('https://api.stripe.com/v1/subscription_items', {
           method: 'POST',
@@ -290,6 +301,7 @@ serve(async (req) => {
           unit_gb: c.unit_gb,
           unit_members: c.unit_members,
           unit_hours: c.unit_hours,
+          unit_participants: c.unit_participants,
           price_usd: c.price_usd,
           status: 'active',
           stripe_subscription_item_id: j.id,

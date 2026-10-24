@@ -164,7 +164,8 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         supabase.from('language_configs').select('source_language, supported_target_languages, speaker_identity').eq('ministry_id', ministryId).maybeSingle(),
         supabase.from('translation_services').select('id, name, started_at, ended_at, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(20),
         supabase.from('translation_sessions').select('id, service_id, source_type, source_language, target_language, status, created_at').eq('ministry_id', ministryId).order('created_at', { ascending: false }).limit(100),
-        supabase.from('ministry_addons').select('quantity, unit_hours').eq('ministry_id', ministryId).eq('addon_type', 'live_translation').eq('status', 'active'),
+        supabase.from('ministry_addons').select('quantity, unit_hours').eq('ministry_id', ministryId).eq('addon_type', 'live_translation').eq('status', 'active')
+          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
         supabase.rpc('get_ministry_translation_minutes_used', { p_ministry_id: ministryId }),
         supabase.from('translation_questions').select('id, service_id, asker_name, speaker_text, original_text, status, created_at').eq('ministry_id', ministryId).eq('status', 'pending').order('created_at', { ascending: true }),
       ]);
@@ -583,7 +584,22 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
         <p className="text-xs text-muted-foreground">
           {(translationMinutesUsed / 60).toFixed(1)}h used this month
           {translationHoursIncluded !== null ? ` of ${translationHoursIncluded}h purchased` : ''}.
+          {' '}Hours count per language.
         </p>
+      )}
+
+      {/* Hours are enforced server-side (migration 0419): new services are
+          refused and running ones stop once the month's hours are used. */}
+      {hasActiveTranslationPlan === true && translationMinutesUsed !== null && !!translationHoursIncluded
+        && translationMinutesUsed >= translationHoursIncluded * 60 * 0.8 && (
+        <Alert variant={translationMinutesUsed >= translationHoursIncluded * 60 ? 'destructive' : 'default'}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            {translationMinutesUsed >= translationHoursIncluded * 60
+              ? 'This month\'s Live Translation hours are used up, so translation is stopped. Buy more hours in Billing settings → Add-ons to carry on.'
+              : 'Over 80% of this month\'s Live Translation hours are used. Translation stops when they run out, so buy more hours in Billing settings → Add-ons if you need them.'}
+          </AlertDescription>
+        </Alert>
       )}
 
       {supportedLanguages.length === 0 && (

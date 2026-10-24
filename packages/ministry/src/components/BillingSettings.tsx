@@ -514,7 +514,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                       {a.addonType === 'storage_pack' ? `+${a.unitGb} GB storage`
                         : a.addonType === 'member_block' ? `+${a.unitMembers} members`
                         : a.addonType === 'participant_block' ? `+${a.unitParticipants} participants`
-                        : a.addonType === 'live_translation' ? `Live Translation — ${a.unitHours}h/month`
+                        : a.addonType === 'live_translation' ? `Live Translation, voice + captions, ${a.unitHours}h/month`
                         : 'Gift Aid & HMRC submission'}
                     </span>
                     <Badge variant="secondary">Active — {money(isNigeria && a.priceNgn != null ? a.priceNgn : a.priceUsd, isNigeria && a.priceNgn != null ? 'NGN' : 'USD')}/mo</Badge>
@@ -543,6 +543,11 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
                 </div>
               ))}
             </div>
+            {addonCatalog.some((i) => i.addonType === 'live_translation') && (
+              <p className="text-xs text-muted-foreground">
+                Live Translation hours are counted per language: a 1-hour service translated into 2 languages uses 2 hours.
+              </p>
+            )}
             {country !== 'NG' && (
               <p className="text-xs text-muted-foreground">
                 Add-ons are charged to the card on file for your plan (Stripe) — subscribe with a card first if you haven't.
