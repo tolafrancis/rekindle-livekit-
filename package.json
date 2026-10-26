@@ -5,6 +5,7 @@
   "packageManager": "npm@11.16.0",
   "workspaces": [
     "apps/*",
+    "apps/*/eas",
     "packages/*"
   ],
   "scripts": {

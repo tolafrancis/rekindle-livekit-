@@ -1,0 +1,9 @@
+{
+  "name": "rekindle-ios-eas",
+  "private": true,
+  "version": "0.0.0",
+  "description": "EAS Build wrapper for the rekindle iOS app. ios/ links to ../ios/App, where EAS expects the Xcode project.",
+  "scripts": {
+    "eas-build-post-install": "cd .. && npx vite build && npx cap sync ios"
+  }
+}

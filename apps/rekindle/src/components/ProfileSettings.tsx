@@ -24,9 +24,10 @@ import { ImageUpload } from '@rekindle/ministry/components/ImageUpload';
 import {
   User, Mail, Globe, BookOpen, Bell, MessageSquare,
   Save, Loader2, Lock, AlertTriangle, CheckCircle,
-  RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles, Code2, UserX
+  RefreshCw, Key, Shield, Download, UserCheck, Languages, ChevronDown, Heart, Sparkles, Code2, UserX, Trash2
 } from 'lucide-react';
 import { BlockedUsersList } from '@rekindle/features/components/BlockedUsersList';
+import { DeleteAccountSection } from '@rekindle/features/components/DeleteAccountSection';
 import { clickableProps } from '@rekindle/features/clickableProps';
 
 const spiritualLevels = [
@@ -472,6 +473,18 @@ export const ProfileSettings: React.FC = () => {
         </CardHeader>
         <CardContent>
           <BlockedUsersList />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5" />
+            {t('profileSettings', 'deleteAccountTitle', 'Delete account')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DeleteAccountSection />
         </CardContent>
       </Card>
                 </>)}

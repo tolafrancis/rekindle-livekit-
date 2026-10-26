@@ -1,0 +1,23 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "environment": "production",
+      "autoIncrement": true,
+      "node": "24.18.0",
+      "env": {
+        "ELECTRON_SKIP_BINARY_DOWNLOAD": "1"
+      },
+      "ios": {
+        "scheme": "App",
+        "buildConfiguration": "Release"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

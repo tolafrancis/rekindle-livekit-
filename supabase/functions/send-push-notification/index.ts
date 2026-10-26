@@ -446,6 +446,12 @@ serve(async (req) => {
                     messagePayload.android = {
                       priority: 'high',
                     };
+                  } else {
+                    // iOS: FCM relays to APNs. Without `sound` the alert arrives silently.
+                    messagePayload.apns = {
+                      headers: { 'apns-priority': '10' },
+                      payload: { aps: { sound: 'default' } },
+                    };
                   }
                 } else {
                   // Web path — UNCHANGED from current behavior.

@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "ReKindleBC Ministry",
+    "slug": "rekindlebc-ministry",
+    "owner": "rekindles-team",
+    "extra": {
+      "eas": {
+        "projectId": "5399f95d-0ac3-4a08-89cf-012eaf589af0"
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "ReKindleBC",
+    "slug": "rekindlebc",
+    "owner": "rekindles-team",
+    "extra": {
+      "eas": {
+        "projectId": "07428dde-e0e9-4c7e-97cf-2153deeef11a"
+      }
+    }
+  }
+}

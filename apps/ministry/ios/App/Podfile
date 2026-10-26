@@ -1,0 +1,8 @@
+# The app's native dependencies come from Swift Package Manager (CapApp-SPM).
+# This Podfile exists only because EAS Build always runs `pod install`; it
+# installs nothing and leaves App.xcodeproj untouched.
+platform :ios, '15.0'
+install! 'cocoapods', :integrate_targets => false
+
+target 'App' do
+end

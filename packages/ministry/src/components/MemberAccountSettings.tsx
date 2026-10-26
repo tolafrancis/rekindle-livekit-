@@ -11,6 +11,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { usePushNotifications } from '@rekindle/features/usePushNotifications';
 import { DailyReminders } from '@rekindle/features/components/DailyReminders';
 import { BlockedUsersList } from '@rekindle/features/components/BlockedUsersList';
+import { DeleteAccountSection } from '@rekindle/features/components/DeleteAccountSection';
 import {
   User as UserIcon, Bell, Globe, ShieldCheck, LogOut, Loader2, Save, Languages, UserX,
 } from 'lucide-react';
@@ -209,6 +210,8 @@ export default function MemberAccountSettings() {
               <LogOut className="h-4 w-4 mr-2" /> Sign out
             </Button>
           </div>
+
+          <DeleteAccountSection className="border-t pt-4" />
         </CardContent>
       </Card>
     </div>

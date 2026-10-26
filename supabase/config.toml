@@ -16,6 +16,11 @@ enabled = true
 # Verifies the user's JWT itself, same as spiritual-companion.
 verify_jwt = true
 
+[functions.delete-account]
+enabled = true
+# Verifies the user's JWT itself, same as spiritual-companion.
+verify_jwt = true
+
 [functions.evangelism-ai-suggestion]
 enabled = true
 verify_jwt = true

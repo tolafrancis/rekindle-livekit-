@@ -22,6 +22,19 @@ const config: CapacitorConfig = {
     iosScheme: 'https',
   },
 
+  // The Firebase plugins share firebase-ios-sdk; without symlinked package
+  // paths SwiftPM reports an identity collision (capacitor-firebase#959).
+  experimental: {
+    ios: {
+      spm: {
+        packageOptions: {
+          '@capacitor-firebase/authentication': { symlink: true },
+          '@capacitor-firebase/messaging': { symlink: true },
+        },
+      },
+    },
+  },
+
   plugins: {
     FirebaseAuthentication: {
       skipNativeAuth: false,
