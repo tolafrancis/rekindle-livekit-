@@ -1400,24 +1400,26 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, meetingId]);
 
-  // Notify every non-host participant the moment recording starts (the host gets
-  // their own toast synchronously from useDailyRoom's startRecording). Tracks the
-  // broadcast meetingSettings.recordingStatus rather than the host-local
-  // isRecordingActive/recordingStatus state, which non-hosts never set.
+  // Ask every non-host participant to agree to the recording: when the host
+  // starts it, and on joining a meeting that is already being recorded. They
+  // can stay (OK) or leave. The host gets their own toast from useDailyRoom's
+  // startRecording. Tracks the broadcast meetingSettings.recordingStatus
+  // rather than the host-local isRecordingActive/recordingStatus state, which
+  // non-hosts never set.
   const recordingNoticeShownRef = useRef(false);
+  const [recordingConsentOpen, setRecordingConsentOpen] = useState(false);
   useEffect(() => {
     if (isHost) return;
     if (meetingSettings.recordingStatus === 'recording' && !recordingNoticeShownRef.current) {
       recordingNoticeShownRef.current = true;
-      toast({
-        title: t('dailyVideoCall', 'meetingBeingRecorded', 'This meeting is being recorded'),
-        description: t('dailyVideoCall', 'meetingBeingRecordedDesc', 'The host has started recording this session.'),
-      });
-    } else if (meetingSettings.recordingStatus !== 'recording') {
-      // Reset so a later start (stop, then start again) notifies again.
+      setRecordingConsentOpen(true);
+    } else if (meetingSettings.recordingStatus !== 'recording' && meetingSettings.recordingStatus !== 'paused') {
+      // Reset once it stops, so a new recording asks again. Pause/resume
+      // is the same recording and doesn't.
       recordingNoticeShownRef.current = false;
+      setRecordingConsentOpen(false);
     }
-  }, [isHost, meetingSettings.recordingStatus, toast, t]);
+  }, [isHost, meetingSettings.recordingStatus]);
 
   // Raise-hand state/action live in useDailyRoom (internal to this component);
   // surface them to the parent so it can render its own Raise Hand button (e.g.
@@ -2504,6 +2506,42 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           <Volume2 className="h-3.5 w-3.5" />
           {t('dailyVideoCall', 'tapToEnableSound', 'Tap to enable sound')}
         </button>
+      )}
+
+      {/* Recording consent: drawn inside the call container (not a portal) so
+          it still shows when the call is full screen. */}
+      {recordingConsentOpen && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="recording-consent-title"
+            aria-describedby="recording-consent-desc"
+            className="w-full max-w-sm rounded-xl bg-gray-900 p-5 text-white shadow-2xl ring-1 ring-white/10"
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <Circle className="h-3 w-3 fill-red-500 text-red-500" />
+              <h2 id="recording-consent-title" className="text-base font-semibold">
+                {t('dailyVideoCall', 'meetingBeingRecorded', 'This meeting is being recorded')}
+              </h2>
+            </div>
+            <p id="recording-consent-desc" className="text-sm text-white/80">
+              {t('dailyVideoCall', 'recordingConsentBody', 'The host is recording this meeting. Your video, audio and name may appear in the recording. By staying, you agree to be recorded. You can turn off your camera or microphone at any time.')}
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                className="border-white/20 bg-transparent text-white hover:bg-white/10"
+                onClick={() => { setRecordingConsentOpen(false); handleEndCall(false); }}
+              >
+                {t('dailyVideoCall', 'leaveMeeting', 'Leave meeting')}
+              </Button>
+              <Button autoFocus onClick={() => setRecordingConsentOpen(false)}>
+                {t('dailyVideoCall', 'recordingConsentOk', 'OK, continue')}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Persistent remote audio — mounted once, independent of the video layout
