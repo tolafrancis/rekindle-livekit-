@@ -62,6 +62,29 @@ async function nativeGoogleSignIn(): Promise<{ error?: string }> {
   }
 }
 
+// Sign in with Apple (iOS app only — App Store guideline 4.8 requires it
+// alongside Google). skipNativeAuth: Supabase, not Firebase, owns the session,
+// so the Apple ID token and its raw nonce go straight to signInWithIdToken.
+async function nativeAppleSignIn(): Promise<{ error?: string }> {
+  try {
+    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+    const result = await FirebaseAuthentication.signInWithApple({ skipNativeAuth: true });
+    const idToken = result.credential?.idToken;
+    if (!idToken) return { error: 'Apple sign-in returned no ID token' };
+    const { error } = await supabase.auth.signInWithIdToken({
+      provider: 'apple',
+      token: idToken,
+      nonce: result.credential?.nonce,
+    });
+    if (error) return { error: error.message };
+    return {};
+  } catch (err: any) {
+    const message: string = err?.message || '';
+    if (/cancel/i.test(message)) return { error: 'Apple sign-in was cancelled' };
+    return { error: message || 'Apple sign in failed' };
+  }
+}
+
 // ============================================
 // TYPES
 // ============================================
@@ -105,6 +128,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signInWithGoogle: () => Promise<{ error?: string }>;
   signInWithFacebook: () => Promise<{ error?: string }>;
+  signInWithApple: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ error?: string; success?: boolean }>;
   completeOnboarding: (data: any) => Promise<void>;
@@ -855,6 +879,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const signInWithApple = async () => {
+    if (Capacitor.getPlatform() !== 'ios') {
+      return { error: 'Sign in with Apple is only available in the iOS app' };
+    }
+    return await nativeAppleSignIn();
+  };
+
   const signOut = useCallback(async () => {
     try {
       setUser(null);
@@ -997,6 +1028,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       signIn,
       signInWithGoogle,
       signInWithFacebook,
+      signInWithApple,
       signOut,
       updateProfile,
       completeOnboarding,

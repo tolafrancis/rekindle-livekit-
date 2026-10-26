@@ -7,6 +7,7 @@ import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Separator } from '@rekindle/ui/separator';
 import { Checkbox } from '@rekindle/ui/checkbox';
+import { AppleSignInButton, isAppleSignInAvailable } from './AppleSignInButton';
 import { Mail, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 /** Passed to onSuccess. needsEmailConfirmation is true when Supabase created
@@ -136,7 +137,7 @@ export const ConfirmEmailNotice: React.FC<ConfirmEmailNoticeProps> = ({ email, o
 };
 
 export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSuccess, compact = false }) => {
-  const { signUp, signInWithGoogle, signInWithFacebook } = useAuth();
+  const { signUp, signInWithGoogle, signInWithFacebook, signInWithApple } = useAuth();
   const { t } = useLanguage();
   const showSocialLogin = !isElectronApp();
   const [fullName, setFullName] = useState('');
@@ -145,7 +146,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
+  const [socialLoading, setSocialLoading] = useState<'apple' | 'google' | 'facebook' | null>(null);
   const [error, setError] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   // Set when sign-up succeeded without a session (email confirmation on).
@@ -207,6 +208,17 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
     }
   };
 
+  const handleAppleSignIn = async () => {
+    if (!requireTerms()) return;
+    setSocialLoading('apple');
+    setError('');
+    const result = await signInWithApple();
+    if (result.error) {
+      setError(result.error);
+      setSocialLoading(null);
+    }
+  };
+
   const handleFacebookSignIn = async () => {
     if (!requireTerms()) return;
     setSocialLoading('facebook');
@@ -260,6 +272,15 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin, onSucce
             <>
               {/* Social Login Buttons */}
               <div className="space-y-3">
+                {isAppleSignInAvailable() && (
+                  <AppleSignInButton
+                    label="Sign up with Apple"
+                    loading={socialLoading === 'apple'}
+                    disabled={!!socialLoading}
+                    onClick={handleAppleSignIn}
+                  />
+                )}
+
                 <Button
                   type="button"
                   variant="outline"

@@ -5,6 +5,7 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { Separator } from '@rekindle/ui/separator';
+import { AppleSignInButton, isAppleSignInAvailable } from './AppleSignInButton';
 import { Mail, Lock, Eye, EyeOff, Loader2, HelpCircle } from 'lucide-react';
 
 interface LoginFormProps {
@@ -39,14 +40,14 @@ const isElectronApp = (): boolean =>
   typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitchToReset, onSuccess, compact = false }) => {
-  const { signIn, signInWithGoogle, signInWithFacebook } = useAuth();
+  const { signIn, signInWithGoogle, signInWithFacebook, signInWithApple } = useAuth();
   const { t } = useLanguage();
   const showSocialLogin = !isElectronApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
+  const [socialLoading, setSocialLoading] = useState<'apple' | 'google' | 'facebook' | null>(null);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,6 +67,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
     setSocialLoading('google');
     setError('');
     const result = await signInWithGoogle();
+    if (result.error) {
+      setError(result.error);
+      setSocialLoading(null);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setSocialLoading('apple');
+    setError('');
+    const result = await signInWithApple();
     if (result.error) {
       setError(result.error);
       setSocialLoading(null);
@@ -106,6 +117,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onSwitch
             <>
               {/* Social Login Buttons */}
               <div className="space-y-3">
+                {isAppleSignInAvailable() && (
+                  <AppleSignInButton
+                    label="Continue with Apple"
+                    loading={socialLoading === 'apple'}
+                    disabled={!!socialLoading}
+                    onClick={handleAppleSignIn}
+                  />
+                )}
+
                 <Button
                   type="button"
                   variant="outline"
