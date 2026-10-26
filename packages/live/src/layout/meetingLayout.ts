@@ -190,7 +190,8 @@ export interface ResolveInput {
 /**
  * Decide the stage. Rules, in order:
  *  1. This viewer's pin wins, for this viewer only (Speaker view of the pin).
- *  2. A live screen share takes the stage in the host's chosen screen mode.
+ *  2. A live screen share takes the stage in the host's chosen screen mode,
+ *     with everyone else as thumbnails (except in Screen only).
  *  3. Spotlight: 1 → Speaker; 2 with Dual Speaker → Dual; 2+ otherwise →
  *     Multi (all spotlit, equal). Order always follows the spotlight list,
  *     never who is talking.
@@ -231,7 +232,10 @@ export function resolveStage(input: ResolveInput): Stage {
         if (!main.includes(id)) main.push(id);
       }
     }
-    const thumbnails = mode === 'screen-gallery' ? thumbsExcept(main) : [];
+    // Everyone not on the main stage stays visible as a thumbnail; only
+    // Screen only hides the cameras. (Screen + Speaker used to drop them, so
+    // during a share viewers saw just the screen and the spotlit host.)
+    const thumbnails = mode === 'screen-only' ? [] : thumbsExcept(main);
     return {
       kind: 'screen', main, screenOf: sharer.sessionId, screenMode: mode, thumbnails,
       reason: spot.length ? 'spotlight' : 'none',

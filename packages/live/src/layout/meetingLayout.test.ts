@@ -81,6 +81,18 @@ test('E3: screen only has no camera tiles; screen + gallery has thumbnails', () 
   assert.deepEqual(gallery.thumbnails, ['A', 'B', 'C', 'D']);
 });
 
+test('E4: screen + speaker and screen + dual keep everyone else as thumbnails', () => {
+  // Bug found live: with the host spotlit (the default), Screen + Speaker
+  // showed only the screen and the host; every other camera disappeared.
+  const sharing = room.map((p) => ({ ...p, hasScreenShare: p.sessionId === 'C' }));
+  const speaker = resolveStage({ state: { ...DEFAULT_LAYOUT_STATE, spotlightParticipants: ['A'] }, participants: sharing });
+  assert.equal(speaker.screenMode, 'screen-speaker');
+  assert.deepEqual(speaker.main, ['A']);
+  assert.deepEqual(speaker.thumbnails, ['B', 'C', 'D']);
+  const dualStage = resolveStage({ state: { ...dual('A', 'B'), screenShareMode: 'screen-dual' }, participants: sharing });
+  assert.deepEqual(dualStage.thumbnails, ['C', 'D']);
+});
+
 test('F: a local pin overrides the spotlight for this viewer only', () => {
   const s = dual('A', 'B');
   const pinned = resolveStage({ state: s, participants: room, pinnedId: 'D' });

@@ -2567,14 +2567,18 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                       {mainParticipants.map(bigTile)}
                     </div>
                   )}
+                  {filmstrip()}
                 </div>
               );
             }
             if (mode === 'screen-speaker' && mainParticipants.length > 0) {
               return (
-                <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
-                  <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
-                  <div className="shrink-0 w-40 self-end lg:self-center lg:w-72">{bigTile(mainParticipants[0])}</div>
+                <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
+                  <div className="flex flex-1 min-h-0 flex-col gap-2 lg:flex-row">
+                    <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
+                    <div className="shrink-0 w-40 self-end lg:self-center lg:w-72">{bigTile(mainParticipants[0])}</div>
+                  </div>
+                  {filmstrip()}
                 </div>
               );
             }
