@@ -1421,6 +1421,22 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     }
   }, [isHost, meetingSettings.recordingStatus]);
 
+  // OK on the recording notice: close it and keep a record of this person's
+  // consent (0421). Best-effort, so a failed write never blocks the meeting.
+  const acknowledgeRecording = useCallback(() => {
+    setRecordingConsentOpen(false);
+    if (!meetingId) return;
+    void supabase.rpc('record_recording_consent', {
+      p_meeting_id: meetingId,
+      p_meeting_kind: meetingKind ?? null,
+      p_participant_id: userId,
+      p_participant_name: userName,
+      p_is_guest: !!isGuestUser,
+    }).then(({ error }) => {
+      if (error) console.warn('[DailyVideoCall] recording consent not saved:', error.message);
+    });
+  }, [meetingId, meetingKind, userId, userName, isGuestUser]);
+
   // Raise-hand state/action live in useDailyRoom (internal to this component);
   // surface them to the parent so it can render its own Raise Hand button (e.g.
   // beside its floating ReactionButton) instead of the control bar.
@@ -2529,7 +2545,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               {t('dailyVideoCall', 'meetingBeingRecordedDesc', 'The host has started recording this session.')}
             </p>
             <div className="mt-5 flex justify-end">
-              <Button autoFocus onClick={() => setRecordingConsentOpen(false)}>
+              <Button autoFocus onClick={acknowledgeRecording}>
                 {t('dailyVideoCall', 'ok', 'OK')}
               </Button>
             </div>
