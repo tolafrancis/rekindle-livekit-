@@ -93,6 +93,27 @@ test('E4: screen + speaker and screen + dual keep everyone else as thumbnails', 
   assert.deepEqual(dualStage.thumbnails, ['C', 'D']);
 });
 
+test('E5: during a share with nobody spotlit, the presenter takes the speaker tile', () => {
+  const sharing = room.map((p) => ({ ...p, hasScreenShare: p.sessionId === 'C' }));
+  const stage = resolveStage({ state: DEFAULT_LAYOUT_STATE, participants: sharing, activeSpeakerId: 'A' });
+  assert.deepEqual(stage.main, ['C']);
+  // Screen + Dual: the presenter, then whoever is talking.
+  const dualStage = resolveStage({ state: { ...DEFAULT_LAYOUT_STATE, screenShareMode: 'screen-dual' }, participants: sharing, activeSpeakerId: 'B' });
+  assert.deepEqual(dualStage.main, ['C', 'B']);
+});
+
+test('E6: nobody spotlit: the speaker is featured, the host between speakers', () => {
+  const talking = resolveStage({ state: DEFAULT_LAYOUT_STATE, participants: room, activeSpeakerId: 'B', defaultFeaturedId: 'A' });
+  assert.equal(talking.kind, 'speaker');
+  assert.deepEqual(talking.main, ['B']);
+  const quiet = resolveStage({ state: DEFAULT_LAYOUT_STATE, participants: room, defaultFeaturedId: 'A' });
+  assert.equal(quiet.kind, 'speaker');
+  assert.deepEqual(quiet.main, ['A']);
+  // A spotlight the host set by hand still wins over the speaker.
+  const spot = resolveStage({ state: { ...DEFAULT_LAYOUT_STATE, spotlightParticipants: ['D'] }, participants: room, activeSpeakerId: 'B', defaultFeaturedId: 'A' });
+  assert.deepEqual(spot.main, ['D']);
+});
+
 test('F: a local pin overrides the spotlight for this viewer only', () => {
   const s = dual('A', 'B');
   const pinned = resolveStage({ state: s, participants: room, pinnedId: 'D' });

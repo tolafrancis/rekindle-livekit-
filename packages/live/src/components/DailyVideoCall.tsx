@@ -1618,21 +1618,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     setWaitingParticipants(waiting);
   }, [isConnected, isHost, participants, showParticipantList]);
 
-  // The host is featured (spotlighted) by default so every participant lands on
-  // the host's video. Only in a fresh room: once the room metadata has been
-  // read, a layout a host or co-host already set (say, before this host
-  // rejoined) is left alone. Late joiners read the spotlight from the room
-  // metadata, so nothing needs re-sending as the roster grows.
-  const didInitSpotlightRef = useRef(false);
-  useEffect(() => {
-    if (!isHost || !layoutLoaded || didInitSpotlightRef.current) return;
-    if (hasSharedLayout) { didInitSpotlightRef.current = true; return; }
-    const me = participants.find((p: any) => p.isLocal);
-    if (me) {
-      didInitSpotlightRef.current = true;
-      spotlightParticipant(me.sessionId);
-    }
-  }, [isHost, layoutLoaded, hasSharedLayout, participants, spotlightParticipant]);
+  // The host is no longer spotlit on join: a spotlight beats the active
+  // speaker, so it pinned the host on stage for the whole meeting. Instead
+  // whoever is talking is featured, and the host is the fallback between
+  // speakers (stageFallbackId below). A spotlight the host sets by hand still
+  // wins over both.
 
   // Who spoke most recently, newest first — Multi-Speaker with nobody
   // spotlit shows the top few. Only reorders when someone starts talking.
@@ -1655,14 +1645,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // debounces avoid flicker: a candidate must lead for 1.2s before becoming
   // featured (skips brief interjections), and once someone's featured they stay
   // featured for 3s of silence before falling back to the grid (skips gaps
-  // between sentences). Only kicks in once the grid would actually have enough
-  // tiles for it to matter — a 1:1 or 3-person call is already cheap either way.
+  // between sentences). Runs in every meeting with at least one other person,
+  // so the speaker is featured in small meetings too.
   const [autoSpeakerId, setAutoSpeakerId] = useState<string | null>(null);
   const autoSpeakerCandidateRef = useRef<string | null>(null);
   const autoSpeakerPromoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSpeakerClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (remoteParticipants.length < 4) {
+    if (remoteParticipants.length === 0) {
       autoSpeakerCandidateRef.current = null;
       if (autoSpeakerPromoteTimerRef.current) { clearTimeout(autoSpeakerPromoteTimerRef.current); autoSpeakerPromoteTimerRef.current = null; }
       if (autoSpeakerClearTimerRef.current) { clearTimeout(autoSpeakerClearTimerRef.current); autoSpeakerClearTimerRef.current = null; }
@@ -2001,6 +1991,16 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     () => new Map(participants.map((p: any) => [p.sessionId as string, p])),
     [participants],
   );
+  // Featured between speakers: the host, for everyone else. The host's own
+  // screen shows the person who spoke last instead of the host's own camera.
+  const stageFallbackId = useMemo(() => {
+    const remoteHost = participants.find((p: any) => !p.isLocal && getParticipantRole(p.sessionId) === 'host')
+      ?? participants.find((p: any) => !p.isLocal && p.isOwner);
+    if (remoteHost) return remoteHost.sessionId as string;
+    const remoteIds = new Set(participants.filter((p: any) => !p.isLocal).map((p: any) => p.sessionId as string));
+    return recentSpeakers.find((id) => remoteIds.has(id)) ?? null;
+  }, [participants, getParticipantRole, recentSpeakers]);
+
   const stage = useMemo(() => resolveStage({
     state: layoutState,
     participants: participants.map((p: any) => ({
@@ -2012,7 +2012,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     pinnedId: pinnedParticipantId,
     activeSpeakerId: autoSpeakerId,
     recentSpeakers,
-  }), [layoutState, participants, screenSharer, pinnedParticipantId, autoSpeakerId, recentSpeakers]);
+    defaultFeaturedId: stageFallbackId,
+  }), [layoutState, participants, screenSharer, pinnedParticipantId, autoSpeakerId, recentSpeakers, stageFallbackId]);
   const mainParticipants = useMemo(
     () => stage.main.map((id) => participantsById.get(id)).filter(Boolean) as any[],
     [stage, participantsById],
