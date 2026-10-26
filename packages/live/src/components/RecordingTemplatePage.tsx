@@ -189,7 +189,9 @@ export default function RecordingTemplatePage() {
             {main.map((t) => <PersonTile key={t.identity} tile={t} />)}
           </div>
         )}
-        {thumbs.length > 0 && (
+        {/* Recordings keep their audience strip to Screen + Gallery; the live
+            meeting also shows it under Screen + Speaker / Dual. */}
+        {stage.screenMode === 'screen-gallery' && thumbs.length > 0 && (
           <div className="flex h-[16%] shrink-0 gap-2">
             {thumbs.slice(0, 8).map((t) => <div key={t.identity} className="aspect-video h-full"><PersonTile tile={t} /></div>)}
           </div>

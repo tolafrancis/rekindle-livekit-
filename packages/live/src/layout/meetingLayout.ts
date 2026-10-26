@@ -183,6 +183,8 @@ export interface ResolveInput {
   activeSpeakerId?: string | null;
   /** Identities in order of most recent speech, for Multi-Speaker. */
   recentSpeakers?: string[];
+  /** Who is featured when nobody is spotlit and nobody is talking (the host). */
+  defaultFeaturedId?: string | null;
   /** For the recording: include the local participant among thumbnails. */
   includeLocalInThumbnails?: boolean;
 }
@@ -190,17 +192,18 @@ export interface ResolveInput {
 /**
  * Decide the stage. Rules, in order:
  *  1. This viewer's pin wins, for this viewer only (Speaker view of the pin).
- *  2. A live screen share takes the stage in the host's chosen screen mode.
+ *  2. A live screen share takes the stage in the host's chosen screen mode,
+ *     with everyone else as thumbnails (except in Screen only).
  *  3. Spotlight: 1 → Speaker; 2 with Dual Speaker → Dual; 2+ otherwise →
  *     Multi (all spotlit, equal). Order always follows the spotlight list,
  *     never who is talking.
  *  4. Nobody spotlit → the selected layout (Speaker/Presentation/Dual follow
- *     the active speaker, Multi shows the most recent speakers, Webinar and
- *     Gallery show the grid).
+ *     the active speaker and fall back on the host between speakers, Multi
+ *     shows the most recent speakers, Webinar and Gallery show the grid).
  * Spotlit people who have left are skipped until they return, keeping their slot.
  */
 export function resolveStage(input: ResolveInput): Stage {
-  const { state, participants, pinnedId, activeSpeakerId, recentSpeakers = [], includeLocalInThumbnails } = input;
+  const { state, participants, pinnedId, activeSpeakerId, recentSpeakers = [], defaultFeaturedId, includeLocalInThumbnails } = input;
   if (participants.length === 0) return { kind: 'empty', main: [], thumbnails: [], reason: 'none' };
 
   const present = new Set(participants.map((p) => p.sessionId));
@@ -217,21 +220,28 @@ export function resolveStage(input: ResolveInput): Stage {
   }
 
   // 2. Screen share.
+  const active = activeSpeakerId && present.has(activeSpeakerId) ? activeSpeakerId : null;
   const sharer = participants.find((p) => p.hasScreenShare);
   if (sharer) {
     const mode = state.screenShareMode;
     let main: string[] = [];
     if (mode === 'screen-speaker') {
-      main = [spot[0] ?? (activeSpeakerId && present.has(activeSpeakerId) ? activeSpeakerId : sharer.sessionId)];
+      // The presenter's camera sits beside their screen, unless the host has
+      // spotlit someone else.
+      main = [spot[0] ?? sharer.sessionId];
     } else if (mode === 'screen-dual') {
       main = spot.slice(0, 2);
-      // Fewer than two spotlit: fill from the sharer, then the room, in join order.
-      for (const id of [sharer.sessionId, ...participants.map((p) => p.sessionId)]) {
+      // Fewer than two spotlit: fill from the sharer, then whoever is talking,
+      // then the room, in join order.
+      for (const id of [sharer.sessionId, ...(active ? [active] : []), ...participants.map((p) => p.sessionId)]) {
         if (main.length >= 2) break;
         if (!main.includes(id)) main.push(id);
       }
     }
-    const thumbnails = mode === 'screen-gallery' ? thumbsExcept(main) : [];
+    // Everyone not on the main stage stays visible as a thumbnail; only
+    // Screen only hides the cameras. (Screen + Speaker used to drop them, so
+    // during a share viewers saw just the screen and the spotlit host.)
+    const thumbnails = mode === 'screen-only' ? [] : thumbsExcept(main);
     return {
       kind: 'screen', main, screenOf: sharer.sessionId, screenMode: mode, thumbnails,
       reason: spot.length ? 'spotlight' : 'none',
@@ -250,13 +260,15 @@ export function resolveStage(input: ResolveInput): Stage {
     return { kind: 'multi', main: spot, thumbnails: noThumbs ? [] : thumbsExcept(spot), reason: 'spotlight' };
   }
 
-  // 4. Nobody spotlit.
-  const active = activeSpeakerId && present.has(activeSpeakerId) ? activeSpeakerId : null;
+  // 4. Nobody spotlit: whoever is talking is featured; between speakers the
+  //    host (defaultFeaturedId) is.
+  const fallback = defaultFeaturedId && present.has(defaultFeaturedId) ? defaultFeaturedId : null;
   switch (state.layoutMode) {
     case 'speaker':
     case 'presentation':
     case 'dual':
       if (active) return { kind: 'speaker', main: [active], thumbnails: thumbsExcept([active]), reason: 'active' };
+      if (fallback) return { kind: 'speaker', main: [fallback], thumbnails: thumbsExcept([fallback]), reason: 'none' };
       return { kind: 'gallery', main: [], thumbnails: thumbsExcept([]), reason: 'none' };
     case 'multi': {
       const main = recentSpeakers.filter((id) => present.has(id)).slice(0, MULTI_SPEAKER_TILES);
