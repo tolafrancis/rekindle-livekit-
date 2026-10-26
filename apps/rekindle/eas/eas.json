@@ -12,6 +12,7 @@
         "ELECTRON_SKIP_BINARY_DOWNLOAD": "1"
       },
       "ios": {
+        "image": "latest",
         "scheme": "App",
         "buildConfiguration": "Release"
       }
