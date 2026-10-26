@@ -1400,9 +1400,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, meetingId]);
 
-  // Ask every non-host participant to agree to the recording: when the host
-  // starts it, and on joining a meeting that is already being recorded. They
-  // can stay (OK) or leave. The host gets their own toast from useDailyRoom's
+  // Tell every non-host participant the meeting is being recorded, with a
+  // pop-up they close with OK: when the host starts recording, and on joining
+  // a meeting that is already being recorded. The host gets their own toast from useDailyRoom's
   // startRecording. Tracks the broadcast meetingSettings.recordingStatus
   // rather than the host-local isRecordingActive/recordingStatus state, which
   // non-hosts never set.
@@ -2508,7 +2508,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         </button>
       )}
 
-      {/* Recording consent: drawn inside the call container (not a portal) so
+      {/* Recording notice: drawn inside the call container (not a portal) so
           it still shows when the call is full screen. */}
       {recordingConsentOpen && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
@@ -2526,18 +2526,11 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </h2>
             </div>
             <p id="recording-consent-desc" className="text-sm text-white/80">
-              {t('dailyVideoCall', 'recordingConsentBody', 'The host is recording this meeting. Your video, audio and name may appear in the recording. By staying, you agree to be recorded. You can turn off your camera or microphone at any time.')}
+              {t('dailyVideoCall', 'meetingBeingRecordedDesc', 'The host has started recording this session.')}
             </p>
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                variant="outline"
-                className="border-white/20 bg-transparent text-white hover:bg-white/10"
-                onClick={() => { setRecordingConsentOpen(false); handleEndCall(false); }}
-              >
-                {t('dailyVideoCall', 'leaveMeeting', 'Leave meeting')}
-              </Button>
+            <div className="mt-5 flex justify-end">
               <Button autoFocus onClick={() => setRecordingConsentOpen(false)}>
-                {t('dailyVideoCall', 'recordingConsentOk', 'OK, continue')}
+                {t('dailyVideoCall', 'ok', 'OK')}
               </Button>
             </div>
           </div>
