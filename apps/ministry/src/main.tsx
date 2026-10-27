@@ -15,6 +15,16 @@ initSentry({ dsn: import.meta.env.VITE_SENTRY_DSN, appName: 'ministry' });
 let callIsActive = false;
 let pendingPushNav: string | null = null;
 
+// iOS's web view widens and zooms the page when anything overflows or an
+// input with small text is focused, cutting off both edges. A native app
+// shouldn't zoom, so pin the scale there (the web build keeps pinch-zoom).
+if (Capacitor.getPlatform() === 'ios') {
+  document.querySelector('meta[name="viewport"]')?.setAttribute(
+    'content',
+    'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no'
+  );
+}
+
 if (Capacitor.isNativePlatform()) {
   window.addEventListener('call:active', (e: Event) => {
     const active = (e as CustomEvent).detail as boolean;

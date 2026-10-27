@@ -9,6 +9,12 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
 
+  // Keep the web view below the status bar and above the home indicator,
+  // as on Android; otherwise headers and sticky bars sit under the clock.
+  ios: {
+    contentInset: 'always',
+  },
+
   server: {
     androidScheme: 'https',
     iosScheme: 'https',

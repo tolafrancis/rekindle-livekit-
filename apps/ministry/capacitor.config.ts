@@ -14,6 +14,12 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
 
+  // Keep the web view below the status bar and above the home indicator,
+  // as on Android; otherwise headers and sticky bars sit under the clock.
+  ios: {
+    contentInset: 'always',
+  },
+
   server: {
     // MUST stay 'https'. getUserMedia() — and therefore every LiveKit broadcast
     // and meeting — only works in a SECURE CONTEXT. Serving the WebView over
