@@ -653,6 +653,13 @@ export const DevotionalModule: React.FC<Props> = ({
   const goToNextSlideRef = useRef(goToNextSlide);
   useEffect(() => { goToNextSlideRef.current = goToNextSlide; }, [goToNextSlide]);
 
+  // True while Read aloud is generating or playing this slide's narration. The
+  // narration then owns the pacing and advances via onComplete; the scroll must
+  // not move on underneath it (the long Devotional slide used to reach the
+  // bottom first and skip ahead mid-reading, cutting the audio off).
+  const narrationBusyRef = useRef(false);
+  narrationBusyRef.current = isSpeaking || isAudioActive || isAudioLoading;
+
   useEffect(() => {
     // isScrollDriven: a scrollable slide advances when its scroll reaches the bottom
     // and dwells there — not on a countdown that knows nothing about the content length.
@@ -734,7 +741,7 @@ export const DevotionalModule: React.FC<Props> = ({
       // Reached the bottom. Hold so the last paragraph can actually be read,
       // then move on.
       endDwellId = setTimeout(() => {
-        if (autoAdvance && currentSlideRef.current < slides.length - 1) {
+        if (autoAdvance && currentSlideRef.current < slides.length - 1 && !narrationBusyRef.current) {
           goToNextSlideRef.current();
         }
       }, SCROLL_END_DWELL_MS);
@@ -770,7 +777,7 @@ export const DevotionalModule: React.FC<Props> = ({
       if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
 
       const atBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 20;
-      if (atBottom && autoAdvance && currentSlide < slides.length - 1 && !isSpiritSlideIndex(currentSlide)) {
+      if (atBottom && autoAdvance && currentSlide < slides.length - 1 && !isSpiritSlideIndex(currentSlide) && !narrationBusyRef.current) {
         userScrollTimeoutRef.current = setTimeout(() => {
           setIsUserScrolling(false);
           isUserScrollingRef.current = false;
@@ -1052,8 +1059,12 @@ export const DevotionalModule: React.FC<Props> = ({
       </div>
 
       {/* Main Content */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-5 py-4 md:px-8 md:py-6 overflow-y-auto overflow-x-hidden">
-        <div className="max-w-md w-full text-center text-white overflow-hidden">
+      {/* The slide is centred with my-auto rather than justify-center, and kept
+          from shrinking: as a shrinking flex item its overflow-hidden clipped
+          tall slides (Reflection Questions) so the last lines couldn't be
+          reached, and justify-center made any overflow above the top unreachable. */}
+      <div className="relative z-10 flex-1 min-h-0 flex flex-col items-center px-5 py-4 md:px-8 md:py-6 overflow-y-auto overflow-x-hidden">
+        <div className="my-auto shrink-0 max-w-md w-full text-center text-white overflow-hidden">
           {/* Slide Icon */}
           <div className="mb-4 flex justify-center">
             <div className="p-3 rounded-full bg-white/20 backdrop-blur-sm">
