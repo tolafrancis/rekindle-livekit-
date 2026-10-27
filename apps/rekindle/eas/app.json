@@ -2,10 +2,10 @@
   "expo": {
     "name": "ReKindleBC",
     "slug": "rekindlebc",
-    "owner": "rekindles-team",
+    "owner": "tolafrancius",
     "extra": {
       "eas": {
-        "projectId": "07428dde-e0e9-4c7e-97cf-2153deeef11a"
+        "projectId": "8a7c7fd3-d010-4da4-b95d-fed581b5e5c8"
       }
     }
   }

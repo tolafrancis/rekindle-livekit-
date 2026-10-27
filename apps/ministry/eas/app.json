@@ -2,10 +2,10 @@
   "expo": {
     "name": "ReKindleBC Ministry",
     "slug": "rekindlebc-ministry",
-    "owner": "rekindles-team",
+    "owner": "tolafrancius",
     "extra": {
       "eas": {
-        "projectId": "5399f95d-0ac3-4a08-89cf-012eaf589af0"
+        "projectId": "6eef9a48-9d8b-4367-914e-42dc0c886a66"
       }
     }
   }
