@@ -31,6 +31,10 @@ interface HighQualityAudioPlayerProps {
   onComplete?: () => void;
 }
 
+// Android's speech engine treats pause() as a stop, so the Chrome keep-alive
+// nudge below would end long narration there after ~10s.
+const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+
 // Browser TTS helpers
 function getBrowserTTSSupport(): boolean {
   return 'speechSynthesis' in window;
@@ -80,7 +84,11 @@ async function getCachedAudio(contentId: string, contentType: string, language: 
 
 // Request server-side generation (only if Edge Function is deployed)
 // NOTE: caller (handleLoadAudio) already checked the cache — do NOT query it again here.
-const EDGE_FN_TIMEOUT_MS = 30000; // 30 seconds - OpenAI TTS can take 10-20 seconds for long text
+// A long slide (the Devotional reading) can take well over 30s to generate the
+// first time. Giving up at 30s dropped it to the browser voice, which often
+// stalled, while the real audio finished caching moments later — so going back
+// and forward "fixed" it. Wait longer, and check the cache once more on timeout.
+const EDGE_FN_TIMEOUT_MS = 75000;
 
 async function requestAudioGeneration(options: {
   text: string;
@@ -193,6 +201,10 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
   // Track which slide the current load is for so we don't clobber state
   // if a stale load resolves after the user already moved on.
   const loadingForSlideRef = useRef<number | null>(null);
+  // The live slide, for async callbacks (loads, speech events) that would
+  // otherwise compare against the slide captured when they started.
+  const currentSlideRef = useRef(currentSlide);
+  currentSlideRef.current = currentSlide;
 
   // Auto-load: re-run whenever the slide (and therefore the text) changes
   useEffect(() => {
@@ -255,9 +267,13 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
     }
     utteranceRef.current = null;
     
+    const slideAtStart = currentSlide;
+
     // FIREFOX FIX: Add small delay after cancel to prevent premature onend
     // Firefox sometimes fires onend for cancelled speech after new speech starts
     setTimeout(() => {
+      // The slide changed during the delay — that slide's own autoplay speaks it.
+      if (currentSlideRef.current !== slideAtStart) return;
       // Create and start new speech
       const processedText = preprocessTextForTTS(text);
       const utterance = new SpeechSynthesisUtterance(processedText);
@@ -275,6 +291,9 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
       };
       
       utterance.onend = () => {
+        // A cancelled utterance (slide changed, or a newer one started) can still
+        // fire onend; acting on it would skip the slide that's now showing.
+        if (utteranceRef.current !== utterance || currentSlideRef.current !== slideAtStart) return;
         if (keepAliveRef.current) { clearInterval(keepAliveRef.current); keepAliveRef.current = null; }
         console.log('✅ [AudioPlayer] Speech ended for slide:', currentSlide);
         console.log('   Speech had started:', speechStarted);
@@ -302,6 +321,7 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
       };
       
       utterance.onerror = (error) => {
+        if (utteranceRef.current !== utterance) return;
         if (keepAliveRef.current) { clearInterval(keepAliveRef.current); keepAliveRef.current = null; }
         console.error('❌ [AudioPlayer] Speech error:', error);
         setIsPlaying(false);
@@ -318,7 +338,7 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
       // which was breaking narration mid-slide on the browser-TTS fallback path.
       // Nudge pause()/resume() under that interval to keep long text playing.
       if (keepAliveRef.current) clearInterval(keepAliveRef.current);
-      keepAliveRef.current = setInterval(() => {
+      if (!IS_ANDROID) keepAliveRef.current = setInterval(() => {
         if (!('speechSynthesis' in window)) return;
         if (window.speechSynthesis.speaking) {
           window.speechSynthesis.pause();
@@ -394,7 +414,7 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
       const cached = await getCachedAudio(slideContentId, contentType, language);
 
       // If the user already moved past this slide while we were awaiting, bail out
-      if (currentSlide !== slideAtStart) {
+      if (loadingForSlideRef.current !== slideAtStart) {
         console.log('[AudioPlayer] Slide changed during load — discarding result for slide', slideAtStart);
         return;
       }
@@ -406,16 +426,18 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
       } else {
         // Try server-side generation (will time out fast if edge fn is missing)
         setLoadProgress(50);
-        const url = await requestAudioGeneration({
+        let url = await requestAudioGeneration({
           text,
           language,
           contentId: slideContentId,
           contentType,
           userId: user?.id,
         });
+        // Generation may have finished server-side just after we stopped waiting.
+        if (!url) url = (await getCachedAudio(slideContentId, contentType, language))?.audio_url ?? null;
 
         // Discard again if slide moved while we awaited the edge function
-        if (currentSlide !== slideAtStart) {
+        if (loadingForSlideRef.current !== slideAtStart) {
           console.log('[AudioPlayer] Slide changed during generation — discarding for slide', slideAtStart);
           return;
         }
@@ -431,11 +453,13 @@ export const HighQualityAudioPlayer: React.FC<HighQualityAudioPlayerProps> = ({
         setLoadProgress(100);
       }
     } catch (err) {
+      if (loadingForSlideRef.current !== slideAtStart) return;
       console.warn('[AudioPlayer] Falling back to browser TTS:', err);
       setUseBrowserTTS(true);
       setLoadProgress(100);
     } finally {
-      setIsLoading(false);
+      // A stale load must not clear the loading state of the slide now loading.
+      if (loadingForSlideRef.current === slideAtStart) setIsLoading(false);
     }
   };
 
