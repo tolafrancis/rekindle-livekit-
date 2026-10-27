@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rekindle/ui/d
 import { Button } from '@rekindle/ui/button';
 import { Heart, X, Sparkles, Check, Crown } from 'lucide-react';
 import type { UpgradePromptConfig } from '@rekindle/auth/useUpgradePrompt';
+import { canShowPurchaseUI } from '../platform';
 
 interface Props {
   prompt: UpgradePromptConfig | null;
@@ -14,6 +15,22 @@ export const UpgradePromptModal: React.FC<Props> = ({ prompt, onClose, onUpgrade
   if (!prompt) return null;
 
   const isMinistry = prompt.category === 'ministry';
+
+  // The iOS app has no purchase surfaces (Apple 3.1.1): say the feature isn't
+  // on this plan, with no upsell and no route to buying it.
+  if (!canShowPurchaseUI()) {
+    return (
+      <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-left">{prompt.title}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">This feature isn't included in your current plan.</p>
+          <Button className="w-full" onClick={onClose}>OK</Button>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const handleBecomPartner = () => {
     // Navigate to donate tab in profile

@@ -69,6 +69,7 @@ import {
 import { toast } from '@rekindle/ui/use-toast';
 import { useTrackElement, type AttachTrackFn } from '../useTrackElement';
 import { LiveChannel, ChannelCoHost } from '@rekindle/types/liveChannelTypes';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 
 interface RaisedHandRequest {
   id: string;
@@ -1274,14 +1275,16 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
                   >
                     {t('liveChannelBroadcast', 'goBack', 'Go Back')}
                   </Button>
-                  <Button
-                    className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black"
-                    onClick={() => {
-                      window.location.href = '/subscription';
-                    }}
-                  >
-                    {t('liveChannelBroadcast', 'upgradeNow', 'Upgrade Now')}
-                  </Button>
+                  {canShowPurchaseUI() && (
+                    <Button
+                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black"
+                      onClick={() => {
+                        window.location.href = '/subscription';
+                      }}
+                    >
+                      {t('liveChannelBroadcast', 'upgradeNow', 'Upgrade Now')}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1437,13 +1440,15 @@ export const LiveChannelBroadcast: React.FC<LiveChannelBroadcastProps> = ({
               <Lock className="h-4 w-4" />
               <span>{t('liveChannelBroadcast', 'broadcastMessagingRequiresMinistry', 'Broadcast messaging (one-to-many) requires Ministry tier subscription')}</span>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => window.location.href = '/subscribe'}
-            >
-              {t('liveChannelBroadcast', 'upgrade', 'Upgrade')}
-            </Button>
+            {canShowPurchaseUI() && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => window.location.href = '/subscribe'}
+              >
+                {t('liveChannelBroadcast', 'upgrade', 'Upgrade')}
+              </Button>
+            )}
           </div>
         </div>
       )}

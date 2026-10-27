@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DataExportButton } from './DataExportButton';
 import { supabase } from '@/lib/supabase';
 import { Lock, Crown, Download, FileJson, Database, Shield } from 'lucide-react';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 
 const DataExportPage: React.FC = () => {
   const { user, profile } = useAuth();
@@ -41,13 +42,15 @@ const DataExportPage: React.FC = () => {
                   <li>Export in JSON or CSV format</li>
                 </ul>
               </div>
-              <Button 
-                className="bg-purple-600 hover:bg-purple-700 text-white"
-                onClick={() => window.location.href = '/subscribe'}
-              >
-                <Crown className="h-4 w-4 mr-2" />
-                Upgrade to Ministry
-              </Button>
+              {canShowPurchaseUI() && (
+                <Button 
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  onClick={() => window.location.href = '/subscribe'}
+                >
+                  <Crown className="h-4 w-4 mr-2" />
+                  Upgrade to Ministry
+                </Button>
+              )}
             </div>
           </AlertDescription>
         </Alert>

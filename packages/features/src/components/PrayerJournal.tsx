@@ -18,6 +18,7 @@ import {
   searchFilterSelectTriggerClass
 } from './SearchFilterPanel';
 import { useLanguage } from '../LanguageContext';
+import { canShowPurchaseUI } from '../platform';
 
 interface JournalEntry {
   id: string;
@@ -128,12 +129,12 @@ export const PrayerJournal: React.FC = () => {
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
                   {isAtLimit 
-                    ? 'Entry limit reached - Upgrade for unlimited entries' 
+                    ? (canShowPurchaseUI() ? 'Entry limit reached - Upgrade for unlimited entries' : 'Entry limit reached')
                     : `You can add ${maxJournalEntries - entries.length} more entr${maxJournalEntries - entries.length === 1 ? 'y' : 'ies'}`
                   }
                 </p>
               </div>
-              {isAtLimit && (
+              {isAtLimit && canShowPurchaseUI() && (
                 <Button 
                   size="sm"
                   className="bg-amber-600 hover:bg-amber-700 text-white"

@@ -13,6 +13,7 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { 
   Heart, CreditCard, Globe, Loader2, Gift, 
   CheckCircle, DollarSign, Sparkles, ExternalLink
@@ -153,7 +154,52 @@ interface PaymentSettings {
   is_active: boolean;
 }
 
-export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = ({ 
+const MINISTRY_WEB_URL = (import.meta.env.VITE_MINISTRY_APP_URL || 'https://rekindlebc.com').replace(/\/+$/, '');
+
+// The iOS app takes no payments (Apple 3.2.2: a platform raising funds for
+// charities must collect them outside the app), so giving opens the
+// ministry's own web page in Safari instead of the form.
+const GiveOnWebCard: React.FC<{ ministryId: string; ministryName: string; themeColor: string }> = ({
+  ministryId, ministryName, themeColor,
+}) => {
+  const { t } = useLanguage();
+  const [slug, setSlug] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('ministry_groups').select('slug').eq('id', ministryId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setSlug((data as any)?.slug ?? null); });
+    return () => { cancelled = true; };
+  }, [ministryId]);
+
+  const openGivingPage = () => {
+    const web = new URL(MINISTRY_WEB_URL);
+    const url = slug ? `${web.protocol}//${slug}.${web.host}/?tab=donations` : MINISTRY_WEB_URL;
+    window.open(url, '_blank');
+  };
+
+  return (
+    <Card className="p-8 text-center">
+      <Gift className="h-12 w-12 mx-auto mb-4" style={{ color: themeColor }} />
+      <h3 className="text-lg font-semibold text-gray-700 mb-2">
+        {t('ministryDonationForm', 'giveToMinistry', 'Give to {name}').replace('{name}', ministryName)}
+      </h3>
+      <p className="text-gray-500 mb-6">
+        {t('ministryDonationForm', 'giveOnWebBody', "Giving opens on the ministry's website in Safari.")}
+      </p>
+      <Button style={{ backgroundColor: themeColor }} size="lg" onClick={openGivingPage}>
+        <ExternalLink className="h-4 w-4 mr-2" />
+        {t('ministryDonationForm', 'giveOnWeb', 'Give on the website')}
+      </Button>
+    </Card>
+  );
+};
+
+export const MinistryDonationForm: React.FC<MinistryDonationFormProps> = (props) =>
+  canShowPurchaseUI()
+    ? <MinistryDonationFormInner {...props} />
+    : <GiveOnWebCard ministryId={props.ministryId} ministryName={props.ministryName} themeColor={props.themeColor ?? '#7c3aed'} />;
+
+const MinistryDonationFormInner: React.FC<MinistryDonationFormProps> = ({ 
   ministryId, 
   ministryName,
   themeColor = '#7c3aed',

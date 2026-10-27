@@ -18,6 +18,7 @@ import {
   TrendingUp, TrendingDown, Users, BookOpen, Music, Heart, 
   DollarSign, Calendar, Download, RefreshCw, Eye, Clock, Loader2, Lock, Crown
 } from 'lucide-react';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 
 interface AnalyticsData {
   dailyActiveUsers: { date: string; users: number }[];
@@ -383,13 +384,15 @@ export const AnalyticsDashboard: React.FC = () => {
                   <li>{t('analyticsDashboard', 'featureDateRange', 'Custom date range reports')}</li>
                 </ul>
               </div>
-              <Button
-                className="bg-purple-600 hover:bg-purple-700 text-white"
-                onClick={() => window.location.href = '/subscribe'}
-              >
-                <Crown className="h-4 w-4 mr-2" />
-                {t('analyticsDashboard', 'upgradeToMinistry', 'Upgrade to Ministry')}
-              </Button>
+              {canShowPurchaseUI() && (
+                <Button
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  onClick={() => window.location.href = '/subscribe'}
+                >
+                  <Crown className="h-4 w-4 mr-2" />
+                  {t('analyticsDashboard', 'upgradeToMinistry', 'Upgrade to Ministry')}
+                </Button>
+              )}
             </div>
           </AlertDescription>
         </Alert>

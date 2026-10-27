@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
@@ -641,54 +642,60 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
             </div>
           </div>
 
-          {/* Plan cards */}
-          <div>
-            <h3 className="text-base font-semibold mb-4">{t('ministryWhatsAppConnect', 'chooseAPlan', 'Choose a Plan to Get Started')}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {WHATSAPP_PLANS.map(plan => (
-                <div
-                  key={plan.id}
-                  className={`relative rounded-xl border-2 p-5 flex flex-col ${plan.colour} ${plan.popular ? 'ring-2 ring-purple-400' : ''}`}
-                >
-                  {plan.popular && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-bold bg-purple-500 text-white px-3 py-0.5 rounded-full">
-                      {t('ministryWhatsAppConnect', 'popular', 'POPULAR')}
-                    </span>
-                  )}
-                  <div className="mb-3">
-                    <Badge className={`text-xs ${plan.badgeColour} border-0`}>{plan.name}</Badge>
-                    <div className="mt-2">
-                      <span className="text-3xl font-extrabold">${plan.monthlyUsd}</span>
-                      <span className="text-sm text-muted-foreground">/mo</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {t('ministryWhatsAppConnect', 'oneTimeSetupFeeX', '+ ${amount} one-time setup fee').replace('{amount}', String(plan.setupUsd))}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      ${plan.messageRate.toFixed(3)}/msg after included{plan.msgIncluded ? ` (${plan.msgIncluded.toLocaleString()} included)` : ' (unlimited, usage-billed)'}
-                    </p>
-                  </div>
-                  <ul className="space-y-1.5 flex-1 mb-4">
-                    {plan.features.map(f => (
-                      <li key={f} className="flex items-start gap-2 text-xs">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    size="sm"
-                    className="w-full"
-                    onClick={() => { setSelectedPlan(plan); setShowPlanModal(true); }}
-                    disabled={checkingOut}
+          {/* Plan cards (none in the iOS app: Apple 3.1.1) */}
+          {canShowPurchaseUI() ? (
+            <div>
+              <h3 className="text-base font-semibold mb-4">{t('ministryWhatsAppConnect', 'chooseAPlan', 'Choose a Plan to Get Started')}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {WHATSAPP_PLANS.map(plan => (
+                  <div
+                    key={plan.id}
+                    className={`relative rounded-xl border-2 p-5 flex flex-col ${plan.colour} ${plan.popular ? 'ring-2 ring-purple-400' : ''}`}
                   >
-                    {t('ministryWhatsAppConnect', 'getStarted', 'Get Started')}
-                    <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                  </Button>
-                </div>
-              ))}
+                    {plan.popular && (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-bold bg-purple-500 text-white px-3 py-0.5 rounded-full">
+                        {t('ministryWhatsAppConnect', 'popular', 'POPULAR')}
+                      </span>
+                    )}
+                    <div className="mb-3">
+                      <Badge className={`text-xs ${plan.badgeColour} border-0`}>{plan.name}</Badge>
+                      <div className="mt-2">
+                        <span className="text-3xl font-extrabold">${plan.monthlyUsd}</span>
+                        <span className="text-sm text-muted-foreground">/mo</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t('ministryWhatsAppConnect', 'oneTimeSetupFeeX', '+ ${amount} one-time setup fee').replace('{amount}', String(plan.setupUsd))}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        ${plan.messageRate.toFixed(3)}/msg after included{plan.msgIncluded ? ` (${plan.msgIncluded.toLocaleString()} included)` : ' (unlimited, usage-billed)'}
+                      </p>
+                    </div>
+                    <ul className="space-y-1.5 flex-1 mb-4">
+                      {plan.features.map(f => (
+                        <li key={f} className="flex items-start gap-2 text-xs">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 shrink-0" />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => { setSelectedPlan(plan); setShowPlanModal(true); }}
+                      disabled={checkingOut}
+                    >
+                      {t('ministryWhatsAppConnect', 'getStarted', 'Get Started')}
+                      <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('ministryWhatsAppConnect', 'notActiveOnPlan', "WhatsApp messaging isn't active for this ministry yet.")}
+            </p>
+          )}
         </div>
 
         {planModal}
@@ -786,13 +793,13 @@ export const MinistryWhatsAppConnect: React.FC<MinistryWhatsAppConnectProps> = (
               <p className="text-sm font-medium">{t('ministryWhatsAppConnect', 'currentPlan', 'Current Plan')}</p>
               <p className="text-xs text-muted-foreground">
                 {WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.name} ·{' '}
-                ${WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.monthlyUsd}/mo
+                {canShowPurchaseUI() && <>${WHATSAPP_PLANS.find(p => p.id === config.whatsapp_plan)?.monthlyUsd}/mo</>}
               </p>
             </div>
             <Badge variant="outline" className="capitalize">{config.plan_status}</Badge>
           </div>
           <div className="flex flex-wrap gap-2">
-            {WHATSAPP_PLANS.filter(p => p.id !== config.whatsapp_plan).map(p => (
+            {canShowPurchaseUI() && WHATSAPP_PLANS.filter(p => p.id !== config.whatsapp_plan).map(p => (
               <Button
                 key={p.id}
                 variant="outline"

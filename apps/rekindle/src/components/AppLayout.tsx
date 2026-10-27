@@ -29,6 +29,7 @@ import { useFeatureToggles } from '@rekindle/features/featureToggles';
 import { AppFooter } from './AppFooter';
 import { registerPush } from '@rekindle/features/usePushNotifications';
 import { UpgradePromptModal } from './UpgradePromptModal';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { OfflineIndicator } from './OfflineIndicator';
 import { DailyDevotionalWidget } from './DailyDevotionalWidget';
 import { FreeMeetingsPromoCard } from '@rekindle/features/components/FreeMeetingsPromoCard';
@@ -344,6 +345,10 @@ const ACCOUNT_GROUPS: { id: string; label: string; labelKey: string; items: stri
   { id: 'give', label: 'Giving & plans', labelKey: 'accountGive', items: ['sponsor', 'subscription', 'billing', 'referral'] },
 ];
 
+// Giving, plans and billing are hidden in the iOS app (Apple 3.1.1 / 3.2.2);
+// see canShowPurchaseUI().
+const PURCHASE_TABS = ['sponsor', 'subscription', 'billing'];
+
 // Phone bottom bar. Live and Community sit in "More" (Home also shows a
 // "Live now" strip while a channel is broadcasting).
 const BOTTOM_TABS: { id: string; label: string; labelKey: string; icon: typeof Home; tab: string }[] = [
@@ -542,6 +547,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
   // "Become a Partner" (openDonate) opens it on the individual plans.
   useEffect(() => {
     const donateHandler = () => {
+      if (!canShowPurchaseUI()) return;
       sessionStorage.setItem('subscriptionCategory', 'individual');
       navigateTab('subscription');
     };
@@ -551,6 +557,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   useEffect(() => {
     const handler = (e: Event) => {
+      if (!canShowPurchaseUI()) return;
       const category = (e as CustomEvent).detail?.category ?? 'individual';
       sessionStorage.setItem('subscriptionCategory', category);
       navigateTab('subscription');
@@ -1242,7 +1249,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
 
   const accountGroups = ACCOUNT_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => item !== 'my-dashboard' || isCounsellor),
+    items: group.items.filter((item) =>
+      (item !== 'my-dashboard' || isCounsellor) && (canShowPurchaseUI() || !PURCHASE_TABS.includes(item))),
   }));
   const openFeatureFinder = () => window.dispatchEvent(new CustomEvent(OPEN_FEATURE_FINDER_EVENT));
   const openHelp = () => navigate('/faq');
@@ -1742,15 +1750,15 @@ const AppLayout: React.FC<AppLayoutProps> = ({ pendingRoomJoin, onRoomJoinHandle
           )}
 
 
-          {activeTab === 'billing' && (
+          {activeTab === 'billing' && canShowPurchaseUI() && (
             <>
               <PaymentHistory onNavigateToSubscription={() => navigateTab('subscription')} />
             </>
           )}
 
-          {activeTab === 'subscription' && <SubscriptionManager />}
+          {activeTab === 'subscription' && canShowPurchaseUI() && <SubscriptionManager />}
 
-          {activeTab === 'sponsor' && <SponsorshipSystem />}
+          {activeTab === 'sponsor' && canShowPurchaseUI() && <SponsorshipSystem />}
 
           {activeTab === 'admin' && isAdmin && (
             <ErrorBoundary>

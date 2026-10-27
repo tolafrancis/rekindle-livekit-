@@ -46,6 +46,7 @@ import {
 import { fetchScripture, BIBLE_VERSIONS } from '@rekindle/features/bibleApi';
 import { publicWebOrigin } from '@rekindle/features/platform';
 import { confirmAction } from '@rekindle/ui/confirm-dialog';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 
 interface MinistryDevotional {
   id: string;
@@ -455,18 +456,20 @@ export const MinistryDevotionalCreator: React.FC<MinistryDevotionalCreatorProps>
               </ul>
             </div>
 
-            <Button 
-              size="lg" 
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
-              onClick={() => {
-                // Open the subscription (sponsor) tab via the app-native event —
-                // the old hash write no longer drives navigation (tabs are paths now).
-                window.dispatchEvent(new CustomEvent('openSubscription'));
-              }}
-            >
-              <Crown className="h-5 w-5 mr-2" />
-              {t('ministryDevotionalCreator', 'upgradeToMinistry', 'Upgrade to Ministry - $19.99/month')}
-            </Button>
+            {canShowPurchaseUI() && (
+              <Button 
+                size="lg" 
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                onClick={() => {
+                  // Open the subscription (sponsor) tab via the app-native event —
+                  // the old hash write no longer drives navigation (tabs are paths now).
+                  window.dispatchEvent(new CustomEvent('openSubscription'));
+                }}
+              >
+                <Crown className="h-5 w-5 mr-2" />
+                {t('ministryDevotionalCreator', 'upgradeToMinistry', 'Upgrade to Ministry - $19.99/month')}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

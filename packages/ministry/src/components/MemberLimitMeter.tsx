@@ -7,6 +7,7 @@ import {
 } from '@rekindle/auth/ministryEntitlements';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 
 // Members-vs-plan-cap meter. `card` (billing page) always shows the count;
 // `banner` (admin dashboard) only appears from MEMBER_LIMIT_WARN_RATIO up, so
@@ -51,12 +52,16 @@ export function MemberLimitMeter({ ministryId, variant }: { ministryId?: string 
                 : `You're at ${pct}% of your member limit (${usage.count.toLocaleString()} of ${usage.limit.toLocaleString()}).`}
             </p>
             <p className="text-gray-600">
-              {full ? "New members can't join until you upgrade." : 'Upgrade before new members are turned away.'}
+              {canShowPurchaseUI()
+                ? (full ? "New members can't join until you upgrade." : 'Upgrade before new members are turned away.')
+                : (full ? "New members can't join until the limit is raised." : 'New members will be turned away once the limit is reached.')}
             </p>
           </div>
-          <Button asChild size="sm" variant={full ? 'destructive' : 'default'}>
-            <a href={BILLING_URL}>Upgrade plan</a>
-          </Button>
+          {canShowPurchaseUI() && (
+            <Button asChild size="sm" variant={full ? 'destructive' : 'default'}>
+              <a href={BILLING_URL}>Upgrade plan</a>
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

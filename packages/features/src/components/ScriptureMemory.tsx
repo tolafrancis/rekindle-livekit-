@@ -19,6 +19,7 @@ import { BookOpen, Plus, RotateCcw, Check, X, Trash2, Brain, Trophy, Search, Che
 import { toast } from '@rekindle/ui/use-toast';
 import { Input } from '@rekindle/ui/input';
 import { Textarea } from '@rekindle/ui/textarea';
+import { canShowPurchaseUI } from '../platform';
 
 /**
  * Scripture Memory Component with Bible API Integration
@@ -411,12 +412,14 @@ export function ScriptureMemory() {
               </p>
               <p className="text-xs text-gray-500">
                 {cards.length >= verseLimit
-                  ? t('scriptureMemory', 'verseLimitReached', 'Verse limit reached - Upgrade for unlimited verses')
+                  ? (canShowPurchaseUI()
+                    ? t('scriptureMemory', 'verseLimitReached', 'Verse limit reached - Upgrade for unlimited verses')
+                    : 'Verse limit reached')
                   : t('scriptureMemory', 'canAddMoreVerses', 'You can add {remaining} more verse(s)').replace('{remaining}', String(verseLimit - cards.length))
                 }
               </p>
             </div>
-            {cards.length >= verseLimit && (
+            {cards.length >= verseLimit && canShowPurchaseUI() && (
               <Button 
                 variant="outline" 
                 size="sm"

@@ -2,6 +2,7 @@ import { Video, Sparkles, ArrowRight, Code2 } from 'lucide-react';
 import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { useLanguage } from '../LanguageContext';
+import { canShowPurchaseUI } from '../platform';
 
 // apps/developer-portal's production domain. The Pages project + DNS/Worker
 // routing for this subdomain are a Cloudflare dashboard task, not code —
@@ -40,7 +41,7 @@ export const FreeMeetingsPromoCard: React.FC<{
           </p>
           <p className="text-sm text-gray-600 mt-1">
             {t('freeMeetingsPromo', 'participants', 'Free plan includes up to 15 participants per meeting.')}{' '}
-            {onSeePlans && (
+            {onSeePlans && canShowPurchaseUI() && (
               <button
                 type="button"
                 onClick={onSeePlans}

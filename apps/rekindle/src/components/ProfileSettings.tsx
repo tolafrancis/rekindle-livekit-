@@ -18,6 +18,7 @@ import { LanguageSettings } from '@/components/LanguageSettings';
 import { PlatformWhatsAppOptIn } from '@/components/WhatsAppOptIn';
 import { DailyReminders } from '@/components/DailyReminders';
 import { PartnerDonationPage } from '@/components/PartnerDonationPage';
+import { canShowPurchaseUI } from '@rekindle/features/platform';
 import { PushNotificationSettings } from '@/components/PushNotificationSettings';
 import { DeveloperApiKeysPanel } from '@/components/DeveloperApiKeysPanel';
 import { ImageUpload } from '@rekindle/ministry/components/ImageUpload';
@@ -612,7 +613,8 @@ export const ProfileSettings: React.FC = () => {
           {/* Counsellor Application Status */}
       <CounsellorApplicationStatus />
 
-      {/* Partner / Donation */}
+      {/* Partner / Donation (not in the iOS app: Apple 3.1.1 / 3.2.2) */}
+      {canShowPurchaseUI() && (
       <Card>
         <CardHeader
           className="cursor-pointer select-none"
@@ -639,6 +641,7 @@ export const ProfileSettings: React.FC = () => {
           </CardContent>
         )}
       </Card>
+      )}
 
                 </>)}
 
