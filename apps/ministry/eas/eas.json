@@ -16,6 +16,10 @@
         "scheme": "App",
         "buildConfiguration": "Release"
       }
+    },
+    "adhoc": {
+      "extends": "production",
+      "distribution": "internal"
     }
   },
   "submit": {
