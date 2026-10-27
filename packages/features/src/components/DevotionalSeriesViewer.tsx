@@ -2031,8 +2031,10 @@ export const DevotionalSeriesViewer: React.FC<DevotionalSeriesViewerProps> = ({
         </div>
 
         {/* Main Content */}
-        <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 md:p-6 overflow-hidden">
-          <div className="max-w-2xl w-full text-center text-white overflow-hidden">
+        {/* Centred with my-auto and kept from shrinking, so a tall slide
+            (Reflection Questions) scrolls instead of being clipped. */}
+        <div className="relative z-10 flex-1 min-h-0 flex flex-col items-center p-4 md:p-6 overflow-y-auto overflow-x-hidden">
+          <div className="my-auto shrink-0 max-w-2xl w-full text-center text-white overflow-hidden">
             {/* Slide Icon */}
             <div className="mb-4 flex justify-center">
               <div className="p-3 rounded-full bg-white/20 backdrop-blur-sm">
