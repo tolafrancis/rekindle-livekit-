@@ -26,8 +26,9 @@ import {
   Plus, Loader2, Clock, Pin, Send, Building2, ChevronRight,
   Lock, Star, Edit, Trash2, Eye, LayoutDashboard, Play, Radio,
   HelpCircle, ThumbsUp, CheckCircle2, ChevronDown, ChevronUp, Book, Sparkles, Menu, Share2, ScrollText, Music, Trophy, Search,
-  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard, HandCoins,
+  User, BarChart3, Inbox, Cake, ClipboardList, HeartHandshake, CreditCard, HandCoins, MoreHorizontal,
 } from 'lucide-react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@rekindle/ui/sheet';
 
 // Every workspace tab (live, meetings, webinars, recordings, settings, the
 // shared Word/Prayer/Community screens …) is its own chunk, loaded when the tab
@@ -396,6 +397,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   const [mExpandedQ, setMExpandedQ] = useState<string | null>(null);
   const [mAnswerDrafts, setMAnswerDrafts] = useState<Record<string, string>>({});
   const [navMenuOpen, setNavMenuOpen] = useState(false);
+  const [moreSheetOpen, setMoreSheetOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [events, setEvents] = useState<MinistryEvent[]>([]);
@@ -1251,6 +1253,19 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
     ownsSubtab(g.id) ? activeTab === g.id && SUBTAB[g.id].value === childId : activeTab === childId;
   const isGroupActive = (g: NavGroup) => activeGroup.id === g.id;
 
+  // Phone bottom bar, like the member app's: Home, Word, Live, Ministry, then
+  // Settings for leaders or Small Groups for members (who have no Settings),
+  // and More for every other group.
+  const BOTTOM_IDS = ['home', 'word', 'live', 'admin', canManageMinistry ? 'settings' : 'groups'];
+  const bottomGroups = BOTTOM_IDS
+    .map((id) => GROUPS.find((g) => g.id === id))
+    .filter((g): g is NavGroup => !!g);
+  const moreGroups = GROUPS.filter((g) => !BOTTOM_IDS.includes(g.id));
+  const bottomLabel = (g: NavGroup) =>
+    g.id === 'word' ? t('ministrySpace', 'navWordShort', 'Word')
+      : g.id === 'groups' ? t('ministrySpace', 'navGroupsShort', 'Groups')
+      : navLabel(g);
+
   // The app-wide "Find a feature" search (apps/rekindle FeatureFinder) asks
   // for a screen in here by group + child id. Only screens this user can
   // actually see (role, plan and modules already applied to GROUPS) are
@@ -1823,7 +1838,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
         </div>
 
         {/* Main content */}
-        <div className="flex-1 overflow-y-auto" data-tour="ministry-page">
+        <div className="flex-1 overflow-y-auto pb-16 md:pb-0" data-tour="ministry-page">
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <Suspense fallback={<TabFallback />}>
         {/* Live Tab - MLiveChannel */}
@@ -3578,6 +3593,91 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           }}
         />
       )}
+
+      {/* Phone bottom bar (see bottomGroups). */}
+      <nav
+        aria-label={t('ministrySpace', 'mainNav', 'Ministry')}
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex">
+          {bottomGroups.map((g) => {
+            const Icon = g.icon;
+            const active = isGroupActive(g) && !moreSheetOpen;
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => { setNavMenuOpen(false); goToGroup(g); }}
+                aria-current={active ? 'page' : undefined}
+                className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold ${active ? '' : 'text-gray-500'}`}
+                style={active ? { color: themeColor } : undefined}
+              >
+                <Icon className="h-5 w-5" />
+                {bottomLabel(g)}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => { setNavMenuOpen(false); setMoreSheetOpen(true); }}
+            aria-haspopup="dialog"
+            aria-expanded={moreSheetOpen}
+            className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold ${moreSheetOpen ? '' : 'text-gray-500'}`}
+            style={moreSheetOpen ? { color: themeColor } : undefined}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+            {t('ministrySpace', 'navMore', 'More')}
+          </button>
+        </div>
+      </nav>
+
+      <Sheet open={moreSheetOpen} onOpenChange={setMoreSheetOpen}>
+        <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <SheetHeader>
+            <SheetTitle>{t('ministrySpace', 'navMore', 'More')}</SheetTitle>
+          </SheetHeader>
+          <div className="mt-3 space-y-4">
+            {moreGroups.map((g) => {
+              const GIcon = g.icon;
+              return (
+                <div key={g.id}>
+                  <button
+                    type="button"
+                    onClick={() => { goToGroup(g); if (!g.children) setMoreSheetOpen(false); }}
+                    className="flex w-full items-center gap-2 px-1 py-1 text-left text-sm font-semibold text-gray-900"
+                  >
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br ${g.gradient} text-white shadow-sm`}>
+                      <GIcon className="h-4 w-4" />
+                    </span>
+                    {navLabel(g)}
+                  </button>
+                  {g.children && (
+                    <div className="mt-1 grid grid-cols-3 gap-1">
+                      {g.children.map((c) => {
+                        const CIcon = c.icon;
+                        const cActive = isChildActive(g, c.id);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => { goToChild(g, c.id); setMoreSheetOpen(false); }}
+                            className={`flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center text-xs ${cActive ? 'font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                            style={cActive ? { color: themeColor, backgroundColor: `${themeColor}14` } : undefined}
+                          >
+                            <CIcon className="h-5 w-5" />
+                            {navLabel(c)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Devotional Reader */}
       {showDevotionalModule && selectedDevotional && (
