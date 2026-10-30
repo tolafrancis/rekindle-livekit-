@@ -15,6 +15,55 @@ import type { TutorialDefinition, TutorialStep } from '@rekindle/features/tutori
 
 const TOUR_DONE_KEY = 'rk-display-tour-done';
 
+type AudienceGate = 'checking' | 'in' | 'full';
+
+/** People-per-language limit (ReKindle Translate plans, live-translation
+ *  migration 0417; get_session_listener_cap is null for everyone else, who
+ *  go straight in). Everyone on this session's page joins a presence
+ *  channel, ordered by arrival; the first `cap` get the captions, the rest
+ *  see "full" and move in when a place opens. Once in, a visitor stays in,
+ *  so phones with skewed clocks can't bump each other. If presence never
+ *  answers, visitors are let in rather than locked out. */
+function useAudienceGate(sessionId: string | undefined, enabled: boolean): AudienceGate {
+  const [gate, setGate] = useState<AudienceGate>('checking');
+  const admittedRef = useRef(false);
+  useEffect(() => {
+    if (!enabled || !sessionId) return;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let failOpen: ReturnType<typeof setTimeout> | null = null;
+    const admit = () => { admittedRef.current = true; setGate('in'); };
+    (async () => {
+      const { data: cap, error } = await supabase.rpc('get_session_listener_cap', { p_session_id: sessionId });
+      if (cancelled) return;
+      if (error || typeof cap !== 'number') { admit(); return; }
+      const me = randomId();
+      const joinedAt = Date.now();
+      failOpen = setTimeout(() => { if (!admittedRef.current) admit(); }, 8000);
+      const ch = supabase.channel(`translation-audience-${sessionId}`, { config: { presence: { key: me } } });
+      channel = ch;
+      ch.on('presence', { event: 'sync' }, () => {
+        if (admittedRef.current) return;
+        const order = Object.entries(ch.presenceState<{ joined_at?: number }>())
+          .map(([key, metas]) => ({ key, at: Math.min(...metas.map((m) => m.joined_at ?? Number.MAX_SAFE_INTEGER)) }))
+          .sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
+        const position = order.findIndex((p) => p.key === me);
+        if (position === -1) return;
+        if (position < cap) admit();
+        else setGate('full');
+      }).subscribe((status) => {
+        if (status === 'SUBSCRIBED') void ch.track({ joined_at: joinedAt });
+      });
+    })();
+    return () => {
+      cancelled = true;
+      if (failOpen) clearTimeout(failOpen);
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [sessionId, enabled]);
+  return gate;
+}
+
 /** First-visit walkthrough of the listener page's controls (2026-10-31).
  *  Runs on TutorialOverlay directly, without TutorialProvider: this page is
  *  public, so there's no account to save progress to; a localStorage flag
@@ -343,8 +392,11 @@ export const TranslationDisplayPage: React.FC = () => {
   // text, several times a second), and re-running this tore down and
   // re-subscribed the channel each time, racing the reload against INSERTs.
   const sessionLoaded = !!session;
+  // Captions only start once this visitor is within the people limit.
+  const audienceGate = useAudienceGate(sessionId, sessionLoaded);
+  const admitted = audienceGate === 'in';
   useEffect(() => {
-    if (!sessionLoaded || !sessionId) return;
+    if (!sessionLoaded || !admitted || !sessionId) return;
 
     let cancelled = false;
     const loadLines = async () => {
@@ -392,7 +444,7 @@ export const TranslationDisplayPage: React.FC = () => {
       clearInterval(poll);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [sessionLoaded, sessionId]);
+  }, [sessionLoaded, admitted, sessionId]);
 
   // Conversation — whether this ministry has it turned on at all (Settings
   // tab default true). language_configs has no public SELECT policy
@@ -825,6 +877,25 @@ export const TranslationDisplayPage: React.FC = () => {
             </Button>
             {downloadError && <p className="text-xs text-red-400">{downloadError}</p>}
             <p className="text-[11px] text-white/30">Available for a limited time after the session ends.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Over the plan's people limit for this language (useAudienceGate). The
+  // presence channel stays open, so a place opening lets them in by itself.
+  if (audienceGate === 'full') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+        <Card className="max-w-sm w-full bg-white/5 border-white/10">
+          <CardContent className="py-8 text-center space-y-3">
+            <Radio className="h-8 w-8 mx-auto text-white/30" />
+            <p className="text-sm font-medium text-white">This translation is full right now</p>
+            <p className="text-sm text-white/50">
+              It has reached the number of people it can take for this language. Keep this page open: you'll join automatically as soon as a place opens.
+            </p>
+            <Loader2 className="h-5 w-5 mx-auto animate-spin text-white/30" />
           </CardContent>
         </Card>
       </div>

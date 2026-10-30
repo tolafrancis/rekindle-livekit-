@@ -118,6 +118,12 @@ serve(async (req) => {
     if (!row.livekit_room_name) return json({ error: 'not_ready' }, 409);
 
     const svc = new RoomServiceClient(httpUrl(LIVEKIT_URL), LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+    const lang = String(row.target_language ?? '').replace(/[^A-Za-z-]/g, '');
+
+    // A ReKindle Translate plan's people-per-language limit (migration 0417
+    // in live-translation; null for ReKindle ministries). Readers are capped
+    // on the listener page itself; this caps audio for the same language.
+    const { data: planCap } = await anon.rpc('get_session_listener_cap', { p_session_id: row.id });
 
     // Capacity gate: count everyone in the room except the bot itself
     // (identity "rlt-bot-{sessionId}", see BotSession.ts) — every previously
@@ -129,6 +135,10 @@ serve(async (req) => {
       const listenerCount = participants.filter((p) => !p.identity.startsWith('rlt-bot-')).length;
       if (listenerCount >= LISTENER_CAP) {
         return json({ error: 'at_capacity' }, 429);
+      }
+      if (typeof planCap === 'number' && lang) {
+        const sameLanguage = participants.filter((p) => p.identity.startsWith(`rlt-listener-${lang}-`)).length;
+        if (sameLanguage >= planCap) return json({ error: 'at_capacity' }, 429);
       }
     } catch {
       // Room not yet visible to the API / transient blip — fail open here;
@@ -142,7 +152,6 @@ serve(async (req) => {
     // watch in rekindle-translation-bot). Ends in the UUID, which the bot
     // parses from the end because a language can contain "-" (pt-BR).
     // No language: the old form, which the bot always counts as listening.
-    const lang = String(row.target_language ?? '').replace(/[^A-Za-z-]/g, '');
     const identity = lang ? `rlt-listener-${lang}-${crypto.randomUUID()}` : `rlt-listener-${crypto.randomUUID()}`;
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity,
