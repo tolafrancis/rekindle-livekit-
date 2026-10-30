@@ -9,6 +9,7 @@ import {
   resolveMinistryRole, roleCan, roleLabel, roleToMemberColumns, normaliseRole,
   ASSIGNABLE_ROLES, ROLE_DESCRIPTIONS, type MinistryRole,
 } from '@rekindle/auth/ministryPermissions';
+import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 import { Switch } from '@rekindle/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
@@ -264,6 +265,14 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
   });
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
   const [ministryName, setMinistryName] = useState('');
+  // Broadcast is a plan feature (caps.broadcastMessaging), same as the
+  // Ministry › Broadcast tab; send-push-notification checks it too.
+  const [canBroadcast, setCanBroadcast] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getMinistryEntitlements(ministryId).then((e) => { if (!cancelled) setCanBroadcast(e.caps.broadcastMessaging); });
+    return () => { cancelled = true; };
+  }, [ministryId]);
 
   // Enhanced analytics state
   const [memberGrowthData, setMemberGrowthData] = useState<MemberGrowthData[]>([]);
@@ -1083,15 +1092,17 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
             <FileDown className="h-4 w-4" />
             {t('ministryMembersManager', 'export', 'Export')}
           </Button>
-          <Button
-            onClick={() => setShowBroadcastModal(true)}
-            variant="outline"
-            className="gap-2"
-            disabled={members.length === 0}
-          >
-            <Radio className="h-4 w-4" />
-            {t('ministryMembersManager', 'broadcast', 'Broadcast')}
-          </Button>
+          {canBroadcast && (
+            <Button
+              onClick={() => setShowBroadcastModal(true)}
+              variant="outline"
+              className="gap-2"
+              disabled={members.length === 0}
+            >
+              <Radio className="h-4 w-4" />
+              {t('ministryMembersManager', 'broadcast', 'Broadcast')}
+            </Button>
+          )}
           <Button onClick={() => setShowInviteModal(true)} className="gap-2">
             <UserPlus className="h-4 w-4" />
             {t('ministryMembersManager', 'inviteMember', 'Invite Member')}
@@ -1192,15 +1203,17 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
           <AlertDescription className="flex items-center justify-between">
             <span>{t('ministryMembersManager', 'membersSelected', '{count} member(s) selected').replace('{count}', String(selectedMembers.length))}</span>
             <div className="flex gap-2">
-              <Button
-                onClick={() => setShowBroadcastModal(true)}
-                size="sm"
-                variant="outline"
-                className="gap-2"
-              >
-                <Send className="h-4 w-4" />
-                {t('ministryMembersManager', 'broadcastToSelected', 'Broadcast to Selected')}
-              </Button>
+              {canBroadcast && (
+                <Button
+                  onClick={() => setShowBroadcastModal(true)}
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                >
+                  <Send className="h-4 w-4" />
+                  {t('ministryMembersManager', 'broadcastToSelected', 'Broadcast to Selected')}
+                </Button>
+              )}
               <Button
                 onClick={() => setSelectedMembers([])}
                 size="sm"

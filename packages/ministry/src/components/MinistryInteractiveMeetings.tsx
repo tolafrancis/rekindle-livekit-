@@ -981,6 +981,8 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
   // True when this ministry has no paid plan and is on the free "Free
   // Ministry Meetings" allowance instead — drives clamping and copy.
   const [isFreeTier, setIsFreeTier] = useState(false);
+  // Recording is the AI note taker on Growth Partner and up (caps.recordMeetings).
+  const [canRecord, setCanRecord] = useState(false);
 
   const [formData, setFormData] = useState<CreateMeetingFormData>({
     title: '',
@@ -1060,6 +1062,7 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
           limit: quota?.limit,
         });
         setIsFreeTier(isFreePlan);
+        setCanRecord(entitlements.caps.recordMeetings);
 
         // Out of scope for the ministry-tier fix: no 1:1 field in
         // MinistryCaps for "max minutes per single meeting" (limits are
@@ -1139,7 +1142,7 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
         duration_minutes: durationMinutes,
         max_participants: maxParticipants,
         access_level: formData.access_level,
-        enable_recording: isFreeTier ? false : formData.enable_recording,
+        enable_recording: canRecord ? formData.enable_recording : false,
         enable_chat: formData.enable_chat,
         enable_screenshare: formData.enable_screenshare,
         // Only written when the host picks a non-default caption language, so
@@ -1523,11 +1526,16 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="enable_recording">{t('ministryInteractiveMeetings', 'enableRecording', 'Enable Recording')}</Label>
-                <p className="text-xs text-gray-500">{t('ministryInteractiveMeetings', 'enableRecordingDesc', 'Record meeting for later playback')}</p>
+                <p className="text-xs text-gray-500">
+                  {canRecord
+                    ? t('ministryInteractiveMeetings', 'enableRecordingDesc', 'Record meeting for later playback')
+                    : t('ministryInteractiveMeetings', 'recordingNeedsGrowth', 'Recording and the AI note taker are on Growth Partner and above')}
+                </p>
               </div>
               <Switch
                 id="enable_recording"
-                checked={formData.enable_recording}
+                disabled={!canRecord}
+                checked={canRecord && formData.enable_recording}
                 onCheckedChange={(checked) => setFormData({ ...formData, enable_recording: checked })}
               />
             </div>
@@ -1657,6 +1665,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const [isLeader, setIsLeader] = useState(false);
   const [ministryName, setMinistryName] = useState<string | null>(null);
   const [canCreateMeeting, setCanCreateMeeting] = useState(false);
+  const [canRecord, setCanRecord] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
   // Guest join support
   const [pendingJoinMeeting, setPendingJoinMeeting] = useState<MinistryVideoMeeting | null>(null);
@@ -1737,6 +1746,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
       try {
         const entitlements = await getMinistryEntitlements(ministryId);
         setCanCreateMeeting(entitlements.caps.interactiveMeetings);
+        setCanRecord(entitlements.caps.recordMeetings);
         if (!entitlements.caps.interactiveMeetings) {
           setSubscriptionError("This ministry's plan doesn't include interactive meetings");
         }
@@ -2000,6 +2010,10 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
   const toggleMeetingRecording = async (meeting: MinistryVideoMeeting, enabled: boolean) => {
     if (meeting.is_active) {
       toast.error(t('ministryInteractiveMeetings', 'cantChangeRecordingLive', "Can't change recording while the meeting is live — end it first."));
+      return;
+    }
+    if (enabled && !canRecord) {
+      toast.error(t('ministryInteractiveMeetings', 'recordingNeedsGrowth', 'Recording and the AI note taker are on Growth Partner and above'));
       return;
     }
     setRecordingBusyId(meeting.id);

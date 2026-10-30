@@ -844,7 +844,7 @@ const CreateMeetingModal = ({ isOpen, onClose, onSuccess, channelId, ministryId,
 
           if (formData.enable_recording && !entitlements.caps.recordMeetings) {
             setFormData(prev => ({ ...prev, enable_recording: false }));
-            toast.warning(t('liveChannelInteractiveMeetings', 'recordingRequiresPlus', 'Recording requires Ministry Plus subscription'));
+            toast.warning(t('liveChannelInteractiveMeetings', 'recordingRequiresGrowth', 'Recording and the AI note taker are on Growth Partner and above'));
           }
           return;
         }
