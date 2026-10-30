@@ -93,6 +93,45 @@ async function getPublishedLanguages(supabase: any): Promise<string[]> {
   return data.map((r: any) => r.code).filter((c: string) => c && c !== 'en');
 }
 
+// Admin-pinned languages to always auto-translate, even before any user picks
+// them: platform_settings.auto_translate_languages = '["es","fr"]'.
+const AUTO_TRANSLATE_SETTING_KEY = 'auto_translate_languages';
+
+// The hourly auto-enqueue's default target set: published languages that a
+// signed-in user is actually reading in (user_profiles.preferred_language,
+// which LanguageContext saves from the switcher and renders the app in), plus
+// any admin-pinned ones. Onboarding's language_preference is ignored: nothing
+// renders from it, so it doesn't mean anyone reads that language. Translating
+// every published language up front spent OpenAI credits on ~20 languages
+// nobody was reading. A user switching to a new language gets English until
+// the next hourly run queues that language.
+async function getAutoTranslateLanguages(supabase: any): Promise<string[]> {
+  const published = new Set(await getPublishedLanguages(supabase));
+  const wanted = new Set<string>();
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from('user_profiles')
+      .select('preferred_language')
+      .neq('preferred_language', 'en')
+      .range(from, from + 999);
+    if (error) throw new Error(`user_profiles: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data) if (r.preferred_language) wanted.add(r.preferred_language);
+    if (data.length < 1000) break;
+  }
+
+  const { data: setting } = await supabase.from('platform_settings')
+    .select('value').eq('key', AUTO_TRANSLATE_SETTING_KEY).maybeSingle();
+  try {
+    const pinned = setting?.value ? JSON.parse(setting.value) : [];
+    if (Array.isArray(pinned)) for (const l of pinned) if (typeof l === 'string') wanted.add(l);
+  } catch {
+    console.warn(`auto_enqueue: ${AUTO_TRANSLATE_SETTING_KEY} is not a JSON array, ignoring`);
+  }
+
+  return Array.from(wanted).filter((l) => published.has(l));
+}
+
 // Bulk-enqueue every row of the given content types for the target languages,
 // skipping (content,language) pairs already completed or already in flight, so
 // re-running is cheap and never double-queues. Preserves existing completed
@@ -900,20 +939,20 @@ Deno.serve(async (req) => {
       }
 
       case 'auto_enqueue': {
-        // Cron entrypoint: translate any NEW/untranslated content into every
-        // PUBLISHED language. queueAllContent skips whatever is already done or
-        // in flight, so each hourly run only picks up genuinely new content.
-        // Defaults: content types = DEFAULT_AUTO_CONTENT_TYPES, languages =
-        // published app_languages. Override either by passing them in the body.
+        // Cron entrypoint: translate any NEW/untranslated content into the
+        // published languages users actually read (getAutoTranslateLanguages).
+        // queueAllContent skips whatever is already done or in flight, so each
+        // hourly run only picks up genuinely new content. Defaults: content
+        // types = DEFAULT_AUTO_CONTENT_TYPES. Override either by passing them in the body.
         const autoTypes = Array.isArray(params.contentTypes) && params.contentTypes.length
           ? params.contentTypes : DEFAULT_AUTO_CONTENT_TYPES;
         const autoLangs = Array.isArray(params.targetLanguages) && params.targetLanguages.length
-          ? params.targetLanguages : await getPublishedLanguages(supabase);
+          ? params.targetLanguages : await getAutoTranslateLanguages(supabase);
 
         if (!autoLangs || autoLangs.length === 0) {
           return new Response(JSON.stringify({
             success: true, skipped: true,
-            message: 'No published non-English languages — publish one in Admin → Languages, or pass targetLanguages.'
+            message: `No user has chosen a published non-English language — nothing to auto-translate. Pin languages in platform_settings.${AUTO_TRANSLATE_SETTING_KEY}, or pass targetLanguages.`
           }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         }
 
