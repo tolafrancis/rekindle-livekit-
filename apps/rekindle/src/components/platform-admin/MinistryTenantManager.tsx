@@ -590,7 +590,8 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                   <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'status', 'Status')}</th>
                   <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'verification', 'Verification')}</th>
                   <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'risk', 'Risk')}</th>
-                  <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'actions', 'Actions')}</th>
+                  {/* Pinned right so the actions stay reachable without scrolling the table sideways. */}
+                  <th className="text-left p-4 font-medium sticky right-0 bg-gray-50 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">{t('ministryTenantManager', 'actions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -598,7 +599,7 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                   const sub = subscriptions[ministry.id];
                   const wl = whiteLabelSettings[ministry.id];
                   return (
-                    <tr key={ministry.id} className="border-b hover:bg-gray-50">
+                    <tr key={ministry.id} className="group border-b hover:bg-gray-50">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div 
@@ -663,7 +664,7 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 sticky right-0 bg-white group-hover:bg-gray-50 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" onClick={() => handleViewDetails(ministry)} title={t('ministryTenantManager', 'viewDetails', 'View Details')}>
                             <Eye className="h-4 w-4" />
