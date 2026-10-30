@@ -18,6 +18,7 @@ import { RadioGroup, RadioGroupItem } from '@rekindle/ui/radio-group';
 import { toast } from '@rekindle/ui/use-toast';
 import { Loader2, ArrowLeft, ArrowRight, CheckCircle2, Clock, Smartphone } from 'lucide-react';
 import { generateQrPngDataUrl } from '@rekindle/features/qrCode';
+import { JoinGetTheApp } from '@rekindle/features/components/JoinGetTheApp';
 import { getMinistryEntitlements } from '@rekindle/auth/ministryEntitlements';
 
 interface Props {
@@ -410,6 +411,7 @@ const MinistryMemberRegistration: React.FC<Props> = ({
               : <div className="w-36 h-36 mx-auto flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-purple-400" /></div>}
           </div>
         )}
+        {!kioskMode && !guestMode && <JoinGetTheApp />}
         <Button className="w-full mt-5" onClick={() => (onExit ? onExit() : (window.location.href = '/'))}>
           {kioskMode ? t('ministryMemberRegistration', 'done', 'Done') : t('ministryMemberRegistration', 'continueToRekindle', 'Continue to Rekindle')}
         </Button>
