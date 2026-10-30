@@ -136,7 +136,14 @@ serve(async (req) => {
       // and a listener arriving a beat before that shouldn't be punished.
     }
 
-    const identity = `rlt-listener-${crypto.randomUUID()}`;
+    // The language is in the identity (2026-10-31) so this session's bot can
+    // tell its own listeners from other languages' in a shared room, and
+    // skip the voice when nobody is listening to it (LiveKitAgent's audience
+    // watch in rekindle-translation-bot). Ends in the UUID, which the bot
+    // parses from the end because a language can contain "-" (pt-BR).
+    // No language: the old form, which the bot always counts as listening.
+    const lang = String(row.target_language ?? '').replace(/[^A-Za-z-]/g, '');
+    const identity = lang ? `rlt-listener-${lang}-${crypto.randomUUID()}` : `rlt-listener-${crypto.randomUUID()}`;
     const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity,
       name: 'Listener',
