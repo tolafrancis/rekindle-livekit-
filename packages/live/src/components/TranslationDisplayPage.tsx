@@ -762,9 +762,14 @@ export const TranslationDisplayPage: React.FC = () => {
   // Live line: the translation as the bot streams it, shown as the newest
   // line until the finished row arrives. Hidden once the last final line
   // already contains it, covering the brief overlap between the final
-  // INSERT and the bot clearing the interim field.
-  const interimText = session?.interim_translated_text?.trim() || '';
+  // INSERT and the bot clearing the interim field. Since 2026-10-31 the
+  // live text can hold several sentences plus a preview of the one still
+  // being spoken, so a finished line at its front is cut off too.
+  const rawInterim = session?.interim_translated_text?.trim() || '';
   const lastFinal = lines[lines.length - 1]?.translated_text?.trim() || '';
+  const interimText = lastFinal && rawInterim.startsWith(lastFinal)
+    ? rawInterim.slice(lastFinal.length).trim()
+    : rawInterim;
   const liveLine = interimText && !lastFinal.startsWith(interimText) ? interimText : '';
   const visibleLines = presenterMode ? (liveLine ? [] : lines.slice(-1)) : lines;
   const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors';
