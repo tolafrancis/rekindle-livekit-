@@ -9,7 +9,8 @@ import { Card, CardContent } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { toast } from '@rekindle/ui/use-toast';
-import { Loader2, Mic, Pause, Play, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply } from 'lucide-react';
+import { Loader2, Mic, Pause, Play, Radio, Copy, Square, AlertCircle, CheckCircle2, Captions, Plus, Maximize2, Minimize2, MessageCircle, Pin, X, User, Reply, QrCode } from 'lucide-react';
+import { ShareQrDialog } from './ShareQrDialog';
 import { publicWebOrigin } from '@rekindle/features/platform';
 
 type Phase = 'idle' | 'requesting-mic' | 'connecting' | 'live' | 'ended' | 'error';
@@ -111,6 +112,7 @@ export const SpeakerPage: React.FC = () => {
   const lastSoundAtRef = useRef(Date.now());
   const [quietNudge, setQuietNudge] = useState(false);
   const [copyLabel, setCopyLabel] = useState('Copy listener link');
+  const [qrOpen, setQrOpen] = useState(false);
   const [level, setLevel] = useState(0); // 0–1, simple mic-activity meter
 
   // Live captions — what the bot's STT actually heard, per finalized
@@ -596,6 +598,12 @@ export const SpeakerPage: React.FC = () => {
   }, []);
 
   const listenerLink = sessionId ? `${publicWebOrigin()}/display/${sessionId}` : '';
+  // The QR dialog renders at the document root, which a full-screen page
+  // element would hide, so leave full screen first.
+  const openQr = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    setQrOpen(true);
+  };
   const copyListenerLink = () => {
     navigator.clipboard.writeText(listenerLink).then(() => {
       setCopyLabel('Copied!');
@@ -605,6 +613,27 @@ export const SpeakerPage: React.FC = () => {
 
   return (
     <div ref={pageRef} className="relative min-h-screen bg-slate-950 text-white flex items-center justify-center px-4 py-6 sm:py-10">
+      {/* Listener QR, available from the start: the speaker can put it up
+          for the room before (or while) they speak. */}
+      {listenerLink && (
+        <button
+          type="button"
+          onClick={openQr}
+          title="Show the listener QR code"
+          className="absolute top-3 left-3 z-10 flex h-9 items-center gap-1.5 rounded-md px-2 text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <QrCode className="h-5 w-5" /> <span className="hidden sm:inline">QR code</span>
+        </button>
+      )}
+      {listenerLink && (
+        <ShareQrDialog
+          open={qrOpen}
+          onOpenChange={setQrOpen}
+          url={listenerLink}
+          title="Follow the live translation"
+          fileBase="listener-link"
+        />
+      )}
       {fullscreenSupported && (
         <button
           type="button"
@@ -863,6 +892,9 @@ export const SpeakerPage: React.FC = () => {
                 <p className="text-xs text-white/50 text-center">Share this with anyone following along:</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded bg-black/30 px-2 py-1.5 text-[11px] text-white/70 truncate">{listenerLink}</code>
+                  <Button variant="outline" size="sm" className="text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white shrink-0" onClick={openQr} title="Show QR code">
+                    <QrCode className="h-3.5 w-3.5" />
+                  </Button>
                   <Button variant="outline" size="sm" className="text-white border-white/20 bg-white/5 hover:bg-white/10 hover:text-white shrink-0" onClick={copyListenerLink}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>

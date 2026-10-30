@@ -7,9 +7,74 @@ import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Label } from '@rekindle/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rekindle/ui/dropdown-menu';
-import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, VolumeX, MoreVertical, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, Lock, Radio, Type, Languages, Maximize2, Minimize2, Volume2, VolumeX, MoreVertical, MessageCircle, Mic, Pin, Send, User, CheckCircle2, AlertCircle, HelpCircle } from 'lucide-react';
 import { ScripturePanel } from './ScripturePanel';
 import { randomId } from '@rekindle/ui/uuid';
+import { TutorialOverlay } from '@rekindle/features/tutorial/TutorialOverlay';
+import type { TutorialDefinition, TutorialStep } from '@rekindle/features/tutorial/types';
+
+const TOUR_DONE_KEY = 'rk-display-tour-done';
+
+/** First-visit walkthrough of the listener page's controls (2026-10-31).
+ *  Runs on TutorialOverlay directly, without TutorialProvider: this page is
+ *  public, so there's no account to save progress to; a localStorage flag
+ *  stops it repeating, and the ? button replays it. */
+function buildListenerTour(opts: { bilingual: boolean; questions: boolean }): TutorialDefinition {
+  const steps: TutorialStep[] = [
+    {
+      id: 'welcome',
+      title: 'Welcome to the live translation',
+      body: 'The translation appears here as the speaker talks. The line in the middle of the screen is what is being said now; earlier lines fade out above it.',
+      placement: 'center',
+    },
+    {
+      id: 'bilingual',
+      target: 'display-bilingual',
+      title: 'See both languages',
+      body: "Shows the speaker's original words above each translated line, so you can follow both.",
+      instruction: opts.bilingual ? "It's on now. Tap it any time to turn it off." : 'Tap it now to turn it on.',
+      ...(opts.bilingual ? {} : { action: { type: 'click' as const, target: 'display-bilingual' } }),
+    },
+    {
+      id: 'text-size',
+      target: 'display-text-size',
+      title: 'Text size',
+      body: 'Tap to switch between small, large and extra-large text.',
+    },
+    {
+      id: 'presenter',
+      target: 'display-presenter',
+      title: 'Presenter mode',
+      body: 'Shows only the current line, full screen: good for a projector or TV. Tap the button in the corner to come back.',
+    },
+    {
+      id: 'listen',
+      target: 'display-more',
+      title: 'Hear the translation',
+      body: 'Open this menu and choose "Listen to live audio" to hear the translation spoken aloud. Use headphones if you are in the room.',
+    },
+    ...(opts.questions ? [{
+      id: 'questions',
+      target: 'display-questions',
+      title: 'Ask a question',
+      body: 'Send the speaker a question in your own language. It is translated for them, and they can pin it for everyone.',
+    }] : []),
+    {
+      id: 'help',
+      target: 'display-help',
+      title: 'See this again',
+      body: 'Tap here any time to replay this guide.',
+    },
+  ];
+  return {
+    id: 'listener-display',
+    category: 'Live Translation',
+    title: 'Using the live translation',
+    description: 'The listener page controls.',
+    minutes: 1,
+    steps,
+  };
+}
 
 interface SessionInfo {
   id: string;
@@ -23,6 +88,10 @@ interface SessionInfo {
   // (migration 0409). Cleared by the bot once the finished line lands in
   // translation_logs.
   interim_translated_text?: string | null;
+  // The speaker's words not yet finalized, in the source language (0346);
+  // shown above the live line when both languages are on. Only arrives via
+  // the realtime UPDATE payload (the full row), not the initial fetch.
+  interim_text?: string | null;
   // PostgREST embeds the FK target as an object (service_id -> id, a
   // to-one relationship), not an array — see migration 0295 for why an
   // anon /display visitor is now allowed to read this at all.
@@ -152,6 +221,8 @@ export const TranslationDisplayPage: React.FC = () => {
     });
   };
   const [presenterMode, setPresenterMode] = useState(false);
+  // Listener walkthrough step, or null when it isn't showing.
+  const [tourStep, setTourStep] = useState<number | null>(null);
 
   // "Conversation" (live Q&A, 2026-09-28) — tab switcher next to the
   // existing captions feed, not a replacement for it. Only offered when
@@ -267,8 +338,13 @@ export const TranslationDisplayPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // Keyed on whether the session has loaded, not the session object: the
+  // object changes on every translation_sessions UPDATE (the bot's live
+  // text, several times a second), and re-running this tore down and
+  // re-subscribed the channel each time, racing the reload against INSERTs.
+  const sessionLoaded = !!session;
   useEffect(() => {
-    if (!session || !sessionId) return;
+    if (!sessionLoaded || !sessionId) return;
 
     let cancelled = false;
     const loadLines = async () => {
@@ -288,7 +364,9 @@ export const TranslationDisplayPage: React.FC = () => {
         { event: 'INSERT', schema: 'public', table: 'translation_logs', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           const row = payload.new as LogLine;
-          setLines(prev => [...prev, row].slice(-MAX_LINES));
+          // The 6s poll below can load a line before (or after) its INSERT
+          // event arrives, so never add one that's already showing.
+          setLines(prev => (prev.some(l => l.id === row.id) ? prev : [...prev, row].slice(-MAX_LINES)));
         })
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'translation_sessions', filter: `id=eq.${sessionId}` },
@@ -314,7 +392,7 @@ export const TranslationDisplayPage: React.FC = () => {
       clearInterval(poll);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [session, sessionId]);
+  }, [sessionLoaded, sessionId]);
 
   // Conversation — whether this ministry has it turned on at all (Settings
   // tab default true). language_configs has no public SELECT policy
@@ -324,6 +402,15 @@ export const TranslationDisplayPage: React.FC = () => {
     supabase.rpc('get_questions_enabled', { p_ministry_id: session.ministry_id })
       .then(({ data }) => setQuestionsEnabled(data !== false));
   }, [session?.ministry_id]);
+
+  // First visit: start the walkthrough once the captions screen is up (a
+  // short delay lets the questions setting arrive so its step is included).
+  useEffect(() => {
+    if (!sessionLoaded) return;
+    try { if (localStorage.getItem(TOUR_DONE_KEY)) return; } catch { /* storage blocked: show it anyway */ }
+    const timer = setTimeout(() => setTourStep(0), 1200);
+    return () => clearTimeout(timer);
+  }, [sessionLoaded]);
 
   // Pinned question — publicly readable (RLS only allows status='pinned'
   // rows through). Re-fetches on any insert/update for this service rather
@@ -443,15 +530,6 @@ export const TranslationDisplayPage: React.FC = () => {
     setListeningForSpeech(true);
     recognition.start();
   };
-
-  // Earlier lines stay up through pauses (no clearing on silence), so a
-  // listener who looks away for a moment can catch up. Keep the newest line
-  // in view when the lines don't all fit.
-  const mainRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const el = mainRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [lines, session?.interim_translated_text]);
 
   // WebRTC-only audio (see docs/rlt-build-checklist.md's "WebRTC-only
   // /display" plan): join the LiveKit room directly as a subscribe-only
@@ -771,8 +849,25 @@ export const TranslationDisplayPage: React.FC = () => {
     ? rawInterim.slice(lastFinal.length).trim()
     : rawInterim;
   const liveLine = interimText && !lastFinal.startsWith(interimText) ? interimText : '';
-  const visibleLines = presenterMode ? (liveLine ? [] : lines.slice(-1)) : lines;
+  // The current line (the live text, else the newest finished line) sits in
+  // the middle of the screen; earlier lines stack above it, dimmed, fading
+  // out at the top. Earlier lines stay up through pauses (no clearing on
+  // silence), so a listener who looks away for a moment can catch up.
+  const currentLine = liveLine ? null : (lines[lines.length - 1] ?? null);
+  const earlierLines = presenterMode ? [] : (liveLine ? lines : lines.slice(0, -1));
   const iconBtn = 'flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors';
+
+  const tour = buildListenerTour({ bilingual, questions: questionsEnabled && !!session?.service_id });
+  const tourIndex = tourStep === null ? null : Math.min(tourStep, tour.steps.length - 1);
+  const finishTour = () => {
+    setTourStep(null);
+    try { localStorage.setItem(TOUR_DONE_KEY, '1'); } catch { /* non-fatal */ }
+  };
+  const nextTourStep = () => {
+    if (tourIndex === null) return;
+    if (tourIndex + 1 >= tour.steps.length) finishTour();
+    else setTourStep(tourIndex + 1);
+  };
 
   return (
     // FIXED height, not min-h's minimum — so flexbox actually reserves the
@@ -815,6 +910,7 @@ export const TranslationDisplayPage: React.FC = () => {
           {questionsEnabled && session?.service_id && (
             <button
               type="button"
+              data-tour="display-questions"
               onClick={() => setActiveTab(activeTab === 'conversation' ? 'captions' : 'conversation')}
               className={`${iconBtn} relative ${activeTab === 'conversation' ? 'text-indigo-400' : ''}`}
               title="Conversation — ask a question"
@@ -827,6 +923,7 @@ export const TranslationDisplayPage: React.FC = () => {
           )}
           <button
             type="button"
+            data-tour="display-text-size"
             onClick={() => setFontSize(prev => FONT_SIZE_CYCLE[(FONT_SIZE_CYCLE.indexOf(prev) + 1) % FONT_SIZE_CYCLE.length])}
             className={iconBtn}
             title={`Text size: ${fontSize} (tap to change)`}
@@ -835,6 +932,7 @@ export const TranslationDisplayPage: React.FC = () => {
           </button>
           <button
             type="button"
+            data-tour="display-bilingual"
             onClick={() => setBilingual(v => !v)}
             className={`${iconBtn} ${bilingual ? 'text-indigo-400' : ''}`}
             title="Show original language too"
@@ -843,6 +941,7 @@ export const TranslationDisplayPage: React.FC = () => {
           </button>
           <button
             type="button"
+            data-tour="display-presenter"
             onClick={() => setPresenterMode(true)}
             className={iconBtn}
             title="Presenter mode (one line, full screen)"
@@ -855,7 +954,7 @@ export const TranslationDisplayPage: React.FC = () => {
           {session && session.status !== 'error' && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className={`${iconBtn} relative`} title="More options" aria-label="More options">
+                <button type="button" data-tour="display-more" className={`${iconBtn} relative`} title="More options" aria-label="More options">
                   <MoreVertical className="h-4 w-4" />
                   {listening && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
                 </button>
@@ -873,8 +972,35 @@ export const TranslationDisplayPage: React.FC = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          <button
+            type="button"
+            data-tour="display-help"
+            onClick={() => setTourStep(0)}
+            className={iconBtn}
+            title="How to use this page"
+            aria-label="How to use this page"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
           <span className={`ml-1 h-2.5 w-2.5 rounded-full shrink-0 ${statusDot}`} title={connStatus} />
         </header>
+      )}
+
+      {/* Paused while presenter mode hides the header it points at. */}
+      {tourIndex !== null && !presenterMode && (
+        <TutorialOverlay
+          tutorial={tour}
+          stepIndex={tourIndex}
+          paused={false}
+          tr={(_key, fallback) => fallback}
+          onNext={nextTourStep}
+          onBack={() => setTourStep(Math.max(0, (tourIndex ?? 0) - 1))}
+          onStop={finishTour}
+          onResume={() => {}}
+          onAction={nextTourStep}
+          onShowMe={() => {}}
+          onRetryNav={() => {}}
+        />
       )}
 
       {presenterMode && (
@@ -897,35 +1023,52 @@ export const TranslationDisplayPage: React.FC = () => {
           lines, so nothing extra to gate out of the live region. */}
       {(presenterMode || activeTab === 'captions') ? (
         <main
-          ref={mainRef}
           aria-live="polite"
           aria-atomic="false"
-          className={`flex-1 min-h-0 overflow-y-auto flex flex-col justify-center items-center p-6 gap-3 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : 'justify-end'}`}
+          className={`flex-1 min-h-0 overflow-hidden flex flex-col px-6 max-w-3xl mx-auto w-full ${presenterMode ? 'text-center' : ''}`}
         >
-          {visibleLines.length === 0 && !liveLine ? (
+          {!currentLine && !liveLine ? (
             // session.status === 'ended' never reaches here — the early
             // return above swaps to the "no longer available" page first.
-            <p className="text-center text-white/50 text-lg">Translation starting…</p>
-          ) : (
-            visibleLines.map((line, i) => (
-              <div key={line.id} className={presenterMode ? '' : 'w-full'}>
-                {bilingual && (
-                  <p className="text-sm sm:text-base text-white/50 mb-1">{line.source_text}</p>
-                )}
-                <p className={i === visibleLines.length - 1 && !liveLine
-                  ? `${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`
-                  : `${OLDER_LINE_CLASS} leading-snug`}>
-                  {line.translated_text}
-                </p>
-              </div>
-            ))
-          )}
-          {liveLine && (
-            // aria-hidden: the finished line is announced when it lands, so
-            // screen readers don't hear every partial word twice.
-            <div className={presenterMode ? '' : 'w-full'} aria-hidden="true">
-              <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`}>{liveLine}</p>
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-center text-white/50 text-lg">Translation starting…</p>
             </div>
+          ) : (
+            <>
+              {/* Equal flex-1 space above and below keeps the current line
+                  centred; earlier lines fill the space above from the
+                  bottom up and are clipped (faded) at the top. */}
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col justify-end gap-3 pb-4 [mask-image:linear-gradient(to_bottom,transparent,black_40%)]">
+                {earlierLines.map((line) => (
+                  <div key={line.id} className="w-full">
+                    {bilingual && (
+                      <p className="text-xs sm:text-sm text-white/30 mb-0.5">{line.source_text}</p>
+                    )}
+                    <p className={`${OLDER_LINE_CLASS} leading-snug`}>{line.translated_text}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="shrink-0 max-h-[60%] overflow-y-auto w-full">
+                {liveLine ? (
+                  // aria-hidden: the finished line is announced when it lands,
+                  // so screen readers don't hear every partial word twice.
+                  <div aria-hidden="true">
+                    {bilingual && session?.interim_text && (
+                      <p className="text-sm sm:text-base text-white/50 mb-1">{session.interim_text}</p>
+                    )}
+                    <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`}>{liveLine}</p>
+                  </div>
+                ) : currentLine && (
+                  <>
+                    {bilingual && (
+                      <p className="text-sm sm:text-base text-white/50 mb-1">{currentLine.source_text}</p>
+                    )}
+                    <p className={`${FONT_SIZE_CLASS[fontSize]} leading-snug font-semibold`}>{currentLine.translated_text}</p>
+                  </>
+                )}
+              </div>
+              <div className="flex-1 min-h-0" />
+            </>
           )}
         </main>
       ) : (
