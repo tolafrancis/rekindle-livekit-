@@ -197,6 +197,12 @@ begin
          and session_kind = 'translate'
       returning id
     loop
+      -- Same as 0420: close the bot instance too, or a bot restart would
+      -- rejoin the stopped session (crash recovery).
+      update public.translation_bot_instances
+         set status = 'stopped'
+       where session_id = v_session.id
+         and status in ('active', 'joining');
       perform pg_notify('bot_dispatch', jsonb_build_object('action', 'stop', 'session_id', v_session.id)::text);
       v_count := v_count + 1;
     end loop;
