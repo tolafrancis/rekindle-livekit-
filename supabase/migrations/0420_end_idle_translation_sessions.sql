@@ -41,6 +41,13 @@ begin
        and coalesce(interim_updated_at, started_at, created_at) < now() - interval '60 minutes'
     returning id
   loop
+    -- The bot ignores a stop for a session it isn't running, which would
+    -- leave its instance row 'active' and make the next bot restart rejoin
+    -- the ended session (crash recovery). Close it here too.
+    update public.translation_bot_instances
+       set status = 'stopped'
+     where session_id = v_session.id
+       and status in ('active', 'joining');
     perform pg_notify('bot_dispatch', jsonb_build_object('action', 'stop', 'session_id', v_session.id)::text);
     v_count := v_count + 1;
   end loop;
