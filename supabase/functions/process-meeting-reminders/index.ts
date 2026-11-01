@@ -43,6 +43,7 @@ interface Recipient {
   email: string | null;   // for the email
   name: string | null;
   optedOut?: boolean;     // profile consent_reminders === false → skip email
+  joinToken?: string | null; // webinar guests: personal ?tk= join link (0427)
 }
 
 type SupabaseClientLike = ReturnType<typeof createClient>;
@@ -137,7 +138,7 @@ async function sendRemindersForMeeting(
   // Registrants (every kind). Users merge by uid; guests keyed by email.
   const { data: regs } = await supabase
     .from("meeting_registrations")
-    .select("user_id, guest_name, guest_email")
+    .select("user_id, guest_name, guest_email, join_token")
     .eq("meeting_id", meeting.id).eq("status", "registered");
   for (const r of regs ?? []) {
     const uid = (r as any).user_id as string | null;
@@ -145,7 +146,12 @@ async function sendRemindersForMeeting(
     const email = ((r as any).guest_email as string | null)?.toLowerCase();
     if (!email) continue;
     const gkey = `guest:${email}`;
-    if (!byKey.has(gkey)) byKey.set(gkey, { key: gkey, userId: null, email, name: (r as any).guest_name ?? null });
+    if (!byKey.has(gkey)) byKey.set(gkey, {
+      key: gkey, userId: null, email, name: (r as any).guest_name ?? null,
+      // Webinar guests have no account, so their reminder carries the same
+      // personal link as their confirmation email.
+      joinToken: kind === "webinar" ? ((r as any).join_token ?? null) : null,
+    });
   }
 
   // Hydrate member/host emails, names and email opt-out from profiles.
@@ -160,7 +166,7 @@ async function sendRemindersForMeeting(
   }
 
   const when = fmtWhen(meeting.scheduled_time, meeting.timezone);
-  const emailUrl = `${origin}${path}`;
+  const baseEmailUrl = `${origin}${path}`;
 
   for (const off of dueOffsets) {
     const lead = offsetLabel(off);
@@ -189,6 +195,7 @@ async function sendRemindersForMeeting(
 
       // Email (best-effort; needs key + address + not opted out).
       if (resendKey && rec.email && !rec.optedOut) {
+        const emailUrl = rec.joinToken ? `${baseEmailUrl}?tk=${rec.joinToken}` : baseEmailUrl;
         const html = `
           <div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto">
             <h2 style="color:#6d28d9;margin:0 0 8px">${meeting.title}</h2>

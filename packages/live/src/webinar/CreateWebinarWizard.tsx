@@ -65,6 +65,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
   const [maxAttendees, setMaxAttendees] = useState(200);
   const [isPublic, setIsPublic] = useState(false);
   const [registrationRequired, setRegistrationRequired] = useState(false);
+  const [requireApproval, setRequireApproval] = useState(false);
   const [enableRecording, setEnableRecording] = useState(true);
   const [enableCaptions, setEnableCaptions] = useState(true);
   const [enableTranslation, setEnableTranslation] = useState(false);
@@ -107,7 +108,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
       setStartMode('now');
       setTitle(''); setDescription(''); setCoverImageUrl(''); setScheduledTime('');
       setTimezone(guessUserTimeZone()); setDurationMinutes(60); setMaxAttendees(200);
-      setIsPublic(false); setRegistrationRequired(false); setEnableRecording(true);
+      setIsPublic(false); setRegistrationRequired(false); setRequireApproval(false); setEnableRecording(true);
       setEnableCaptions(true); setEnableTranslation(false); setDefaultLanguage('en'); setCaptionLanguage('en');
       setEnableChat(true); setEnableQA(true); setEnablePolls(true);
       setRecordingVisibility('private');
@@ -124,6 +125,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     setMaxAttendees(webinar.max_attendees);
     setIsPublic(webinar.is_public);
     setRegistrationRequired(webinar.registration_required);
+    setRequireApproval(webinar.registration_approval === 'manual');
     setEnableRecording(webinar.enable_recording);
     setEnableCaptions(webinar.enable_captions);
     setCaptionLanguage(webinar.source_language ?? 'en');
@@ -169,6 +171,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         duration_minutes: durationMinutes,
         max_attendees: maxAttendees,
         registration_required: registrationRequired,
+        registration_approval: registrationRequired && requireApproval ? 'manual' : 'automatic',
         reminder_offsets: reminderOffsets,
         is_public: isPublic,
         access_level: isPublic ? 'public' : 'members',
@@ -333,7 +336,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           <div className="flex items-center justify-between">
             <div>
               <Label>Public</Label>
-              <p className="text-xs text-gray-500">Anyone with the link can watch, not just ministry members.</p>
+              <p className="text-xs text-gray-500">Anyone with the link can watch, not just ministry members. No Rekindle account needed.</p>
             </div>
             <Switch checked={isPublic} onCheckedChange={setIsPublic} />
           </div>
@@ -341,10 +344,23 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           <div className="flex items-center justify-between">
             <div>
               <Label>Require registration</Label>
-              <p className="text-xs text-gray-500">Attendees must register before joining — they'll get reminders too.</p>
+              <p className="text-xs text-gray-500">
+                Attendees register before joining and get a personal join link by email, plus reminders.
+                {isPublic ? ' Guests only need a name and email.' : ''}
+              </p>
             </div>
             <Switch checked={registrationRequired} onCheckedChange={setRegistrationRequired} />
           </div>
+
+          {registrationRequired && (
+            <div className="flex items-center justify-between pl-4 border-l-2 border-purple-100">
+              <div>
+                <Label>Approve registrations</Label>
+                <p className="text-xs text-gray-500">You approve each person before they get their join link. Off = everyone is approved automatically.</p>
+              </div>
+              <Switch checked={requireApproval} onCheckedChange={setRequireApproval} />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center justify-between rounded-md border p-3">

@@ -31,6 +31,8 @@ export interface MinistryWebinar {
   room_name: string;
   max_attendees: number;
   registration_required: boolean;
+  /** 'manual' = host approves each registration (migration 0427). */
+  registration_approval?: 'automatic' | 'manual';
   is_public: boolean;
   access_level: 'public' | 'members' | 'invite_only';
   enable_recording: boolean;
@@ -339,4 +341,58 @@ export async function moveWebinarSpeakerToAudience(params: {
     // Already gone from the room — the DB changes above are what matter.
     console.warn('[webinarControl] set-role attendee failed:', err);
   }
+}
+
+// ── Registration (Zoom-style, migration 0427 + webinar-registration fn) ──
+
+export type WebinarRegistrationStatus = 'registered' | 'pending' | 'declined' | 'cancelled';
+
+export interface WebinarRegisterResult {
+  status: WebinarRegistrationStatus;
+  /** Personal join token. Returned for new registrations; for an email that
+   *  was already registered the link is only re-sent by email. */
+  token?: string;
+  already?: boolean;
+}
+
+/** Register for a webinar. Signed in → as yourself; signed out → as a guest
+ *  (name + email, public webinars only). Sends the confirmation email. */
+export async function registerForWebinar(
+  webinarId: string, guest?: { name: string; email: string },
+): Promise<WebinarRegisterResult> {
+  const { data, error } = await supabase.functions.invoke('webinar-registration', {
+    body: { action: 'register', webinarId, name: guest?.name, email: guest?.email },
+  });
+  if (error) {
+    let msg = error.message;
+    try { const b = await (error as any).context?.json?.(); if (b?.error) msg = b.error; } catch { /* keep msg */ }
+    throw new Error(msg);
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data as WebinarRegisterResult;
+}
+
+/** Host/co-host: approve or decline a pending registration (emails the person). */
+export async function decideWebinarRegistration(registrationId: string, approve: boolean): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('webinar-registration', {
+    body: { action: 'decide', registrationId, approve },
+  });
+  if (error) throw error;
+  if ((data as any)?.error) throw new Error((data as any).error);
+}
+
+export interface WebinarGuestRegistration {
+  registration_id: string;
+  webinar_id: string;
+  display_name: string;
+  status: WebinarRegistrationStatus;
+}
+
+/** Resolve a guest's personal ?tk= link. */
+export async function getWebinarRegistrationByToken(token: string): Promise<WebinarGuestRegistration | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return null;
+  const { data, error } = await supabase.rpc('webinar_registration_by_token', { p_token: token });
+  if (error) { console.error('[webinarControl] token lookup failed:', error.message); return null; }
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as WebinarGuestRegistration) ?? null;
 }
