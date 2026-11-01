@@ -806,10 +806,12 @@ const EnhancedVideoCallWrapper = ({
       )}
 
       {/* ── AI Recording & Transcription — tucked behind a compact button ── */}
-      {isHost && !isPiP && (
-        <div className="absolute top-20 left-4 z-50 max-w-xs">
-          {showAiPanel ? (
-            <div className="space-y-2">
+      {/* Kept MOUNTED for the whole call and only hidden (panel closed or
+          mini-player) — unmounting it would drop the in-memory transcript and
+          stop note-taking, like LiveChannelBroadcast's AI panel. */}
+      {isHost && (
+        <div className={`absolute top-20 left-4 z-50 max-w-xs ${isPiP ? 'hidden' : ''}`}>
+            <div className={showAiPanel ? 'space-y-2' : 'hidden'}>
               <div className="flex justify-end">
                 <button
                   onClick={() => setShowAiPanel(false)}
@@ -835,7 +837,7 @@ const EnhancedVideoCallWrapper = ({
                 onStateChange={(s) => setNotesActive(s === 'recording')}
               />
             </div>
-          ) : (
+          {!showAiPanel && (
             <button
               onClick={() => setShowAiPanel(true)}
               className="flex items-center gap-1.5 bg-gray-900/80 backdrop-blur-sm text-white rounded-full px-3 py-2 text-sm hover:bg-gray-800"
