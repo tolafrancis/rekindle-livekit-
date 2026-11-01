@@ -61,3 +61,4 @@
 2026-10-30 speaker link: clearer microphone messages (packages/live)
 2026-10-31: listener page centred line + walkthrough, Share QR dialog (packages/live)
 2026-11-01 screen share: presenter tile no longer covered, floating share controls (packages/live)
+2026-11-01 Live Scripture host-only switch; verse overlay visible to everyone incl. screen share (packages/live)
