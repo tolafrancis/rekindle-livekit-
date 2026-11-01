@@ -86,6 +86,14 @@ function copyStyles(target: Window) {
 const POPOUT_WIDTH = 340;
 const POPOUT_HEIGHT_COLLAPSED = 132;
 const POPOUT_HEIGHT_EXPANDED = 420;
+const POPOUT_MINI_WIDTH = 240;
+const POPOUT_MINI_HEIGHT = 56;
+
+/** Bring the meeting tab to the front. Chrome lets a click inside the
+ *  pop-out focus the meeting tab; elsewhere this is a harmless no-op. */
+const returnToMeeting = () => {
+  try { window.focus(); } catch { /* not allowed: user switches back */ }
+};
 
 export const ScreenShareControls = forwardRef<ScreenShareControlsHandle, ScreenShareControlsProps>((props, ref) => {
   const { isSharing } = props;
@@ -121,9 +129,13 @@ export const ScreenShareControls = forwardRef<ScreenShareControlsHandle, ScreenS
   }), [openPopout, closePopout]);
 
   // Close the pop-out when the share ends (Stop button, the browser's own
-  // "Stop sharing" bar, or the track ending). Also on unmount (leaving).
+  // "Stop sharing" bar, or the track ending) and go back to the meeting tab.
+  // Also on unmount (leaving).
   useEffect(() => {
-    if (wasSharingRef.current && !isSharing) closePopout();
+    if (wasSharingRef.current && !isSharing) {
+      returnToMeeting();
+      closePopout();
+    }
     if (isSharing) setMinimized(false);
     wasSharingRef.current = isSharing;
   }, [isSharing, closePopout]);
@@ -145,21 +157,49 @@ export const ScreenShareControls = forwardRef<ScreenShareControlsHandle, ScreenS
     };
   }, [isSharing, openPopout]);
 
-  // Grow the pop-out when the participant list opens, shrink when it closes.
+  // Stop Share from the pop-out (or bar): stop, then jump back to the
+  // meeting tab while the click's activation still allows focusing it.
+  const stopAndReturn = useCallback(() => {
+    props.onStopShare();
+    returnToMeeting();
+  }, [props.onStopShare]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Size the pop-out to what it shows: a small strip when minimized, taller
+  // when the participant list is open.
+  const [popMini, setPopMini] = useState(false);
   useEffect(() => {
     if (!popout) return;
+    const chromeW = popout.outerWidth - popout.innerWidth;
+    const chromeH = popout.outerHeight - popout.innerHeight;
     try {
       popout.resizeTo(
-        popout.outerWidth,
-        (showPeople ? POPOUT_HEIGHT_EXPANDED : POPOUT_HEIGHT_COLLAPSED) + (popout.outerHeight - popout.innerHeight),
+        (popMini ? POPOUT_MINI_WIDTH : POPOUT_WIDTH) + chromeW,
+        (popMini ? POPOUT_MINI_HEIGHT : showPeople ? POPOUT_HEIGHT_EXPANDED : POPOUT_HEIGHT_COLLAPSED) + chromeH,
       );
     } catch { /* resize needs a gesture in some browsers; user can drag */ }
-  }, [showPeople, popout]);
+  }, [showPeople, popMini, popout]);
+  useEffect(() => { if (!popout) setPopMini(false); }, [popout]);
 
   if (popout) {
     return createPortal(
       <div className="h-screen w-full overflow-hidden bg-gray-900 text-white">
-        <ControlsPanel {...props} showPeople={showPeople} onTogglePeople={() => setShowPeople((v) => !v)} fillHeight />
+        {popMini ? (
+          <MiniStrip
+            isMicOn={props.isMicOn}
+            onToggleMic={props.onToggleMic}
+            onStopShare={stopAndReturn}
+            onExpand={() => setPopMini(false)}
+          />
+        ) : (
+          <ControlsPanel
+            {...props}
+            onStopShare={stopAndReturn}
+            showPeople={showPeople}
+            onTogglePeople={() => setShowPeople((v) => !v)}
+            fillHeight
+            headerExtra={<MinimizeButton onClick={() => setPopMini(true)} />}
+          />
+        )}
       </div>,
       popout.document.body,
     );
@@ -170,6 +210,7 @@ export const ScreenShareControls = forwardRef<ScreenShareControlsHandle, ScreenS
   return (
     <InPageBar
       {...props}
+      onStopShare={stopAndReturn}
       minimized={minimized}
       onMinimize={setMinimized}
       showPeople={showPeople}
@@ -299,6 +340,34 @@ const ControlsPanel: React.FC<PanelProps> = ({
           </ul>
         </div>
       )}
+    </div>
+  );
+};
+
+const MinimizeButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const { t } = useLanguage();
+  return (
+    <button type="button" onClick={onClick} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white" title={t('dailyVideoCall', 'minimizeControls', 'Minimize')} aria-label={t('dailyVideoCall', 'minimizeControls', 'Minimize')}>
+      <Minimize2 className="h-4 w-4" />
+    </button>
+  );
+};
+
+/** The minimized pop-out: just mic, Stop Share and expand. */
+const MiniStrip: React.FC<{ isMicOn: boolean; onToggleMic: () => void; onStopShare: () => void; onExpand: () => void }> = ({ isMicOn, onToggleMic, onStopShare, onExpand }) => {
+  const { t } = useLanguage();
+  return (
+    <div className="flex h-full items-center justify-between gap-1 px-2">
+      <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-green-400" />
+      <button type="button" onClick={onToggleMic} className="rounded-full p-1.5 hover:bg-white/10" aria-label={isMicOn ? t('dailyVideoCall', 'mute', 'Mute') : t('dailyVideoCall', 'unmute', 'Unmute')}>
+        {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4 text-red-400" />}
+      </button>
+      <button type="button" onClick={onStopShare} className="rounded-full bg-red-600 px-2.5 py-1 text-xs font-medium hover:bg-red-700">
+        {t('dailyVideoCall', 'stopShare', 'Stop Share')}
+      </button>
+      <button type="button" onClick={onExpand} className="rounded-full p-1.5 hover:bg-white/10" aria-label={t('dailyVideoCall', 'showControls', 'Show controls')}>
+        <Maximize2 className="h-4 w-4" />
+      </button>
     </div>
   );
 };

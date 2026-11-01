@@ -5,3 +5,4 @@
 2026-11-01 screen share: presenter tile no longer covered, floating share controls (packages/live)
 2026-11-01 Live Scripture host-only switch; verse overlay visible to everyone incl. screen share (packages/live)
 2026-11-01 screen share pop-out controls open reliably (packages/live)
+2026-11-01 screen share pop-out: minimize, Stop Share returns to meeting tab (packages/live)
