@@ -44,12 +44,15 @@ interface WebinarAttendeeViewerProps {
   /** Fired once the attendee accepts a promotion to speaker — the parent
    *  re-mounts WebinarStage in place of this component. */
   onPromoted: () => void;
+  /** Signed-out guest (Zoom-style registration). Watches and reads chat, but
+   *  can't post, ask, vote or request to speak — those need an account. */
+  isGuest?: boolean;
 }
 
 /** Viewer-only attendee experience — HLS playback of the webinar's live stream,
  *  never a LiveKit connection. Chat/Q&A/Polls tabs are gated by the webinar's
  *  own enable_chat/enable_qa/enable_polls toggles set at creation. */
-export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLeave, onPromoted }: WebinarAttendeeViewerProps) {
+export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLeave, onPromoted, isGuest = false }: WebinarAttendeeViewerProps) {
   const speakerRequests = useWebinarSpeakerRequests(webinar.id, userId, userName, false);
   const myRequest = speakerRequests.myRequest;
   const [hlsLatencySeconds, setHlsLatencySeconds] = useState(HLS_TARGET_LATENCY_SECONDS);
@@ -76,15 +79,15 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
   const [audioMuted, setAudioMuted] = useState(true);
 
   useEffect(() => {
-    trackMeetingParticipant(webinar.id, userId, userName, false, 'join', 'ministry_webinar');
-    return () => { trackMeetingParticipant(webinar.id, userId, userName, false, 'leave', 'ministry_webinar'); };
-  }, [webinar.id, userId, userName]);
+    trackMeetingParticipant(webinar.id, userId, userName, isGuest, 'join', 'ministry_webinar');
+    return () => { trackMeetingParticipant(webinar.id, userId, userName, isGuest, 'leave', 'ministry_webinar'); };
+  }, [webinar.id, userId, userName, isGuest]);
 
   // Announces this attendee into the webinar's realtime presence channel so the
   // host's Manage panel can show a live "who's here" roster and invite them up —
   // same mechanism MinistryInteractiveMeetings already uses for its own webinar/
   // presentation mode (attendees never join LiveKit there either).
-  useMeetingPresence(webinar.id, userId, userName, false, true);
+  useMeetingPresence(webinar.id, userId, userName, isGuest, true);
 
   useEffect(() => {
     if (myRequest?.status === 'accepted') onPromoted();
@@ -146,6 +149,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
           </div>
         )}
 
+        {!isGuest && (
         <div className="z-50 flex flex-col items-center gap-2 py-3 sm:py-0 sm:absolute sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2">
           {myRequest?.status === 'requested' ? (
             <button
@@ -163,6 +167,7 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
             </button>
           )}
         </div>
+        )}
 
         {captions.enabled && (
           <CaptionOverlay
@@ -217,13 +222,17 @@ export function WebinarAttendeeViewer({ webinar, userId, userName, onEnded, onLe
             </TabsTrigger>
           </TabsList>
           <TabsContent value="chat" className="flex-1 min-h-0 m-0">
-            {webinar.enable_chat && <MeetingChatPanel meetingId={webinar.id} userId={userId} userName={userName} isGuest={false} meetingTable="ministry_webinars" />}
+            {webinar.enable_chat && <MeetingChatPanel meetingId={webinar.id} userId={userId} userName={userName} isGuest={isGuest} meetingTable="ministry_webinars" />}
           </TabsContent>
           <TabsContent value="qa" className="flex-1 min-h-0 m-0">
-            {webinar.enable_qa && <WebinarQAPanel webinarId={webinar.id} userId={userId} userName={userName} />}
+            {webinar.enable_qa && (isGuest
+              ? <p className="p-4 text-center text-xs text-gray-500">Sign in to ask questions.</p>
+              : <WebinarQAPanel webinarId={webinar.id} userId={userId} userName={userName} />)}
           </TabsContent>
           <TabsContent value="polls" className="flex-1 min-h-0 m-0">
-            {webinar.enable_polls && <WebinarPollPanel webinarId={webinar.id} userId={userId} />}
+            {webinar.enable_polls && (isGuest
+              ? <p className="p-4 text-center text-xs text-gray-500">Sign in to vote in polls.</p>
+              : <WebinarPollPanel webinarId={webinar.id} userId={userId} />)}
           </TabsContent>
         </Tabs>
       </div>
