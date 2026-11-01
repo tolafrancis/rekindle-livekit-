@@ -129,6 +129,22 @@ export const ScreenShareControls = forwardRef<ScreenShareControlsHandle, ScreenS
   }, [isSharing, closePopout]);
   useEffect(() => () => { getDocPiP()?.window?.close(); }, []);
 
+  // Fallback: Chrome can open the pop-out by itself when you switch away from
+  // the meeting tab during a call (automatic picture-in-picture for video
+  // calls). Registered only while sharing; the handler runs with the
+  // activation requestWindow needs.
+  useEffect(() => {
+    if (!isSharing || !supportsPopoutControls()) return;
+    const ms = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
+    if (!ms) return;
+    try {
+      ms.setActionHandler('enterpictureinpicture' as MediaSessionAction, () => openPopout());
+    } catch { return; /* action not supported in this browser */ }
+    return () => {
+      try { ms.setActionHandler('enterpictureinpicture' as MediaSessionAction, null); } catch { /* ignore */ }
+    };
+  }, [isSharing, openPopout]);
+
   // Grow the pop-out when the participant list opens, shrink when it closes.
   useEffect(() => {
     if (!popout) return;

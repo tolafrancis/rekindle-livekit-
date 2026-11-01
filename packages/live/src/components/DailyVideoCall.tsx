@@ -2442,12 +2442,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     <button
       type="button"
       onClick={isScreenSharing ? stopScreenShare : () => {
-        // Start the share first (getDisplayMedia wants the click's user
-        // activation), then open the always-on-top controls in the same
-        // click (Document PiP needs it too). If the picker is cancelled the
-        // pop-out closes again.
-        const started = startScreenShare();
+        // Open the always-on-top controls FIRST, while the click's user
+        // activation is still unused: Chrome's getDisplayMedia consumes it,
+        // so opening the pop-out after starting the share was silently
+        // refused (the bar never appeared). Chrome doesn't need activation
+        // for getDisplayMedia, so starting the share second is fine. If the
+        // picker is cancelled the pop-out closes again.
         shareControlsRef.current?.openPopout();
+        const started = startScreenShare();
         Promise.resolve(started).finally(() => {
           setTimeout(() => shareControlsRef.current?.closeIfNotSharing(), 1500);
         });
