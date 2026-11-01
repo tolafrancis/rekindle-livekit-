@@ -171,7 +171,11 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         duration_minutes: durationMinutes,
         max_attendees: maxAttendees,
         registration_required: registrationRequired,
-        registration_approval: registrationRequired && requireApproval ? 'manual' : 'automatic',
+        // Only written when approval is (or was) on, so saving still works on a
+        // database that hasn't run migration 0427 yet.
+        ...((registrationRequired && requireApproval) || webinar?.registration_approval === 'manual'
+          ? { registration_approval: registrationRequired && requireApproval ? 'manual' : 'automatic' }
+          : {}),
         reminder_offsets: reminderOffsets,
         is_public: isPublic,
         access_level: isPublic ? 'public' : 'members',

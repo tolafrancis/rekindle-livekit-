@@ -148,7 +148,7 @@ function WebinarCard({ webinar, ministryId, isLeader, onEdit, onChanged, selecta
         duration_minutes: webinar.duration_minutes,
         max_attendees: webinar.max_attendees,
         registration_required: webinar.registration_required,
-        registration_approval: webinar.registration_approval ?? 'automatic',
+        ...(webinar.registration_approval ? { registration_approval: webinar.registration_approval } : {}),
         reminder_offsets: [],
         is_public: webinar.is_public,
         access_level: webinar.access_level,
