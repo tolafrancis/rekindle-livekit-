@@ -222,6 +222,105 @@ async function sendRemindersForMeeting(
   return { delivered, skipped };
 }
 
+// ── Recurring ministry meetings (2026-11-01) ────────────────────────────────
+// Copy of nextMeetingOccurrence() in packages/features/src/meetingTime.ts (edge
+// functions can't import from the web packages) — keep the two in sync.
+// A recurring meeting is one row with one room/link; once an occurrence is
+// over we roll scheduled_time forward to the next one, reopen it (ended_at =
+// null) and clear its reminder ledger so the next round of reminders fires.
+type RecurFreq = "daily" | "weekdays" | "weekly" | "biweekly" | "monthly";
+const RECUR_FREQS = new Set(["daily", "weekdays", "weekly", "biweekly", "monthly"]);
+
+function parseRecurrence(raw: unknown): { frequency: RecurFreq; until: string | null } | null {
+  if (!raw) return null;
+  let v: any = raw;
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { v = { frequency: v }; } }
+  if (typeof v !== "object" || !v || !RECUR_FREQS.has(v.frequency)) return null;
+  const until = typeof v.until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.until) ? v.until : null;
+  return { frequency: v.frequency, until };
+}
+
+function tzOffsetMs(timeZone: string, at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour12: false, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(at);
+  const m: Record<string, string> = {};
+  for (const p of parts) m[p.type] = p.value;
+  const hour = m.hour === "24" ? "00" : m.hour;
+  return Date.UTC(+m.year, +m.month - 1, +m.day, +hour, +m.minute, +m.second) - at.getTime();
+}
+
+function wallToUtcMs(y: number, mo: number, d: number, h: number, mi: number, tz: string): number {
+  const guess = Date.UTC(y, mo - 1, d, h, mi);
+  return guess - tzOffsetMs(tz, new Date(guess));
+}
+
+function utcToWall(ms: number, tz: string): [number, number, number, number, number] {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(new Date(ms));
+  const m: Record<string, string> = {};
+  for (const p of parts) m[p.type] = p.value;
+  return [+m.year, +m.month, +m.day, m.hour === "24" ? 0 : +m.hour, +m.minute];
+}
+
+function nextOccurrence(scheduledISO: string, tz: string | null, pattern: unknown, durationMin: number | null, nowMs: number): string | null {
+  const rule = parseRecurrence(pattern);
+  const durMs = Math.max(1, durationMin || 60) * 60000;
+  const startMs = new Date(scheduledISO).getTime();
+  if (isNaN(startMs)) return null;
+  if (!rule || startMs + durMs > nowMs) return scheduledISO;
+  const zone = tz || "UTC";
+  let [y, mo, d, h, mi] = utcToWall(startMs, zone);
+  const anchorDay = d;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  for (let i = 0; i < 4000; i++) {
+    let next: Date;
+    if (rule.frequency === "monthly") {
+      const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate(); // days in the next month
+      next = new Date(Date.UTC(y, mo, Math.min(anchorDay, lastDay), h, mi));
+    } else {
+      const days = rule.frequency === "weekly" ? 7 : rule.frequency === "biweekly" ? 14 : 1;
+      next = new Date(Date.UTC(y, mo - 1, d + days, h, mi));
+      if (rule.frequency === "weekdays") {
+        while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next = new Date(next.getTime() + 86400000);
+      }
+    }
+    [y, mo, d] = [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()];
+    if (rule.until && `${y}-${pad(mo)}-${pad(d)}` > rule.until) return null;
+    const ms = wallToUtcMs(y, mo, d, h, mi, zone);
+    if (ms + durMs > nowMs) return new Date(ms).toISOString();
+  }
+  return null;
+}
+
+async function rollRecurringMeetings(supabase: SupabaseClientLike, nowMs: number): Promise<number> {
+  const { data, error } = await supabase
+    .from("ministry_video_meetings")
+    .select("id, scheduled_time, timezone, duration_minutes, recurrence_pattern")
+    .eq("is_recurring", true)
+    .eq("meeting_type", "scheduled")
+    .eq("is_active", false)
+    .not("scheduled_time", "is", null)
+    .lt("scheduled_time", new Date(nowMs).toISOString());
+  if (error) { console.error("[meeting-reminders] recurring query:", error.message); return 0; }
+  let rolled = 0;
+  for (const m of (data ?? []) as any[]) {
+    const next = nextOccurrence(m.scheduled_time, m.timezone, m.recurrence_pattern, m.duration_minutes, nowMs);
+    if (!next || new Date(next).getTime() === new Date(m.scheduled_time).getTime()) continue;
+    const { error: upErr } = await supabase
+      .from("ministry_video_meetings")
+      .update({ scheduled_time: next, ended_at: null, participant_count: 0 })
+      .eq("id", m.id)
+      .eq("is_active", false);
+    if (upErr) { console.error(`[meeting-reminders] roll ${m.id}:`, upErr.message); continue; }
+    await supabase.from("meeting_reminder_sends").delete().eq("meeting_id", m.id);
+    rolled++;
+  }
+  return rolled;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -251,6 +350,10 @@ serve(async (req) => {
 
     let delivered = 0;
     let skipped = 0;
+
+    // Move finished recurring meetings on to their next occurrence first, so
+    // the reminder query below picks that occurrence up in the same run.
+    const rolled = await rollRecurringMeetings(supabase, now);
 
     const KINDS: {
       kind: Kind;
@@ -319,9 +422,9 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[meeting-reminders] delivered=${delivered} skipped=${skipped}`);
+    console.log(`[meeting-reminders] delivered=${delivered} skipped=${skipped} rolled=${rolled}`);
     return new Response(
-      JSON.stringify({ success: true, delivered, skipped, timestamp: nowISO }),
+      JSON.stringify({ success: true, delivered, skipped, rolled, timestamp: nowISO }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {

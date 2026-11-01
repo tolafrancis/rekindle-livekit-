@@ -132,3 +132,114 @@ export const REMINDER_OFFSET_OPTIONS: { minutes: number; label: string }[] = [
   { minutes: 60, label: '1 hour before' },
   { minutes: 15, label: '15 minutes before' },
 ];
+
+/* ------------------------------------------------------------------
+   Recurring meetings (2026-11-01)
+
+   A recurring meeting is ONE ministry_video_meetings row: same room, same
+   link, same registrations and recordings list, every time. scheduled_time
+   holds the first (or current) occurrence; recurrence_pattern (jsonb) says how
+   it repeats. Occurrences step in the meeting's own zone, so "Sundays 9:00 AM
+   Lagos" stays 9:00 AM across DST changes. The process-meeting-reminders cron
+   rolls scheduled_time forward once an occurrence is over (it keeps a copy of
+   nextMeetingOccurrence — keep the two in sync), and the UI also computes the
+   next occurrence itself so it never shows a stale past time in between.
+------------------------------------------------------------------- */
+
+export type MeetingRecurrenceFrequency = 'daily' | 'weekdays' | 'weekly' | 'biweekly' | 'monthly';
+
+export interface MeetingRecurrencePattern {
+  frequency: MeetingRecurrenceFrequency;
+  /** Last day (YYYY-MM-DD, in the meeting's zone) an occurrence may fall on. Omit for no end. */
+  until?: string | null;
+}
+
+export const MEETING_RECURRENCE_OPTIONS: { value: MeetingRecurrenceFrequency; label: string }[] = [
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekdays', label: 'Every weekday (Mon–Fri)' },
+  { value: 'weekly', label: 'Every week' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Every month' },
+];
+
+const RECURRENCE_FREQUENCIES = new Set<string>(MEETING_RECURRENCE_OPTIONS.map((o) => o.value));
+
+/** Parse whatever is stored in recurrence_pattern (jsonb, or a legacy plain string). */
+export function parseMeetingRecurrence(raw: unknown): MeetingRecurrencePattern | null {
+  if (!raw) return null;
+  let v: any = raw;
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v); } catch { v = { frequency: v }; }
+  }
+  if (typeof v !== 'object' || !v || !RECURRENCE_FREQUENCIES.has(v.frequency)) return null;
+  const until = typeof v.until === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.until) ? v.until : null;
+  return { frequency: v.frequency, until };
+}
+
+/** Step a zone-less wall time ("YYYY-MM-DDTHH:mm") to the next occurrence. */
+function stepWallTime(wall: string, freq: MeetingRecurrenceFrequency, anchorDay: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(wall);
+  if (!m) return wall;
+  const [, y, mo, d, h, mi] = m.map(Number);
+  let next: Date;
+  if (freq === 'monthly') {
+    // Same day-of-month as the first occurrence, clamped to short months (31st → 30th/28th).
+    const target = new Date(Date.UTC(y, mo, 1, h, mi)); // first of next month
+    const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(anchorDay, lastDay));
+    next = target;
+  } else {
+    const days = freq === 'weekly' ? 7 : freq === 'biweekly' ? 14 : 1;
+    next = new Date(Date.UTC(y, mo - 1, d + days, h, mi));
+    if (freq === 'weekdays') {
+      while (next.getUTCDay() === 0 || next.getUTCDay() === 6) next = new Date(next.getTime() + 86400000);
+    }
+  }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}T${pad(next.getUTCHours())}:${pad(next.getUTCMinutes())}`;
+}
+
+/**
+ * The occurrence a recurring meeting should show/start next: the first one
+ * (from scheduled_time onward) that hasn't finished yet at `nowMs`. Returns
+ * scheduled_time unchanged when it's not recurring or still upcoming/in
+ * progress, and null when the series has run past its end date.
+ */
+export function nextMeetingOccurrence(
+  scheduledISO: string | null | undefined,
+  timeZone: string | null | undefined,
+  pattern: unknown,
+  durationMinutes: number | null | undefined,
+  nowMs: number = Date.now(),
+): string | null {
+  if (!scheduledISO) return null;
+  const rule = parseMeetingRecurrence(pattern);
+  const durMs = Math.max(1, durationMinutes || 60) * 60000;
+  const startMs = new Date(scheduledISO).getTime();
+  if (isNaN(startMs)) return null;
+  if (!rule || startMs + durMs > nowMs) return scheduledISO;
+
+  const tz = timeZone || 'UTC';
+  let wall = utcISOToZonedInputValue(scheduledISO, tz);
+  const anchorDay = Number(wall.slice(8, 10));
+  for (let i = 0; i < 4000; i++) {
+    wall = stepWallTime(wall, rule.frequency, anchorDay);
+    if (rule.until && wall.slice(0, 10) > rule.until) return null;
+    const iso = zonedWallTimeToUtcISO(wall, tz);
+    if (!iso) return null;
+    if (new Date(iso).getTime() + durMs > nowMs) return iso;
+  }
+  return null;
+}
+
+/** "Every week" / "Every week until Dec 20, 2026" for a meeting card. */
+export function describeMeetingRecurrence(pattern: unknown): string {
+  const rule = parseMeetingRecurrence(pattern);
+  if (!rule) return '';
+  const base = MEETING_RECURRENCE_OPTIONS.find((o) => o.value === rule.frequency)?.label ?? '';
+  if (!rule.until) return base;
+  const [y, mo, d] = rule.until.split('-').map(Number);
+  const untilLabel = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(y, mo - 1, d)));
+  return `${base} until ${untilLabel}`;
+}
