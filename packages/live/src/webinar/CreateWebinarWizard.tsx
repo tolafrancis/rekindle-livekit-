@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@rekindle/ui/select';
-import { Loader2, Plus, X, Radio } from 'lucide-react';
+import { Loader2, Plus, X, Radio, Upload } from 'lucide-react';
 import { toast } from '@rekindle/ui/toast-compat';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
@@ -59,6 +59,32 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadCover = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Invalid file', description: 'Please choose an image.', variant: 'destructive' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Image too large', description: 'Cover images must be under 5MB.', variant: 'destructive' });
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `webinar-covers/${ministryId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('assets').upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data } = supabase.storage.from('assets').getPublicUrl(path);
+      setCoverImageUrl(data.publicUrl);
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setUploadingCover(false);
+    }
+  };
   const [scheduledTime, setScheduledTime] = useState('');
   const [timezone, setTimezone] = useState(guessUserTimeZone());
   const [durationMinutes, setDurationMinutes] = useState(60);
@@ -266,8 +292,31 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="webinar-cover">Cover image URL</Label>
-            <Input id="webinar-cover" value={coverImageUrl} onChange={(e) => setCoverImageUrl(e.target.value)} placeholder="https://…" />
+            <Label htmlFor="webinar-cover">Cover image</Label>
+            {coverImageUrl.trim() && (
+              <div className="relative w-full h-32 rounded-lg overflow-hidden border">
+                <img src={coverImageUrl} alt="Cover preview" className="w-full h-full object-cover" />
+                <button
+                  type="button" aria-label="Remove cover image"
+                  onClick={() => setCoverImageUrl('')}
+                  className="absolute top-2 right-2 bg-black/50 rounded-full p-1 text-white hover:bg-black/70"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input id="webinar-cover" value={coverImageUrl} onChange={(e) => setCoverImageUrl(e.target.value)} placeholder="Paste an image URL (https://…)" className="flex-1" />
+              <Button type="button" variant="outline" disabled={uploadingCover} onClick={() => coverInputRef.current?.click()}>
+                {uploadingCover ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+                {uploadingCover ? 'Uploading…' : 'Upload'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Upload a PNG or JPG up to 5MB, or paste a link.</p>
+            <input
+              ref={coverInputRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCover(f); e.target.value = ''; }}
+            />
           </div>
 
           <div className="space-y-2">
