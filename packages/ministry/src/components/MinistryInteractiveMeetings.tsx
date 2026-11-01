@@ -34,7 +34,7 @@ import {
   PhoneOff,
   MonitorUp, MessageSquare, Trash2, Radio,
   Crown, Zap, Sparkles, FileText,
-  Hand, X, GripVertical
+  Hand, X, GripVertical, Repeat
 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { useUserEntitlements } from '@rekindle/auth/useUserEntitlements';
@@ -47,6 +47,11 @@ import {
   guessUserTimeZone,
   commonTimeZones,
   REMINDER_OFFSET_OPTIONS,
+  MEETING_RECURRENCE_OPTIONS,
+  parseMeetingRecurrence,
+  nextMeetingOccurrence,
+  describeMeetingRecurrence,
+  type MeetingRecurrenceFrequency,
 } from '@rekindle/features/meetingTime';
 import { toast } from '@rekindle/ui/toast-compat';
 import RegisterMeetingButton from '@rekindle/live/components/RegisterMeetingButton';
@@ -122,7 +127,8 @@ interface MinistryVideoMeeting {
   duration_minutes: number;
   meeting_type: 'instant' | 'scheduled';
   is_recurring: boolean;
-  recurrence_pattern?: string;
+  /** jsonb: { frequency, until? } — see MeetingRecurrencePattern in meetingTime.ts. */
+  recurrence_pattern?: unknown;
   max_participants: number;
   access_level: 'public' | 'members' | 'leaders';
   enable_recording: boolean;
@@ -144,6 +150,12 @@ interface MinistryVideoMeeting {
   ended_at?: string;
 }
 
+/** Start time to show/share: the next occurrence for a recurring meeting. */
+const meetingNextStart = (m: Pick<MinistryVideoMeeting, 'is_recurring' | 'scheduled_time' | 'timezone' | 'recurrence_pattern' | 'duration_minutes'>): string | null =>
+  m.is_recurring
+    ? nextMeetingOccurrence(m.scheduled_time, m.timezone, m.recurrence_pattern, m.duration_minutes) ?? m.scheduled_time ?? null
+    : m.scheduled_time ?? null;
+
 interface CreateMeetingFormData {
   title: string;
   description: string;
@@ -152,6 +164,10 @@ interface CreateMeetingFormData {
   timezone: string;
   reminder_offsets: number[];
   registration_enabled: boolean;
+  /** 'none' = one-off; otherwise how a scheduled meeting repeats (same link every time). */
+  recurrence: 'none' | MeetingRecurrenceFrequency;
+  /** Optional last date (YYYY-MM-DD) for the series. Empty = repeats until deleted. */
+  recurrence_until: string;
   duration_minutes: number;
   max_participants: number;
   access_level: 'public' | 'members' | 'leaders';
@@ -719,7 +735,7 @@ const EnhancedVideoCallWrapper = ({
         <Button
           onClick={async () => {
             const link = meetingJoinLink(meeting);
-            const r = await shareMeeting({ title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
+            const r = await shareMeeting({ title: meeting.title, scheduledTime: meetingNextStart(meeting), recurrenceLabel: meeting.is_recurring ? describeMeetingRecurrence(meeting.recurrence_pattern) : null, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
           }}
           variant="secondary"
@@ -992,6 +1008,8 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
     timezone: guessUserTimeZone(),
     reminder_offsets: [],
     registration_enabled: false,
+    recurrence: 'none',
+    recurrence_until: '',
     duration_minutes: 60,
     max_participants: 50,
     access_level: 'members',
@@ -1009,15 +1027,23 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
     if (!isOpen) return;
     if (meeting) {
       const tz = meeting.timezone || guessUserTimeZone();
+      const rule = meeting.is_recurring ? parseMeetingRecurrence(meeting.recurrence_pattern) : null;
+      // Prefill a recurring meeting with its NEXT occurrence, so editing
+      // doesn't drag the series back to a date that's already passed.
+      const shownStart = rule
+        ? nextMeetingOccurrence(meeting.scheduled_time, tz, meeting.recurrence_pattern, meeting.duration_minutes) ?? meeting.scheduled_time
+        : meeting.scheduled_time;
       setModeTouched(true);
       setFormData({
         title: meeting.title,
         description: meeting.description || '',
         meeting_type: meeting.meeting_type,
-        scheduled_time: meeting.scheduled_time ? utcISOToZonedInputValue(meeting.scheduled_time, tz) : '',
+        scheduled_time: shownStart ? utcISOToZonedInputValue(shownStart, tz) : '',
         timezone: tz,
         reminder_offsets: meeting.reminder_offsets || [],
         registration_enabled: meeting.registration_enabled ?? false,
+        recurrence: rule?.frequency ?? 'none',
+        recurrence_until: rule?.until ?? '',
         duration_minutes: meeting.duration_minutes,
         max_participants: meeting.max_participants,
         access_level: meeting.access_level,
@@ -1117,6 +1143,11 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
       toast.error(t('ministryInteractiveMeetings', 'invalidScheduledTime', 'Please pick a valid scheduled time.'));
       return;
     }
+    const isRecurring = isScheduled && formData.recurrence !== 'none';
+    if (isRecurring && formData.recurrence_until && formData.recurrence_until < formData.scheduled_time.slice(0, 10)) {
+      toast.error(t('ministryInteractiveMeetings', 'recurrenceEndBeforeStart', 'The repeat end date must be on or after the first meeting.'));
+      return;
+    }
 
     setIsLoading(true);
 
@@ -1139,6 +1170,10 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
         timezone: isScheduled ? formData.timezone : null,
         reminder_offsets: isScheduled ? formData.reminder_offsets : [],
         registration_enabled: isScheduled ? formData.registration_enabled : false,
+        is_recurring: isRecurring,
+        recurrence_pattern: isRecurring
+          ? { frequency: formData.recurrence, ...(formData.recurrence_until ? { until: formData.recurrence_until } : {}) }
+          : null,
         duration_minutes: durationMinutes,
         max_participants: maxParticipants,
         access_level: formData.access_level,
@@ -1157,7 +1192,9 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
         // Changing the schedule clears the reminder ledger so the new times fire.
         const { data, error } = await supabase
           .from('ministry_video_meetings')
-          .update(sharedFields)
+          // A recurring meeting that ended last time is reopened for its next
+          // occurrence when the host saves a schedule for it.
+          .update(isRecurring && !meeting.is_active ? { ...sharedFields, ended_at: null } : sharedFields)
           .eq('id', meeting.id)
           .select()
           .single();
@@ -1333,6 +1370,45 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
                   <span className="font-medium">
                     {formatMeetingTime(zonedWallTimeToUtcISO(formData.scheduled_time, formData.timezone), formData.timezone)}
                   </span>
+                </p>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="recurrence">{t('ministryInteractiveMeetings', 'recurrenceLabel', 'Repeat')}</Label>
+                  <Select
+                    value={formData.recurrence}
+                    onValueChange={(value) => setFormData({ ...formData, recurrence: value as CreateMeetingFormData['recurrence'] })}
+                  >
+                    <SelectTrigger id="recurrence">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t('ministryInteractiveMeetings', 'recurrenceNone', 'Does not repeat')}</SelectItem>
+                      {MEETING_RECURRENCE_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {t('ministryInteractiveMeetings', `recurrence_${opt.value}`, opt.label)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {formData.recurrence !== 'none' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="recurrence_until">{t('ministryInteractiveMeetings', 'recurrenceUntilLabel', 'Ends on (optional)')}</Label>
+                    <Input
+                      id="recurrence_until"
+                      type="date"
+                      value={formData.recurrence_until}
+                      min={formData.scheduled_time ? formData.scheduled_time.slice(0, 10) : undefined}
+                      onChange={(e) => setFormData({ ...formData, recurrence_until: e.target.value })}
+                    />
+                  </div>
+                )}
+              </div>
+              {formData.recurrence !== 'none' && (
+                <p className="text-xs text-gray-500">
+                  {t('ministryInteractiveMeetings', 'recurrenceTip', 'Same meeting link every time. Reminders go out before each one, and every recording is kept separately under Recordings.')}
                 </p>
               )}
 
@@ -2173,10 +2249,25 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
-                          {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
-                            <div className="flex items-center gap-1 font-medium text-gray-800">
-                              <Calendar className="h-4 w-4 text-purple-600" />
-                              <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                          {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (() => {
+                            const next = meeting.is_recurring
+                              ? nextMeetingOccurrence(meeting.scheduled_time, meeting.timezone, meeting.recurrence_pattern, meeting.duration_minutes)
+                              : meeting.scheduled_time;
+                            return (
+                              <div className="flex items-center gap-1 font-medium text-gray-800">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                <span>
+                                  {next
+                                    ? formatMeetingTime(next, meeting.timezone)
+                                    : t('ministryInteractiveMeetings', 'seriesEnded', 'Series ended')}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                          {meeting.meeting_type === 'scheduled' && meeting.is_recurring && describeMeetingRecurrence(meeting.recurrence_pattern) && (
+                            <div className="flex items-center gap-1 text-purple-700">
+                              <Repeat className="h-4 w-4" />
+                              <span>{describeMeetingRecurrence(meeting.recurrence_pattern)}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-1">
@@ -2226,7 +2317,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           size="icon"
                           onClick={async () => {
                             const link = meetingJoinLink(meeting);
-                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
+                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meetingNextStart(meeting), recurrenceLabel: meeting.is_recurring ? describeMeetingRecurrence(meeting.recurrence_pattern) : null, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                           }}
                           title={t('ministryInteractiveMeetings', 'copyMeetingLink', 'Copy meeting link')}
@@ -2344,10 +2435,25 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-600">
-                          {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (
-                            <div className="flex items-center gap-1 font-medium text-gray-800">
-                              <Calendar className="h-4 w-4 text-purple-600" />
-                              <span>{formatMeetingTime(meeting.scheduled_time, meeting.timezone)}</span>
+                          {meeting.meeting_type === 'scheduled' && meeting.scheduled_time && (() => {
+                            const next = meeting.is_recurring
+                              ? nextMeetingOccurrence(meeting.scheduled_time, meeting.timezone, meeting.recurrence_pattern, meeting.duration_minutes)
+                              : meeting.scheduled_time;
+                            return (
+                              <div className="flex items-center gap-1 font-medium text-gray-800">
+                                <Calendar className="h-4 w-4 text-purple-600" />
+                                <span>
+                                  {next
+                                    ? formatMeetingTime(next, meeting.timezone)
+                                    : t('ministryInteractiveMeetings', 'seriesEnded', 'Series ended')}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                          {meeting.meeting_type === 'scheduled' && meeting.is_recurring && describeMeetingRecurrence(meeting.recurrence_pattern) && (
+                            <div className="flex items-center gap-1 text-purple-700">
+                              <Repeat className="h-4 w-4" />
+                              <span>{describeMeetingRecurrence(meeting.recurrence_pattern)}</span>
                             </div>
                           )}
                           <div className="flex items-center gap-1">
@@ -2397,7 +2503,7 @@ export const MinistryInteractiveMeetings = ({ ministryId }: { ministryId: string
                           size="icon"
                           onClick={async () => {
                             const link = meetingJoinLink(meeting);
-                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meeting.scheduled_time, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
+                            const r = await shareMeeting({ hostName: ministryName, title: meeting.title, scheduledTime: meetingNextStart(meeting), recurrenceLabel: meeting.is_recurring ? describeMeetingRecurrence(meeting.recurrence_pattern) : null, timezone: meeting.timezone, registrationEnabled: meeting.registration_enabled, url: link });
                             if (r.method !== 'native') toast.success(t('ministryInteractiveMeetings', 'inviteCopied', 'Meeting invite copied — paste it anywhere to invite people!'));
                           }}
                           title={t('ministryInteractiveMeetings', 'copyMeetingLink', 'Copy meeting link')}
