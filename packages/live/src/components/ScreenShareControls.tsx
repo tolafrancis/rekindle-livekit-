@@ -86,7 +86,7 @@ function copyStyles(target: Window) {
 const POPOUT_WIDTH = 340;
 const POPOUT_HEIGHT_COLLAPSED = 132;
 const POPOUT_HEIGHT_EXPANDED = 420;
-const POPOUT_MINI_WIDTH = 240;
+const POPOUT_MINI_WIDTH = 300;
 const POPOUT_MINI_HEIGHT = 56;
 
 /** Bring the meeting tab to the front. Chrome lets a click inside the
@@ -347,8 +347,9 @@ const ControlsPanel: React.FC<PanelProps> = ({
 const MinimizeButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
   const { t } = useLanguage();
   return (
-    <button type="button" onClick={onClick} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white" title={t('dailyVideoCall', 'minimizeControls', 'Minimize')} aria-label={t('dailyVideoCall', 'minimizeControls', 'Minimize')}>
-      <Minimize2 className="h-4 w-4" />
+    <button type="button" onClick={onClick} className="flex shrink-0 items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-xs font-medium text-white hover:bg-white/25" title={t('dailyVideoCall', 'minimizeControls', 'Minimize')}>
+      <Minimize2 className="h-3.5 w-3.5" />
+      {t('dailyVideoCall', 'minimizeControls', 'Minimize')}
     </button>
   );
 };
@@ -365,8 +366,9 @@ const MiniStrip: React.FC<{ isMicOn: boolean; onToggleMic: () => void; onStopSha
       <button type="button" onClick={onStopShare} className="rounded-full bg-red-600 px-2.5 py-1 text-xs font-medium hover:bg-red-700">
         {t('dailyVideoCall', 'stopShare', 'Stop Share')}
       </button>
-      <button type="button" onClick={onExpand} className="rounded-full p-1.5 hover:bg-white/10" aria-label={t('dailyVideoCall', 'showControls', 'Show controls')}>
-        <Maximize2 className="h-4 w-4" />
+      <button type="button" onClick={onExpand} className="flex shrink-0 items-center gap-1 rounded-md bg-white/15 px-2 py-1 text-xs font-medium hover:bg-white/25" title={t('dailyVideoCall', 'maximizeControls', 'Maximize')}>
+        <Maximize2 className="h-3.5 w-3.5" />
+        {t('dailyVideoCall', 'maximizeControls', 'Maximize')}
       </button>
     </div>
   );
@@ -435,8 +437,9 @@ const InPageBar: React.FC<InPageProps> = ({ minimized, onMinimize, onPopout, ...
         <button type="button" onClick={panel.onStopShare} className="rounded-full bg-red-600 px-2.5 py-1 text-xs font-medium hover:bg-red-700">
           {t('dailyVideoCall', 'stopShare', 'Stop Share')}
         </button>
-        <button type="button" onClick={() => onMinimize(false)} className="rounded-full p-1.5 hover:bg-white/10" aria-label={t('dailyVideoCall', 'showControls', 'Show controls')}>
-          <Maximize2 className="h-4 w-4" />
+        <button type="button" onClick={() => onMinimize(false)} className="flex items-center gap-1 rounded-full bg-white/15 px-2 py-1 text-xs font-medium hover:bg-white/25">
+          <Maximize2 className="h-3.5 w-3.5" />
+          {t('dailyVideoCall', 'maximizeControls', 'Maximize')}
         </button>
       </div>
     );
@@ -454,9 +457,7 @@ const InPageBar: React.FC<InPageProps> = ({ minimized, onMinimize, onPopout, ...
                 <ExternalLink className="h-4 w-4" />
               </button>
             )}
-            <button type="button" onClick={() => onMinimize(true)} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white" title={t('dailyVideoCall', 'minimizeControls', 'Minimize')} aria-label={t('dailyVideoCall', 'minimizeControls', 'Minimize')}>
-              <Minimize2 className="h-4 w-4" />
-            </button>
+            <MinimizeButton onClick={() => onMinimize(true)} />
           </>
         }
       />
