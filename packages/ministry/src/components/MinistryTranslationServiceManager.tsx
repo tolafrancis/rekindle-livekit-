@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@rekindle/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@rekindle/ui/dialog';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
-import { generateBroadcastOverlayPng, downloadUrl } from '@rekindle/features/qrCode';
+import { ShareQrDialog } from '@rekindle/live/components/ShareQrDialog';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { Radio, Plus, X, Loader2, Copy, Square, Play, Cast, QrCode, Share2, Mic, AlertTriangle, Trash2, Captions, MessageCircle, Pin, User } from 'lucide-react';
 import { ObsCaptionSetupDialog } from '@rekindle/live/components/ObsCaptionSetupDialog';
@@ -142,8 +142,8 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // YouTube/OBS, where multi-audio-track selection isn't available so
   // multilingual viewers instead scan a QR to open /display on their phone.
   const [broadcastMode, setBroadcastMode] = useState<Set<string>>(new Set());
-  const [generatingQrFor, setGeneratingQrFor] = useState<string | null>(null);
-  const [qrPreview, setQrPreview] = useState<Record<string, string>>({});
+  // The listener QR showing in ShareQrDialog, if any.
+  const [qrDialog, setQrDialog] = useState<{ url: string; title: string; fileBase: string } | null>(null);
 
   // "Conversation" (live Q&A, 2026-09-28) — pending questions across every
   // service this ministry has, keyed by service_id when rendered per-card
@@ -489,21 +489,8 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
   // these too, not just the multi-language "Start Service" cards.
   const landingUrlFor = (service: { id: string; name: string }) => `${publicWebOrigin()}/display?service_id=${service.id}`;
 
-  const downloadQrOverlay = async (service: { id: string; name: string }) => {
-    setGeneratingQrFor(service.id);
-    try {
-      const pngDataUrl = await generateBroadcastOverlayPng(landingUrlFor(service));
-      setQrPreview(prev => ({ ...prev, [service.id]: pngDataUrl }));
-      const filename = `${service.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-broadcast-qr.png`;
-      downloadUrl(pngDataUrl, filename);
-      toast({ title: 'QR overlay downloaded', description: 'Drop it into OBS as an image source.' });
-    } catch (err: any) {
-      console.error('[MinistryTranslationServiceManager] QR overlay generation failed:', err);
-      toast({ title: 'Could not generate QR overlay', description: err.message, variant: 'destructive' });
-    } finally {
-      setGeneratingQrFor(null);
-    }
-  };
+  const openServiceQr = (service: { id: string; name: string }) =>
+    setQrDialog({ url: landingUrlFor(service), title: `Follow ${service.name} in your language`, fileBase: service.name });
 
   const copyBroadcastLink = (service: { id: string; name: string }) => {
     const url = landingUrlFor(service);
@@ -710,13 +697,6 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
             <CardContent className="space-y-2">
               {broadcastMode.has(service.id) && (
                 <div className="flex items-start gap-3 rounded-lg border border-dashed p-3 bg-muted/30">
-                  {qrPreview[service.id] && (
-                    <img
-                      src={qrPreview[service.id]}
-                      alt="Broadcast QR overlay preview"
-                      className="h-16 rounded border shrink-0"
-                    />
-                  )}
                   <div className="flex-1 space-y-1.5 min-w-0">
                     <p className="text-xs text-muted-foreground">
                       For YouTube/OBS broadcasts, which can't offer a language picker like the meeting can. Viewers
@@ -725,9 +705,9 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                       adds another 5–40s on top of that; both are normal for a live stream with captions, not a bug.
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" onClick={() => downloadQrOverlay(service)} disabled={generatingQrFor === service.id}>
-                        {generatingQrFor === service.id ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5 mr-1.5" />}
-                        Download QR overlay
+                      <Button size="sm" variant="outline" onClick={() => openServiceQr(service)}>
+                        <QrCode className="h-3.5 w-3.5 mr-1.5" />
+                        Show QR code
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => copyBroadcastLink(service)}>
                         <Copy className="h-3.5 w-3.5 mr-1.5" />
@@ -981,6 +961,14 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                 <Label className="text-xs text-muted-foreground">Listener link — send to anyone following along</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all">{newSpeakerLink.listenerLink}</code>
+                  <Button
+                    aria-label="Show listener QR code"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setQrDialog({ url: newSpeakerLink.listenerLink, title: 'Follow the live translation', fileBase: 'listener-link' })}
+                  >
+                    <QrCode className="h-4 w-4" />
+                  </Button>
                   <Button aria-label="Copy listener link" variant="outline" size="sm" onClick={() => copyToClipboard('Listener link', newSpeakerLink.listenerLink)}>
                     <Copy className="h-4 w-4" />
                   </Button>
@@ -988,13 +976,6 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
               </div>
               {newSpeakerService && (
                 <div className="flex items-start gap-3 rounded-lg border border-dashed p-3 bg-muted/30">
-                  {qrPreview[newSpeakerService.id] && (
-                    <img
-                      src={qrPreview[newSpeakerService.id]}
-                      alt="Broadcast QR overlay preview"
-                      className="h-16 rounded border shrink-0"
-                    />
-                  )}
                   <div className="flex-1 space-y-1.5 min-w-0">
                     <p className="text-xs font-medium flex items-center gap-1.5"><Cast className="h-3.5 w-3.5" /> Broadcast mode</p>
                     <p className="text-xs text-muted-foreground">
@@ -1002,9 +983,9 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
                       on their own phone.
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" onClick={() => downloadQrOverlay(newSpeakerService)} disabled={generatingQrFor === newSpeakerService.id}>
-                        {generatingQrFor === newSpeakerService.id ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5 mr-1.5" />}
-                        Download QR overlay
+                      <Button size="sm" variant="outline" onClick={() => openServiceQr(newSpeakerService)}>
+                        <QrCode className="h-3.5 w-3.5 mr-1.5" />
+                        Show QR code
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => copyBroadcastLink(newSpeakerService)}>
                         <Copy className="h-3.5 w-3.5 mr-1.5" />
@@ -1040,6 +1021,15 @@ export const MinistryTranslationServiceManager: React.FC<MinistryTranslationServ
           sessionId={obsCaptionSessionId}
           open
           onOpenChange={(o) => { if (!o) setObsCaptionSessionId(null); }}
+        />
+      )}
+      {qrDialog && (
+        <ShareQrDialog
+          open
+          onOpenChange={(o) => { if (!o) setQrDialog(null); }}
+          url={qrDialog.url}
+          title={qrDialog.title}
+          fileBase={qrDialog.fileBase}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useActiveCallOptional } from '../ActiveCallContext';
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Popover, PopoverContent, PopoverTrigger } from '@rekindle/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
 import { Button } from '@rekindle/ui/button';
@@ -109,6 +110,9 @@ export interface ScriptureControlState {
   /** Only the host sees the manual-entry/hide controls (matches the old
    *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
   canControl: boolean;
+  /** Only the host can turn Live Scripture on or off; everyone else gets a
+   *  read-only panel showing the verse the host has on screen. */
+  isHost: boolean;
   /** The ministry's "Detect references automatically" or "Show confirmed
    *  verses automatically" setting is off, so nothing shows on its own. */
   autoOff: boolean;
@@ -351,13 +355,20 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   // the effect below), the same way TranslationListenerButton.tsx already
   // does for its own (HLS-viewer) captions picker.
   const SCRIPTURE_STORAGE_KEY = `rk-scripture-mode-${roomName}`;
-  const [scriptureOn, setScriptureOnState] = useState(() => {
+  const [scriptureOnSaved, setScriptureOnState] = useState(() => {
     try { return localStorage.getItem(SCRIPTURE_STORAGE_KEY) === 'on'; } catch { return false; }
   });
+  // Host-only (2026-11-01): only the host turns Live Scripture on or off.
+  // A participant's switch is ignored, even one restored from localStorage
+  // on a device that once hosted, so they always just watch whatever verse
+  // the host puts up (see watchSessionId below). The database already lets
+  // only ministry admins put verses up or change the settings (0373 RLS).
+  const scriptureOn = isHost && scriptureOnSaved;
   // Set only by a user tap (not a restored-from-localStorage "on"), so the
   // captions tip below shows once per toggle rather than on every reload.
   const scriptureJustToggledOnRef = useRef(false);
   const setScriptureOn = (on: boolean) => {
+    if (on && !isHost) return;
     scriptureJustToggledOnRef.current = on;
     setScriptureOnState(on);
     try { localStorage.setItem(SCRIPTURE_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* non-fatal */ }
@@ -386,6 +397,21 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     resetKey: displaySessionId ? 'on' : 'off',
     baseTransform: 'translateX(-50%)',
   });
+  // Where the caption/scripture overlays render: the page body, or the
+  // fullscreen element while the meeting is fullscreened (anything outside
+  // it would be hidden).
+  const [overlayRoot, setOverlayRoot] = useState<Element | null>(() =>
+    typeof document === 'undefined' ? null : (document.fullscreenElement ?? document.body));
+  useEffect(() => {
+    const update = () => setOverlayRoot(document.fullscreenElement ?? document.body);
+    update();
+    document.addEventListener('fullscreenchange', update);
+    document.addEventListener('webkitfullscreenchange', update);
+    return () => {
+      document.removeEventListener('fullscreenchange', update);
+      document.removeEventListener('webkitfullscreenchange', update);
+    };
+  }, []);
 
   useEffect(() => {
     if (!scriptureOn) { setScriptureSessionId(null); return; }
@@ -596,7 +622,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     onScriptureStateChange?.({
       on: scriptureOn,
       starting: scriptureStarting,
-      toggle: () => setScriptureOn(!scriptureOn),
+      toggle: () => { if (isHost) setScriptureOn(!scriptureOn); },
       manual: scriptureManual,
       setManual: (v: string) => { setScriptureManual(v); setScriptureManualError(null); },
       manualError: scriptureManualError,
@@ -605,6 +631,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       hiding: scriptureHiding,
       onHide: hideVerse,
       canControl: !!(scriptureOn && isHost && scriptureSessionId),
+      isHost,
       autoOff: !(scriptureSettings.auto_detect && scriptureSettings.auto_show),
       onOpenSettings: openScriptureSettings,
     });
@@ -864,105 +891,118 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           near any toolbar; still draggable anywhere afterward, same as the
           captions box below. Matches the same ScripturePanel "display" card
           /display renders (see TranslationDisplayPage.tsx). */}
-      {displaySessionId && (
-        <div
-          ref={scriptureOverlay.ref}
-          className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
-          style={scriptureOverlay.style}
-        >
-          <div
-            onPointerDown={scriptureOverlay.onPointerDown}
-            onPointerMove={scriptureOverlay.onPointerMove}
-            onPointerUp={scriptureOverlay.onPointerUp}
-            onPointerCancel={scriptureOverlay.onPointerCancel}
-            title="Drag to move"
-            className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-          >
-            <ScripturePanel sessionId={displaySessionId} variant="display" />
-          </div>
-        </div>
-      )}
-
-      {captionMode !== 'off' && (
-        <div
-          ref={captionOverlay.ref}
-          className="fixed bottom-40 sm:bottom-44 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
-          style={captionOverlay.style}
-        >
-          <div
-            onPointerDown={captionOverlay.onPointerDown}
-            onPointerMove={captionOverlay.onPointerMove}
-            onPointerUp={captionOverlay.onPointerUp}
-            onPointerCancel={captionOverlay.onPointerCancel}
-            title="Drag to move"
-            className={`flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10 select-none ${
-              captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
-            }`}
-          >
-            {/* aria-live="polite" (2026-09-23, real gap flagged in a
-                captions pipeline review): announces each FINAL caption line
-                to screen readers. interimText is deliberately kept OUT of
-                this region (aria-hidden below) — it updates every ~150ms
-                while someone's talking, and including it would spam a
-                screen reader with a new announcement on every keystroke-
-                like update instead of once per settled sentence. */}
-            <div className="flex-1 min-w-0 space-y-1" aria-live="polite" aria-atomic="false">
-              {captionLines.length === 0 && !interimText ? (
-                <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
-              ) : (
-                <>
-                  {/* Finalized lines all render as "history" (dim) once
-                      there's a growing interim line to be the current one —
-                      only the most recent final gets the bold "current"
-                      treatment when nothing is actively being spoken. */}
-                  {captionLines.map((line, i) => (
-                    <p
-                      key={line.id}
-                      className={`text-center leading-relaxed ${
-                        i === captionLines.length - 1 && !interimText
-                          ? 'text-base sm:text-xl font-medium'
-                          : 'text-sm sm:text-base text-white/50'
-                      }`}
-                    >
-                      {line.text}
-                    </p>
-                  ))}
-                  {/* F-CAP-1 (2026-09-23, captions pipeline review Phase 3):
-                      the bot now publishes interim text for translated
-                      sessions too, not just same-language "Show Captions"
-                      — several real seconds of blank space while GPT-4o/
-                      ElevenLabs are still working, previously. Deliberately
-                      labeled "Hearing:" and styled dimmer/italic in
-                      translated mode specifically so it can't be mistaken
-                      for the actual translated line (the whole reason this
-                      was gated off originally) — this IS the source
-                      language, not a translation. 'original' mode keeps its
-                      existing unlabeled, full-weight treatment (it already
-                      IS the thing being captioned, no ambiguity to avoid). */}
-                  {interimText && (
-                    captionMode === 'original' ? (
-                      <p aria-hidden="true" className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
-                        {interimText}
-                      </p>
-                    ) : (
-                      <p aria-hidden="true" className="text-sm text-center leading-relaxed text-white/40 italic">
-                        Hearing: {interimText}
-                      </p>
-                    )
-                  )}
-                </>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setCaptionMode('off')}
-              title="Turn off captions"
-              className="shrink-0 text-white/60 hover:text-white mt-0.5"
+      {/* Both overlays are portalled out of the control bar (2026-11-01).
+          This component sits inside DailyVideoCall's secondary-controls
+          tray, which is display:none on phones until More is opened and
+          carries a translate transform from sm up, so a `fixed` child was
+          either hidden or pinned to the tray instead of the screen. That
+          is why participants missed verses, most visibly while someone
+          was screen sharing. The portal target follows fullscreen so the
+          verse still shows when the meeting is fullscreened. */}
+      {overlayRoot && createPortal(
+        <>
+          {displaySessionId && (
+            <div
+              ref={scriptureOverlay.ref}
+              className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+              style={scriptureOverlay.style}
             >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+              <div
+                onPointerDown={scriptureOverlay.onPointerDown}
+                onPointerMove={scriptureOverlay.onPointerMove}
+                onPointerUp={scriptureOverlay.onPointerUp}
+                onPointerCancel={scriptureOverlay.onPointerCancel}
+                title="Drag to move"
+                className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+              >
+                <ScripturePanel sessionId={displaySessionId} variant="display" />
+              </div>
+            </div>
+          )}
+
+          {captionMode !== 'off' && (
+            <div
+              ref={captionOverlay.ref}
+              className="fixed bottom-40 sm:bottom-44 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+              style={captionOverlay.style}
+            >
+              <div
+                onPointerDown={captionOverlay.onPointerDown}
+                onPointerMove={captionOverlay.onPointerMove}
+                onPointerUp={captionOverlay.onPointerUp}
+                onPointerCancel={captionOverlay.onPointerCancel}
+                title="Drag to move"
+                className={`flex items-start gap-3 rounded-2xl bg-black/80 backdrop-blur-md text-white px-5 py-4 shadow-xl ring-1 ring-white/10 select-none ${
+                  captionOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+                }`}
+              >
+                {/* aria-live="polite" (2026-09-23, real gap flagged in a
+                    captions pipeline review): announces each FINAL caption line
+                    to screen readers. interimText is deliberately kept OUT of
+                    this region (aria-hidden below) — it updates every ~150ms
+                    while someone's talking, and including it would spam a
+                    screen reader with a new announcement on every keystroke-
+                    like update instead of once per settled sentence. */}
+                <div className="flex-1 min-w-0 space-y-1" aria-live="polite" aria-atomic="false">
+                  {captionLines.length === 0 && !interimText ? (
+                    <p className="text-base sm:text-lg text-center text-white/60 leading-relaxed">{placeholderText}</p>
+                  ) : (
+                    <>
+                      {/* Finalized lines all render as "history" (dim) once
+                          there's a growing interim line to be the current one —
+                          only the most recent final gets the bold "current"
+                          treatment when nothing is actively being spoken. */}
+                      {captionLines.map((line, i) => (
+                        <p
+                          key={line.id}
+                          className={`text-center leading-relaxed ${
+                            i === captionLines.length - 1 && !interimText
+                              ? 'text-base sm:text-xl font-medium'
+                              : 'text-sm sm:text-base text-white/50'
+                          }`}
+                        >
+                          {line.text}
+                        </p>
+                      ))}
+                      {/* F-CAP-1 (2026-09-23, captions pipeline review Phase 3):
+                          the bot now publishes interim text for translated
+                          sessions too, not just same-language "Show Captions"
+                          — several real seconds of blank space while GPT-4o/
+                          ElevenLabs are still working, previously. Deliberately
+                          labeled "Hearing:" and styled dimmer/italic in
+                          translated mode specifically so it can't be mistaken
+                          for the actual translated line (the whole reason this
+                          was gated off originally) — this IS the source
+                          language, not a translation. 'original' mode keeps its
+                          existing unlabeled, full-weight treatment (it already
+                          IS the thing being captioned, no ambiguity to avoid). */}
+                      {interimText && (
+                        captionMode === 'original' ? (
+                          <p aria-hidden="true" className="text-base sm:text-xl font-medium text-center leading-relaxed text-white/90">
+                            {interimText}
+                          </p>
+                        ) : (
+                          <p aria-hidden="true" className="text-sm text-center leading-relaxed text-white/40 italic">
+                            Hearing: {interimText}
+                          </p>
+                        )
+                      )}
+                    </>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCaptionMode('off')}
+                  title="Turn off captions"
+                  className="shrink-0 text-white/60 hover:text-white mt-0.5"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </>,
+        overlayRoot,
       )}
 
       <Popover>

@@ -13,6 +13,7 @@ import { ReactionButton } from './MeetingReactions';
 import { ParticipantTileMenu, type LayoutActions } from './MeetingLayoutControls';
 import { MeetingControlsMenu } from './MeetingControlsMenu';
 import { LiveScriptureSidebar } from './LiveScriptureSidebar';
+import { ScreenShareControls, type ScreenShareControlsHandle } from './ScreenShareControls';
 import { MeetingBackstage, type BackstageReadyState } from './MeetingBackstage';
 import type { ScriptureControlState } from './FloatingTranslationButton';
 import { gridColumns, resolveStage } from '../layout/meetingLayout';
@@ -1002,9 +1003,11 @@ const ScreenShareView: React.FC<{ participant: DailyParticipantInfo }> = ({ part
           muted
           className="absolute inset-0 h-full w-full object-contain"
         />
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 text-white/90 text-xs bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
-          <Monitor className="h-3.5 w-3.5" />
-          {t('dailyVideoCall', 'isSharingScreen', '{name} is sharing their screen').replace('{name}', participant.userName)}
+        {/* Bottom-left, not top-centre: at the top it sat under the meeting's
+            status bar (Live · timer · icons) and the two overlapped. */}
+        <div className="pointer-events-none absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 text-white/90 text-[11px] sm:text-xs bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full">
+          <Monitor className="h-3 w-3 shrink-0" />
+          <span className="truncate">{t('dailyVideoCall', 'isSharingScreen', '{name} is sharing their screen').replace('{name}', participant.userName)}</span>
         </div>
       </div>
     </div>
@@ -1997,6 +2000,8 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // stage instead of falling back to the camera grid.
   const screenSharer = participants.find((p: any) =>
     p.hasScreenShare && p.screenVideoTrack && p.screenVideoTrack.readyState === 'live') || null;
+  // Floating controls for the presenter while they share (ScreenShareControls).
+  const shareControlsRef = useRef<ScreenShareControlsHandle>(null);
 
   // What's on stage comes from the host's shared layout and spotlight list
   // (layout/meetingLayout.ts's resolveStage): this viewer's own PIN wins for
@@ -2042,6 +2047,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   );
   const featuredParticipant = mainParticipants[0] ?? null;
   const featuredIsLocal = mainParticipants.some((p: any) => p.isLocal);
+  // During a screen share your own camera sits in the people strip beside the
+  // screen instead of floating over it. The floating self-view used to land
+  // on top of the presenter's tile (both bottom-right), hiding their video.
+  const selfInline = stage.kind === 'screen' && !!screenSharer && !!localParticipant
+    && remoteParticipants.length > 0 && !featuredIsLocal
+    && !thumbnailParticipants.some((p: any) => p.isLocal)
+    && (stage.screenMode === 'screen-dual' || stage.screenMode === 'screen-gallery'
+      || (stage.screenMode === 'screen-speaker' && mainParticipants.length > 0));
 
   // On-screen tile capping (2026-09-23, meeting architecture review
   // follow-up). Active speakers are prioritized so a live conversation can't
@@ -2320,6 +2333,33 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // control bar, reactions or filmstrip (those belong to full-screen; the host's
   // maximize/leave chrome is drawn by ActiveCallHost). Audio keeps playing.
   const isPiP = (activeCallCtx?.minimized || activeCallCtx?.isSystemPiP) ?? false;
+  const shareControls = (
+    <ScreenShareControls
+      ref={shareControlsRef}
+      isSharing={isScreenSharing}
+      // Android system PiP is a tiny window; the bar would cover it.
+      hideInPage={!!activeCallCtx?.isSystemPiP}
+      isMicOn={isMicOn}
+      isCameraOn={isCameraOn}
+      onToggleMic={toggleMic}
+      onToggleCamera={toggleCamera}
+      onStopShare={stopScreenShare}
+      onLeave={() => handleEndCall(false)}
+      participants={participants.map((p: any) => ({
+        sessionId: p.sessionId,
+        userName: p.userName,
+        isLocal: p.isLocal,
+        hasAudio: p.hasAudio,
+        isSpeaking: p.isSpeaking,
+        role: getParticipantRole(p.sessionId),
+      }))}
+      raisedHandIds={raisedHands.map((h) => h.sessionId)}
+      isModerator={isModerator}
+      onMuteParticipant={(id) => muteParticipant(id)}
+      waitingRoom={waitingRoomParticipants.map((w: any) => ({ sessionId: w.session_id, userName: w.user_name }))}
+      onAdmit={(id) => admitFromWaitingRoom(id)}
+    />
+  );
   const withAttach = (node: React.ReactNode) => (
     <TrackAttachContext.Provider value={attachTrack}>{node}</TrackAttachContext.Provider>
   );
@@ -2338,6 +2378,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       localParticipant;
     return withAttach(
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gray-900">
+        {shareControls}
         <RemoteAudioLayer participants={remoteParticipants} />
         <RemoteScreenAudioLayer participants={remoteParticipants} />
         {screenSharer ? (
@@ -2400,7 +2441,19 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const screenShareButton = (
     <button
       type="button"
-      onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+      onClick={isScreenSharing ? stopScreenShare : () => {
+        // Open the always-on-top controls FIRST, while the click's user
+        // activation is still unused: Chrome's getDisplayMedia consumes it,
+        // so opening the pop-out after starting the share was silently
+        // refused (the bar never appeared). Chrome doesn't need activation
+        // for getDisplayMedia, so starting the share second is fine. If the
+        // picker is cancelled the pop-out closes again.
+        shareControlsRef.current?.openPopout();
+        const started = startScreenShare();
+        Promise.resolve(started).finally(() => {
+          setTimeout(() => shareControlsRef.current?.closeIfNotSharing(), 1500);
+        });
+      }}
       title={isScreenSharing ? undefined : t('dailyVideoCall', 'shareScreenAudioHint', 'Tick "Share tab audio" / "Share system audio" in the picker to include sound')}
       aria-label={screenShareLabel}
       className="flex flex-col items-center gap-1 sm:gap-2 group shrink-0"
@@ -2499,6 +2552,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
       ref={containerRef}
       className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-gray-900 sm:flex-row ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}
     >
+      {/* Must stay the FIRST child here and in the mini-player return above,
+          so minimizing doesn't remount it (and close the pop-out window). */}
+      {shareControls}
       {/* Reconnection UX (2026-09-23, meeting architecture review) — before
           this, a network blip gave zero feedback: tiles just froze with no
           indication anything was wrong, and a blocked audio autoplay left a
@@ -2586,8 +2642,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             </div>
           );
           // The row of audience thumbnails under the main tiles.
-          const filmstrip = () => cappedThumbnails.visible.length > 0 && (
+          const filmstrip = (withSelf = false) => (cappedThumbnails.visible.length > 0 || (withSelf && selfInline)) && (
             <div className="flex gap-2 h-20 sm:h-28 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+              {withSelf && selfInline && thumb(localParticipant, 'h-full aspect-video')}
               {cappedThumbnails.visible.map((p: any) => thumb(p, 'h-full aspect-video'))}
               {overflowTile(cappedThumbnails.overflowCount, 'h-full')}
             </div>
@@ -2606,42 +2663,51 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           // A live screen share takes the stage, laid out the way the host chose.
           if (stage.kind === 'screen' && screenSharer) {
             const mode = stage.screenMode;
+            // pt clears the top status bar so it never sits on the shared screen.
+            const screenPad = 'p-2 pt-14 sm:pt-16';
             if (mode === 'screen-dual') {
               return (
-                <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
+                <div className={`flex h-full flex-col gap-2 overflow-hidden ${screenPad}`}>
                   <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
                   {mainParticipants.length > 0 && (
                     <div className={`grid shrink-0 gap-2 w-full max-w-2xl mx-auto ${mainParticipants.length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-xs'}`}>
                       {mainParticipants.map(bigTile)}
                     </div>
                   )}
-                  {filmstrip()}
+                  {filmstrip(true)}
                 </div>
               );
             }
             if (mode === 'screen-speaker' && mainParticipants.length > 0) {
               return (
-                <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
+                <div className={`flex h-full flex-col gap-2 overflow-hidden ${screenPad}`}>
                   <div className="flex flex-1 min-h-0 flex-col gap-2 lg:flex-row">
                     <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
-                    <div className="shrink-0 w-40 self-end lg:self-center lg:w-72">{bigTile(mainParticipants[0])}</div>
+                    {/* Presenter's camera, with your own self-view NEXT to it
+                        (never on top of it). Side by side under the screen on
+                        phones, stacked beside it on wide screens. */}
+                    <div className="flex shrink-0 items-end justify-center gap-2 lg:w-72 lg:flex-col lg:items-stretch lg:justify-center">
+                      <div className="w-44 sm:w-56 lg:w-full">{bigTile(mainParticipants[0])}</div>
+                      {selfInline && <div className="w-28 sm:w-36 lg:w-40 lg:self-end">{thumb(localParticipant, 'w-full')}</div>}
+                    </div>
                   </div>
                   {filmstrip()}
                 </div>
               );
             }
-            if (mode === 'screen-gallery' && cappedThumbnails.visible.length > 0) {
+            if (mode === 'screen-gallery' && (cappedThumbnails.visible.length > 0 || selfInline)) {
               return (
-                <div className="flex h-full flex-col gap-2 overflow-hidden p-2 lg:flex-row">
+                <div className={`flex h-full flex-col gap-2 overflow-hidden lg:flex-row ${screenPad}`}>
                   <div className="flex-1 min-h-0"><ScreenShareView participant={screenSharer} /></div>
                   <div className="flex lg:flex-col gap-2 lg:w-44 shrink-0 overflow-x-auto lg:overflow-y-auto overflow-y-hidden lg:overflow-x-hidden">
+                    {selfInline && thumb(localParticipant, 'w-28 lg:w-full')}
                     {cappedThumbnails.visible.map((p: any) => thumb(p, 'w-28 lg:w-full'))}
                     {overflowTile(cappedThumbnails.overflowCount, 'w-28 lg:w-full')}
                   </div>
                 </div>
               );
             }
-            return <div className="h-full overflow-hidden p-2"><ScreenShareView participant={screenSharer} /></div>;
+            return <div className="h-full overflow-hidden p-2 pt-14 sm:pt-16"><ScreenShareView participant={screenSharer} /></div>;
           }
 
           if (remoteParticipants.length === 0) {
@@ -2782,7 +2848,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             so its stream stays attached. Unmounting it (the old behaviour) left it
             blank after removing your own spotlight until a re-render re-attached. */}
         {localParticipant && remoteParticipants.length > 0 && (
-          <div className={`absolute bottom-3 right-3 z-20 aspect-video w-24 max-w-[40vw] overflow-hidden rounded-lg border-2 border-gray-700 bg-gray-800 shadow-lg sm:bottom-4 sm:right-4 sm:w-36 md:w-48 flex items-center justify-center ${featuredIsLocal ? 'hidden' : ''}`}>
+          <div className={`absolute bottom-3 right-3 z-20 aspect-video w-24 max-w-[40vw] overflow-hidden rounded-lg border-2 border-gray-700 bg-gray-800 shadow-lg sm:bottom-4 sm:right-4 sm:w-36 md:w-48 flex items-center justify-center ${featuredIsLocal || selfInline ? 'hidden' : ''}`}>
             {/* Always render video element so ref is available for track attachment */}
             <video
               ref={localVideoRef}

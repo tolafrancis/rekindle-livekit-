@@ -18,7 +18,7 @@ import {
   Building2, Search, Loader2, CheckCircle, XCircle, Clock, Eye,
   Shield, Users, Settings, AlertTriangle, RefreshCw, Ban, Play,
   Globe, Lock, Download, Mail, Phone, Link, ExternalLink,
-  FileCheck, UserCog, Palette, Crown
+  FileCheck, UserCog, Palette, Crown, Trash2
 } from 'lucide-react';
 
 interface Ministry {
@@ -103,6 +103,8 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
   const [showActionModal, setShowActionModal] = useState(false);
   const [showWhiteLabelModal, setShowWhiteLabelModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | 'suspend' | 'activate' | 'verify'>('approve');
@@ -266,6 +268,43 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
 
       toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'actionSuccess', 'Ministry {action} successfully').replace('{action}', `${actionType}d`) });
       setShowActionModal(false);
+      loadData();
+      onUpdate();
+    } catch (err: any) {
+      toast({ title: t('ministryTenantManager', 'error', 'Error'), description: err.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOpenDelete = (ministry: Ministry) => {
+    setSelectedMinistry(ministry);
+    setDeleteConfirmName('');
+    setShowDeleteModal(true);
+  };
+
+  // Permanent: the RPC checks platform-admin + the typed name, logs the
+  // deletion, then deletes the ministry and everything that cascades from it.
+  const handleDeleteMinistry = async () => {
+    if (!selectedMinistry) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('admin_delete_ministry', {
+        p_ministry_id: selectedMinistry.id,
+        p_confirm_name: deleteConfirmName,
+      });
+      if (error) {
+        if (error.message.includes('HAS_GIFT_AID')) {
+          throw new Error(t('ministryTenantManager', 'deleteHasGiftAid', 'This ministry has Gift Aid declarations, which must be kept for HMRC. Suspend it instead.'));
+        }
+        if (error.message.includes('NAME_MISMATCH')) {
+          throw new Error(t('ministryTenantManager', 'deleteNameMismatch', 'The name you typed doesn\'t match the ministry name.'));
+        }
+        throw error;
+      }
+      toast({ title: t('ministryTenantManager', 'success', 'Success'), description: t('ministryTenantManager', 'deleteSuccess', '"{name}" was deleted').replace('{name}', selectedMinistry.name) });
+      setShowDeleteModal(false);
+      setSelectedMinistry(null);
       loadData();
       onUpdate();
     } catch (err: any) {
@@ -551,7 +590,8 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                   <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'status', 'Status')}</th>
                   <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'verification', 'Verification')}</th>
                   <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'risk', 'Risk')}</th>
-                  <th className="text-left p-4 font-medium">{t('ministryTenantManager', 'actions', 'Actions')}</th>
+                  {/* Pinned right so the actions stay reachable without scrolling the table sideways. */}
+                  <th className="text-left p-4 font-medium sticky right-0 bg-gray-50 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">{t('ministryTenantManager', 'actions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -559,7 +599,7 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                   const sub = subscriptions[ministry.id];
                   const wl = whiteLabelSettings[ministry.id];
                   return (
-                    <tr key={ministry.id} className="border-b hover:bg-gray-50">
+                    <tr key={ministry.id} className="group border-b hover:bg-gray-50">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div 
@@ -624,7 +664,7 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 sticky right-0 bg-white group-hover:bg-gray-50 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" onClick={() => handleViewDetails(ministry)} title={t('ministryTenantManager', 'viewDetails', 'View Details')}>
                             <Eye className="h-4 w-4" />
@@ -657,6 +697,9 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
                               <Shield className="h-4 w-4" />
                             </Button>
                           )}
+                          <Button variant="ghost" size="icon" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleOpenDelete(ministry)} title={t('ministryTenantManager', 'deleteMinistry', 'Delete Ministry')}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -919,6 +962,48 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {t('ministryTenantManager', 'confirm', 'Confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Modal */}
+      <Dialog open={showDeleteModal} onOpenChange={(open) => { if (!saving) setShowDeleteModal(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              {t('ministryTenantManager', 'deleteMinistry', 'Delete Ministry')}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedMinistry && (
+            <div className="space-y-4">
+              <p className="text-gray-600">
+                {t('ministryTenantManager', 'deleteConfirm', 'Permanently delete "{name}"? Its members, devotionals, events, donations, groups, translation sessions and all other ministry data will be removed. This cannot be undone.').replace('{name}', selectedMinistry.name)}
+              </p>
+              <p className="text-sm text-gray-500">
+                {t('ministryTenantManager', 'deleteSuspendHint', 'To pause a ministry without losing its data, use Suspend instead.')}
+              </p>
+              <div>
+                <Label>{t('ministryTenantManager', 'deleteTypeName', 'Type the ministry name to confirm')}</Label>
+                <Input
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  placeholder={selectedMinistry.name}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteModal(false)} disabled={saving}>{t('ministryTenantManager', 'cancel', 'Cancel')}</Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteMinistry}
+              disabled={saving || !selectedMinistry || deleteConfirmName !== selectedMinistry.name}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              {t('ministryTenantManager', 'deletePermanently', 'Delete permanently')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -16,8 +16,35 @@ import {
   AlertDialogTitle,
 } from '@rekindle/ui/alert-dialog';
 import { useAuth } from '../AuthContext';
+import { nativePlatform } from '../platform';
 
 const CONFIRM_WORD = 'DELETE';
+
+class AppleConfirmCancelled extends Error {}
+
+// Apple requires deleting an account to also revoke its Sign in with Apple
+// tokens. Supabase keeps no Apple token, so on iOS an Apple-linked user
+// confirms with Apple once more; the delete-account function swaps that fresh
+// code for a token and revokes it. Anywhere else there is nothing to send.
+async function appleRevocationBody(user: any): Promise<Record<string, string>> {
+  const providers: string[] = user?.app_metadata?.providers ?? [];
+  if (nativePlatform() !== 'ios' || !providers.includes('apple')) return {};
+  try {
+    const [{ FirebaseAuthentication }, { App }] = await Promise.all([
+      import('@capacitor-firebase/authentication'),
+      import('@capacitor/app'),
+    ]);
+    const result = await FirebaseAuthentication.signInWithApple({ skipNativeAuth: true });
+    const code = result.credential?.authorizationCode;
+    if (!code) return {};
+    return { appleAuthorizationCode: code, appleClientId: (await App.getInfo()).id };
+  } catch (err) {
+    if (/cancel/i.test(err instanceof Error ? err.message : '')) throw new AppleConfirmCancelled();
+    // Apple unavailable: still delete the account, just without the revoke.
+    console.warn('[DeleteAccount] Apple confirmation failed:', err);
+    return {};
+  }
+}
 
 /**
  * Settings → Delete account. Apple requires in-app account deletion; this
@@ -26,7 +53,7 @@ const CONFIRM_WORD = 'DELETE';
  * (ProfileSettings → Privacy) and the ministry app (MemberAccountSettings).
  */
 export const DeleteAccountSection: React.FC<{ className?: string }> = ({ className }) => {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -35,7 +62,8 @@ export const DeleteAccountSection: React.FC<{ className?: string }> = ({ classNa
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      const { data, error } = await supabase.functions.invoke('delete-account', { body: {} });
+      const body = await appleRevocationBody(user);
+      const { data, error } = await supabase.functions.invoke('delete-account', { body });
       if (error) {
         // Non-2xx: the function's JSON body carries the reason.
         const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
@@ -50,7 +78,9 @@ export const DeleteAccountSection: React.FC<{ className?: string }> = ({ classNa
     } catch (err) {
       toast({
         title: 'Could not delete account',
-        description: err instanceof Error ? err.message : 'Please try again.',
+        description: err instanceof AppleConfirmCancelled
+          ? 'Confirm with Apple to delete your account.'
+          : err instanceof Error ? err.message : 'Please try again.',
         variant: 'destructive',
       });
     } finally {

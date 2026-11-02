@@ -213,6 +213,19 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Not authorized for this audience' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+
+      // Broadcast messaging is a plan feature (ministry_has_cap, 0425). The
+      // app hides the Broadcast screens without it; this stops a direct call.
+      if (ministryId && !isPlatformAdmin &&
+          (notificationType === 'group_broadcast' || notificationType === 'leader_broadcast')) {
+        const { data: allowed, error: capError } = await supabaseClient
+          .rpc('ministry_has_cap', { p_ministry_id: ministryId, p_cap: 'broadcastMessaging' });
+        if (capError) console.error('[send-push-notification] ministry_has_cap failed:', capError.message);
+        if (allowed !== true) {
+          return new Response(JSON.stringify({ error: "This ministry's plan doesn't include broadcast messaging" }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      }
     }
 
     // -- Resolve audience to a list of user IDs (Step 1) ------------------

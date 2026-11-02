@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@rekindle/ui/select';
-import { Loader2, Plus, X, Radio } from 'lucide-react';
+import { Loader2, Plus, X, Radio, Upload } from 'lucide-react';
 import { toast } from '@rekindle/ui/toast-compat';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
@@ -59,12 +59,39 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadCover = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Invalid file', description: 'Please choose an image.', variant: 'destructive' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Image too large', description: 'Cover images must be under 5MB.', variant: 'destructive' });
+      return;
+    }
+    setUploadingCover(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `webinar-covers/${ministryId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('assets').upload(path, file, { upsert: true, contentType: file.type });
+      if (error) throw error;
+      const { data } = supabase.storage.from('assets').getPublicUrl(path);
+      setCoverImageUrl(data.publicUrl);
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setUploadingCover(false);
+    }
+  };
   const [scheduledTime, setScheduledTime] = useState('');
   const [timezone, setTimezone] = useState(guessUserTimeZone());
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [maxAttendees, setMaxAttendees] = useState(200);
   const [isPublic, setIsPublic] = useState(false);
   const [registrationRequired, setRegistrationRequired] = useState(false);
+  const [requireApproval, setRequireApproval] = useState(false);
   const [enableRecording, setEnableRecording] = useState(true);
   const [enableCaptions, setEnableCaptions] = useState(true);
   const [enableTranslation, setEnableTranslation] = useState(false);
@@ -107,7 +134,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
       setStartMode('now');
       setTitle(''); setDescription(''); setCoverImageUrl(''); setScheduledTime('');
       setTimezone(guessUserTimeZone()); setDurationMinutes(60); setMaxAttendees(200);
-      setIsPublic(false); setRegistrationRequired(false); setEnableRecording(true);
+      setIsPublic(false); setRegistrationRequired(false); setRequireApproval(false); setEnableRecording(true);
       setEnableCaptions(true); setEnableTranslation(false); setDefaultLanguage('en'); setCaptionLanguage('en');
       setEnableChat(true); setEnableQA(true); setEnablePolls(true);
       setRecordingVisibility('private');
@@ -124,6 +151,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
     setMaxAttendees(webinar.max_attendees);
     setIsPublic(webinar.is_public);
     setRegistrationRequired(webinar.registration_required);
+    setRequireApproval(webinar.registration_approval === 'manual');
     setEnableRecording(webinar.enable_recording);
     setEnableCaptions(webinar.enable_captions);
     setCaptionLanguage(webinar.source_language ?? 'en');
@@ -169,6 +197,11 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
         duration_minutes: durationMinutes,
         max_attendees: maxAttendees,
         registration_required: registrationRequired,
+        // Only written when approval is (or was) on, so saving still works on a
+        // database that hasn't run migration 0427 yet.
+        ...((registrationRequired && requireApproval) || webinar?.registration_approval === 'manual'
+          ? { registration_approval: registrationRequired && requireApproval ? 'manual' : 'automatic' }
+          : {}),
         reminder_offsets: reminderOffsets,
         is_public: isPublic,
         access_level: isPublic ? 'public' : 'members',
@@ -266,8 +299,31 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="webinar-cover">Cover image URL</Label>
-            <Input id="webinar-cover" value={coverImageUrl} onChange={(e) => setCoverImageUrl(e.target.value)} placeholder="https://…" />
+            <Label htmlFor="webinar-cover">Cover image</Label>
+            {coverImageUrl.trim() && (
+              <div className="relative w-full h-32 rounded-lg overflow-hidden border">
+                <img src={coverImageUrl} alt="Cover preview" className="w-full h-full object-cover" />
+                <button
+                  type="button" aria-label="Remove cover image"
+                  onClick={() => setCoverImageUrl('')}
+                  className="absolute top-2 right-2 bg-black/50 rounded-full p-1 text-white hover:bg-black/70"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input id="webinar-cover" value={coverImageUrl} onChange={(e) => setCoverImageUrl(e.target.value)} placeholder="Paste an image URL (https://…)" className="flex-1" />
+              <Button type="button" variant="outline" disabled={uploadingCover} onClick={() => coverInputRef.current?.click()}>
+                {uploadingCover ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+                {uploadingCover ? 'Uploading…' : 'Upload'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Upload a PNG or JPG up to 5MB, or paste a link.</p>
+            <input
+              ref={coverInputRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCover(f); e.target.value = ''; }}
+            />
           </div>
 
           <div className="space-y-2">
@@ -333,7 +389,7 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           <div className="flex items-center justify-between">
             <div>
               <Label>Public</Label>
-              <p className="text-xs text-gray-500">Anyone with the link can watch, not just ministry members.</p>
+              <p className="text-xs text-gray-500">Anyone with the link can watch, not just ministry members. No Rekindle account needed.</p>
             </div>
             <Switch checked={isPublic} onCheckedChange={setIsPublic} />
           </div>
@@ -341,10 +397,23 @@ export function CreateWebinarWizard({ ministryId, isOpen, onClose, onSuccess, we
           <div className="flex items-center justify-between">
             <div>
               <Label>Require registration</Label>
-              <p className="text-xs text-gray-500">Attendees must register before joining — they'll get reminders too.</p>
+              <p className="text-xs text-gray-500">
+                Attendees register before joining and get a personal join link by email, plus reminders.
+                {isPublic ? ' Guests only need a name and email.' : ''}
+              </p>
             </div>
             <Switch checked={registrationRequired} onCheckedChange={setRegistrationRequired} />
           </div>
+
+          {registrationRequired && (
+            <div className="flex items-center justify-between pl-4 border-l-2 border-purple-100">
+              <div>
+                <Label>Approve registrations</Label>
+                <p className="text-xs text-gray-500">You approve each person before they get their join link. Off = everyone is approved automatically.</p>
+              </div>
+              <Switch checked={requireApproval} onCheckedChange={setRequireApproval} />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center justify-between rounded-md border p-3">
