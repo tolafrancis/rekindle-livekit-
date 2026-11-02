@@ -2,7 +2,7 @@
 // =====================================================================
 // MINISTRY (tenant) subscription checkout for the "Ministry Partner" plan.
 // Provider-agnostic and region-routed: Nigeria pays via Paystack (NGN,
-// recurring via a pre-created Paystack Plan); everywhere else pays via
+// recurring via a pre-created Paystack Plan) or Stripe (USD); everywhere else pays via
 // Stripe (USD, recurring via a Stripe Price) or a PayPal hosted billing link.
 // Pricing and provider IDs are read from ministry_partner_plans — never
 // hardcoded — so admins can change them without a deploy.
@@ -235,7 +235,7 @@ serve(async (req) => {
 
       const countryCode = typeof country === 'string' ? country.toUpperCase() : 'US';
       const isNigeria = countryCode === 'NG';
-      if (isNigeria && provider !== 'paystack') return json({ error: 'Nigeria must use Paystack' }, 400);
+      if (isNigeria && provider === 'paypal') return json({ error: 'PayPal is not available for Nigeria' }, 400);
       if (!isNigeria && provider === 'paystack') return json({ error: 'Paystack is only available for Nigeria' }, 400);
 
       if (provider === 'paystack') {
@@ -325,8 +325,10 @@ serve(async (req) => {
     const isNigeria = countryCode === 'NG';
 
     // Enforce the routing rule server-side too — never trust the client alone.
-    if (isNigeria && provider !== 'paystack') {
-      return json({ error: 'Nigeria must use Paystack' }, 400);
+    // Nigeria may pay via Paystack (NGN) or Stripe (USD card); PayPal isn't
+    // offered there.
+    if (isNigeria && provider === 'paypal') {
+      return json({ error: 'PayPal is not available for Nigeria' }, 400);
     }
     if (!isNigeria && provider === 'paystack') {
       return json({ error: 'Paystack is only available for Nigeria' }, 400);

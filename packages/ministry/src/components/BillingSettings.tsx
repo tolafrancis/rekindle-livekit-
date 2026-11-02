@@ -156,7 +156,8 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
     const res = await purchaseAddon({
       ministryId: currentMinistryId,
       catalogId: item.id,
-      provider: country === 'NG' ? 'paystack' : 'stripe',
+      // An add-on is billed by the provider the ministry's plan is on.
+      provider: country === 'NG' && introState?.paymentProvider !== 'stripe' ? 'paystack' : 'stripe',
       country,
     });
     setBuyingAddonId(null);
@@ -175,6 +176,9 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
   const currentSlug = entitlements.tierSlug;
   const isPaid = currentSlug !== 'free';
   const isNigeria = country === 'NG';
+  // Plan cards show Naira for Nigeria only where the plan can be paid via
+  // Paystack; otherwise the USD (Stripe) price.
+  const cardCountry = (plan: MinistryPartnerPlan) => (isNigeria && !plan.paystackPlanCode ? 'US' : country);
   const hasStoragePack = myAddons.some((a) => a.addonType === 'storage_pack');
   const currentPlan = plans.find((p) => p.slug === currentSlug) ?? null;
   const purchasedParticipants = totalParticipantsPurchased(myAddons);
@@ -184,8 +188,8 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
 
   // Launch offer: shown to ministries without a paid plan on monthly
   // billing. ministry-checkout makes the final eligibility check.
-  const introFor = (plan: MinistryPartnerPlan) =>
-    launchOffer?.isOpen && !isPaid && cycle === 'monthly' ? resolveIntroPrice(plan, country) : null;
+  const introFor = (plan: MinistryPartnerPlan, priceCountry: string = cardCountry(plan)) =>
+    launchOffer?.isOpen && !isPaid && cycle === 'monthly' ? resolveIntroPrice(plan, priceCountry) : null;
   const introMonths = launchOffer?.introMonths ?? 3;
   const inIntro = !!introState?.introOfferApplied && !!introState.introEndsAt && new Date(introState.introEndsAt) > new Date();
   const canSwitchAnnual = isPaid && introState?.paymentProvider === 'stripe'
@@ -208,13 +212,13 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
 
   const selectPlan = (plan: MinistryPartnerPlan) => {
     setSelectedPlan(plan);
-    setProvider(isNigeria ? 'paystack' : plan.stripePriceIdMonthly || !plan.paypalBillingLinkMonthly ? 'stripe' : 'paypal');
+    setProvider(isNigeria ? (plan.paystackPlanCode ? 'paystack' : 'stripe') : plan.stripePriceIdMonthly || !plan.paypalBillingLinkMonthly ? 'stripe' : 'paypal');
     setStep('confirm');
   };
 
   const onCountryChange = (code: string) => {
     setCountry(code);
-    if (selectedPlan) setProvider(code === 'NG' ? 'paystack' : 'stripe');
+    if (selectedPlan) setProvider(code === 'NG' && selectedPlan.paystackPlanCode ? 'paystack' : 'stripe');
   };
 
   const confirmAndPay = async () => {
@@ -247,10 +251,13 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
 
   // ── Confirmation step ────────────────────────────────────────────────
   if (step === 'confirm' && selectedPlan) {
-    const { currency, amount } = resolvePlanPricing(selectedPlan, country, cycle);
-    const intro = provider === 'paypal' ? null : introFor(selectedPlan);
+    // Paystack charges in Naira; Stripe and PayPal charge in USD, including
+    // for Nigeria.
+    const priceCountry = provider === 'paystack' ? 'NG' : isNigeria ? 'US' : country;
+    const { currency, amount } = resolvePlanPricing(selectedPlan, priceCountry, cycle);
+    const intro = provider === 'paypal' ? null : introFor(selectedPlan, priceCountry);
     const availableProviders: BillingProvider[] = isNigeria
-      ? ['paystack']
+      ? (selectedPlan.paystackPlanCode ? ['paystack', 'stripe'] : ['stripe'])
       : (['stripe', 'paypal'] as BillingProvider[]).filter((p) =>
           p === 'stripe' ? true : !!(cycle === 'annual' ? selectedPlan.paypalBillingLinkAnnual : selectedPlan.paypalBillingLinkMonthly)
         );
@@ -421,7 +428,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {plans.map((plan) => {
-          const { currency, amount } = resolvePlanPricing(plan, country, cycle);
+          const { currency, amount } = resolvePlanPricing(plan, cardCountry(plan), cycle);
           const isCurrent = plan.slug === currentSlug;
           const intro = introFor(plan);
           // A smaller church can pick any plan for its features, so show the
@@ -473,7 +480,7 @@ export default function BillingSettings({ ministryId }: { ministryId?: string } 
         Participant caps apply across both Meetings and Webinars.
       </p>
       <p className="text-xs text-muted-foreground">
-        Nigeria pays in Naira via Paystack; everywhere else pays in USD via Stripe or PayPal. Your plan activates
+        Nigeria can pay in Naira via Paystack or in USD by card via Stripe; everywhere else pays in USD via Stripe or PayPal. Your plan activates
         automatically after payment (PayPal is confirmed manually — see note at checkout).
       </p>
 
