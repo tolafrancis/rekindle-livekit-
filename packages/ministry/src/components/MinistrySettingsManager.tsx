@@ -180,7 +180,7 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { data: savedRows, error } = await supabase
         .from('ministry_groups')
         .update({
           name: formData.name,
@@ -197,9 +197,15 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
           settings: formData.settings,
           updated_at: new Date().toISOString()
         })
-        .eq('id', ministry.id);
+        .eq('id', ministry.id)
+        .select('id');
 
       if (error) throw error;
+      // RLS turns a blocked update into zero rows with no error; say so
+      // instead of claiming it saved and then showing the old values.
+      if (!savedRows?.length) {
+        throw new Error(t('ministrySettingsManager', 'noPermission', "You don't have permission to edit this ministry's profile. Ask the ministry owner to make the change."));
+      }
       toast({ title: t('ministrySettingsManager', 'settingsSaved', 'Settings saved') });
       onUpdate();
     } catch (err: any) {
