@@ -9,13 +9,17 @@
 //   2. prepare_user_account_deletion() (migration 0422) refuses ministry
 //      owners and clears the NO ACTION references that would block the
 //      delete.
-//   3. auth.admin.deleteUser() removes the user; everything else cascades.
+//   3. Revokes the user's Sign in with Apple tokens when the iOS app sent
+//      a fresh Apple authorization code (see revokeAppleTokens).
+//   4. auth.admin.deleteUser() removes the user; everything else cascades.
 //
-// Secrets: STRIPE_SECRET_KEY, PAYSTACK_SECRET_KEY.
+// Secrets: STRIPE_SECRET_KEY, PAYSTACK_SECRET_KEY,
+//          APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY.
 // =====================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as Sentry from 'npm:@sentry/deno@^10';
+import { SignJWT, importPKCS8 } from 'npm:jose@5';
 
 Sentry.init({ dsn: Deno.env.get('SENTRY_DSN'), defaultIntegrations: false, tracesSampleRate: 0 });
 Sentry.setTag('function', 'delete-account');
@@ -30,12 +34,65 @@ const json = (body: unknown, status = 200) =>
     status, headers: { 'Content-Type': 'application/json', ...corsHeaders }
   });
 
+// Bundle IDs of the two iOS apps, the client_id Apple issued the code to.
+const APPLE_CLIENT_IDS = ['com.rekindlebc.app', 'com.rekindlebc.ministry'];
+
+// Apple requires apps to revoke a user's Sign in with Apple tokens when the
+// account is deleted. Supabase keeps no Apple token, so the iOS app has the
+// user confirm with Apple and sends the fresh authorization code; it is
+// exchanged for a refresh token here and that token is revoked.
+// APPLE_PRIVATE_KEY is the contents of the Sign in with Apple .p8 key.
+async function revokeAppleTokens(code: string, clientId: string) {
+  const teamId = Deno.env.get('APPLE_TEAM_ID');
+  const keyId = Deno.env.get('APPLE_KEY_ID');
+  const privateKey = Deno.env.get('APPLE_PRIVATE_KEY');
+  if (!teamId || !keyId || !privateKey) {
+    throw new Error('Apple revoke is not configured. Set APPLE_TEAM_ID, APPLE_KEY_ID and APPLE_PRIVATE_KEY in Supabase secrets.');
+  }
+
+  const key = await importPKCS8(privateKey.replace(/\\n/g, '\n'), 'ES256');
+  const clientSecret = await new SignJWT({})
+    .setProtectedHeader({ alg: 'ES256', kid: keyId })
+    .setIssuer(teamId)
+    .setSubject(clientId)
+    .setAudience('https://appleid.apple.com')
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(key);
+
+  const form = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  const tokenResponse = await fetch('https://appleid.apple.com/auth/token', {
+    method: 'POST',
+    headers: form,
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, grant_type: 'authorization_code' }),
+  });
+  const tokens = await tokenResponse.json().catch(() => ({}));
+  const token: string | undefined = tokens.refresh_token ?? tokens.access_token;
+  if (!tokenResponse.ok || !token) {
+    throw new Error(`Apple token exchange failed: ${tokens.error ?? tokenResponse.status}`);
+  }
+
+  const revokeResponse = await fetch('https://appleid.apple.com/auth/revoke', {
+    method: 'POST',
+    headers: form,
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      token,
+      token_type_hint: tokens.refresh_token ? 'refresh_token' : 'access_token',
+    }),
+  });
+  if (!revokeResponse.ok) throw new Error(`Apple revoke failed: ${revokeResponse.status}`);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    const body = await req.json().catch(() => ({}));
+
     const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
     const paystackSecretKey = Deno.env.get('PAYSTACK_SECRET_KEY');
 
@@ -116,6 +173,17 @@ Deno.serve(async (req) => {
         }, 409);
       }
       throw new Error(prepareError.message);
+    }
+
+    // Best effort, like Paystack: a failed revoke is reported, not fatal, so
+    // deleting an account never depends on Apple being reachable.
+    if (typeof body?.appleAuthorizationCode === 'string' && APPLE_CLIENT_IDS.includes(body?.appleClientId)) {
+      try {
+        await revokeAppleTokens(body.appleAuthorizationCode, body.appleClientId);
+      } catch (err) {
+        console.warn('Apple revoke failed:', err);
+        Sentry.captureException(err);
+      }
     }
 
     const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id);
