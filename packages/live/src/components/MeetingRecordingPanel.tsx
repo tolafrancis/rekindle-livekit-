@@ -208,6 +208,45 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
     toast.success('Notes stopped. Clean the transcript and generate insights below.');
   }, [meetingId, tableName, enableRecording, notes, elapsedSeconds, meetingTitle, userId]);
 
+  // Safety net (2026-11-01): the meeting ending (End for All, leaving, closing
+  // the tab) while notes are still running used to throw the transcript away —
+  // it only lived in this browser's memory and was saved by "Stop notes".
+  // Now the initiator's browser saves whatever was captured on the way out.
+  // Fire-and-forget: the request still goes out after unmount, and on a tab
+  // close it's best effort (the browser may cut it off).
+  const latestRef = useRef({ recordingState, lines: notes.lines, elapsedSeconds });
+  latestRef.current = { recordingState, lines: notes.lines, elapsedSeconds };
+  const unmountSaveDoneRef = useRef(false);
+  const saveTranscriptOnExit = useCallback(() => {
+    const { recordingState: st, lines, elapsedSeconds: secs } = latestRef.current;
+    if (unmountSaveDoneRef.current || st !== 'recording' || !isInitiatorRef.current) return;
+    if (savedNoteIdRef.current || !userId || lines.length === 0) return;
+    unmountSaveDoneRef.current = true;
+    try { notes.stopNotes(); } catch { /* noop */ }
+    const raw: RawTranscript = { lines, durationSeconds: secs, detectedLanguages: [] };
+    void supabase.from('meeting_ai_notes').insert({
+      meeting_id: meetingId,
+      source_table: tableName,
+      meeting_title: meetingTitle,
+      created_by: userId,
+      raw_transcript: raw,
+      transcript: { lines, dominantLanguage: '', isMixedLanguage: false },
+      duration_seconds: secs,
+    }).then(({ error }) => {
+      if (error) console.error('[MeetingRecordingPanel] auto-save transcript on exit failed:', error);
+    });
+  }, [meetingId, tableName, meetingTitle, userId, notes]);
+  const saveOnExitRef = useRef(saveTranscriptOnExit);
+  saveOnExitRef.current = saveTranscriptOnExit;
+  useEffect(() => {
+    const onPageHide = () => saveOnExitRef.current();
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      saveOnExitRef.current();
+    };
+  }, []);
+
   const handleTranscriptReady = useCallback((raw: RawTranscript) => {
     setRawTranscript(raw);
   }, []);

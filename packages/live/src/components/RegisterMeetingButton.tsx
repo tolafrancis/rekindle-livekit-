@@ -7,7 +7,8 @@ import { Badge } from '@rekindle/ui/badge';
 import { toast } from '@rekindle/ui/use-toast';
 import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
-import { UserCheck, UserPlus, Users, Loader2 } from 'lucide-react';
+import { UserCheck, UserPlus, Users, Loader2, Clock, Check, X } from 'lucide-react';
+import { registerForWebinar, decideWebinarRegistration, type WebinarRegisterResult } from '../webinar/webinarControl';
 
 export type MeetingKind = 'ministry' | 'channel' | 'webinar';
 
@@ -20,6 +21,10 @@ interface Props {
   /** Guests may register with name+email only on public meetings. */
   allowGuests?: boolean;
   className?: string;
+  /** Called after this person's registration changes (register/cancel). */
+  onChange?: () => void;
+  /** Webinars: called after a signed-out guest registers. */
+  onGuestRegistered?: (result: WebinarRegisterResult) => void;
 }
 
 interface Registrant {
@@ -37,7 +42,13 @@ interface Registrant {
  */
 export const RegisterMeetingButton: React.FC<Props> = ({
   meetingId, meetingKind, meetingTitle, isHost = false, allowGuests = false, className,
+  onChange, onGuestRegistered,
 }) => {
+  // Webinar registrations go through the webinar-registration edge function
+  // (confirmation email, personal join link, optional host approval — 0427).
+  const isWebinar = meetingKind === 'webinar';
+  const [myStatus, setMyStatus] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<string | null>(null);
   const { user } = useAuth();
   const [count, setCount] = useState<number>(0);
   const [registered, setRegistered] = useState(false);
@@ -59,6 +70,7 @@ export const RegisterMeetingButton: React.FC<Props> = ({
         .eq('user_id', user.id)
         .maybeSingle();
       setRegistered(!!data && (data as any).status === 'registered');
+      setMyStatus((data as any)?.status ?? null);
     }
   }, [meetingId, user]);
 
@@ -67,6 +79,25 @@ export const RegisterMeetingButton: React.FC<Props> = ({
   const registerAsUser = async () => {
     if (!user) return;
     setBusy(true);
+    if (isWebinar) {
+      try {
+        const res = await registerForWebinar(meetingId);
+        if (res.status === 'pending') {
+          toast({ title: 'Registration sent', description: 'The host will review it. We’ll email you when you’re approved.' });
+        } else if (res.status === 'declined') {
+          toast({ title: 'Registration not approved', description: 'The host declined this registration.', variant: 'destructive' });
+        } else {
+          toast({ title: 'You’re registered', description: `Check your email for your join link to “${meetingTitle}”.` });
+        }
+        await refresh();
+        onChange?.();
+      } catch (e: any) {
+        toast({ title: 'Could not register', description: e?.message || 'Please try again.', variant: 'destructive' });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       // Upsert-by-hand: partial unique indexes make onConflict awkward, so
       // re-activate an existing row or insert a fresh one.
@@ -103,6 +134,7 @@ export const RegisterMeetingButton: React.FC<Props> = ({
         .eq('meeting_id', meetingId).eq('user_id', user.id);
       toast({ title: 'Registration cancelled' });
       await refresh();
+      onChange?.();
     } catch (e: any) {
       toast({ title: 'Could not cancel', description: e?.message || 'Please try again.', variant: 'destructive' });
     } finally {
@@ -118,6 +150,23 @@ export const RegisterMeetingButton: React.FC<Props> = ({
       return;
     }
     setBusy(true);
+    if (isWebinar) {
+      try {
+        const res = await registerForWebinar(meetingId, { name, email });
+        toast(res.status === 'pending'
+          ? { title: 'Registration sent', description: `The host will review it and email ${email}.` }
+          : { title: 'You’re registered', description: `Your personal join link was emailed to ${email}.` });
+        setGuestOpen(false);
+        setGuestName(''); setGuestEmail('');
+        await refresh();
+        onGuestRegistered?.(res);
+      } catch (e: any) {
+        toast({ title: 'Could not register', description: e?.message || 'Please try again.', variant: 'destructive' });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const { error } = await supabase.from('meeting_registrations').insert({
         meeting_id: meetingId, meeting_kind: meetingKind, guest_name: name, guest_email: email, status: 'registered',
@@ -141,10 +190,27 @@ export const RegisterMeetingButton: React.FC<Props> = ({
       .from('meeting_registrations')
       .select('id, user_id, guest_name, guest_email, status')
       .eq('meeting_id', meetingId)
-      .eq('status', 'registered')
+      .in('status', isWebinar ? ['registered', 'pending'] : ['registered'])
       .order('registered_at', { ascending: true });
     setRegistrants((data as Registrant[]) || []);
   };
+
+  const decide = async (r: Registrant, approve: boolean) => {
+    setDeciding(r.id);
+    try {
+      await decideWebinarRegistration(r.id, approve);
+      setRegistrants((prev) => approve
+        ? prev.map((x) => (x.id === r.id ? { ...x, status: 'registered' } : x))
+        : prev.filter((x) => x.id !== r.id));
+      toast({ title: approve ? 'Approved' : 'Declined', description: approve ? 'Their join link is on its way by email.' : 'They’ve been emailed.' });
+      await refresh();
+    } catch (e: any) {
+      toast({ title: 'Could not update', description: e?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setDeciding(null);
+    }
+  };
+  const pendingCount = registrants.filter((r) => r.status === 'pending').length;
 
   // Host view: a clearly-labelled button that opens the registrant list.
   if (isHost) {
@@ -157,17 +223,33 @@ export const RegisterMeetingButton: React.FC<Props> = ({
         <Dialog open={listOpen} onOpenChange={setListOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Registrations ({registrants.length})</DialogTitle>
-              <DialogDescription>People registered for “{meetingTitle}”.</DialogDescription>
+              <DialogTitle>Registrations ({registrants.length - pendingCount})</DialogTitle>
+              <DialogDescription>
+                People registered for “{meetingTitle}”.
+                {pendingCount > 0 && ` ${pendingCount} waiting for your approval.`}
+              </DialogDescription>
             </DialogHeader>
             <div className="max-h-80 overflow-y-auto divide-y">
               {registrants.length === 0 ? (
                 <p className="text-sm text-gray-500 py-6 text-center">No registrations yet.</p>
               ) : registrants.map((r) => (
-                <div key={r.id} className="py-2 text-sm">
-                  <span className="font-medium">{r.guest_name || 'Member'}</span>
-                  {r.guest_email && <span className="text-gray-500"> · {r.guest_email}</span>}
-                  {!r.user_id && <Badge variant="secondary" className="ml-2 text-[10px]">Guest</Badge>}
+                <div key={r.id} className="py-2 text-sm flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium">{r.guest_name || 'Member'}</span>
+                    {r.guest_email && <span className="text-gray-500"> · {r.guest_email}</span>}
+                    {!r.user_id && <Badge variant="secondary" className="ml-2 text-[10px]">Guest</Badge>}
+                    {r.status === 'pending' && <Badge variant="outline" className="ml-2 text-[10px] border-amber-300 text-amber-700">Pending</Badge>}
+                  </div>
+                  {r.status === 'pending' && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-green-700 border-green-300" disabled={deciding === r.id} onClick={() => decide(r, true)} title="Approve">
+                        {deciding === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-red-700 border-red-300" disabled={deciding === r.id} onClick={() => decide(r, false)} title="Decline">
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -184,7 +266,14 @@ export const RegisterMeetingButton: React.FC<Props> = ({
         <Users className="h-3 w-3" />
         {count} registered
       </Badge>
-      {registered ? (
+      {isWebinar && myStatus === 'pending' ? (
+        <Button variant="outline" size="sm" disabled={busy} onClick={cancel} title="Cancel your registration request" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4 mr-1" />}
+          Awaiting approval
+        </Button>
+      ) : isWebinar && myStatus === 'declined' ? (
+        <Button variant="outline" size="sm" disabled className="text-gray-500">Not approved</Button>
+      ) : registered ? (
         <Button variant="outline" size="sm" disabled={busy} onClick={cancel} className="border-green-300 text-green-700 hover:bg-green-50">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4 mr-1" />}
           Registered

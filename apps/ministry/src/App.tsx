@@ -7,7 +7,7 @@ import { LanguageProvider } from '@rekindle/features/LanguageContext';
 import { BrowserTranslationTip } from '@rekindle/features/components/BrowserTranslationTip';
 import { CurrentMinistryProvider, useCurrentMinistry } from '@rekindle/features/CurrentMinistryContext';
 import { useMinistryBranding } from '@rekindle/features/ministryBranding';
-import { canShowPurchaseUI } from '@rekindle/features/platform';
+import { canShowPurchaseUI, nativePlatform } from '@rekindle/features/platform';
 import { useNotifications } from '@rekindle/features/useNotifications';
 import { NotificationFeed } from '@rekindle/features/components/NotificationFeed';
 import { MinistrySwitcher } from '@rekindle/features/components/MinistrySwitcher';
@@ -212,14 +212,17 @@ function AuthedArea() {
   const { user, loading, initialized } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  // The iOS app opens on sign-in like any other iPhone app; the marketing
+  // landing page is for the web (and the Android app).
+  const landingAtRoot = nativePlatform() !== 'ios';
   // The dark first paint is only for the landing page.
-  const showingLanding = !loading && initialized && !user && location.pathname === '/';
+  const showingLanding = !loading && initialized && !user && location.pathname === '/' && landingAtRoot;
   useEffect(() => {
     if (!loading && initialized && !showingLanding) endDarkBoot();
   }, [loading, initialized, showingLanding]);
   if (loading || !initialized) return <LoadingScreen />;
   if (!user) {
-    if (location.pathname === '/') {
+    if (location.pathname === '/' && landingAtRoot) {
       return (
         <LandingPage
           appContext="ministry"

@@ -131,8 +131,8 @@ export function WebinarPeoplePanel({
         ) : (
           <div className="space-y-2">
             {[
-              ...audience.map((m) => ({ id: m.userId, name: m.userName })),
-              ...orphanRequests.map((r) => ({ id: r.user_id, name: r.user_name || 'Attendee' })),
+              ...audience.map((m) => ({ id: m.userId, name: m.userName, guest: m.isGuest })),
+              ...orphanRequests.map((r) => ({ id: r.user_id, name: r.user_name || 'Attendee', guest: false })),
             ].map((m) => {
               const requested = requestedIds.has(m.id);
               const invited = invitedIds.has(m.id);
@@ -141,12 +141,14 @@ export function WebinarPeoplePanel({
                   <span className="text-sm truncate">
                     {requested && <Hand className="inline h-3.5 w-3.5 text-purple-300 mr-1" />}
                     {m.name}
+                    {m.guest && <span className="ml-1.5 text-[10px] text-gray-400">Guest</span>}
                   </span>
-                  <Button size="sm" className="h-8 px-2.5 text-xs bg-purple-600 hover:bg-purple-700 shrink-0"
+                  {/* Guests watch without an account, so they can't go on stage. */}
+                  {!m.guest && <Button size="sm" className="h-8 px-2.5 text-xs bg-purple-600 hover:bg-purple-700 shrink-0"
                     disabled={invited || webinar.status !== 'live'}
                     onClick={() => speakerRequests.hostInvite(m.id, m.name)}>
                     <UserPlus className="h-3.5 w-3.5 mr-1" /> {invited ? 'Invited' : 'Bring up to speak'}
-                  </Button>
+                  </Button>}
                 </div>
               );
             })}

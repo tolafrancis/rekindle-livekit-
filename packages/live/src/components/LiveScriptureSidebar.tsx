@@ -28,6 +28,7 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
   hiding,
   onHide,
   canControl,
+  isHost,
   autoOff,
   onOpenSettings,
   onClose,
@@ -44,12 +45,15 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
             {/* The only off switch: the toolbar's Scripture button just opens
                 this panel (turning Scripture on the first time), and closing
                 the panel deliberately leaves Scripture running. */}
-            <Switch
-              checked={on}
-              disabled={starting}
-              onCheckedChange={toggle}
-              aria-label={on ? 'Turn off Live Scripture' : 'Turn on Live Scripture'}
-            />
+            {/* Host-only (2026-11-01): participants never get the switch. */}
+            {isHost && (
+              <Switch
+                checked={on}
+                disabled={starting}
+                onCheckedChange={toggle}
+                aria-label={on ? 'Turn off Live Scripture' : 'Turn on Live Scripture'}
+              />
+            )}
             <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-gray-400 hover:text-white">
               <X className="h-4 w-4" />
             </Button>
@@ -58,7 +62,23 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
       </CardHeader>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-4">
-        {starting ? (
+        {!isHost ? (
+          <>
+            <p className="text-sm text-gray-400">
+              The host controls Live Scripture. Verses the host puts up show on your screen automatically.
+            </p>
+            {onScreenVerse ? (
+              <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-300">
+                  {onScreenVerse.reference} · {onScreenVerse.version}
+                </p>
+                <p className="mt-1.5 text-sm leading-snug text-white">{onScreenVerse.text}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Nothing on screen right now.</p>
+            )}
+          </>
+        ) : starting ? (
           <p className="text-sm text-gray-400 flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin" /> Turning on Live Scripture…
           </p>

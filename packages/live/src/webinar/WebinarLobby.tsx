@@ -14,12 +14,14 @@ interface WebinarLobbyProps {
   webinar: MinistryWebinar;
   role: WebinarViewerRole;
   onLive: () => void;
+  /** Already registered (e.g. a guest who opened their personal link). */
+  hideRegistration?: boolean;
 }
 
 /** Pre-join screen — host/speaker get a "go live" prep screen, attendees get a
  *  waiting/countdown screen. Neither ever connects to LiveKit here (Phase 1:
  *  attendees never do at all; host/speakers connect once WebinarStage mounts). */
-export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
+export function WebinarLobby({ webinar, role, onLive, hideRegistration = false }: WebinarLobbyProps) {
   const [starting, setStarting] = useState(false);
   const canStart = role === 'host' || role === 'co-host';
 
@@ -107,7 +109,7 @@ export function WebinarLobby({ webinar, role, onLive }: WebinarLobbyProps) {
               ? "The host is getting ready. You'll be let in as soon as the webinar goes live…"
               : 'Waiting for the host to start the webinar…'}
           </p>
-          {webinar.registration_required && (
+          {webinar.registration_required && !hideRegistration && (
             <RegisterMeetingButton
               meetingId={webinar.id} meetingKind="webinar" meetingTitle={webinar.title}
               allowGuests={webinar.is_public} className="w-full"

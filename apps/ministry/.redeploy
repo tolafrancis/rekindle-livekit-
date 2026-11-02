@@ -61,3 +61,7 @@
 2026-10-30 speaker link: clearer microphone messages (packages/live)
 2026-10-31: listener page centred line + walkthrough, Share QR dialog (packages/live)
 2026-11-01 listener screen no longer freezes on one line (packages/live)
+2026-11-02 Nigeria can pay via Stripe
+2026-11-02 ministry admins can save profile (0430)
+2026-11-02 lock down open write policies (0432)
+2026-11-02 ministry admin permissions audit (0431)
