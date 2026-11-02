@@ -898,10 +898,9 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
   const handlePrayForRequest = async (requestId: string, currentCount: number) => {
     try {
-      await supabase
-        .from('ministry_prayer_requests')
-        .update({ prayer_count: currentCount + 1 })
-        .eq('id', requestId);
+      // Counter bump goes through an RPC: members can't UPDATE the row (0432).
+      const { error } = await supabase.rpc('ministry_prayer_request_prayed', { p_request_id: requestId });
+      if (error) throw error;
 
       setPrayerRequests(prev => prev.map(p => 
         p.id === requestId ? { ...p, prayer_count: currentCount + 1 } : p
@@ -3563,13 +3562,10 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           onComplete={async () => {
             // Increment prayer count
             try {
-              const { error } = await supabase
-                .from('ministry_prayer_library')
-                .update({ 
-                  prayer_count: selectedPrayer.prayer_count + 1,
-                  view_count: selectedPrayer.view_count + 1
-                })
-                .eq('id', selectedPrayer.id);
+              const { error } = await supabase.rpc('ministry_prayer_library_bump', {
+                p_prayer_id: selectedPrayer.id,
+                p_prayed: true,
+              });
               
               if (!error) {
                 loadMinistryData();
@@ -3583,9 +3579,8 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             // Just increment view count
             try {
               supabase
-                .from('ministry_prayer_library')
-                .update({ view_count: selectedPrayer.view_count + 1 })
-                .eq('id', selectedPrayer.id);
+                .rpc('ministry_prayer_library_bump', { p_prayer_id: selectedPrayer.id, p_prayed: false })
+                .then(() => {});
             } catch (err) {
               console.error('Error updating view count:', err);
             }
