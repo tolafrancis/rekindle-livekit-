@@ -438,11 +438,16 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
       }
 
       if (editingDevotional) {
-        const { error } = await supabase
+        const { data: savedRows, error } = await supabase
           .from('ministry_devotionals')
           .update(dataToSave)
-          .eq('id', editingDevotional.id);
+          .eq('id', editingDevotional.id)
+          .select('id');
         if (error) throw error;
+        // A blocked update returns zero rows and no error; don't report success.
+        if (!savedRows?.length) {
+          throw new Error(t('ministryDevotionalsManager2', 'noPermission', "You don't have permission to edit this devotional. Ask a ministry admin to make the change."));
+        }
         toast({ title: t('ministryDevotionalsManager2', 'success', 'Success'), description: t('ministryDevotionalsManager2', 'devotionalUpdated', 'Devotional updated successfully') });
       } else {
         const { error } = await supabase
