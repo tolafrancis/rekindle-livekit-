@@ -445,3 +445,10 @@ enabled = true
 # Called by pg_cron (private.call_edge_fn) with a service-role JWT. The
 # gateway verifies the JWT; the function checks the role.
 verify_jwt = true
+
+[functions.webinar-registration]
+enabled = true
+# Signed-out guests register for public webinars (Zoom-style), so the gateway
+# can't require a user JWT. The function checks the caller itself: guests may
+# only register for public webinars; approve/decline needs a webinar manager.
+verify_jwt = false

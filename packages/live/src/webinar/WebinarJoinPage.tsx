@@ -15,6 +15,7 @@ import { WebinarLobby, type WebinarViewerRole } from './WebinarLobby';
 import { WebinarStage } from './WebinarStage';
 import { WebinarAttendeeViewer } from './WebinarAttendeeViewer';
 import { WebinarEndScreen } from './WebinarEndScreen';
+import { WebinarGuestJoin } from './WebinarGuestJoin';
 
 const ENDED_STATUSES = new Set(['ended', 'recording_processing', 'completed', 'cancelled']);
 
@@ -33,6 +34,10 @@ export function WebinarJoinPage() {
   const [error, setError] = useState<string | null>(null);
   const [promoted, setPromoted] = useState(false);
   const [isRegistered, setIsRegistered] = useState<boolean | null>(null);
+  const [regStatus, setRegStatus] = useState<string | null>(null);
+  // Signed-out visitors may join as guests (Zoom-style) on public webinars;
+  // they can still switch to the sign-in form below.
+  const [showSignIn, setShowSignIn] = useState(false);
   const { t } = useLanguage();
   // Signed-out visitors sign in right here (same compact forms
   // WebinarSpeakerInvitePage embeds) instead of being sent to '/', which
@@ -58,9 +63,10 @@ export function WebinarJoinPage() {
         .from('meeting_registrations')
         .select('id')
         .eq('meeting_id', webinarId).eq('meeting_kind', 'webinar')
-        .eq('user_id', user.id).eq('status', 'registered')
+        .eq('user_id', user.id).in('status', ['registered', 'pending', 'declined'])
         .maybeSingle();
-      setIsRegistered(!!reg);
+      setRegStatus((reg as any)?.status ?? null);
+      setIsRegistered((reg as any)?.status === 'registered');
     } else {
       setIsRegistered(true);
     }
@@ -210,6 +216,16 @@ export function WebinarJoinPage() {
     );
   }
 
+  if (!user && !showSignIn && webinarId) {
+    return (
+      <WebinarGuestJoin
+        webinarId={webinarId}
+        onSignIn={() => setShowSignIn(true)}
+        onHome={handleHome}
+      />
+    );
+  }
+
   if (!user) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gray-950 p-4">
@@ -289,10 +305,16 @@ export function WebinarJoinPage() {
         <Card className="max-w-sm w-full text-center">
           <CardHeader><CardTitle>Registration required</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-gray-500">{webinar.title} requires registration to join.</p>
+            <p className="text-sm text-gray-500">
+              {regStatus === 'pending'
+                ? 'Your registration is waiting for the host’s approval. We’ll email you as soon as you’re approved.'
+                : regStatus === 'declined'
+                  ? 'The host wasn’t able to approve your registration.'
+                  : `${webinar.title} requires registration to join.`}
+            </p>
             <RegisterMeetingButton
               meetingId={webinar.id} meetingKind="webinar" meetingTitle={webinar.title}
-              allowGuests={webinar.is_public} className="w-full"
+              allowGuests={webinar.is_public} className="w-full justify-center" onChange={load}
             />
             <Button onClick={load} variant="outline" className="w-full">I've registered — refresh</Button>
           </CardContent>

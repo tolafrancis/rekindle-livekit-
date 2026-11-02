@@ -10,6 +10,7 @@ import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { setDeepLink, DEEP_LINK_TAB } from '@/lib/deepLink';
 import RouteFallback from '@/components/RouteFallback';
+import { nativePlatform } from '@rekindle/features/platform';
 
 // Signed-out visitors only ever need the landing page / shared preview, and
 // signed-in users only ever need the app shell — so each side is its own chunk
@@ -361,20 +362,25 @@ const AuthGate: React.FC = () => {
       />
     );
 
-    // Visitors always land on the marketing page (or shared-content preview)
-    // first. The auth form only overlays once the visitor intentionally taps
-    // "Sign In" / "Sign Up" (both set authOpen), never on first visit.
-    const showAuthOverlay = authOpen;
+    // Web visitors always land on the marketing page (or shared-content
+    // preview) first. The auth form only overlays once the visitor
+    // intentionally taps "Sign In" / "Sign Up" (both set authOpen), never on
+    // first visit. The iOS app skips the marketing page and opens on sign-in,
+    // like any other iPhone app; shared-content previews still show first.
+    const authIsHome = nativePlatform() === 'ios' && !isSharedContent;
+    const showAuthOverlay = authOpen || authIsHome;
 
     if (showAuthOverlay) {
       return (
         <div className="relative min-h-screen">
-          <button
-            onClick={() => setAuthOpen(false)}
-            className="fixed top-4 right-4 z-50 rounded-full bg-white/90 border px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-md hover:bg-white transition-all flex items-center gap-1.5"
-          >
-            {isSharedContent ? '← Back to preview' : '← Back'}
-          </button>
+          {!authIsHome && (
+            <button
+              onClick={() => setAuthOpen(false)}
+              className="fixed top-4 right-4 z-50 rounded-full bg-white/90 border px-3.5 py-1.5 text-xs font-semibold text-gray-700 shadow-md hover:bg-white transition-all flex items-center gap-1.5"
+            >
+              {isSharedContent ? '← Back to preview' : '← Back'}
+            </button>
+          )}
           {authMode === 'login' && (
             <LoginForm
               onSwitchToSignup={() => setAuthMode('signup')}

@@ -111,11 +111,13 @@ export interface MeetingShareInput {
   timezone?: string | null;
   /** When true, a scheduled meeting invites people to register (not just view). */
   registrationEnabled?: boolean;
+  /** Recurring meetings: e.g. "Every week" — shown under the time. */
+  recurrenceLabel?: string | null;
   url: string;
 }
 
 export function buildMeetingShareText(
-  { hostName, title, scheduledTime, timezone, registrationEnabled, url }: MeetingShareInput,
+  { hostName, title, scheduledTime, timezone, registrationEnabled, recurrenceLabel, url }: MeetingShareInput,
   includeUrl = true,
 ): string {
   const host = (hostName || '').trim();
@@ -124,6 +126,7 @@ export function buildMeetingShareText(
   const when = formatWhenTz(scheduledTime, timezone);
   const lines = [header, '', `📌 "${cleanTitle}"`];
   if (when) lines.push(`🗓 ${when}`);
+  if (when && recurrenceLabel) lines.push(`🔁 ${recurrenceLabel} (same link every time)`);
   lines.push('');
   if (when) {
     // Scheduled meeting: the link opens a details/registration page, not the room.

@@ -91,7 +91,7 @@ import { supabase } from '@rekindle/supabase';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
-import { formatMeetingTime } from '@rekindle/features/meetingTime';
+import { formatMeetingTime, nextMeetingOccurrence } from '@rekindle/features/meetingTime';
 import { isNativeApp, isDesktopApp } from '@rekindle/features/platform';
 import RegisterMeetingButton from './RegisterMeetingButton';
 import {
@@ -139,6 +139,8 @@ interface MeetingData {
   enable_screenshare: boolean;
   is_active: boolean;
   ended_at?: string | null;
+  is_recurring?: boolean;
+  recurrence_pattern?: unknown;
 }
 
 // While a meeting is still 'scheduled', re-run the same meeting query on this
@@ -313,6 +315,15 @@ const MeetingJoinPage: React.FC = () => {
 
       // Check if meeting exists and is valid
       const now = new Date();
+      // Recurring meeting: the link always points at the NEXT occurrence, so a
+      // past first date (or last week's ended_at) doesn't read as "ended".
+      if (meeting.is_recurring && meeting.scheduled_time && !meeting.is_active) {
+        const next = nextMeetingOccurrence(meeting.scheduled_time, meeting.timezone, meeting.recurrence_pattern, meeting.duration_minutes, now.getTime());
+        if (next) {
+          if (next !== meeting.scheduled_time) meeting.ended_at = null;
+          meeting.scheduled_time = next;
+        }
+      }
       const startTime = meeting.scheduled_time ? new Date(meeting.scheduled_time) : new Date();
       const endTime = new Date(startTime.getTime() + (meeting.duration_minutes || 60) * 60000);
 

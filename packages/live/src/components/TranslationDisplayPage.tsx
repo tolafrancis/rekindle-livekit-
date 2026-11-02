@@ -243,6 +243,8 @@ export const TranslationDisplayPage: React.FC = () => {
   const [downloadingTranscript, setDownloadingTranscript] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Bumped to rebuild the realtime channel after it errors or closes.
+  const [channelNonce, setChannelNonce] = useState(0);
 
   // Display preferences — local to this visitor's browser only, no account
   // to save them to. Persisted (2026-09-23, real gap flagged in a captions
@@ -408,6 +410,26 @@ export const TranslationDisplayPage: React.FC = () => {
         .limit(MAX_LINES);
       if (!cancelled && data) setLines([...data].reverse() as LogLine[]);
     };
+    // The live line and the session status otherwise only arrive through the
+    // realtime UPDATE events below. When that stream stalls (a phone waking
+    // up, a network blip, realtime dropping events without CHANNEL_ERROR),
+    // the last live text stayed in the middle of the screen as the "current"
+    // line while new finished lines piled up above it, faded out: the
+    // screen looked frozen (2026-11-01, RCCG Vietnam). Re-read them with the
+    // lines so the screen always catches up within one poll.
+    const loadLive = async () => {
+      const { data } = await supabase
+        .from('translation_sessions')
+        .select('status, interim_text, interim_translated_text')
+        .eq('id', sessionId)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      const live = data as Pick<SessionInfo, 'status' | 'interim_text' | 'interim_translated_text'>;
+      setSession(prev => (prev ? { ...prev, ...live } : prev));
+      if (live.status === 'ended') setConnStatus('ended');
+    };
+    const refresh = () => { loadLines(); loadLive(); };
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     loadLines();
 
     const channel = supabase
@@ -432,19 +454,31 @@ export const TranslationDisplayPage: React.FC = () => {
         })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') setConnStatus(prev => (prev === 'ended' ? prev : 'live'));
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setConnStatus('reconnecting');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (cancelled) return;
+          setConnStatus(prev => (prev === 'ended' ? prev : 'reconnecting'));
+          // Rejoin with a fresh channel rather than waiting on the old one.
+          if (!retryTimer) retryTimer = setTimeout(() => { retryTimer = null; setChannelNonce(n => n + 1); }, 3000);
+        }
       });
     channelRef.current = channel;
 
     // Realtime is the primary path; poll as a quiet fallback so the feed
-    // still moves if the socket drops without firing CHANNEL_ERROR cleanly.
-    const poll = setInterval(loadLines, 6000);
+    // (finished lines, live line and status) still moves if realtime stalls.
+    const poll = setInterval(refresh, 4000);
+    // A phone screen that slept, or a background tab, catches up at once.
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', refresh);
     return () => {
       cancelled = true;
       clearInterval(poll);
+      if (retryTimer) clearTimeout(retryTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', refresh);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [sessionLoaded, admitted, sessionId]);
+  }, [sessionLoaded, admitted, sessionId, channelNonce]);
 
   // Conversation — whether this ministry has it turned on at all (Settings
   // tab default true). language_configs has no public SELECT policy
