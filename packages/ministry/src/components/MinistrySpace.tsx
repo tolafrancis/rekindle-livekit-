@@ -106,10 +106,38 @@ const CONSUMER_APP_URL = (import.meta.env.VITE_CONSUMER_APP_URL || 'https://app.
 // followed stream (e.g. Open Heavens) lives in `devotionals`, not
 // `ministry_devotionals`, so a /ministry-devotional/ link to it can't load;
 // it gets the consumer app's daily-devotional link, which has the preview and reader.
-const ministryDevotionalShareUrl = (d: { id: string; from_stream?: boolean }) =>
+// That link carries ?ministry=<id> so the preview can offer "Join <ministry>"
+// alongside "Just read it on Rekindle", whoever shares it.
+const ministryDevotionalShareUrl = (d: { id: string; from_stream?: boolean }, ministryId?: string) =>
   d.from_stream
-    ? `${CONSUMER_APP_URL}/daily-devotional/${d.id}`
+    ? `${CONSUMER_APP_URL}/daily-devotional/${d.id}${ministryId ? `?ministry=${encodeURIComponent(ministryId)}` : ''}`
     : `${publicWebOrigin()}/ministry-devotional/${d.id}`;
+
+// Map a platform devotional (`devotionals`, from a followed stream) onto the
+// ministry devotional shape the homepage and reader expect.
+const mapStreamDevotional = (d: any) => ({
+  id: d.id,
+  from_stream: true,
+  title: d.title,
+  author_name: d.author || d.author_name || '',
+  content: d.message || d.content || '',
+  scripture_reference: d.scripture_reference || d.scripture || '',
+  scripture_text: d.scripture_text || '',
+  // The player builds the Scripture slides from these, and the long
+  // "Bible Passage" slide from bible_passage_*; dropping them here hid
+  // those slides for ministries that follow a stream.
+  scripture_references: d.scripture_references,
+  bible_passage_reference: d.bible_passage_reference || '',
+  bible_passage_text: d.bible_passage_text || '',
+  background_music_id: d.background_music_id,
+  reflection_questions: d.reflection_questions,
+  prayer_focus: d.prayer || d.prayer_focus || '',
+  featured_image: d.image_url || d.cover_image_url || '',
+  audio_url: d.audio_url || '',
+  scheduled_date: d.schedule_date ?? null,
+  is_published: d.is_published,
+  created_at: d.created_at,
+});
 import { shareDevotional } from '@rekindle/features/devotionalShare';
 import { canNativeShare } from '@rekindle/features/webShare';
 import { TakeDeclarationContext } from '@rekindle/features/takeDeclarationContext';
@@ -612,29 +640,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           .limit(10);
         // Map the platform devotional shape onto the ministry devotional shape the
         // homepage renderer expects.
-        setDevotionals((streamDevs || []).map((d: any) => ({
-          id: d.id,
-          from_stream: true,
-          title: d.title,
-          author_name: d.author || d.author_name || '',
-          content: d.message || d.content || '',
-          scripture_reference: d.scripture_reference || d.scripture || '',
-          scripture_text: d.scripture_text || '',
-          // The player builds the Scripture slides from these, and the long
-          // "Bible Passage" slide from bible_passage_*; dropping them here hid
-          // those slides for ministries that follow a stream.
-          scripture_references: d.scripture_references,
-          bible_passage_reference: d.bible_passage_reference || '',
-          bible_passage_text: d.bible_passage_text || '',
-          background_music_id: d.background_music_id,
-          reflection_questions: d.reflection_questions,
-          prayer_focus: d.prayer || d.prayer_focus || '',
-          featured_image: d.image_url || d.cover_image_url || '',
-          audio_url: d.audio_url || '',
-          scheduled_date: d.schedule_date ?? null,
-          is_published: d.is_published,
-          created_at: d.created_at,
-        })));
+        setDevotionals((streamDevs || []).map(mapStreamDevotional));
       } else {
         setDevotionals(devotionalsRes.data || []);
       }
@@ -779,6 +785,29 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           if (data) {
             handleStartDevotional(data as MinistryDevotional);
             recordSharedDevotionalOpen(user?.id, 'ministry', data.id, 'ministry');
+          }
+        } catch (err) {
+          console.error('Error opening shared devotional:', err);
+        }
+      })();
+    }
+
+    // A shared Rekindle devotional (from the stream this ministry follows) whose
+    // reader chose "Join <ministry>" on the preview: open it once they're in.
+    const dlStreamDev = consumeDeepLink('ministry-stream-devotional');
+    if (dlStreamDev?.id) {
+      setActiveTab('devotionals');
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from('devotionals')
+            .select('*')
+            .eq('id', dlStreamDev.id)
+            .maybeSingle();
+          if (data) {
+            // No next-morning follow-up email here: its link would point the
+            // ministry app at /daily-devotional/, which it doesn't route.
+            handleStartDevotional(mapStreamDevotional(data) as unknown as MinistryDevotional);
           }
         } catch (err) {
           console.error('Error opening shared devotional:', err);
@@ -962,7 +991,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
   // Same branded message as the consumer home's share button: ministry name,
   // author, title, and a public preview link.
   const handleShareDevotional = async (devotional: MinistryDevotional) => {
-    const url = ministryDevotionalShareUrl(devotional);
+    const url = ministryDevotionalShareUrl(devotional, ministry.id);
     const result = await shareDevotional({ ministryName: ministry.name, author: devotional.author_name, title: devotional.title, url });
     if (result.method === 'clipboard') {
       toast({ title: t('devotionals', 'copiedToShare', 'Copied to share!'), description: t('devotionals', 'copiedToShareDesc', 'The devotional message is on your clipboard — paste it anywhere to invite someone.') });
@@ -3700,7 +3729,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
           seriesTitle={ministry.name}
           ministryName={ministry.name}
           totalDays={1}
-          shareUrl={ministryDevotionalShareUrl(selectedDevotional)}
+          shareUrl={ministryDevotionalShareUrl(selectedDevotional, ministry.id)}
           onComplete={async () => {
             // Mark devotional as completed
             try {

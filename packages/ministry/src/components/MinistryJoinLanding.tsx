@@ -62,8 +62,18 @@ const MinistryJoinLanding: React.FC = () => {
     if (devotionalId) setDeepLink({ type: 'ministry-devotional', id: devotionalId });
   }, [devotionalId]);
 
+  // A shared Rekindle devotional from the stream this ministry follows
+  // (?daily-devotional=, from that preview's "Join the ministry" choice).
+  // `extra` carries the ministry so MinistriesHub knows which space to open.
+  const dailyDevotionalId = sp.get('daily-devotional') || '';
+
   const [stage, setStage] = useState<'loading' | 'error' | 'branding'>('loading');
   const [ministry, setMinistry] = useState<MinistryBranding | null>(null);
+  useEffect(() => {
+    if (dailyDevotionalId && ministry?.ministry_id) {
+      setDeepLink({ type: 'ministry-stream-devotional', id: dailyDevotionalId, extra: ministry.ministry_id });
+    }
+  }, [dailyDevotionalId, ministry?.ministry_id]);
   const [codeStatus, setCodeStatus] = useState('');
   // Start on a simple choice ("I'm new" / "I have an account") before showing a form.
   const [authMode, setAuthMode] = useState<'choice' | 'login' | 'signup' | 'reset'>('choice');
