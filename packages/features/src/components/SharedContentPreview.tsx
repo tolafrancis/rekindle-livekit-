@@ -84,6 +84,11 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
   const segments = location.pathname.split('/').filter(Boolean);
   const kind = segments[0] as Kind;
   const id = segments[1];
+  // A Rekindle devotional shared from a ministry space that follows a stream
+  // carries ?ministry=<id>, so the reader can join that ministry too.
+  const sharedFromMinistryId = kind === 'daily-devotional'
+    ? new URLSearchParams(location.search).get('ministry') || ''
+    : '';
 
   const [loading, setLoading] = useState(true);
   const [item, setItem] = useState<any | null>(null);
@@ -95,9 +100,9 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
   const [downloadLinks, setDownloadLinks] = useState<AppDownloadLinks>(DEFAULT_APP_DOWNLOAD_LINKS);
   const showStoreLinks = !isNativeApp() && !isDesktopApp();
   useEffect(() => {
-    if (kind !== 'ministry-devotional' || !showStoreLinks) return;
+    if ((kind !== 'ministry-devotional' && !sharedFromMinistryId) || !showStoreLinks) return;
     loadAppDownloadLinks().then(setDownloadLinks).catch(() => {});
-  }, [kind, showStoreLinks]);
+  }, [kind, sharedFromMinistryId, showStoreLinks]);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -119,6 +124,17 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
             .from('devotionals').select('*').eq('id', id).single();
           if (e1) throw e1;
           if (active) setItem(data);
+          // Shared from a ministry space: resolve that ministry's name and
+          // join slug for the "Join this ministry" choice. Without a slug the
+          // page falls back to the plain Rekindle sign-up card.
+          if (sharedFromMinistryId) {
+            const [{ data: mn }, { data: slug }] = await Promise.all([
+              supabase.rpc('get_ministry_name', { mid: sharedFromMinistryId }),
+              supabase.rpc('get_ministry_join_slug', { mid: sharedFromMinistryId }),
+            ]);
+            if (active && mn) setMinistryName(typeof mn === 'string' ? mn : (mn as any));
+            if (active && typeof slug === 'string' && slug) setMinistrySlug(slug);
+          }
         } else if (kind === 'ministry-devotional') {
           const { data, error: e1 } = await supabase
             .from('ministry_devotionals').select('*').eq('id', id).single();
@@ -172,7 +188,7 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
       }
     })();
     return () => { active = false; };
-  }, [kind, id]);
+  }, [kind, id, sharedFromMinistryId]);
 
   const title = item?.title || 'A gift for you';
   const author = item?.author || item?.author_name;
@@ -240,7 +256,10 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
     const ministryLabel = ministryName || 'this ministry';
     const joinMinistry = () => {
       if (ministrySlug) {
-        const path = `/join/${encodeURIComponent(ministrySlug)}?devotional=${encodeURIComponent(id)}`;
+        // A Rekindle devotional travels as ?daily-devotional= so the ministry
+        // app knows to open it from `devotionals`, not `ministry_devotionals`.
+        const param = kind === 'daily-devotional' ? 'daily-devotional' : 'devotional';
+        const path = `/join/${encodeURIComponent(ministrySlug)}?${param}=${encodeURIComponent(id)}`;
         window.location.href = appContext === 'ministry' ? path : `${MINISTRY_APP_URL}${path}`;
       } else if (appContext === 'ministry') {
         onSignUp();
@@ -250,7 +269,7 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
     };
     const readOnRekindle = () => {
       if (appContext === 'consumer') onSignUp();
-      else window.location.href = `${CONSUMER_APP_URL}/ministry-devotional/${encodeURIComponent(id)}`;
+      else window.location.href = `${CONSUMER_APP_URL}/${kind}/${encodeURIComponent(id)}`;
     };
     return (
       <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50 p-6 shadow-sm">
@@ -552,7 +571,9 @@ export const SharedContentPreview: React.FC<SharedContentPreviewProps> = ({ onSi
           );
         })()}
 
-        {kind === 'ministry-devotional' && item ? <MinistryDevotionalChoice /> : <CTA />}
+        {item && (kind === 'ministry-devotional' || (kind === 'daily-devotional' && ministrySlug))
+          ? <MinistryDevotionalChoice />
+          : <CTA />}
 
         <p className="pb-10 text-center text-xs text-gray-400">
           Shared via Rekindle — grow in prayer, the Word, and community.

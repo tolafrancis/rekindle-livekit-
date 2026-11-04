@@ -426,6 +426,10 @@ const MinistriesHub: React.FC<MinistriesHubProps> = ({ activeView: controlledAct
         } else if (dl.type === 'ministry-prayer') {
           const { data: prayer } = await supabase.from('ministry_prayer_requests').select('ministry_id').eq('id', dl.id).maybeSingle();
           targetMinistryId = prayer?.ministry_id || null;
+        } else if (dl.type === 'ministry-stream-devotional') {
+          // A shared Rekindle devotional joined through this ministry: the
+          // join page saved the ministry alongside it.
+          targetMinistryId = dl.extra || null;
         } else if (dl.type === 'small-group' || dl.type === 'messages') {
           const { data: sg } = await supabase.from('small_groups').select('ministry_id').eq('id', dl.id).maybeSingle();
           targetMinistryId = sg?.ministry_id || null;
