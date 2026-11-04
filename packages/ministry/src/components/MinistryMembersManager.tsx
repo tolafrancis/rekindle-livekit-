@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { Alert, AlertDescription } from '@rekindle/ui/alert';
 import { supabase } from '@rekindle/supabase';
 import { notify } from '@rekindle/features/notify';
+import { publicWebOrigin } from '@rekindle/features/platform';
 import { toast } from '@rekindle/ui/use-toast';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
@@ -283,9 +284,57 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
 
   const [inviteForm, setInviteForm] = useState({
     email: '',
-    role: 'member',
     message: ''
   });
+  const [inviteSending, setInviteSending] = useState(false);
+
+  // Emails each address a real invitation with this ministry's join link.
+  // The server rebuilds the link from the ministry's slug/code and only trusts
+  // our own domains (or the ministry's active custom domain) for the origin.
+  const sendInvites = async () => {
+    const emails = inviteForm.email.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
+    if (emails.length === 0) return;
+    setInviteSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-ministry-member-invite', {
+        body: { ministryId, emails, message: inviteForm.message, origin: publicWebOrigin() },
+      });
+      if (error) {
+        let msg = error.message;
+        try { const body = await (error as any).context?.json?.(); if (body?.error) msg = body.error; } catch { /* keep msg */ }
+        throw new Error(msg);
+      }
+      const sent: string[] = data?.sent || [];
+      const failed: string[] = data?.failed || [];
+      const already: string[] = data?.alreadyMembers || [];
+      const invalid: string[] = data?.invalid || [];
+      const notes: string[] = [];
+      if (already.length) notes.push(t('ministryMembersManager', 'inviteAlreadyMembers', 'Already members: {list}').replace('{list}', already.join(', ')));
+      if (invalid.length) notes.push(t('ministryMembersManager', 'inviteInvalid', 'Not valid emails: {list}').replace('{list}', invalid.join(', ')));
+      if (failed.length) notes.push(t('ministryMembersManager', 'inviteFailed', 'Could not send to: {list}').replace('{list}', failed.join(', ')));
+      toast({
+        title: sent.length
+          ? t('ministryMembersManager', 'invitationsSentCount', 'Invitation sent to {count}').replace('{count}', sent.length === 1 ? sent[0] : `${sent.length} people`)
+          : t('ministryMembersManager', 'noInvitationsSent', 'No invitations sent'),
+        description: notes.join(' · ') || undefined,
+        variant: sent.length ? undefined : 'destructive',
+      });
+      if (sent.length && !failed.length) {
+        setShowInviteModal(false);
+        setInviteForm({ email: '', message: '' });
+      } else if (failed.length) {
+        setInviteForm((f) => ({ ...f, email: failed.join('\n') }));
+      }
+    } catch (err: any) {
+      toast({
+        title: t('ministryMembersManager', 'inviteError', 'Couldn\'t send invitations'),
+        description: err?.message || String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setInviteSending(false);
+    }
+  };
 
   useEffect(() => {
     loadMembers();
@@ -1923,45 +1972,28 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Invite Modal - Keep existing implementation */}
-      <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
+      {/* Invite Modal — emails each address the ministry's real join link
+          (send-ministry-member-invite edge fn). */}
+      <Dialog open={showInviteModal} onOpenChange={(open) => { if (!inviteSending) setShowInviteModal(open); }}>
         <DialogContent>
           <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            <DialogTitle>{t('ministryMembersManager', 'inviteNewMember', 'Invite New Member')}</DialogTitle>
+            <DialogTitle>{t('ministryMembersManager', 'inviteMembers', 'Invite Members')}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{t('ministryMembersManager', 'emailAddress', 'Email Address')}</Label>
-              <Input
-                type="email"
-                placeholder="member@example.com"
+              <Label>{t('ministryMembersManager', 'emailAddresses', 'Email addresses')}</Label>
+              <Textarea
+                placeholder={'member@example.com\nanother@example.com'}
+                rows={3}
                 value={inviteForm.email}
                 onChange={(e) =>
                   setInviteForm({ ...inviteForm, email: e.target.value })
                 }
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label>{t('ministryMembersManager', 'role', 'Role')}</Label>
-              <Select
-                value={inviteForm.role}
-                onValueChange={(value) =>
-                  setInviteForm({ ...inviteForm, role: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLES.map(role => (
-                    <SelectItem key={role.value} value={role.value}>
-                      {role.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <p className="text-xs text-gray-500">
+                {t('ministryMembersManager', 'inviteEmailsHint', 'Separate addresses with commas or new lines (up to 25 at a time). Each person gets an email with your join link. They join as members, and you can change their role after they join.')}
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -1969,6 +2001,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
               <Textarea
                 placeholder={t('ministryMembersManager', 'addPersonalMessage', 'Add a personal message to the invitation...')}
                 rows={4}
+                maxLength={1000}
                 value={inviteForm.message}
                 onChange={(e) =>
                   setInviteForm({ ...inviteForm, message: e.target.value })
@@ -1978,22 +2011,16 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
           </div>
 
           <DialogFooter>
-            <Button onClick={() => setShowInviteModal(false)} variant="outline">
+            <Button onClick={() => setShowInviteModal(false)} variant="outline" disabled={inviteSending}>
               {t('ministryMembersManager', 'cancel', 'Cancel')}
             </Button>
             <Button
-              onClick={async () => {
-                // Implement invite logic
-                toast({
-                  title: t('ministryMembersManager', 'invitationSent', 'Invitation sent'),
-                  description: t('ministryMembersManager', 'invitationSentToX', 'Invitation sent to {email}').replace('{email}', inviteForm.email),
-                });
-                setShowInviteModal(false);
-                setInviteForm({ email: '', role: 'member', message: '' });
-              }}
-              disabled={!inviteForm.email}
+              onClick={sendInvites}
+              disabled={!inviteForm.email.trim() || inviteSending}
             >
-              {t('ministryMembersManager', 'sendInvitation', 'Send Invitation')}
+              {inviteSending
+                ? t('ministryMembersManager', 'sendingInvitations', 'Sending…')
+                : t('ministryMembersManager', 'sendInvitation', 'Send Invitation')}
             </Button>
           </DialogFooter>
         </DialogContent>
