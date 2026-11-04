@@ -119,6 +119,7 @@ const TUTORIAL_TOC_GROUPS: Array<[string, Array<[string, string]>]> = [
     ['leader-kiosk', 'Turn a tablet into a check-in kiosk'],
     ['leader-devotional-source', 'Choose your devotional source'],
     ['leader-devotional', 'Publish a devotional'],
+    ['leader-devotional-import', 'Import many devotionals at once'],
     ['leader-live', 'Go live'],
     ['leader-meetings', 'Schedule an interactive meeting'],
     ['leader-webinar', 'Host a webinar'],
@@ -480,6 +481,24 @@ const TutorialContent: React.FC = () => (
         { text: <>Preview it, then publish now or schedule it for a date.</> },
         { text: <>Members find it under <strong>The Word › Devotionals › My Ministry</strong>.</> },
       ]}
+    />
+
+    <TutorialSection
+      id="leader-devotional-import" eyebrow="Leaders" title="Import many devotionals at once"
+      path={['Manage', 'Settings', 'Content', 'Devotionals', 'Import']}
+      intro="Got a month of devotionals in a Word document or a spreadsheet? Bring them all in at once instead of typing each day."
+      steps={[
+        { text: <>In your dashboard go to <strong>Settings › Content › Devotionals</strong> and tap <strong>Import</strong>.</> },
+        { text: <>Tap <strong>Word template</strong> or <strong>Sheet template (CSV)</strong> to download a ready-made example, and fill it in with your own days.</> },
+        { text: <>Give every day a <strong>Date</strong>, a <strong>Title</strong> and the <strong>Message</strong>. You can also add a <strong>Memory verse</strong> and its text, a <strong>Bible reading</strong>, a <strong>Prayer</strong>, <strong>Reflection questions</strong> and an <strong>Author</strong>. Write dates like 2026-12-01 so they can’t be misread.</> },
+        { text: <><strong>In a sheet</strong> (Excel, Google Sheets or CSV): put those names as the column headings in the first row, then one row per day. Put each reflection question on its own line in the cell.</> },
+        { text: <><strong>In a document</strong> (Word or Google Docs): start each day with its <strong>Date:</strong> line, then write each part after its label and a colon, for example <strong>Title: Faithful in Little</strong>. Leave a blank line between paragraphs of the message.</> },
+        { text: <>Using Google Docs or Sheets? Choose <strong>File › Download</strong> and pick Microsoft Word (.docx) or Microsoft Excel (.xlsx), then upload that file. Or copy everything and paste it into the text box.</> },
+        { text: <>Tap <strong>Read file</strong>. Check each day in the preview: fix a date or title, open <strong>Check</strong> to see the message and prayer, and untick any day you don’t want.</> },
+        { text: <>If a date already has a devotional, that day is skipped unless you choose to replace it. Days with no date can be filled in from a start date in one tap.</> },
+        { text: <>Leave <strong>Publish</strong> off to save them as drafts, or switch it on so each day appears for members on its date. Then tap <strong>Import</strong>.</> },
+      ]}
+      tip="Already written your devotionals your own way? Upload the file anyway. AI finds each day, title, verse, message and prayer, copying your words exactly, and you check everything before it is saved."
     />
 
     <TutorialSection

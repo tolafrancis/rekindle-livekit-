@@ -21,9 +21,10 @@ import {
   BookOpen, Plus, Edit, Trash2, Eye, EyeOff, Clock, Star,
   Search, Loader2, BarChart3, Image, Music, Globe,
   Download, TrendingUp, Users, Heart, MessageSquare, Share2,
-  FileText, List, Grid, Save, X, Copy, CheckCircle
+  FileText, List, Grid, Save, X, Copy, CheckCircle, Upload
 } from 'lucide-react';
 import { ImageUpload } from './ImageUpload';
+import { DevotionalBulkImport } from '@rekindle/features/components/DevotionalBulkImport';
 import { confirmAction } from '@rekindle/ui/confirm-dialog';
 
 interface MinistryDevotionalsManagerProps {
@@ -117,6 +118,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
   const [showModal, setShowModal] = useState(false);
   const [showSeriesModal, setShowSeriesModal] = useState(false);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingDevotional, setEditingDevotional] = useState<Devotional | null>(null);
   const [editingSeries, setEditingSeries] = useState<DevotionalSeries | null>(null);
   const [saving, setSaving] = useState(false);
@@ -713,7 +715,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
       </Card>
 
       {/* Header with Actions */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -737,7 +739,7 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
             </SelectContent>
           </Select>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <div className="flex bg-gray-100 rounded-lg p-1">
             <Button aria-label={t('ministryDevotionalsManager2', 'listView', 'List view')}
               variant={viewMode === 'list' ? 'secondary' : 'ghost'}
@@ -766,12 +768,23 @@ export const MinistryDevotionalsManager: React.FC<MinistryDevotionalsManagerProp
             <Plus className="h-4 w-4 mr-2" />
             {t('ministryDevotionalsManager2', 'newSeries', 'New Series')}
           </Button>
+          <Button variant="outline" data-tour="ministry-devotionals-import" onClick={() => setShowImport(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            {t('ministryDevotionalsManager2', 'importDevotionals', 'Import')}
+          </Button>
           <Button onClick={handleCreate}>
             <Plus className="h-4 w-4 mr-2" />
             {t('ministryDevotionalsManager2', 'newDevotional', 'New Devotional')}
           </Button>
         </div>
       </div>
+
+      <DevotionalBulkImport
+        target={{ kind: 'ministry', ministryId }}
+        open={showImport}
+        onOpenChange={setShowImport}
+        onImported={() => { loadDevotionals(); loadAnalytics(); }}
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-5 gap-4">

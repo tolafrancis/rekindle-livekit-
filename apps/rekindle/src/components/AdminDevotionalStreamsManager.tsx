@@ -27,8 +27,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { toast } from './ui/use-toast';
 import {
   Layers, Plus, Edit, Trash2, Loader2, Star, Eye, EyeOff, Save,
-  Hand, Sparkles, Rss, Play, AlertTriangle, CheckCircle2, PenLine,
+  Hand, Sparkles, Rss, Play, AlertTriangle, CheckCircle2, PenLine, Upload,
 } from 'lucide-react';
+import { DevotionalBulkImport } from '@rekindle/features/components/DevotionalBulkImport';
 import { confirmAction } from '@/components/ui/confirm-dialog';
 
 type Mode = 'manual' | 'ai' | 'scrape';
@@ -85,6 +86,7 @@ export const AdminDevotionalStreamsManager: React.FC<{
   const [runningId, setRunningId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [importStream, setImportStream] = useState<Stream | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -324,6 +326,15 @@ export const AdminDevotionalStreamsManager: React.FC<{
                     <PenLine className="h-4 w-4 text-emerald-600" />
                   </Button>
                 )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  title={t('adminDevotionalStreams', 'importDevotionals', 'Import devotionals from a document or sheet')}
+                  aria-label={t('adminDevotionalStreams', 'importDevotionals', 'Import devotionals from a document or sheet')}
+                  onClick={() => setImportStream(s)}
+                >
+                  <Upload className="h-4 w-4 text-blue-600" />
+                </Button>
                 {s.source && (
                   <Button
                     size="icon"
@@ -496,6 +507,22 @@ export const AdminDevotionalStreamsManager: React.FC<{
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {importStream && (
+        <DevotionalBulkImport
+          key={importStream.id}
+          target={{
+            kind: 'stream',
+            streamId: importStream.id,
+            streamName: importStream.name,
+            defaultAuthor: importStream.is_default ? 'Rekindle Team' : '',
+            scriptureVersion: importStream.source?.scripture_version?.toUpperCase() || 'NIV',
+          }}
+          open={!!importStream}
+          onOpenChange={(o) => { if (!o) setImportStream(null); }}
+          onImported={() => load()}
+        />
+      )}
     </Card>
   );
 };
