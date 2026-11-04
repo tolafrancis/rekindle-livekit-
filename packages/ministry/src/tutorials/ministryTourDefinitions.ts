@@ -417,10 +417,10 @@ export const MINISTRY_TUTORIALS: TutorialDefinition[] = [
     id: 'ministry-leading',
     category: 'Your ministry',
     title: 'Running your ministry',
-    description: 'For leaders: what members see, following up new people, Bible studies and small groups.',
-    minutes: 2,
+    description: 'For leaders: what members see, following up new people, importing devotionals, Bible studies and small groups.',
+    minutes: 3,
     level: 'Beginner',
-    pages: ['settings/profile', 'settings/members', 'manage-groups'],
+    pages: ['settings/profile', 'settings/members', 'settings/content', 'manage-groups'],
     steps: [
       menuStep('Find Settings', 'As a leader you also have Settings, where you run the ministry. Members don’t see it.'),
       {
@@ -439,6 +439,16 @@ export const MINISTRY_TUTORIALS: TutorialDefinition[] = [
         target: 'ministry-page',
         go: go('settings', 'members'),
         page: 'settings/members',
+        placement: 'dock',
+      },
+      {
+        id: 'import-devotionals',
+        title: 'Import a month of devotionals at once',
+        body: 'Under Content › Devotionals, tap Import and upload a Word or Google Doc, or an Excel, Google or CSV sheet. Give each day a Date, Title and Message, and add a Memory verse, Bible reading, Prayer and Reflection questions if you have them. In a sheet, use those as column headings with one row per day. In a doc, start each day with “Date:” and put each part after its label and a colon.',
+        instruction: 'Download the Word or sheet template from the Import window to start. Written your own way? Upload it anyway: AI reads it, and you check every day, and anything already on that date, before it is saved.',
+        target: 'ministry-page',
+        go: go('settings', 'content'),
+        page: 'settings/content',
         placement: 'dock',
       },
       {

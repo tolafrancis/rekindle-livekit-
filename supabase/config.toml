@@ -452,3 +452,9 @@ enabled = true
 # can't require a user JWT. The function checks the caller itself: guests may
 # only register for public webinars; approve/decline needs a webinar manager.
 verify_jwt = false
+
+[functions.parse-devotional-import]
+enabled = true
+# Ministry admins (is_ministry_admin) or platform staff only, checked inside
+# the function. Reads files for the bulk import preview; writes nothing.
+verify_jwt = true
