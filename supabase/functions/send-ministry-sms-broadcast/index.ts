@@ -107,7 +107,8 @@ async function logBroadcast(
   admin: ReturnType<typeof createClient>,
   args: { title?: string; message: string; sent: number; failed: number; total: number; ministryId: string },
 ) {
-  await admin.from('broadcast_logs').insert({
+  // A Postgrest builder has no .catch(); read the error off the result.
+  const { error } = await admin.from('broadcast_logs').insert({
     title: args.title ?? 'SMS broadcast',
     message: args.message.slice(0, 500),
     channel: 'sms',
@@ -116,7 +117,8 @@ async function logBroadcast(
     failed_sends: args.failed,
     sent_at: new Date().toISOString(),
     metadata: { ministryId: args.ministryId },
-  }).catch((e) => console.error('[send-ministry-sms-broadcast] log failed:', e));
+  });
+  if (error) console.error('[send-ministry-sms-broadcast] log failed:', error.message);
 }
 
 // AES-GCM decrypt — mirrors process-birthday-wishes / ministry-whatsapp-broadcast.
