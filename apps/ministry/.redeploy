@@ -1,1 +1,12 @@
-2026-11-05 remove unused restream defaults card (#138)
+2026-11-02 Nigeria can pay via Stripe
+2026-11-02 ministry admins can save profile (0430)
+2026-11-02 lock down open write policies (0432)
+2026-11-02 ministry admin permissions audit (0431)
+2026-11-01 listener screen no longer freezes on one line (packages/live)
+2026-11-01 webinar cover image upload option (packages/live)
+2026-10-30 join flow: get the app (Play Store, iPhone coming soon) (packages/features + packages/ministry, #114)
+2026-11-04 bulk devotional import (packages/ministry, packages/features)
+2026-11-04 shared Rekindle devotionals from a ministry space offer Join the ministry
+2026-11-05 image fields: upload from device alongside URL
+2026-11-05 ministries create their own challenges (packages/features + packages/ministry, 0433)
+2026-11-05 remove unused restream defaults card, broadcast history (packages/ministry, #138)
