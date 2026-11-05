@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
+import { ImageUrlField } from '@rekindle/features/components/ImageUrlField';
 import { ScriptureSelector, ScriptureReference } from './ScriptureSelector';
 import { MusicSelector } from './MusicSelector';
 // NEW: Import Bulk TTS Component
@@ -829,10 +830,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ isSuperAdmin = false })
               </div>
               <div>
                 <Label>{t('adminDashboard', 'imageUrl', 'Image URL')}</Label>
-                <Input
+                <ImageUrlField
                   value={formData.image_url || formData.featured_image || ''}
-                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value, featured_image: e.target.value })}
-                  placeholder="https://..."
+                  onChange={(url) => setFormData({ ...formData, image_url: url, featured_image: url })}
+                  bucket="admin-content"
+                  folder="devotionals/images"
                 />
               </div>
               <div>

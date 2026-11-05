@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { MinistryFeatureToggles } from './FeatureTogglesPanel';
 import { supabase } from '@/lib/supabase';
 import { toast } from '../ui/use-toast';
+import { ImageUrlField } from '@rekindle/features/components/ImageUrlField';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
@@ -1030,10 +1031,12 @@ export const MinistryTenantManager: React.FC<MinistryTenantManagerProps> = ({ on
               </div>
               <div>
                 <Label>{t('ministryTenantManager', 'logoUrl', 'Logo URL')}</Label>
-                <Input
+                <ImageUrlField
                   value={whiteLabelForm.logo_url}
-                  onChange={(e) => setWhiteLabelForm({ ...whiteLabelForm, logo_url: e.target.value })}
-                  placeholder="https://..."
+                  onChange={(url) => setWhiteLabelForm({ ...whiteLabelForm, logo_url: url })}
+                  bucket="assets"
+                  folder="ministry-logos"
+                  aspect="square"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">

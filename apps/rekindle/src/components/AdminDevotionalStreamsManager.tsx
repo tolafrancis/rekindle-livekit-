@@ -25,6 +25,7 @@ import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { toast } from './ui/use-toast';
+import { ImageUrlField } from '@rekindle/features/components/ImageUrlField';
 import {
   Layers, Plus, Edit, Trash2, Loader2, Star, Eye, EyeOff, Save,
   Hand, Sparkles, Rss, Play, AlertTriangle, CheckCircle2, PenLine, Upload,
@@ -373,7 +374,7 @@ export const AdminDevotionalStreamsManager: React.FC<{
               </div>
               <div>
                 <Label>{t('adminDevotionalStreams', 'coverUrl', 'Cover image URL')}</Label>
-                <Input value={editing.cover_image_url || ''} onChange={(e) => setEditing({ ...editing, cover_image_url: e.target.value })} placeholder="https://…" />
+                <ImageUrlField value={editing.cover_image_url || ''} onChange={(url) => setEditing({ ...editing, cover_image_url: url })} bucket="admin-content" folder="devotional-streams" />
               </div>
               <div className="flex items-center justify-between">
                 <div>
