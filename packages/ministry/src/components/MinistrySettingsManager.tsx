@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
@@ -58,9 +58,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
   const [tab, setTab] = useViewHistory<string>('ministry-settings-tab', 'general');
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
-  const [savingRestream, setSavingRestream] = useState(false);
-  const [ytKey, setYtKey] = useState<string>(() => ministry.settings?.restream_defaults?.youtube || '');
-  const [fbKey, setFbKey] = useState<string>(() => ministry.settings?.restream_defaults?.facebook || '');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [formData, setFormData] = useState({
@@ -93,42 +90,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
       enable_events: true
     }
   });
-
-  useEffect(() => {
-    const rd = ministry.settings?.restream_defaults;
-    if (rd) {
-      setYtKey(rd.youtube || '');
-      setFbKey(rd.facebook || '');
-    }
-  }, [ministry.settings]);
-
-  const handleSaveRestream = async () => {
-    setSavingRestream(true);
-    try {
-      const updatedSettings = {
-        ...(ministry.settings || {}),
-        restream_defaults: {
-          youtube: ytKey.trim(),
-          facebook: fbKey.trim()
-        }
-      };
-      const { error } = await supabase
-        .from('ministry_groups')
-        .update({
-          settings: updatedSettings,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', ministry.id);
-
-      if (error) throw error;
-      toast({ title: t('ministrySettingsManager', 'restreamSaved', 'Restream defaults saved') });
-      onUpdate();
-    } catch (err: any) {
-      toast({ title: t('ministrySettingsManager', 'saveFailed', 'Save failed'), description: err.message, variant: 'destructive' });
-    } finally {
-      setSavingRestream(false);
-    }
-  };
 
   const uploadMinistryImage = async (
     file: File,
@@ -684,46 +645,6 @@ export const MinistrySettingsManager: React.FC<MinistrySettingsManagerProps> = (
       {/* Tab 2 — Live & Translation */}
       <TabsContent value="live-translation" className="space-y-6">
         <MinistryTranslationSettings ministryId={ministry.id} />
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Radio className="h-5 w-5 text-purple-600" />
-              Restream Defaults
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Configure default RTMP stream keys for broadcasting to external platforms.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>YouTube Stream Key</Label>
-                <Input
-                  type="password"
-                  value={ytKey}
-                  onChange={(e) => setYtKey(e.target.value)}
-                  placeholder="xxxx-xxxx-xxxx-xxxx"
-                />
-              </div>
-              <div>
-                <Label>Facebook Stream Key</Label>
-                <Input
-                  type="password"
-                  value={fbKey}
-                  onChange={(e) => setFbKey(e.target.value)}
-                  placeholder="FB-xxxx-xxxx-xxxx"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <Button onClick={handleSaveRestream} disabled={savingRestream}>
-                {savingRestream ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Save Restream Defaults
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </TabsContent>
 
       {/* Tab 3 — Payments & Compliance */}
