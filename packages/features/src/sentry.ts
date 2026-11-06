@@ -23,6 +23,13 @@ export function initSentry({ dsn, appName }: InitSentryOptions) {
       // actionable. Ones our own code catches are still reported.
       const ex = event.exception?.values?.[0];
       if (ex?.type === 'NegotiationError' && ex.mechanism?.handled === false) return null;
+      // An UNHANDLED AbortError ("The operation was aborted.", Safari's
+      // wording) is a cancelled request or media play() that a library
+      // dropped on the floor, typically while a meeting is torn down: leaving
+      // the room aborts LiveKit's pending signalling/region fetches and any
+      // video element mid-play(). Nothing failed for the user, so don't
+      // report it. AbortErrors our own code catches and reports still arrive.
+      if (ex?.type === 'AbortError' && ex.mechanism?.handled === false) return null;
       return event;
     },
   });
