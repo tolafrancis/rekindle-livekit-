@@ -380,6 +380,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureHiding, setScriptureHiding] = useState(false);
   const scriptureSettings = useScriptureSettings(ministryId);
   const activeCall = useActiveCallOptional();
+  const overlaysHidden = !!activeCall?.minimized && !activeCall?.isSystemPiP;
   // Watching without the switch on: whoever hasn't turned Live Scripture on
   // themselves (every participant, usually) still sees the verse the host
   // puts up. Their switch is per device and off by default, and the overlay
@@ -899,12 +900,19 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           is why participants missed verses, most visibly while someone
           was screen sharing. The portal target follows fullscreen so the
           verse still shows when the meeting is fullscreened. */}
-      {overlayRoot && createPortal(
+      {/* z-[75] (2026-11-06): the meeting itself is a fixed z-[70] layer
+          (ActiveCallHost.tsx), and once these overlays were portalled to the
+          body their old z-50 put them BEHIND it, so nobody saw the verse on
+          screen even though the Live Scripture tab showed it. 75 sits above
+          the meeting and below Radix dialogs/popovers (z-80/90). Hidden while
+          the meeting is shrunk to the mini-player so they don't float over
+          the rest of the app. */}
+      {overlayRoot && !overlaysHidden && createPortal(
         <>
           {displaySessionId && (
             <div
               ref={scriptureOverlay.ref}
-              className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+              className="fixed bottom-60 sm:bottom-64 left-1/2 z-[75] w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
               style={scriptureOverlay.style}
             >
               <div
@@ -923,7 +931,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           {captionMode !== 'off' && (
             <div
               ref={captionOverlay.ref}
-              className="fixed bottom-40 sm:bottom-44 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+              className="fixed bottom-40 sm:bottom-44 left-1/2 z-[75] w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
               style={captionOverlay.style}
             >
               <div

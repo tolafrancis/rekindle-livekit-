@@ -1177,6 +1177,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // state) is enough: it only needs to be true by the next render, which the
   // isConnected state flip already triggers.
   const isExitingRef = useRef(false);
+  // "Ending meeting…" screen (2026-11-06). Leaving the room clears the
+  // participant list straight away, but the host's End for All then still
+  // waits on the meeting row update, stopping translation and closing the
+  // LiveKit room before the page closes the meeting. For that second or two
+  // the host used to see an empty, half-torn-down call (the "glitch").
+  const [isEnding, setIsEnding] = useState<'ending' | 'leaving' | null>(null);
   // Real bug found live (2026-09-22): a webinar host's LiveKit connection
   // silently dropped mid-broadcast (RoomEvent.Disconnected -> isConnected
   // false) with ZERO visible feedback — no banner, no frozen indicator,
@@ -1803,6 +1809,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const handleMeetingEnded = async () => {
     console.log('[DailyVideoCall] Handling meeting ended');
     isExitingRef.current = true;
+    setIsEnding('leaving');
 
     toast({
       title: t('dailyVideoCall', 'meetingEnded', 'Meeting Ended'),
@@ -1830,7 +1837,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
    *  isConnected, so the generic disconnect card never has a state gap to
    *  flash through, regardless of which action this is. */
   const handleEndCall = async (endForAll: boolean = true) => {
+    if (isExitingRef.current && isEnding) return; // a second tap while ending
     isExitingRef.current = true;
+    setIsEnding(isHost && endForAll ? 'ending' : 'leaving');
     // Before 2026-10-10 this only wrote to the unused `meetings` table, so
     // "End meeting for everyone" from the call bar just made the host leave
     // while everyone else stayed in the room.
@@ -1839,7 +1848,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         const duration = sessionDuration;
         await leaveRoom();
         onSessionComplete?.(duration);
-        await onEndForAll();
+        try {
+          await onEndForAll();
+        } catch (error) {
+          console.error('[DailyVideoCall] Error ending meeting for all:', error);
+          // The page normally closes the meeting itself; if ending failed
+          // part way, don't leave the host on the "Ending meeting" screen.
+          onCallEnd?.();
+        }
         return;
       }
       try {
@@ -2250,6 +2266,22 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Ending screen: see isEnding above.
+  if (isEnding) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <Loader2 className="h-12 w-12 mx-auto animate-spin text-purple-600 mb-6" />
+          <h3 className="text-xl font-semibold mb-2">
+            {isEnding === 'ending'
+              ? t('dailyVideoCall', 'endingMeeting', 'Ending meeting...')
+              : t('dailyVideoCall', 'leavingMeeting', 'Leaving meeting...')}
+          </h3>
         </CardContent>
       </Card>
     );
