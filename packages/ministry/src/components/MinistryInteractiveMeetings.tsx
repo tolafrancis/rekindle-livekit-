@@ -1021,7 +1021,6 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
     mode: 'meeting',
     source_language: 'en',
   });
-  const [modeTouched, setModeTouched] = useState(false);
   const tzOptions = React.useMemo(() => commonTimeZones(), []);
 
   // Prefill when opening in edit mode; reset to defaults for create.
@@ -1035,7 +1034,6 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
       const shownStart = rule
         ? nextMeetingOccurrence(meeting.scheduled_time, tz, meeting.recurrence_pattern, meeting.duration_minutes) ?? meeting.scheduled_time
         : meeting.scheduled_time;
-      setModeTouched(true);
       setFormData({
         title: meeting.title,
         description: meeting.description || '',
@@ -1058,15 +1056,10 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
     }
   }, [isOpen, meeting]);
 
-  // "Pick the cheap path automatically": large sessions default to webinar
-  const WEBINAR_AUTO_THRESHOLD = 15;
-  useEffect(() => {
-    if (modeTouched) return;
-    setFormData(prev => ({
-      ...prev,
-      mode: prev.max_participants >= WEBINAR_AUTO_THRESHOLD ? 'webinar' : 'meeting',
-    }));
-  }, [formData.max_participants, modeTouched]);
+  // New meetings always start as Meeting (everyone can talk and use their
+  // camera). This used to auto-switch to Broadcast at 15+ expected
+  // participants, and with the default of 50 nearly every new meeting landed
+  // in Broadcast. Hosts now pick Broadcast themselves when they want it.
 
   useEffect(() => {
     const loadAccess = async () => {
@@ -1524,7 +1517,7 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
               onChange={(e) => setFormData({ ...formData, max_participants: Math.max(1, parseInt(e.target.value) || 1) })}
             />
             <p className="text-xs text-gray-500">
-              {t('ministryInteractiveMeetings', 'maxParticipantsTip', 'This decides whether Meeting or Broadcast mode is auto-selected below.')}
+              {t('ministryInteractiveMeetings', 'maxParticipantsTip', 'Used for the participant limit. New meetings start in Meeting mode; choose Broadcast below if only the host should be on camera.')}
             </p>
             {formData.max_participants > MEETING_PARTICIPANT_CAP && (
               <div className="rounded-lg bg-red-50 border border-red-200 p-3">
@@ -1548,32 +1541,10 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
               bigger, unnecessary schema-wide change for a label-only distinction). */}
           <div className="space-y-2 border-t pt-4">
             <Label>{t('ministryInteractiveMeetings', 'modeLabel', 'Mode')}</Label>
-            {/* Broadcast is auto-picked for 15+ expected participants (the
-                default is 50), so hosts who wanted a normal call kept ending up
-                in Broadcast. Shown until the host picks a mode themselves. */}
-            {formData.mode === 'webinar' && !modeTouched && (
-              <div className="flex items-start gap-2 rounded-lg border-2 border-amber-400 bg-amber-50 p-3">
-                <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-amber-900">
-                    {t('ministryInteractiveMeetings', 'presentationDefaultTip', 'Broadcast was picked for you, so only the host is on camera and everyone else just watches. If people should be able to talk and turn on their camera, choose Meeting.')}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-amber-500 text-amber-900 hover:bg-amber-100"
-                    onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'meeting' }); }}
-                  >
-                    {t('ministryInteractiveMeetings', 'switchToMeeting', 'Switch to Meeting')}
-                  </Button>
-                </div>
-              </div>
-            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'meeting' }); }}
+                onClick={() => { setFormData({ ...formData, mode: 'meeting' }); }}
                 className={`rounded-lg border p-3 text-left transition ${formData.mode === 'meeting' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
               >
                 <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modeMeeting', 'Meeting')}</p>
@@ -1581,7 +1552,7 @@ export const CreateMeetingModal = ({ isOpen, onClose, onSuccess, ministryId, mee
               </button>
               <button
                 type="button"
-                onClick={() => { setModeTouched(true); setFormData({ ...formData, mode: 'webinar' }); }}
+                onClick={() => { setFormData({ ...formData, mode: 'webinar' }); }}
                 className={`rounded-lg border p-3 text-left transition ${formData.mode === 'webinar' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}
               >
                 <p className="font-medium text-sm">{t('ministryInteractiveMeetings', 'modePresentation', 'Broadcast')}</p>
