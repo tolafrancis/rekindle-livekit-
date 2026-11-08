@@ -10,3 +10,4 @@
 2026-11-05 image fields: upload from device alongside URL
 2026-11-05 ministries create their own challenges (packages/features + packages/ministry, 0433)
 2026-11-06 Live Scripture verse shows over the meeting again; smoother End meeting (packages/live, packages/features)
+2026-11-08 meeting tiles fill the stage; self-view attaches after others join
