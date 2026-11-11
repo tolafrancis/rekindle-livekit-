@@ -317,10 +317,23 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
     }
   }, [meetingId, tableName, cleanedTranscript, meetingTitle, userId, rawTranscript, elapsedSeconds]);
 
-  // Slash command listener — listens to chat messages via Supabase realtime
+  // Slash command listener — listens to chat messages via Supabase realtime.
+  // Subscribes once per meeting (2026-11-11). It used to depend on
+  // recordingState and handleStartRecording, and handleStartRecording is
+  // rebuilt on every render (useMeetingNotes returns a new object each
+  // time), so the channel was torn down and re-joined on every render while
+  // the AI panel was open. That flood tripped Supabase's "Too many joins on
+  // this socket" limit, after which no realtime channel on the page could
+  // join, which is why Live Scripture's Show did nothing on screen. The
+  // latest values are read through refs instead. The topic is also no
+  // longer shared with useMeetingChat's `meeting-chat-` channel.
+  const recordingStateRef = useRef(recordingState);
+  recordingStateRef.current = recordingState;
+  const handleStartRecordingRef = useRef(handleStartRecording);
+  handleStartRecordingRef.current = handleStartRecording;
   useEffect(() => {
     const channel = supabase
-      .channel(`meeting-chat-${meetingId}`)
+      .channel(`meeting-slash-commands-${meetingId}-${Math.random().toString(36).slice(2, 10)}`)
       .on(
         'postgres_changes',
         {
@@ -334,8 +347,8 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
           const command = parseSlashCommand(message);
           if (!command) return;
 
-          if (command === '/record' && recordingState === 'idle') {
-            handleStartRecording();
+          if (command === '/record' && recordingStateRef.current === 'idle') {
+            handleStartRecordingRef.current();
           } else if (command === '/transcribe') {
             setShowTranscriptPanel(true);
             toast.info('Transcription panel opened');
@@ -349,7 +362,7 @@ const MeetingRecordingPanel: React.FC<MeetingRecordingPanelProps> = ({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [meetingId, recordingState, handleStartRecording]);
+  }, [meetingId]);
 
   // ── Overlay (compact, inside video call) ─────────────────────────────────
 

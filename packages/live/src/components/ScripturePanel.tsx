@@ -36,9 +36,9 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
     if (!sessionId) return;
     let cancelled = false;
     const take = (row: ScriptureEvent) =>
-      setLatest(prev => (prev && new Date(prev.created_at) > new Date(row.created_at) ? prev : row));
+      setLatest(prev => (prev && (prev.id === row.id || new Date(prev.created_at) > new Date(row.created_at)) ? prev : row));
 
-    supabase
+    const poll = () => supabase
       .from('translation_scripture_events')
       .select('id, status, reference, version, text, attribution, listener_text, listener_version, display_seconds, created_at')
       .eq('session_id', sessionId)
@@ -47,6 +47,16 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
       .then(({ data }) => {
         if (!cancelled && data?.[0]) take(data[0] as ScriptureEvent);
       }, () => { /* no verse: nothing to show */ });
+    poll();
+    // Polling backstop (2026-11-11). On 2026-11-11 a meeting's realtime
+    // socket hit Supabase's "Too many joins on this socket" limit, so this
+    // channel never joined: Show saved the verse but nobody's screen got the
+    // INSERT, not even the host's. The realtime event still makes it
+    // instant when it arrives; this guarantees it shows within a few
+    // seconds when it doesn't. Also re-checks on return to the tab.
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 4000);
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    document.addEventListener('visibilitychange', onVisible);
 
     // One channel per hook instance: a page can use this hook more than once
     // for the same session (FloatingTranslationButton reads the verse and
@@ -60,7 +70,12 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
         (payload) => take(payload.new as ScriptureEvent))
       .subscribe();
 
-    return () => { cancelled = true; supabase.removeChannel(channel); };
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      supabase.removeChannel(channel);
+    };
   }, [sessionId]);
 
   // Hide a verse once its display time is up (display_seconds = 0 keeps it
