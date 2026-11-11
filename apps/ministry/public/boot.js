@@ -1,7 +1,7 @@
 // Runs before the app bundle. A signed-out visitor on "/" is about to see the
-// dark landing page, so paint its background now: otherwise the first frames
-// are the app's light "Loading…" page, which flashed light-to-dark on every
-// visit. Removed again by the app once anything else is shown (App.tsx).
+// landing page, so paint its background now (the class name is historical:
+// the landing page used to be dark; index.html now paints its warm light
+// background). Removed again by the app once anything else is shown (App.tsx).
 // The session lives under supabase's storageKey 'kindled-auth-token'
 // (packages/supabase/src/supabase.ts) plus AuthContext's 'kindled_user'.
 try {
