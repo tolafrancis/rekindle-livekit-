@@ -55,6 +55,7 @@
   "build": {
     "appId": "com.rekindlebc.ministry",
     "productName": "Rekindle Ministry",
+    "npmRebuild": false,
     "electronVersion": "31.7.7",
     "directories": {
       "output": "release"
