@@ -5,6 +5,7 @@ import { Languages, Check, Volume2, Captions, X, Loader2, BookOpen } from 'lucid
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { useStackAbove } from '../useStackAbove';
 import { updateCaptionPrefs, useCaptionPrefs } from '../captionPrefs';
 import { ScripturePanel } from './ScripturePanel';
 
@@ -250,6 +251,8 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
     resetKey: scriptureOn && scriptureSessionId ? 'on' : 'off',
     baseTransform: 'translateX(-50%)',
   });
+  // Default spot (2026-11-21): just above the captions, or in their place.
+  const scriptureBottom = useStackAbove(captionOverlay.ref, captionMode !== 'off');
 
   // Deferred until the picker is actually opened (hasOpened) — a real
   // regression found live (2026-08-20): mounting this for every viewer the
@@ -727,8 +730,8 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
       {scriptureOn && scriptureSessionId && (
         <div
           ref={scriptureOverlay.ref}
-          className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
-          style={scriptureOverlay.style}
+          className={`fixed left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2 ${scriptureBottom == null ? 'bottom-40 sm:bottom-44' : ''}`}
+          style={{ ...scriptureOverlay.style, ...(scriptureBottom != null ? { bottom: scriptureBottom } : {}) }}
         >
           <div
             onPointerDown={scriptureOverlay.onPointerDown}
@@ -738,7 +741,7 @@ export const TranslationListenerButton: React.FC<TranslationListenerButtonProps>
             title="Drag to move"
             className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           >
-            <ScripturePanel sessionId={scriptureSessionId} variant="display" />
+            <ScripturePanel sessionId={scriptureSessionId} variant="card" />
           </div>
         </div>
       )}
