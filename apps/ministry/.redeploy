@@ -15,3 +15,4 @@
 2026-11-11 Live Scripture Show works again: realtime join flood from the AI notes panel fixed, verse polled as backstop (packages/live)
 2026-11-21 Live Scripture verse card: editable text, readable on any background, default just above captions (packages/live)
 2026-11-21 meeting co-hosts get Live Scripture controls (packages/live, packages/ministry)
+2026-11-21 co-hosts who aren't ministry admins send Live Scripture requests to the host to approve (packages/live)

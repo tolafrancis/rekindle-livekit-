@@ -28,6 +28,7 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
   hiding,
   onHide,
   onEdit,
+  needsApproval,
   canControl,
   isHost,
   autoOff,
@@ -107,7 +108,14 @@ export const LiveScriptureSidebar: React.FC<LiveScriptureSidebarProps> = ({
           </p>
         ) : (
           <>
-            {canControl && autoOff && (
+            {needsApproval && (
+              <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-3 text-sm text-sky-100">
+                {canControl
+                  ? "Only ministry admins can put verses on screen, so what you show, edit or hide goes to the host to approve first."
+                  : 'Waiting for the host or a ministry admin to turn on Live Scripture. You can show verses once they do.'}
+              </div>
+            )}
+            {canControl && autoOff && !needsApproval && (
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
                 <p className="font-semibold text-amber-200">Verses won't show on their own yet</p>
                 <p className="mt-1 leading-snug">
