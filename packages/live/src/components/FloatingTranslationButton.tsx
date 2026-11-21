@@ -10,9 +10,10 @@ import { toast } from '@rekindle/ui/use-toast';
 import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { useStackAbove } from '../useStackAbove';
 import { updateCaptionPrefs, useCaptionPrefs } from '../captionPrefs';
 import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './ScripturePanel';
-import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
+import { useScriptureSettings, showScriptureVerse, hideScriptureVerse, editScriptureVerse } from './liveScripture';
 import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
 import type { LiveCaptionsBridge } from '../useLiveCaptions';
 import { publicWebOrigin } from '@rekindle/features/platform';
@@ -107,6 +108,9 @@ export interface ScriptureControlState {
   onScreenVerse: ScriptureEvent | null;
   hiding: boolean;
   onHide: () => void;
+  /** Host only: puts new wording for the on-screen verse up for everyone.
+   *  Returns an error message, or null on success. */
+  onEdit: (text: string) => Promise<string | null>;
   /** Only the host sees the manual-entry/hide controls (matches the old
    *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
   canControl: boolean;
@@ -413,6 +417,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       document.removeEventListener('webkitfullscreenchange', update);
     };
   }, []);
+  // Default spot (2026-11-21): bottom-center of the meeting, just above the
+  // captions. With captions on, the card sits 8px above the captions box
+  // (measured, since the box grows and shrinks with the lines in it); with
+  // captions off it takes the captions' own spot, bottom-40 / sm:bottom-44.
+  const scriptureBottom = useStackAbove(captionOverlay.ref, captionMode !== 'off', `${String(overlayRoot?.nodeName)}-${overlaysHidden}`);
 
   useEffect(() => {
     if (!scriptureOn) { setScriptureSessionId(null); return; }
@@ -619,6 +628,12 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
     }
   };
 
+  const canControlScripture = !!(scriptureOn && isHost && scriptureSessionId);
+  const editVerse = async (text: string): Promise<string | null> => {
+    if (!scriptureSessionId || !onScreenVerse) return 'Nothing on screen to edit.';
+    return editScriptureVerse(scriptureSessionId, ministryId, onScreenVerse, text);
+  };
+
   useEffect(() => {
     onScriptureStateChange?.({
       on: scriptureOn,
@@ -631,7 +646,8 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       onScreenVerse,
       hiding: scriptureHiding,
       onHide: hideVerse,
-      canControl: !!(scriptureOn && isHost && scriptureSessionId),
+      onEdit: editVerse,
+      canControl: canControlScripture,
       isHost,
       autoOff: !(scriptureSettings.auto_detect && scriptureSettings.auto_show),
       onOpenSettings: openScriptureSettings,
@@ -912,8 +928,8 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           {displaySessionId && (
             <div
               ref={scriptureOverlay.ref}
-              className="fixed bottom-60 sm:bottom-64 left-1/2 z-[75] w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
-              style={scriptureOverlay.style}
+              className={`fixed left-1/2 z-[75] w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2 ${scriptureBottom == null ? 'bottom-40 sm:bottom-44' : ''}`}
+              style={{ ...scriptureOverlay.style, ...(scriptureBottom != null ? { bottom: scriptureBottom } : {}) }}
             >
               <div
                 onPointerDown={scriptureOverlay.onPointerDown}
@@ -923,7 +939,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                 title="Drag to move"
                 className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
               >
-                <ScripturePanel sessionId={displaySessionId} variant="display" />
+                <ScripturePanel
+                  sessionId={displaySessionId}
+                  variant="card"
+                  onEdit={canControlScripture ? editVerse : undefined}
+                />
               </div>
             </div>
           )}

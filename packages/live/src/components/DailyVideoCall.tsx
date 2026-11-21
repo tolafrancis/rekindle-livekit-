@@ -130,6 +130,10 @@ interface DailyVideoCallProps {
    *  (mute, spotlight) from this instead of the generic HostControlPanel.
    *  Only fired while the local user is a moderator; null otherwise. */
   onModeratorControlsChange?: (controls: ModeratorControls | null) => void;
+  /** Fires with whether the local user is a moderator (host or co-host),
+   *  on join and whenever they're made or removed as co-host (2026-11-21:
+   *  meeting co-hosts get Live Scripture controls). */
+  onModeratorChange?: (isModerator: boolean) => void;
   /** Live Scripture's control state, lifted from FloatingTranslationButton.tsx
    *  (see its ScriptureControlState doc comment) — the toggle button lives
    *  in the control bar (replacing the old Layout slot) and its panel opens
@@ -1135,6 +1139,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onTranslationControlsChange,
   onCaptionsBridgeChange,
   onModeratorControlsChange,
+  onModeratorChange,
   scriptureControl,
   secondaryControls,
 }) => {
@@ -1484,6 +1489,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange, remoteParticipants]);
+
+  useEffect(() => {
+    onModeratorChange?.(isModerator);
+  }, [onModeratorChange, isModerator]);
 
   useEffect(() => {
     if (!onModeratorControlsChange) return;
