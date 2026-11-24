@@ -1149,6 +1149,15 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       id: 'live', label: 'Live', icon: Radio, gradient: 'from-red-500 to-rose-600',
       children: [
         ...(ministryEntitlements.caps.liveChannels ? [{ id: 'live', label: 'Live Channel', icon: Radio }] : []),
+        // Meetings moved here from the Ministry group (2026-11-24, per the
+        // user's request) so the Live tile always has something to open:
+        // every plan, free included, gets Interactive Meetings. On the free
+        // plan it's the first child, so the tile lands on it.
+        { id: 'meetings', label: 'Meetings', icon: Video },
+        // Free plan, leaders on web: a locked Live Channel entry that opens
+        // an upgrade screen instead of hiding live streaming altogether.
+        ...(entitlementsLoaded && !ministryEntitlements.caps.liveChannels && showMinistryFeatureUpgradePrompt
+          ? [{ id: 'live-upgrade', label: 'Live Channel', icon: Lock }] : []),
         ...(ministryEntitlements.caps.webinars ? [{ id: 'webinars', label: 'Webinars', icon: Radio }] : []),
         ...(ministryEntitlements.caps.liveChannels && canManageMinistry ? [{ id: 'live-tech', label: 'Live Translation', icon: Settings }] : []),
       ],
@@ -1168,7 +1177,6 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
       // settings half moved to Settings > Finance & Billing), so leaders had
       // no way to reach it.
       ...(canManageMinistry && isUkCountryCode(ministry.country_code) ? [{ id: 'gift-aid', label: 'Gift Aid', icon: HandCoins }] : []),
-      { id: 'meetings', label: 'Meetings', icon: Video },
       ...(canManageMinistry ? [{ id: 'content', label: 'Content', icon: Sparkles }] : []),
     ] },
     ...(canManageMinistry ? [{
@@ -1877,6 +1885,35 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
             isLeader={isLeader}
             themeColor={themeColor}
           />
+        )}
+
+        {/* Locked Live Channel on the free plan (leaders, web only). */}
+        {activeTab === 'live-upgrade' && (
+          <Card>
+            <CardContent className="py-10 flex flex-col items-center text-center gap-3">
+              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center">
+                <Lock className="h-6 w-6 text-red-500" />
+              </div>
+              <p className="font-semibold text-gray-900">
+                {t('ministrySpace', 'liveLockedTitle', 'Go live with a paid plan')}
+              </p>
+              <p className="text-sm text-gray-600 max-w-md">
+                {t('ministrySpace', 'liveLockedDesc', 'Stream services to your members on your own Live Channel, with live translation and webinars. Meetings stay free on every plan.')}
+              </p>
+              <div className="flex flex-wrap justify-center gap-2 mt-2">
+                {showMinistryFeatureUpgradePrompt && (
+                  <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => navigate('/settings/billing')}>
+                    <Crown className="h-4 w-4 mr-2" />
+                    {t('ministrySpace', 'upgradeNow', 'Upgrade Now')}
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setActiveTab('meetings')}>
+                  <Video className="h-4 w-4 mr-2" />
+                  {t('ministrySpace', 'liveLockedMeetings', 'Start a free meeting')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Live Translation — translation + restream config, moved here from
@@ -2868,7 +2905,7 @@ const MinistrySpace: React.FC<MinistrySpaceProps> = ({ ministry, membership, onE
 
             {/* ── FEED / CHALLENGES / REWARDS sub-tabs (ported from consumer community) ── */}
             {communitySubTab === 'feed' && <CommunityActivityFeed ministryId={ministry.id} />}
-            {communitySubTab === 'challenges' && <EnhancedPrayerChallenges />}
+            {communitySubTab === 'challenges' && <EnhancedPrayerChallenges ministryId={ministry.id} canManage={canManageMinistry} />}
 
             {/* ── REVELATIONS sub-tab ── */}
             {communitySubTab === 'revelations' && (

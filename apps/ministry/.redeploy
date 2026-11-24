@@ -7,4 +7,15 @@
 2026-10-30 join flow: get the app (Play Store, iPhone coming soon) (packages/features + packages/ministry, #114)
 2026-11-04 bulk devotional import (packages/ministry, packages/features)
 2026-11-04 shared Rekindle devotionals from a ministry space offer Join the ministry
+2026-11-05 image fields: upload from device alongside URL
+2026-11-05 ministries create their own challenges (packages/features + packages/ministry, 0433)
+2026-11-06 Live Scripture verse shows over the meeting again; smoother End meeting (packages/live, packages/features)
+2026-11-08 meeting tiles fill the stage; self-view attaches after others join
+2026-11-10T03:15:32Z
+2026-11-11 Live Scripture Show works again: realtime join flood from the AI notes panel fixed, verse polled as backstop (packages/live)
+2026-11-21 Live Scripture verse card: editable text, readable on any background, default just above captions (packages/live)
+2026-11-21 meeting co-hosts get Live Scripture controls (packages/live, packages/ministry)
+2026-11-21 co-hosts who aren't ministry admins send Live Scripture requests to the host to approve (packages/live)
+2026-11-21 meeting join page: 'Didn't open?' download link matches the device (packages/live)
+2026-11-24 Live tile: Meetings in Live group
 2026-11-04 Invite Member sends real invite emails

@@ -24,6 +24,8 @@ export interface PrayerChallenge {
   live_session_date?: string;
   live_session_duration?: number;
   live_room_id?: string;
+  ministry_id?: string | null;
+  created_by?: string | null;
   is_active: boolean;
   created_at: string;
   // Prayer reminder settings

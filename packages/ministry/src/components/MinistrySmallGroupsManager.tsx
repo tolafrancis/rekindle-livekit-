@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rekindle/ui/tabs';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
+import { ImageUrlField } from '@rekindle/features/components/ImageUrlField';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useLanguage } from '@rekindle/features/LanguageContext';
 import { resolveMinistryRole, roleCan, type MinistryRole } from '@rekindle/auth/ministryPermissions';
@@ -574,7 +575,7 @@ export const MinistrySmallGroupsManager: React.FC<MinistrySmallGroupsManagerProp
               </div>
               <div>
                 <Label>{t('ministrySmallGroupsManager', 'labelCoverImage', 'Cover Image URL')}</Label>
-                <Input value={formData.cover_image_url} onChange={(e) => setFormData({ ...formData, cover_image_url: e.target.value })} placeholder="https://..." />
+                <ImageUrlField value={formData.cover_image_url} onChange={(url) => setFormData({ ...formData, cover_image_url: url })} bucket="assets" folder="small-groups" />
               </div>
             </TabsContent>
 

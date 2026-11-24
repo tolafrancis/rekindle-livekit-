@@ -130,6 +130,10 @@ interface DailyVideoCallProps {
    *  (mute, spotlight) from this instead of the generic HostControlPanel.
    *  Only fired while the local user is a moderator; null otherwise. */
   onModeratorControlsChange?: (controls: ModeratorControls | null) => void;
+  /** Fires with whether the local user is a moderator (host or co-host),
+   *  on join and whenever they're made or removed as co-host (2026-11-21:
+   *  meeting co-hosts get Live Scripture controls). */
+  onModeratorChange?: (isModerator: boolean) => void;
   /** Live Scripture's control state, lifted from FloatingTranslationButton.tsx
    *  (see its ScriptureControlState doc comment) — the toggle button lives
    *  in the control bar (replacing the old Layout slot) and its panel opens
@@ -776,7 +780,10 @@ const ParticipantVideo: React.FC<{
   fill?: boolean;
   /** Hide the name/status overlay (the mini-player draws its own title bar). */
   hideOverlay?: boolean;
-}> = ({ participant, isLarge = false, fill = false, hideOverlay = false }) => {
+  /** With `fill`: letterbox (contain) instead of crop (cover). Gallery and
+   *  speaker tiles use this so a phone held upright isn't cropped to a chin. */
+  contain?: boolean;
+}> = ({ participant, isLarge = false, fill = false, hideOverlay = false, contain = false }) => {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoAttached, setVideoAttached] = useState(false);
@@ -896,7 +903,7 @@ const ParticipantVideo: React.FC<{
         // frame actually appears without needing a camera re-toggle.
         onLoadedMetadata={() => { videoRef.current?.play().catch(() => {}); }}
         onCanPlay={() => { videoRef.current?.play().catch(() => {}); }}
-        className={`w-full h-full ${fill ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
+        className={`w-full h-full ${fill && !contain ? 'object-cover' : 'object-contain'} ${showVideo ? '' : 'hidden'}`}
         // Your own camera mirrored, like the self-view and every video app.
         style={participant.isLocal ? { transform: 'scaleX(-1)' } : undefined}
       />
@@ -1132,6 +1139,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   onTranslationControlsChange,
   onCaptionsBridgeChange,
   onModeratorControlsChange,
+  onModeratorChange,
   scriptureControl,
   secondaryControls,
 }) => {
@@ -1177,6 +1185,12 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   // state) is enough: it only needs to be true by the next render, which the
   // isConnected state flip already triggers.
   const isExitingRef = useRef(false);
+  // "Ending meeting…" screen (2026-11-06). Leaving the room clears the
+  // participant list straight away, but the host's End for All then still
+  // waits on the meeting row update, stopping translation and closing the
+  // LiveKit room before the page closes the meeting. For that second or two
+  // the host used to see an empty, half-torn-down call (the "glitch").
+  const [isEnding, setIsEnding] = useState<'ending' | 'leaving' | null>(null);
   // Real bug found live (2026-09-22): a webinar host's LiveKit connection
   // silently dropped mid-broadcast (RoomEvent.Disconnected -> isConnected
   // false) with ZERO visible feedback — no banner, no frozen indicator,
@@ -1475,6 +1489,10 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [translationTracks, translationLanguage, setTranslationLanguage, onTranslationControlsChange, remoteParticipants]);
+
+  useEffect(() => {
+    onModeratorChange?.(isModerator);
+  }, [onModeratorChange, isModerator]);
 
   useEffect(() => {
     if (!onModeratorControlsChange) return;
@@ -1803,6 +1821,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
   const handleMeetingEnded = async () => {
     console.log('[DailyVideoCall] Handling meeting ended');
     isExitingRef.current = true;
+    setIsEnding('leaving');
 
     toast({
       title: t('dailyVideoCall', 'meetingEnded', 'Meeting Ended'),
@@ -1830,7 +1849,9 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
    *  isConnected, so the generic disconnect card never has a state gap to
    *  flash through, regardless of which action this is. */
   const handleEndCall = async (endForAll: boolean = true) => {
+    if (isExitingRef.current && isEnding) return; // a second tap while ending
     isExitingRef.current = true;
+    setIsEnding(isHost && endForAll ? 'ending' : 'leaving');
     // Before 2026-10-10 this only wrote to the unused `meetings` table, so
     // "End meeting for everyone" from the call bar just made the host leave
     // while everyone else stayed in the room.
@@ -1839,7 +1860,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
         const duration = sessionDuration;
         await leaveRoom();
         onSessionComplete?.(duration);
-        await onEndForAll();
+        try {
+          await onEndForAll();
+        } catch (error) {
+          console.error('[DailyVideoCall] Error ending meeting for all:', error);
+          // The page normally closes the meeting itself; if ending failed
+          // part way, don't leave the host on the "Ending meeting" screen.
+          onCallEnd?.();
+        }
         return;
       }
       try {
@@ -2255,6 +2283,22 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     );
   }
 
+  // Ending screen: see isEnding above.
+  if (isEnding) {
+    return (
+      <Card className="w-full max-w-lg mx-auto">
+        <CardContent className="p-8 text-center">
+          <Loader2 className="h-12 w-12 mx-auto animate-spin text-purple-600 mb-6" />
+          <h3 className="text-xl font-semibold mb-2">
+            {isEnding === 'ending'
+              ? t('dailyVideoCall', 'endingMeeting', 'Ending meeting...')
+              : t('dailyVideoCall', 'leavingMeeting', 'Leaving meeting...')}
+          </h3>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Connecting screen
   if (isConnecting || isJoining) {
     return (
@@ -2660,6 +2704,14 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
             </div>
           );
 
+          // Largest 16:9 box that fits its cell both ways (Zoom-style). The
+          // cell is a size container, so 100cqw/100cqh are its width/height.
+          // Before (2026-11-08) gallery tiles had no width at all and shrank
+          // to the video's intrinsic size: a 2-person call showed the other
+          // person as a ~200px tile in the middle of an empty stage.
+          const fitBox = 'relative aspect-video w-[min(100cqw,calc(100cqh*16/9))] max-h-full';
+          const fitCell = 'flex h-full w-full min-h-0 min-w-0 items-center justify-center [container-type:size]';
+
           // A live screen share takes the stage, laid out the way the host chose.
           if (stage.kind === 'screen' && screenSharer) {
             const mode = stage.screenMode;
@@ -2761,17 +2813,18 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           // Speaker: one featured tile, the rest in a filmstrip.
           if (stage.kind === 'speaker' && featuredParticipant) {
             return (
-              <div className="flex flex-col h-full gap-2 p-1 sm:p-2">
-                <div className="relative flex-1 min-h-0 flex items-center justify-center">
-                  {/* max-w-3xl (2026-09-22): a smaller featured frame lets
-                      adaptiveStream request a resolution that matches what's
-                      rendered instead of stretching a still-ramping bitrate. */}
-                  <div className="relative w-full max-w-3xl">
-                    <ParticipantVideo key={featuredParticipant.sessionId} participant={featuredParticipant} isLarge />
+              <div className="flex flex-col h-full gap-2 p-1 sm:p-2 pt-12 sm:pt-16">
+                <div className={`relative flex-1 ${fitCell}`}>
+                  {/* Fills the stage at 16:9 (2026-11-08). The old max-w-3xl cap
+                      (2026-09-22) predates tiles rendering through LiveKit's
+                      attach(); adaptiveStream now sizes the layer to the
+                      rendered element itself. */}
+                  <div className={fitBox}>
+                    <ParticipantVideo key={featuredParticipant.sessionId} participant={featuredParticipant} fill contain />
                     {/* Spotlight (host, global) vs pin (this viewer). Nothing for
                         an automatic active speaker. Below the top status bar. */}
                     {stage.reason !== 'active' && stage.reason !== 'none' && (
-                      <div className="absolute top-14 sm:top-20 left-2 z-10">
+                      <div className="absolute top-2 left-2 z-10">
                         {stage.reason === 'spotlight' ? (
                           <span className="flex items-center gap-1 text-xs font-medium bg-amber-500 text-white px-2 py-1 rounded-md shadow">
                             <Sparkles className="h-3 w-3" /> {t('dailyVideoCall', 'spotlight', 'Spotlight')}
@@ -2786,7 +2839,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                     {/* Anyone can unpin their own pin; only a host or co-host
                         can remove a spotlight. */}
                     {stage.reason === 'pin' ? (
-                      <div className="absolute top-14 sm:top-20 right-2 z-10">
+                      <div className="absolute top-2 right-2 z-10">
                         <button
                           onClick={() => pinParticipant(null)}
                           className="flex items-center gap-1 text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-md shadow"
@@ -2795,7 +2848,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                         </button>
                       </div>
                     ) : stage.reason === 'spotlight' && isModerator ? (
-                      <div className="absolute top-14 sm:top-20 right-2 z-10">
+                      <div className="absolute top-2 right-2 z-10">
                         <button
                           onClick={() => removeFromSpotlight(featuredParticipant.sessionId)}
                           className="flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-md shadow"
@@ -2804,7 +2857,7 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="absolute top-14 sm:top-20 right-2 z-10">{renderTileControls(featuredParticipant)}</div>
+                      <div className="absolute top-2 right-2 z-10">{renderTileControls(featuredParticipant)}</div>
                     )}
                   </div>
                 </div>
@@ -2819,23 +2872,27 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
           const { visible, overflowCount } = cappedThumbnails;
           const tileCount = visible.length + (overflowCount > 0 ? 1 : 0);
           return (
-            <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 h-full place-items-center ${
+            <div className={`grid gap-1 sm:gap-2 p-1 sm:p-2 pt-12 sm:pt-16 h-full auto-rows-fr ${
               tileCount === 1 ? 'grid-cols-1' :
               tileCount <= 4 ? 'grid-cols-2' :
               'grid-cols-3'
             }`}>
               {visible.map((participant: any) => (
-                <div key={participant.sessionId} className="relative">
-                  <ParticipantVideo participant={participant} isLarge={tileCount === 1} />
-                  {renderTileControls(participant)}
-                  {renderQualityBadge(participant)}
+                <div key={participant.sessionId} className={fitCell}>
+                  <div className={fitBox}>
+                    <ParticipantVideo participant={participant} fill contain />
+                    {renderTileControls(participant)}
+                    {renderQualityBadge(participant)}
+                  </div>
                 </div>
               ))}
               {overflowCount > 0 && (
-                <div className="relative flex aspect-video w-full items-center justify-center rounded-lg bg-gray-800 text-white">
-                  <div className="text-center">
-                    <Users className="h-6 w-6 mx-auto mb-1 opacity-70" />
-                    <p className="text-sm font-medium">+{overflowCount} {t('dailyVideoCall', 'moreParticipants', 'more')}</p>
+                <div className={fitCell}>
+                  <div className={`${fitBox} flex items-center justify-center rounded-lg bg-gray-800 text-white`}>
+                    <div className="text-center">
+                      <Users className="h-6 w-6 mx-auto mb-1 opacity-70" />
+                      <p className="text-sm font-medium">+{overflowCount} {t('dailyVideoCall', 'moreParticipants', 'more')}</p>
+                    </div>
                   </div>
                 </div>
               )}

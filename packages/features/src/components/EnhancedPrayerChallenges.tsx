@@ -19,7 +19,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { instrumentalTracks } from '../data/instrumentals';
 import { SearchFilterPanel, searchFilterSelectTriggerClass } from './SearchFilterPanel';
 
-export const EnhancedPrayerChallenges: React.FC = () => {
+interface EnhancedPrayerChallengesProps {
+  /**
+   * Ministry app: show only this ministry's challenges and create new ones
+   * for it. Omitted in the Rekindle app, which shows Rekindle-wide challenges.
+   */
+  ministryId?: string;
+  /** Ministry leaders/admins can create, edit and delete the ministry's challenges. */
+  canManage?: boolean;
+}
+
+export const EnhancedPrayerChallenges: React.FC<EnhancedPrayerChallengesProps> = ({ ministryId, canManage = false }) => {
   const { user, profile } = useAuth();
   const { t } = useLanguage();
   const [challenges, setChallenges] = useState<PrayerChallenge[]>([]);
@@ -28,6 +38,9 @@ export const EnhancedPrayerChallenges: React.FC = () => {
   const [userSubscriptionPlan, setUserSubscriptionPlan] = useState<string>('free');
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingChallenge, setEditingChallenge] = useState<PrayerChallenge | null>(null);
+  const [deletingChallenge, setDeletingChallenge] = useState<PrayerChallenge | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [shareChallenge, setShareChallenge] = useState<PrayerChallenge | null>(null);
   const [activeSession, setActiveSession] = useState<PrayerChallenge | null>(null);
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -39,17 +52,20 @@ export const EnhancedPrayerChallenges: React.FC = () => {
   const [challengeToStart, setChallengeToStart] = useState<PrayerChallenge | null>(null);
   const [selectedMusicId, setSelectedMusicId] = useState<string>('1');
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => { fetchData(); }, [user, ministryId, canManage]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch challenges (no user ID needed for public view)
-      const challengeRes = await supabase
+      // Ministry app: this ministry's challenges only. Rekindle app:
+      // Rekindle-wide challenges only (ministry ones stay in their ministry).
+      let query = supabase
         .from('enhanced_prayer_challenges')
         .select('*')
         .eq('is_active', true);
-      
+      query = ministryId ? query.eq('ministry_id', ministryId) : query.is('ministry_id', null);
+      const challengeRes = await query.order('created_at', { ascending: false });
+
       if (challengeRes.data) {
         const parsed = challengeRes.data.map(c => {
           // Convert prayer_points from string[] to PrayerPoint[]
@@ -264,8 +280,33 @@ export const EnhancedPrayerChallenges: React.FC = () => {
     setChallengeToStart(null);
   };
 
-  // Check if user can create challenges (only premium and ministry plans)
-  const canCreate = userSubscriptionPlan === 'premium' || userSubscriptionPlan === 'ministry';
+  // Ministry app: leaders/admins of this ministry. Rekindle app: premium and ministry plans.
+  const canCreate = ministryId
+    ? canManage
+    : userSubscriptionPlan === 'premium' || userSubscriptionPlan === 'ministry';
+
+  const canManageChallenge = (c: PrayerChallenge) => {
+    if (!user?.id) return false;
+    if (ministryId) return canManage;
+    return c.creator_id === user.id || c.created_by === user.id;
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingChallenge) return;
+    setDeleting(true);
+    const { error } = await supabase
+      .from('enhanced_prayer_challenges')
+      .delete()
+      .eq('id', deletingChallenge.id);
+    setDeleting(false);
+    if (error) {
+      toast({ title: t('enhancedPrayerChallenges', 'error', 'Error'), description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: t('enhancedPrayerChallenges', 'challengeDeleted', 'Challenge deleted') });
+    setDeletingChallenge(null);
+    fetchData();
+  };
   const filtered = categoryFilter === 'all' ? challenges : challenges.filter(c => c.category === categoryFilter);
 
   if (loading) return (
@@ -321,12 +362,28 @@ export const EnhancedPrayerChallenges: React.FC = () => {
       onJoin={() => joinChallenge(challenge)}
       onStart={() => handleStartChallenge(challenge)} 
       onShare={() => setShareChallenge(challenge)}
+      onEdit={canManageChallenge(challenge) ? () => setEditingChallenge(challenge) : undefined}
+      onDelete={canManageChallenge(challenge) ? () => setDeletingChallenge(challenge) : undefined}
       onUpdateReminder={(settings) => updateReminderSettings(challengeId, settings)}
     />
   );
 })}
           </div>
-          {filtered.length === 0 && <div className="text-center py-12 bg-white rounded-xl"><Trophy className="h-12 w-12 mx-auto text-gray-300 mb-4" /><p className="text-gray-500">{t('enhancedPrayerChallenges', 'noChallengesFound', 'No challenges found')}</p></div>}
+          {filtered.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-xl">
+              <Trophy className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500">
+                {ministryId && challenges.length === 0
+                  ? (canCreate
+                    ? t('enhancedPrayerChallenges', 'noMinistryChallengesLeader', 'No challenges yet. Create one for your members to pray through together.')
+                    : t('enhancedPrayerChallenges', 'noMinistryChallenges', 'Your ministry has no challenges yet.'))
+                  : t('enhancedPrayerChallenges', 'noChallengesFound', 'No challenges found')}
+              </p>
+              {ministryId && challenges.length === 0 && canCreate && (
+                <Button onClick={() => setShowCreate(true)} className="mt-4 bg-purple-600 hover:bg-purple-700"><Plus className="h-4 w-4 mr-2" />{t('enhancedPrayerChallenges', 'createChallenge', 'Create a challenge')}</Button>
+              )}
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="analytics" className="mt-4">
           {selectedForAnalytics ? (
@@ -407,12 +464,29 @@ export const EnhancedPrayerChallenges: React.FC = () => {
       </Dialog>
 
       <CreateChallengeModal 
-        open={showCreate} 
-        onClose={() => setShowCreate(false)} 
+        open={showCreate || !!editingChallenge} 
+        onClose={() => { setShowCreate(false); setEditingChallenge(null); }} 
         onCreated={() => fetchData()} 
         userId={user?.id} 
         userName={profile?.full_name || 'Anonymous'} 
+        ministryId={ministryId}
+        challenge={editingChallenge}
       />
+
+      <Dialog open={!!deletingChallenge} onOpenChange={(o) => { if (!o) setDeletingChallenge(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('enhancedPrayerChallenges', 'deleteChallengeTitle', 'Delete this challenge?')}</DialogTitle>
+            <DialogDescription>
+              {t('enhancedPrayerChallenges', 'deleteChallengeBody', '"{title}" will be removed for everyone, including people who joined it.').replace('{title}', deletingChallenge?.title || '')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingChallenge(null)} disabled={deleting}>{t('enhancedPrayerChallenges', 'cancel', 'Cancel')}</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>{deleting ? t('enhancedPrayerChallenges', 'deleting', 'Deleting...') : t('enhancedPrayerChallenges', 'delete', 'Delete')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {shareChallenge && <ShareChallengeModal open={!!shareChallenge} onClose={() => setShareChallenge(null)} title={shareChallenge.title} description={shareChallenge.description || ''} challengeId={shareChallenge.id} />}
       {activeSession && <InteractivePrayerSession title={activeSession.title} prayerPoints={activeSession.prayer_points} sessionType={activeSession.session_type} instrumentalId={activeSession.instrumental_id} onComplete={() => completeSession(activeSession)} onClose={() => setActiveSession(null)} />}
     </div>

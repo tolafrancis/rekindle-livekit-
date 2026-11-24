@@ -20,7 +20,9 @@ import {
   CheckCircle,
   BookOpen,
   Bell,
-  Settings
+  Settings,
+  Pencil,
+  Trash2
 } from 'lucide-react'
 
 const SESSION_DURATIONS: Record<string, { label: string; duration: number }> = {
@@ -45,6 +47,9 @@ interface Props {
   onJoin: () => void
   onStart: () => void
   onShare: () => void
+  /** Shown only to people who can manage this challenge. */
+  onEdit?: () => void
+  onDelete?: () => void
   onUpdateReminder?: (settings: {
     enabled: boolean;
     frequency?: 'hourly' | 'daily' | 'weekly' | 'monthly';
@@ -71,6 +76,8 @@ export const ChallengeCard: React.FC<Props> = ({
   onJoin,
   onStart,
   onShare,
+  onEdit,
+  onDelete,
   onUpdateReminder,
   participantCount
 }) => {
@@ -132,7 +139,27 @@ export const ChallengeCard: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2 right-2 flex items-center gap-0.5">
+          {onEdit && (
+            <Button aria-label="Edit challenge"
+              variant="ghost"
+              size="icon"
+              onClick={onEdit}
+              className="text-white hover:bg-white/20"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+          {onDelete && (
+            <Button aria-label="Delete challenge"
+              variant="ghost"
+              size="icon"
+              onClick={onDelete}
+              className="text-white hover:bg-white/20"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
           <Button aria-label="Share"
             variant="ghost"
             size="icon"

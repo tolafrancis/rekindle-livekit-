@@ -2920,7 +2920,13 @@ export const useDailyRoom = (options: DailyRoomOptions): UseDailyRoomReturn => {
 
   // Attach local video track to video element - periodic check
   useEffect(() => {
-    if (!wrapperRef.current || !localVideoRef.current || !isConnected) return;
+    // Don't bail when the self-view <video> isn't mounted yet: in a meeting it
+    // only mounts once someone else joins (alone, you see yourself in the big
+    // tile instead). The old `!localVideoRef.current` guard meant the 2s
+    // re-check never started for whoever joined first, so their corner
+    // self-view stayed blank with the camera on (reported 2026-11-08).
+    // attachLocalVideoTrack() already no-ops while there's no element.
+    if (!wrapperRef.current || !isConnected) return;
     
     const checkAndAttach = () => {
       if (!isCameraOn) {

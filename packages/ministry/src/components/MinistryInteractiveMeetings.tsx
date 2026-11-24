@@ -230,6 +230,10 @@ const EnhancedVideoCallWrapper = ({
   // so DailyVideoCall can render its own toggle button + side panel instead
   // of it living in FloatingTranslationButton's popover.
   const [callScripture, setCallScripture] = useState<ScriptureControlState | null>(null);
+  // Host or co-host (2026-11-21): co-hosts get Live Scripture (and the
+  // translation host controls) too. Showing a verse is still gated to
+  // ministry admins by RLS (migration 0373).
+  const [callIsModerator, setCallIsModerator] = useState(false);
 
   // Presenters + raised hands (webinar invite-up). Host is always a presenter.
   const stage = useMeetingStage(meeting.id, userId, userName, isHost);
@@ -656,6 +660,7 @@ const EnhancedVideoCallWrapper = ({
         onTranslationControlsChange={setCallTranslation}
         onCaptionsBridgeChange={setCallCaptionsBridge}
         scriptureControl={callScripture}
+        onModeratorChange={setCallIsModerator}
         secondaryControls={!isPiP ? (
           <>
             {/* Background moved into DailyVideoCall's own Meeting Controls menu
@@ -666,7 +671,7 @@ const EnhancedVideoCallWrapper = ({
                 translation={callTranslation}
                 ministryId={meeting.ministry_id}
                 roomName={meeting.room_name}
-                isHost={isHost}
+                isHost={isHost || callIsModerator}
                 userId={userId}
                 onScriptureStateChange={setCallScripture}
                 showCaptionsOption={false}

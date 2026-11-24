@@ -93,6 +93,7 @@ import { useLanguage } from '@rekindle/features/LanguageContext';
 import { toast } from '@rekindle/ui/use-toast';
 import { formatMeetingTime, nextMeetingOccurrence } from '@rekindle/features/meetingTime';
 import { isNativeApp, isDesktopApp } from '@rekindle/features/platform';
+import { DEFAULT_APP_DOWNLOAD_LINKS, loadAppDownloadLinks, type AppDownloadLinks } from '@rekindle/features/appDownloadLinks';
 import RegisterMeetingButton from './RegisterMeetingButton';
 import {
   Loader2,
@@ -112,11 +113,18 @@ import {
   Sparkles
 } from 'lucide-react';
 
-// Same env vars LandingPage.tsx's homepage download buttons read — each
-// app's own .env supplies its own release URL at build time, so this
-// resolves correctly whether the page was bundled into rekindle or ministry.
-// Always empty inside the native apps (Play policy bans off-store installs).
-const WINDOWS_INSTALLER_URL = isNativeApp() ? '' : (import.meta.env.VITE_WINDOWS_INSTALLER_URL || '');
+// The visitor's device, for the "Didn't open?" download link (2026-11-21):
+// each device gets its own store or installer instead of always Windows.
+type VisitorOs = 'android' | 'ios' | 'mac' | 'windows' | 'other';
+function visitorOs(): VisitorOs {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  if (/android/i.test(ua)) return 'android';
+  // iPadOS reports itself as a Mac; touch support tells them apart.
+  if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)) return 'ios';
+  if (/macintosh|mac os x/i.test(ua)) return 'mac';
+  if (/windows/i.test(ua)) return 'windows';
+  return 'other';
+}
 
 interface MeetingData {
   id: string;
@@ -207,6 +215,14 @@ const MeetingJoinPage: React.FC = () => {
   // Electron shell would try to re-launch its own protocol on itself).
   const [handoffDismissed, setHandoffDismissed] = useState(false);
   const [handoffFailed, setHandoffFailed] = useState(false);
+  // Store/installer links from Platform Admin > Settings > App download
+  // links (platform_settings), the same ones the landing page uses.
+  const [downloadLinks, setDownloadLinks] = useState<AppDownloadLinks>(DEFAULT_APP_DOWNLOAD_LINKS);
+  useEffect(() => {
+    let cancelled = false;
+    loadAppDownloadLinks().then((l) => { if (!cancelled) setDownloadLinks(l); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const handoffTimerRef = useRef<number | null>(null);
 
   // Which app can actually host this meeting — a ministry meeting only ever
@@ -222,6 +238,22 @@ const MeetingJoinPage: React.FC = () => {
   // web route — the desktop shell just does location.pathname+search on
   // whatever URL it receives, no translation table to keep in sync.
   const desktopHandoffUrl = `${desktopScheme}://app${location.pathname}${location.search}`;
+  // The download for this visitor's device, for the app that hosts this
+  // meeting (Ministry app for a ministry meeting, ReKindle BC for a channel).
+  // Empty when the admin hasn't set one for that device: the link is hidden.
+  const appDownload = (() => {
+    const ministry = !channelId;
+    switch (visitorOs()) {
+      case 'android': return { url: ministry ? downloadLinks.ministryPlayStore : downloadLinks.consumerPlayStore, label: t('skeleton', 'getOnGooglePlay', 'get it on Google Play'), file: false };
+      case 'ios': return { url: ministry ? downloadLinks.ministryAppStore : downloadLinks.consumerAppStore, label: t('skeleton', 'getOnAppStore', 'get it on the App Store'), file: false };
+      case 'mac': {
+        const url = ministry ? downloadLinks.ministryMac : downloadLinks.consumerMac;
+        return { url, label: t('skeleton', 'downloadMac', 'download for Mac'), file: /\.(dmg|pkg|zip)(\?|$)/i.test(url) };
+      }
+      case 'windows': return { url: ministry ? downloadLinks.ministryWindows : downloadLinks.consumerWindows, label: t('skeleton', 'downloadWindows', 'download for Windows'), file: true };
+      default: return { url: '', label: '', file: false };
+    }
+  })();
 
   // Timeout-based failure detection, not the older hidden-iframe probe
   // technique (progressively restricted by Chrome/Firefox, never reliable
@@ -682,15 +714,19 @@ const MeetingJoinPage: React.FC = () => {
             {t('skeleton', 'continueInBrowserLower', 'continue in browser')}
           </button>
           {/* "Didn't open?" most often means the app isn't installed at all,
-              not that the handoff glitched — offer the actual install, same
-              URLs as the homepage's download buttons, hidden independently
-              until each is configured. */}
-          {WINDOWS_INSTALLER_URL && (
+              not that the handoff glitched — offer the actual install for
+              this device (Play Store, App Store, Mac or Windows), from the
+              admin-editable download links; hidden when none is set. */}
+          {appDownload.url && (
             <>
               {' · '}
               {t('skeleton', 'dontHaveApp', "don't have the app?")}{' '}
-              <a href={WINDOWS_INSTALLER_URL} download className="underline">
-                {t('skeleton', 'downloadWindows', 'download Windows')}
+              <a
+                href={appDownload.url}
+                {...(appDownload.file ? { download: '' } : { target: '_blank', rel: 'noopener noreferrer' })}
+                className="underline"
+              >
+                {appDownload.label}
               </a>
             </>
           )}

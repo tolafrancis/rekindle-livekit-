@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rekindle/ui/dialog';
 import { Button } from '@rekindle/ui/button';
 import { Input } from '@rekindle/ui/input';
 import { Textarea } from '@rekindle/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rekindle/ui/select';
-import { PrayerPoint, CHALLENGE_CATEGORIES, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
+import { PrayerChallenge, PrayerPoint, CHALLENGE_CATEGORIES, SESSION_DURATIONS } from '@rekindle/types/prayerTypes';
 import { instrumentalTracks } from '../data/instrumentals';
 import { getVerseText, sampleVerses } from '../data/bibleVerses';
 import { Plus, Trash2, Calendar, Music, BookOpen } from 'lucide-react';
@@ -18,11 +18,27 @@ interface Props {
   onCreated: (challenge: any) => void;
   userId: string;
   userName: string;
+  /** When set, the challenge belongs to this ministry (ministry app). */
+  ministryId?: string | null;
+  /** When set, the modal edits this challenge instead of creating one. */
+  challenge?: PrayerChallenge | null;
 }
+
+const emptyPoint = (): PrayerPoint => ({ title: '', content: '', scripture: '', scriptureText: '' });
+
+// datetime-local wants "YYYY-MM-DDTHH:mm" in local time.
+const toLocalInput = (iso?: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const scriptureOptions = Object.keys(sampleVerses);
 
-export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated, userId, userName }) => {
+export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated, userId, userName, ministryId, challenge }) => {
+  const isEdit = !!challenge;
   const { t } = useLanguage();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -33,6 +49,30 @@ export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated
   const [liveDate, setLiveDate] = useState('');
   const [liveDuration, setLiveDuration] = useState(30);
   const [loading, setLoading] = useState(false);
+
+  // Prefill when opening for edit; reset when opening for create.
+  useEffect(() => {
+    if (!open) return;
+    if (challenge) {
+      setTitle(challenge.title || '');
+      setDescription(challenge.description || '');
+      setCategory(challenge.category || 'Healing');
+      setSessionType(challenge.session_type || 'standard');
+      setInstrumentalId(challenge.instrumental_id || '1');
+      setPrayerPoints(challenge.prayer_points?.length ? challenge.prayer_points.map(p => ({ ...p })) : [emptyPoint()]);
+      setLiveDate(toLocalInput(challenge.live_session_date));
+      setLiveDuration(challenge.live_session_duration || 30);
+    } else {
+      setTitle('');
+      setDescription('');
+      setCategory('Healing');
+      setSessionType('standard');
+      setInstrumentalId('1');
+      setPrayerPoints([emptyPoint()]);
+      setLiveDate('');
+      setLiveDuration(30);
+    }
+  }, [open, challenge]);
 
   const addPrayerPoint = () => setPrayerPoints([...prayerPoints, { title: '', content: '', scripture: '', scriptureText: '' }]);
   const removePrayerPoint = (index: number) => setPrayerPoints(prayerPoints.filter((_, i) => i !== index));
@@ -59,20 +99,31 @@ export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated
     }
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('enhanced_prayer_challenges').insert({
+      const fields = {
         title, description, category, session_type: sessionType,
         prayer_points: prayerPoints, instrumental_id: instrumentalId,
-        creator_id: userId, creator_name: userName,
-        live_session_date: liveDate || null, live_session_duration: liveDuration
-      }).select().single();
+        live_session_date: liveDate ? new Date(liveDate).toISOString() : null,
+        live_session_duration: liveDuration,
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = isEdit
+        ? await supabase.from('enhanced_prayer_challenges').update(fields).eq('id', challenge!.id).select().single()
+        : await supabase.from('enhanced_prayer_challenges').insert({
+            ...fields,
+            creator_id: userId, created_by: userId, creator_name: userName,
+            ministry_id: ministryId || null,
+            is_active: true,
+            visibility: ministryId ? 'ministry' : 'public',
+          }).select().single();
       if (error) throw error;
-      toast({ title: t('createChallengeModal', 'success', 'Success'), description: t('createChallengeModal', 'challengeCreated', 'Prayer challenge created!') });
+      toast({
+        title: t('createChallengeModal', 'success', 'Success'),
+        description: isEdit
+          ? t('createChallengeModal', 'challengeUpdated', 'Prayer challenge updated!')
+          : t('createChallengeModal', 'challengeCreated', 'Prayer challenge created!'),
+      });
       onCreated(data);
       onClose();
-      // Reset form
-      setTitle('');
-      setDescription('');
-      setPrayerPoints([{ title: '', content: '', scripture: '', scriptureText: '' }]);
     } catch (err: any) {
       toast({ title: t('createChallengeModal', 'error', 'Error'), description: err.message, variant: 'destructive' });
     } finally { setLoading(false); }
@@ -81,7 +132,7 @@ export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{t('createChallengeModal', 'createPrayerChallenge', 'Create Prayer Challenge')}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? t('createChallengeModal', 'editPrayerChallenge', 'Edit Prayer Challenge') : t('createChallengeModal', 'createPrayerChallenge', 'Create Prayer Challenge')}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <Input placeholder={t('createChallengeModal', 'challengeTitlePlaceholder', 'Challenge Title *')} value={title} onChange={e => setTitle(e.target.value)} />
           <Textarea placeholder={t('createChallengeModal', 'description', 'Description')} value={description} onChange={e => setDescription(e.target.value)} />
@@ -178,7 +229,7 @@ export const CreateChallengeModal: React.FC<Props> = ({ open, onClose, onCreated
             </div>
           </div>
           <Button onClick={handleCreate} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700">
-            {loading ? t('createChallengeModal', 'creating', 'Creating...') : t('createChallengeModal', 'createChallenge', 'Create Challenge')}
+            {loading ? (isEdit ? t('createChallengeModal', 'saving', 'Saving...') : t('createChallengeModal', 'creating', 'Creating...')) : (isEdit ? t('createChallengeModal', 'saveChanges', 'Save Changes') : t('createChallengeModal', 'createChallenge', 'Create Challenge'))}
           </Button>
         </div>
       </DialogContent>
