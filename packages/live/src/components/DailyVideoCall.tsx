@@ -1978,6 +1978,27 @@ export const DailyVideoCall: React.FC<DailyVideoCallProps> = ({
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [droppedMidCall]);
 
+  // Keep the Android "You're in a meeting" service running (2026-11-22).
+  // startCall() reports the call to the app (call:active → MainActivity
+  // .setCallActive → MeetingForegroundService) the moment Join is tapped,
+  // which is BEFORE the backstage asks for the microphone. On a phone that
+  // hadn't granted the mic yet, the service refused to start (it needs the
+  // permission) and nothing ever asked again, so minimizing let Android cut
+  // the mic and freeze the app, and the meeting dropped. Report the call again
+  // once the room is connected (the mic has been granted or refused by then)
+  // and each time the app comes back to the front, which is when Android lets
+  // the service start. Starting an already running service is a no-op.
+  // Only for a call hosted by ActiveCallHost, the one that owns call:active.
+  const hostedCall = !!activeCallCtx?.call;
+  useEffect(() => {
+    if (!isConnected || !hostedCall) return;
+    const report = () => window.dispatchEvent(new CustomEvent('call:active', { detail: true }));
+    report();
+    const onVisible = () => { if (document.visibilityState === 'visible') report(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [isConnected, hostedCall]);
+
   // Apply backstage's chosen initial mic/camera/background state once the
   // room actually connects — setVideoBackground needs the real LiveKit
   // wrapper, which useDailyRoom only creates inside joinRoom() itself, so
