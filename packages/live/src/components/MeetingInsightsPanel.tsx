@@ -7,7 +7,7 @@
  * Used by both MinistryInteractiveMeetings and LiveChannelInteractiveMeetings.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@rekindle/ui/card';
 import { Button } from '@rekindle/ui/button';
 import { Badge } from '@rekindle/ui/badge';
@@ -17,7 +17,7 @@ import {
   Sparkles, FileText, CheckSquare, Lightbulb,
   HelpCircle, BarChart3, Copy, Download, Share2,
   Loader2, Clock, Globe, TrendingUp, Users,
-  ChevronRight, AlertCircle, Languages
+  ChevronRight, AlertCircle, Languages, ClipboardList
 } from 'lucide-react';
 import { toast } from '@rekindle/ui/toast-compat';
 import { canNativeShare } from '@rekindle/features/webShare';
@@ -25,10 +25,13 @@ import {
   MeetingInsights,
   CleanedTranscript,
   generateMeetingInsights,
+  generateMeetingNotes,
+  downloadMeetingNotesAsDoc,
   downloadInsightsAsTxt,
   downloadInsightsAsJson,
   downloadTranscriptAsTxt,
 } from '@rekindle/features/meetingAIEngine';
+import { meetingNotesToHtml, meetingNotesToPlainText } from '@rekindle/features/meetingNotesFormat';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,8 @@ interface MeetingInsightsPanelProps {
   cleaned: CleanedTranscript | null;
   existingInsights?: MeetingInsights | null; // Pre-loaded from DB
   onInsightsGenerated?: (insights: MeetingInsights) => void;
+  /** Shown on the report, e.g. "6 November 2026". Defaults to today. */
+  meetingDate?: string;
 }
 
 // ── Sentiment display ─────────────────────────────────────────────────────
@@ -78,6 +83,7 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
   cleaned,
   existingInsights,
   onInsightsGenerated,
+  meetingDate,
 }) => {
   const [insights, setInsights] = useState<MeetingInsights | null>(existingInsights ?? null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -85,6 +91,41 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
   const [generatingProgress, setGeneratingProgress] = useState(0);
   const [showOriginalLang, setShowOriginalLang] = useState(false);
   const [activeTab, setActiveTab] = useState('summary');
+  const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  const notesHtml = useMemo(
+    () => (insights?.meetingNotes ? meetingNotesToHtml(insights.meetingNotes) : ''),
+    [insights?.meetingNotes],
+  );
+
+  // Insights saved before detailed notes existed have no meetingNotes; this
+  // writes just the notes and keeps the rest of the insights as they are.
+  const handleGenerateNotes = async () => {
+    if (!insights) return;
+    if (!cleaned || cleaned.lines.length === 0) {
+      toast.error('No transcript available for this meeting.');
+      return;
+    }
+    setIsGeneratingNotes(true);
+    try {
+      const notes = await generateMeetingNotes(cleaned, meetingTitle, { meetingDate });
+      if (!notes) throw new Error('empty notes');
+      const next = { ...insights, meetingNotes: notes };
+      setInsights(next);
+      onInsightsGenerated?.(next);
+      toast.success('Meeting notes created');
+    } catch (err) {
+      console.error('Error generating meeting notes:', err);
+      toast.error('Could not create meeting notes. Please try again.');
+    } finally {
+      setIsGeneratingNotes(false);
+    }
+  };
+
+  const handleCopyNotes = () => {
+    if (!insights?.meetingNotes) return;
+    navigator.clipboard.writeText(meetingNotesToPlainText(insights.meetingNotes));
+    toast.success('Meeting notes copied');
+  };
 
   const handleGenerateInsights = async () => {
     if (!cleaned || cleaned.lines.length === 0) {
@@ -103,7 +144,8 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
       setGeneratingProgress(55);
       setGeneratingStep('Generating insights with AI…');
 
-      const result = await generateMeetingInsights(cleaned, meetingTitle);
+      setGeneratingStep('Writing detailed meeting notes and insights…');
+      const result = await generateMeetingInsights(cleaned, meetingTitle, { meetingDate });
 
       setGeneratingProgress(90);
       setGeneratingStep('Finalizing…');
@@ -137,6 +179,7 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
     const lines = [
       `Meeting: ${meetingTitle}`,
       '',
+      ...(insights.meetingNotes ? ['MEETING NOTES', meetingNotesToPlainText(insights.meetingNotes), ''] : []),
       'SUMMARY',
       insights.summaryEnglish,
       '',
@@ -188,7 +231,7 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
               </div>
               <Progress value={generatingProgress} className="h-2" />
               <p className="text-xs text-gray-400">
-                Powered by Claude AI — this may take a moment for longer sessions
+                Writing detailed notes — this can take up to a minute for longer sessions
               </p>
             </div>
           ) : (
@@ -199,7 +242,7 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
               <div>
                 <h3 className="font-semibold text-gray-900 mb-1">AI-Powered Meeting Analysis</h3>
                 <p className="text-sm text-gray-500 max-w-sm mx-auto">
-                  Generate structured insights including summary, action items,
+                  Generate detailed meeting notes plus a summary, action items,
                   decisions, key themes, and speaker breakdown.
                 </p>
               </div>
@@ -377,6 +420,72 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
               Copy summary
             </Button>
 
+            {/* Detailed meeting notes: the full report (overview, topic
+                sections, tables, action items with owners). */}
+            <div className="border-t border-gray-100 pt-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-purple-500" />
+                  Meeting notes
+                </h4>
+                {insights.meetingNotes && (
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={handleCopyNotes} className="text-gray-500 text-xs">
+                      <Copy className="h-3 w-3 mr-1" />
+                      Copy
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => insights.meetingNotes && downloadMeetingNotesAsDoc(insights.meetingNotes, meetingTitle)}
+                      className="text-xs"
+                    >
+                      <Download className="h-3 w-3 mr-1" />
+                      Download report
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {insights.meetingNotes ? (
+                <div
+                  className={[
+                    'rounded-lg border border-gray-200 bg-white p-4 text-sm leading-relaxed text-gray-800',
+                    '[&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-gray-900 [&_h1]:mb-1',
+                    '[&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-purple-800 [&_h2]:mt-5 [&_h2]:mb-1.5',
+                    '[&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1',
+                    '[&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5',
+                    '[&_li]:my-1 [&_li_ul]:list-[circle] [&_strong]:font-semibold [&_hr]:my-3',
+                    '[&_table]:w-full [&_table]:my-2 [&_table]:border-collapse [&_table]:text-xs',
+                    '[&_th]:border [&_th]:border-gray-200 [&_th]:bg-gray-50 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left',
+                    '[&_td]:border [&_td]:border-gray-200 [&_td]:px-2 [&_td]:py-1.5 [&_td]:align-top',
+                    'overflow-x-auto',
+                  ].join(' ')}
+                  // Safe: meetingNotesToHtml escapes all text before adding markup.
+                  dangerouslySetInnerHTML={{ __html: notesHtml }}
+                />
+              ) : (
+                <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center space-y-2">
+                  <p className="text-sm text-gray-600">
+                    Create a detailed report of this meeting: overview, each topic discussed, plans and action items with owners.
+                  </p>
+                  <Button
+                    size="sm"
+                    onClick={handleGenerateNotes}
+                    disabled={isGeneratingNotes || !cleaned || cleaned.lines.length === 0}
+                    className="bg-purple-600 hover:bg-purple-700"
+                  >
+                    {isGeneratingNotes ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ClipboardList className="h-4 w-4 mr-2" />
+                    )}
+                    {isGeneratingNotes ? 'Writing notes…' : 'Create meeting notes'}
+                  </Button>
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center gap-4 text-xs text-gray-500 pt-1 border-t border-gray-100">
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
@@ -510,7 +619,18 @@ const MeetingInsightsPanel: React.FC<MeetingInsightsPanelProps> = ({
         </Tabs>
 
         {/* Download buttons */}
-        <div className="flex items-center gap-2 pt-3 border-t border-gray-100 mt-4">
+        <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-gray-100 mt-4">
+          {insights.meetingNotes && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => insights.meetingNotes && downloadMeetingNotesAsDoc(insights.meetingNotes, meetingTitle)}
+              className="text-xs"
+            >
+              <Download className="h-3 w-3 mr-1" />
+              Report
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

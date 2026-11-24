@@ -26,6 +26,8 @@ export default function SavedMeetingInsights({ meetingId, meetingTitle }: SavedM
   const [cleaned, setCleaned] = useState<CleanedTranscript | null>(null);
   const [insights, setInsights] = useState<MeetingInsights | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noteId, setNoteId] = useState<string | null>(null);
+  const [meetingDate, setMeetingDate] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +41,7 @@ export default function SavedMeetingInsights({ meetingId, meetingTitle }: SavedM
       // because Option A distributed transcription merges every speaker's lines.
       const { data, error: err } = await supabase
         .from('meeting_ai_notes')
-        .select('transcript, insights')
+        .select('id, created_at, transcript, insights')
         .eq('meeting_id', meetingId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -52,6 +54,10 @@ export default function SavedMeetingInsights({ meetingId, meetingTitle }: SavedM
       } else if (data) {
         setCleaned((data.transcript as CleanedTranscript) ?? null);
         setInsights((data.insights as MeetingInsights) ?? null);
+        setNoteId(data.id as string);
+        if (data.created_at) {
+          setMeetingDate(new Date(data.created_at as string).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }));
+        }
       }
       setLoading(false);
     })();
@@ -87,7 +93,18 @@ export default function SavedMeetingInsights({ meetingId, meetingTitle }: SavedM
       meetingId={meetingId}
       cleaned={cleaned}
       existingInsights={insights}
-      onInsightsGenerated={() => {}}
+      meetingDate={meetingDate}
+      onInsightsGenerated={async (next) => {
+        // Keep regenerated insights / newly created meeting notes, so they are
+        // there next time instead of being lost when the dialog closes.
+        setInsights(next);
+        if (!noteId) return;
+        const { error: saveErr } = await supabase
+          .from('meeting_ai_notes')
+          .update({ insights: next, dominant_language: next.dominantLanguage })
+          .eq('id', noteId);
+        if (saveErr) console.error('Saving meeting insights failed:', saveErr);
+      }}
     />
   );
 }

@@ -18,4 +18,7 @@
 2026-11-21 co-hosts who aren't ministry admins send Live Scripture requests to the host to approve (packages/live)
 2026-11-21 meeting join page: 'Didn't open?' download link matches the device (packages/live)
 2026-11-24 Live tile: Meetings in Live group
+2026-11-22 keep Android meeting service running after mic grant
+2026-11-06 detailed AI meeting notes + Meeting default
+2026-11-05 remove unused restream defaults card, broadcast history (packages/ministry, #138)
 2026-11-04 Invite Member sends real invite emails
