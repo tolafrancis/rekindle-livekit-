@@ -406,7 +406,7 @@ export const MINISTRY_TUTORIALS: TutorialDefinition[] = [
         title: 'Meetings',
         body: 'Video meetings your ministry has scheduled. Join from here when one starts.',
         target: 'ministry-page',
-        go: go('admin', 'meetings'),
+        go: go('live', 'meetings'),
         page: 'meetings',
         placement: 'dock',
       },
