@@ -118,6 +118,96 @@ interface TopActiveMember extends Member {
   totalEngagement: number;
 }
 
+// Splits CSV text into rows of cells. Handles quoted cells ("Doe, John", embedded quotes and
+// line breaks), Windows/Mac line endings, and the semicolon or tab separators that Excel uses
+// in many locales.
+function parseCSVText(text: string): string[][] {
+  const firstLine = text.split(/\r\n|\n|\r/, 1)[0] || '';
+  const count = (ch: string) => firstLine.split(ch).length - 1;
+  const delimiter = [',', ';', '\t'].reduce((best, ch) => (count(ch) > count(best) ? ch : best), ',');
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delimiter) {
+      row.push(cell); cell = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+const CSV_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+// Turns the date formats people type in spreadsheets into YYYY-MM-DD, or '' if unreadable.
+// Slash/dot dates are read day first (12/05/1990 = 12 May) unless that can't be right.
+function normalizeCSVDate(raw: string): string {
+  const v = raw.trim();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const build = (y: number, m: number, d: number) => {
+    if (y < 100) y += y > (new Date().getFullYear() % 100) ? 1900 : 2000;
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return '';
+    return `${y}-${pad(m)}-${pad(d)}`;
+  };
+  let m = v.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return build(+m[1], +m[2], +m[3]);
+  m = v.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
+  if (m) {
+    const a = +m[1], b = +m[2], y = +m[3];
+    if (a > 12) return build(y, b, a);
+    if (b > 12) return build(y, a, b);
+    return build(y, b, a);
+  }
+  m = v.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\-]+([a-z]+)\.?,?[\s\-]+(\d{2,4})$/i);
+  if (m) {
+    const mi = CSV_MONTHS.indexOf(m[2].slice(0, 3).toLowerCase());
+    return mi === -1 ? '' : build(+m[3], mi + 1, +m[1]);
+  }
+  m = v.match(/^([a-z]+)\.?[\s\-]+(\d{1,2})(?:st|nd|rd|th)?,?[\s\-]+(\d{2,4})$/i);
+  if (m) {
+    const mi = CSV_MONTHS.indexOf(m[1].slice(0, 3).toLowerCase());
+    return mi === -1 ? '' : build(+m[3], mi + 1, +m[2]);
+  }
+  return '';
+}
+
+// membership_status is a database enum, so any other word fails the insert. Map common
+// spreadsheet wording onto it; anything else falls back to "member".
+const CSV_MEMBERSHIP_STATUSES = ['visitor', 'new_convert', 'regular_attendee', 'member', 'worker', 'minister', 'pastor'];
+const CSV_MEMBERSHIP_SYNONYMS: Record<string, string> = {
+  guest: 'visitor', first_timer: 'visitor', first_time: 'visitor', newcomer: 'visitor', new: 'visitor',
+  convert: 'new_convert', new_believer: 'new_convert',
+  regular: 'regular_attendee', attendee: 'regular_attendee',
+  active: 'member', members: 'member', church_member: 'member',
+  volunteer: 'worker', leader: 'worker', usher: 'worker', deacon: 'worker', deaconess: 'worker',
+  elder: 'minister', reverend: 'minister', rev: 'minister', evangelist: 'minister',
+  pastors: 'pastor', senior_pastor: 'pastor', assistant_pastor: 'pastor',
+};
+function normalizeCSVMembership(raw: string): string | null {
+  const key = raw.trim().toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
+  if (!key) return '';
+  if (CSV_MEMBERSHIP_STATUSES.includes(key)) return key;
+  return CSV_MEMBERSHIP_SYNONYMS[key] || null;
+}
+
 interface CSVImportRow {
   name: string;
   email: string;
@@ -459,14 +549,24 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
 
   // CSV Import Functions
   const handleCSVFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && file.type === 'text/csv') {
+    const input = event.target;
+    const file = input.files?.[0];
+    // Let the same file be picked again after fixing it.
+    input.value = '';
+    if (!file) return;
+    // Browsers report CSVs under many types (Windows/Excel says application/vnd.ms-excel,
+    // some Android pickers say text/comma-separated-values or nothing), so trust the extension.
+    const name = file.name.toLowerCase();
+    const looksLikeCsv = name.endsWith('.csv') || name.endsWith('.txt')
+      || /csv|comma-separated|ms-excel|text\/plain/.test(file.type);
+    if (looksLikeCsv) {
       setCSVFile(file);
+      setCSVImportResults({ successful: 0, updated: 0, failed: 0, duplicates: 0 });
       parseCSVFile(file);
     } else {
       toast({
         title: t('ministryMembersManager', 'invalidFile', 'Invalid file'),
-        description: t('ministryMembersManager', 'selectValidCsvFile', 'Please select a valid CSV file'),
+        description: t('ministryMembersManager', 'selectValidCsvFile', 'Please select a valid CSV file (in Excel or Google Sheets use File > Save as / Download > CSV)'),
         variant: 'destructive'
       });
     }
@@ -475,40 +575,54 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
   const parseCSVFile = async (file: File) => {
     setCSVValidating(true);
     try {
-      const text = await file.text();
-      const lines = text.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
+      const text = (await file.text()).replace(/^\uFEFF/, '');
+      const rows = parseCSVText(text).filter(r => r.some(c => c.trim()));
+
+      if (rows.length < 2) {
         throw new Error('CSV file must contain at least a header row and one data row');
       }
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const nameIndex = headers.findIndex(h => h.includes('name'));
-      const emailIndex = headers.findIndex(h => h.includes('email'));
-      const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('mobile'));
-      const cityIndex = headers.findIndex(h => h.includes('city'));
-      const countryIndex = headers.findIndex(h => h.includes('country'));
-      const genderIndex = headers.findIndex(h => h.includes('gender'));
-      const dobIndex = headers.findIndex(h => h.includes('birth') || h === 'dob');
-      const statusIndex = headers.findIndex(h => h.includes('membership') || h.includes('status'));
+      const headers = rows[0].map(h => h.trim().toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' '));
+      const find = (test: (h: string) => boolean) => headers.findIndex(test);
+      const firstNameIndex = find(h => /^(first|given|fore) ?name$|^first$|^forename$/.test(h));
+      const lastNameIndex = find(h => /^(last|family|sur) ?name$|^surname$|^last$/.test(h));
+      const nameIndex = find(h => /^(full ?name|name|member name|member)$/.test(h)) !== -1
+        ? find(h => /^(full ?name|name|member name|member)$/.test(h))
+        : find(h => h.includes('name') && !/first|given|fore|last|family|sur|middle|user/.test(h));
+      const emailIndex = find(h => h.includes('email') || h.includes('e mail'));
+      const phoneIndex = find(h => h.includes('phone') || h.includes('mobile') || h.includes('whatsapp') || h === 'tel' || h.includes('telephone'));
+      const cityIndex = find(h => h.includes('city') || h.includes('town'));
+      const countryIndex = find(h => h.includes('country'));
+      const genderIndex = find(h => h.includes('gender') || h === 'sex');
+      const dobIndex = find(h => h.includes('birth') || h === 'dob' || h === 'birthday');
+      const statusIndex = find(h => h.includes('membership') || h === 'status' || h === 'member status');
 
-      if (nameIndex === -1 || emailIndex === -1) {
-        throw new Error('CSV must contain "name" and "email" columns');
+      if (nameIndex === -1 && firstNameIndex === -1) {
+        throw new Error('CSV must contain a "name" column (or "first name" and "last name" columns)');
+      }
+      if (emailIndex === -1 && phoneIndex === -1) {
+        throw new Error('CSV must contain an "email" or "phone" column');
       }
 
+      const cell = (values: string[], idx: number) => (idx !== -1 ? (values[idx] || '').trim() : '');
       const parsedData: CSVImportRow[] = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
+
+      for (let i = 1; i < rows.length; i++) {
+        const values = rows[i];
+        const fullName = nameIndex !== -1
+          ? cell(values, nameIndex)
+          : '';
+        const name = fullName
+          || [cell(values, firstNameIndex), cell(values, lastNameIndex)].filter(Boolean).join(' ');
         const row: CSVImportRow = {
-          name: values[nameIndex] || '',
-          email: values[emailIndex] || '',
-          phone: phoneIndex !== -1 ? values[phoneIndex] || '' : '',
-          city: cityIndex !== -1 ? values[cityIndex] || '' : '',
-          country: countryIndex !== -1 ? values[countryIndex] || '' : '',
-          gender: genderIndex !== -1 ? values[genderIndex] || '' : '',
-          date_of_birth: dobIndex !== -1 ? values[dobIndex] || '' : '',
-          membership_status: statusIndex !== -1 ? values[statusIndex] || '' : '',
+          name: name.replace(/\s+/g, ' ').trim(),
+          email: cell(values, emailIndex).toLowerCase(),
+          phone: cell(values, phoneIndex),
+          city: cell(values, cityIndex),
+          country: cell(values, countryIndex),
+          gender: cell(values, genderIndex),
+          date_of_birth: cell(values, dobIndex),
+          membership_status: cell(values, statusIndex).toLowerCase(),
           rowNumber: i + 1,
           status: 'pending',
           errors: []
@@ -518,7 +632,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
       }
 
       setCSVData(parsedData);
-      validateCSVData(parsedData);
+      await validateCSVData(parsedData);
     } catch (error: any) {
       toast({
         title: t('ministryMembersManager', 'errorParsingCsv', 'Error parsing CSV'),
@@ -526,6 +640,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         variant: 'destructive'
       });
       setCSVFile(null);
+      setCSVData([]);
     } finally {
       setCSVValidating(false);
     }
@@ -533,7 +648,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
 
   const validateCSVData = async (data: CSVImportRow[]) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const phoneRegex = /^[\d\s\-\+\(\)]+$/;
+    const phoneRegex = /^[\d\s\-\+\(\)\.\/]+$/;
 
     // Existing emails across BOTH stores: auth members (view) and member profiles
     const { data: existingView } = await supabase
@@ -568,8 +683,11 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
 
     const firstRowByEmail = new Map<string, number>();
 
-    const updatedData = data.map(row => {
+    const updatedData = data.map(original => {
+      let row = original;
       const errors: string[] = [];
+      // Notes shown next to the row that don't stop it importing.
+      const notes: string[] = [];
       let status: CSVImportRow['status'] = 'valid';
 
       // Validate name
@@ -578,10 +696,12 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         status = 'invalid';
       }
 
-      // Validate email
-      if (!row.email) {
-        errors.push('Email is required');
+      // Validate email (optional when a phone number is given)
+      if (!row.email && !row.phone) {
+        errors.push('Email or phone is required');
         status = 'invalid';
+      } else if (!row.email) {
+        // phone-only contact, nothing more to check here
       } else if (!emailRegex.test(row.email)) {
         errors.push('Invalid email format');
         status = 'invalid';
@@ -608,7 +728,29 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
         errors.push('Already in ministry (app account with no member profile to update)');
       }
 
-      return { ...row, status, errors, existingProfileId };
+      // Dates: accept 1990-05-12, 12/05/1990 (day first), 12 May 1990… A date we can't read
+      // is dropped with a note instead of failing the whole row in the database.
+      if (row.date_of_birth) {
+        const iso = normalizeCSVDate(row.date_of_birth);
+        if (iso) {
+          row = { ...row, date_of_birth: iso };
+        } else {
+          notes.push(`Date of birth "${row.date_of_birth}" not recognised (left blank)`);
+          row = { ...row, date_of_birth: '' };
+        }
+      }
+
+      if (row.membership_status) {
+        const mapped = normalizeCSVMembership(row.membership_status);
+        if (mapped === null) {
+          notes.push(`Membership status "${row.membership_status}" not recognised (saved as member)`);
+          row = { ...row, membership_status: 'member' };
+        } else {
+          row = { ...row, membership_status: mapped };
+        }
+      }
+
+      return { ...row, status, errors: [...errors, ...notes], existingProfileId };
     });
 
     setCSVData(updatedData);
@@ -692,7 +834,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
             ministry_id: ministryId,
             first_name: firstName,
             last_name: lastName,
-            email: row.email.trim(),
+            email: row.email.trim() || null,
             mobile_number: row.phone || '',
             city: row.city || '',
             country: row.country || '',
@@ -1446,7 +1588,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
               <AlertDescription>
                 <p className="font-semibold mb-2">{t('ministryMembersManager', 'csvFormatRequirements', 'CSV Format Requirements:')}</p>
                 <ul className="list-disc list-inside space-y-1 text-sm">
-                  <li>{t('ministryMembersManager', 'requiredColumns', 'Required columns: name, email')}</li>
+                  <li>{t('ministryMembersManager', 'requiredColumns', 'Required columns: name (or first name + last name), and email or phone')}</li>
                   <li>{t('ministryMembersManager', 'optionalColumn', 'Optional column: phone')}</li>
                   <li>{t('ministryMembersManager', 'firstRowHeaders', 'First row must contain column headers')}</li>
                   <li>{t('ministryMembersManager', 'fileMustBeCsv', 'File must be in CSV format')}</li>
@@ -1472,7 +1614,7 @@ export const MinistryMembersManager: React.FC<MinistryMembersManagerProps> = ({
               <div className="flex items-center gap-4">
                 <Input
                   type="file"
-                  accept=".csv"
+                  accept=".csv,text/csv,application/vnd.ms-excel,text/plain"
                   onChange={handleCSVFileSelect}
                   className="flex-1"
                 />

@@ -3,6 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import { promises as fsp } from 'fs';
+import { fileURLToPath } from 'url';
+
+// package.json is "type": "module", so this bundles to ESM where the CJS
+// __dirname global doesn't exist — without this the window never opens.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Fixed port for ReKindle's local renderer server (Ministry uses 5181 —
 // see apps/ministry/electron/main.ts — kept distinct so both apps can run
@@ -211,9 +216,9 @@ function startStaticServer(rootDir: string, port: number): Promise<void> {
 
 // ── Window ───────────────────────────────────────────────────────────────
 async function createWindow() {
-  const preloadPath = fs.existsSync(path.join(__dirname, 'preload.mjs'))
-    ? path.join(__dirname, 'preload.mjs')
-    : path.join(__dirname, 'preload.js');
+  // Built as CommonJS (see vite.config.ts): a non-sandboxed preload is
+  // loaded via require(), so an ESM preload.js would fail to load.
+  const preloadPath = path.join(__dirname, 'preload.cjs');
 
   const iconPath = path.join(__dirname, '../dist/icon-square.png');
 

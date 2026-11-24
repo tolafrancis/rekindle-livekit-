@@ -45,8 +45,9 @@ export const MEMBER_MENU: MemberMenuGroup[] = [
     { key: 'community.challenges', label: 'Challenges' },
   ] },
   { id: 'groups', label: 'Small Groups', description: 'Group chats and joining groups', items: [] },
-  { id: 'live', label: 'Live', description: 'Live services and webinars (when your plan includes them)', items: [
+  { id: 'live', label: 'Live', description: 'Meetings, plus live services and webinars when your plan includes them', items: [
     { key: 'live.live', label: 'Live Channel' },
+    { key: 'live.meetings', label: 'Meetings' },
     { key: 'live.webinars', label: 'Webinars' },
   ] },
   { id: 'admin', label: 'Ministry', description: 'News, care and giving', items: [
@@ -56,7 +57,6 @@ export const MEMBER_MENU: MemberMenuGroup[] = [
     { key: 'admin.requests', label: 'Prayer Requests' },
     { key: 'admin.testimonies', label: 'Testimonies' },
     { key: 'admin.donations', label: 'Donations' },
-    { key: 'admin.meetings', label: 'Meetings' },
   ] },
 ];
 
@@ -100,7 +100,10 @@ export const MEMBER_MENU_PRESETS: MemberMenuPreset[] = [
 /** Hidden keys stored for a ministry. Unknown or malformed values hide nothing. */
 export function hiddenMemberMenu(settings: unknown): Set<string> {
   const hidden = (settings as any)?.member_menu?.hidden;
-  return new Set(Array.isArray(hidden) ? hidden.filter((k): k is string => typeof k === 'string') : []);
+  const keys = Array.isArray(hidden) ? hidden.filter((k): k is string => typeof k === 'string') : [];
+  // Meetings moved from the Ministry group to Live (2026-11-24): a menu saved
+  // before then hid it as 'admin.meetings'.
+  return new Set(keys.map((k) => (k === 'admin.meetings' ? 'live.meetings' : k)));
 }
 
 /** Leader: save which items are hidden. Merges into the latest stored

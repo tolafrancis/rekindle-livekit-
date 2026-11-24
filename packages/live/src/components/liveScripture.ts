@@ -111,6 +111,48 @@ export async function showScriptureVerse(
   }
 }
 
+/** Puts an edited copy of the verse that's on screen back up (2026-11-21):
+ *  the host changed its wording. Same insert as showScriptureVerse, with the
+ *  reference/version/attribution and listener translation copied from the
+ *  verse being edited, so every screen swaps to the new text. Returns an
+ *  error message on failure, or null on success. */
+export async function editScriptureVerse(
+  sessionId: string,
+  ministryId: string,
+  verse: {
+    reference: string | null;
+    version: string | null;
+    attribution: string | null;
+    listener_text?: string | null;
+    listener_version?: string | null;
+    display_seconds: number;
+  },
+  text: string,
+): Promise<string | null> {
+  const trimmed = text.trim();
+  if (!trimmed) return 'The verse text can\'t be empty.';
+  try {
+    const { error } = await supabase.from('translation_scripture_events').insert({
+      session_id: sessionId,
+      ministry_id: ministryId, // overwritten from the session by the DB trigger
+      status: 'shown',
+      reference: verse.reference,
+      version: verse.version,
+      text: trimmed,
+      attribution: verse.attribution ?? null,
+      is_licensed: !!verse.version && verse.version !== 'KJV',
+      display_seconds: verse.display_seconds,
+      listener_text: verse.listener_text ?? null,
+      listener_version: verse.listener_version ?? null,
+    });
+    if (error) throw error;
+    return null;
+  } catch (err) {
+    console.warn('[liveScripture] editScriptureVerse failed:', err);
+    return 'Could not update the verse. Please try again.';
+  }
+}
+
 /** Clears whatever verse is currently on screen for a session. */
 export async function hideScriptureVerse(sessionId: string, ministryId: string): Promise<void> {
   try {

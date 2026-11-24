@@ -1,0 +1,3 @@
+/* First-paint background for the landing page (class set by boot.js). A static
+   file, not an inline <style>: inline CSS breaks the electron-mode build. */
+html.rk-dark-boot, html.rk-dark-boot body { background: #fbf8f3; }
