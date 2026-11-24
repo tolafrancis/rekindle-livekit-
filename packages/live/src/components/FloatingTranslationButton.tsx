@@ -7,13 +7,15 @@ import { Button } from '@rekindle/ui/button';
 import { Languages, Check, Volume2, Copy, Square, Plus, Loader2, Captions, X } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 import { toast } from '@rekindle/ui/use-toast';
+import { ToastAction } from '@rekindle/ui/toast';
 import { notify } from '@rekindle/features/notify';
 import { useAuth } from '@rekindle/features/AuthContext';
 import { useDraggableOverlay } from '../useDraggableOverlay';
+import { useStackAbove } from '../useStackAbove';
 import { updateCaptionPrefs, useCaptionPrefs } from '../captionPrefs';
 import { ScripturePanel, useCurrentScripture, type ScriptureEvent } from './ScripturePanel';
-import { useScriptureSettings, showScriptureVerse, hideScriptureVerse } from './liveScripture';
-import { ScriptureDetector, formatReference } from '@rekindle/features/scripture/parser';
+import { useScriptureSettings, showScriptureVerse, hideScriptureVerse, editScriptureVerse } from './liveScripture';
+import { ScriptureDetector, formatReference, parseReference } from '@rekindle/features/scripture/parser';
 import type { LiveCaptionsBridge } from '../useLiveCaptions';
 import { publicWebOrigin } from '@rekindle/features/platform';
 
@@ -107,6 +109,13 @@ export interface ScriptureControlState {
   onScreenVerse: ScriptureEvent | null;
   hiding: boolean;
   onHide: () => void;
+  /** Host only: puts new wording for the on-screen verse up for everyone.
+   *  Returns an error message, or null on success. */
+  onEdit: (text: string) => Promise<string | null>;
+  /** A meeting co-host who isn't a ministry admin: the database won't take
+   *  their verses, so Show / Edit / Hide / turning it on send a request to
+   *  the host and ministry admins in the meeting instead (2026-11-21). */
+  needsApproval?: boolean;
   /** Only the host sees the manual-entry/hide controls (matches the old
    *  popover's `scriptureOn && isHost && scriptureSessionId` gate). */
   canControl: boolean;
@@ -380,6 +389,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const [scriptureHiding, setScriptureHiding] = useState(false);
   const scriptureSettings = useScriptureSettings(ministryId);
   const activeCall = useActiveCallOptional();
+  const overlaysHidden = !!activeCall?.minimized && !activeCall?.isSystemPiP;
   // Watching without the switch on: whoever hasn't turned Live Scripture on
   // themselves (every participant, usually) still sees the verse the host
   // puts up. Their switch is per device and off by default, and the overlay
@@ -412,12 +422,148 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       document.removeEventListener('webkitfullscreenchange', update);
     };
   }, []);
+  // Default spot (2026-11-21): bottom-center of the meeting, just above the
+  // captions. With captions on, the card sits 8px above the captions box
+  // (measured, since the box grows and shrinks with the lines in it); with
+  // captions off it takes the captions' own spot, bottom-40 / sm:bottom-44.
+  const scriptureBottom = useStackAbove(captionOverlay.ref, captionMode !== 'off', `${String(overlayRoot?.nodeName)}-${overlaysHidden}`);
+
+  // Co-host approval flow (2026-11-21). A meeting co-host gets the Live
+  // Scripture controls, but translation_scripture_events only accepts
+  // inserts from ministry admins (RLS, migration 0373). So when a co-host
+  // isn't one, their Show / Edit / Hide / turn-on goes to the host and
+  // ministry admins in the meeting as a request (a Supabase broadcast on a
+  // per-room channel, nothing stored), and any of them can approve it from
+  // a toast. canShowVerses: null while checking, then whether this user is
+  // a ministry admin.
+  const [canShowVerses, setCanShowVerses] = useState<boolean | null>(null);
+  const canShowVersesRef = useRef<boolean | null>(null);
+  canShowVersesRef.current = canShowVerses;
+  const [scriptureRetry, setScriptureRetry] = useState(0);
+  useEffect(() => {
+    if (!isHost || !user?.id || !ministryId) { setCanShowVerses(null); return; }
+    let cancelled = false;
+    supabase.rpc('is_group_admin', { p_ministry_id: ministryId, p_user_id: user.id })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        // On an error, assume admin: the insert itself is still RLS-checked.
+        setCanShowVerses(error ? true : !!data);
+      });
+    return () => { cancelled = true; };
+  }, [isHost, user?.id, ministryId]);
+
+  type ScriptureRequest =
+    | { kind: 'turn_on' }
+    | { kind: 'turned_on' }
+    | { kind: 'show'; reference: string }
+    | { kind: 'hide' }
+    | { kind: 'edit'; text: string; reference?: string };
+  const requestChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const requesterName = (user?.user_metadata?.full_name as string | undefined)
+    || user?.email?.split('@')[0] || 'A co-host';
+  const sendScriptureRequest = (req: ScriptureRequest) => {
+    requestChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'scripture-request',
+      payload: { ...req, from: requesterName, fromId: user?.id ?? null },
+    });
+  };
+  // Latest values for the broadcast handler, so the channel below joins once
+  // per room instead of on every render (see the 2026-11-11 join-flood note
+  // in ScripturePanel.tsx).
+  const approvalLive = useRef({
+    scriptureOn: false, sessionId: null as string | null, settings: scriptureSettings,
+    verse: null as ScriptureEvent | null, canShow: null as boolean | null,
+  });
+  approvalLive.current = {
+    scriptureOn, sessionId: scriptureSessionId, settings: scriptureSettings,
+    verse: onScreenVerse, canShow: canShowVerses,
+  };
+  const pendingShowRef = useRef<string | null>(null);
+  // An admin's session is ready: show a verse approved while it was off, and
+  // tell any co-host waiting on "turn on" to pick the session up.
+  useEffect(() => {
+    if (!scriptureSessionId || canShowVerses !== true) return;
+    requestChannelRef.current?.send({ type: 'broadcast', event: 'scripture-request', payload: { kind: 'turned_on' } });
+    const pending = pendingShowRef.current;
+    pendingShowRef.current = null;
+    if (pending) void showScriptureVerse(scriptureSessionId, ministryId, pending, scriptureSettings, sourceLanguage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptureSessionId, canShowVerses]);
+
+  useEffect(() => {
+    if (!isHost || !roomName) return;
+    const channel = supabase
+      .channel(`scripture-requests-${roomName}`, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'scripture-request' }, ({ payload }) => {
+        const req = payload as ScriptureRequest & { from?: string; fromId?: string | null };
+        const live = approvalLive.current;
+        if (req.kind === 'turned_on') {
+          // A requester waiting on the host: try again now.
+          if (live.canShow === false && live.scriptureOn && !live.sessionId) setScriptureRetry((n) => n + 1);
+          return;
+        }
+        if (live.canShow !== true) return; // only ministry admins approve
+        const who = req.from || 'A co-host';
+        const approve = async () => {
+          const cur = approvalLive.current;
+          if (req.kind === 'turn_on') {
+            if (!cur.scriptureOn) setScriptureOn(true);
+            else channel.send({ type: 'broadcast', event: 'scripture-request', payload: { kind: 'turned_on' } });
+            return;
+          }
+          if (!cur.sessionId) {
+            // Not on here yet: turn it on, then show once the session is ready.
+            if (req.kind === 'show') pendingShowRef.current = req.reference;
+            setScriptureOn(true);
+            return;
+          }
+          if (req.kind === 'show') {
+            const err = await showScriptureVerse(cur.sessionId, ministryId, req.reference, cur.settings, sourceLanguage);
+            if (err) toast({ title: 'Could not show the verse', description: err, variant: 'destructive' });
+          } else if (req.kind === 'hide') {
+            await hideScriptureVerse(cur.sessionId, ministryId);
+          } else if (req.kind === 'edit' && cur.verse) {
+            const err = await editScriptureVerse(cur.sessionId, ministryId, cur.verse, req.text);
+            if (err) toast({ title: 'Could not update the verse', description: err, variant: 'destructive' });
+          }
+        };
+        const title = req.kind === 'turn_on' ? `${who} wants to turn on Live Scripture`
+          : req.kind === 'show' ? `${who} wants to show ${req.reference}`
+          : req.kind === 'hide' ? `${who} wants to hide the verse`
+          : `${who} edited the verse text`;
+        const description = req.kind === 'edit'
+          ? (req.text.length > 140 ? `${req.text.slice(0, 140)}…` : req.text)
+          : 'Only ministry admins can put verses on screen.';
+        const label = req.kind === 'turn_on' ? 'Turn on' : req.kind === 'hide' ? 'Hide' : req.kind === 'edit' ? 'Use edit' : 'Show';
+        toast({
+          title,
+          description,
+          duration: 30_000,
+          action: <ToastAction altText={label} onClick={() => { void approve(); }}>{label}</ToastAction>,
+        });
+      })
+      .subscribe();
+    requestChannelRef.current = channel;
+    return () => {
+      requestChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, roomName, ministryId]);
 
   useEffect(() => {
     if (!scriptureOn) { setScriptureSessionId(null); return; }
     let cancelled = false;
     (async () => {
       setScriptureStarting(true);
+      // Non-admin co-host (2026-11-21): start_bot_session would be refused,
+      // so ask the host/admins to turn it on. Their "turned on" reply bumps
+      // scriptureRetry and this runs again, now finding their session.
+      const askToTurnOn = () => {
+        sendScriptureRequest({ kind: 'turn_on' });
+        toast({ title: 'Asked the host to turn on Live Scripture', description: "You'll get the controls as soon as they do." });
+      };
       try {
         // Any already-running session for this room (real translation or
         // captions, any target language) is already a perfectly good
@@ -447,6 +593,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           tipIfNoCaptions(existing.session_kind !== 'scripture_only');
           return;
         }
+        if (canShowVersesRef.current === false) { askToTurnOn(); return; }
 
         const { data, error } = await supabase.rpc('start_bot_session', {
           p_ministry_id: ministryId,
@@ -462,15 +609,19 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         tipIfNoCaptions(false);
       } catch (err: any) {
         console.error('[FloatingTranslationButton] could not start Live Scripture:', err);
-        toast({ title: 'Could not turn on Live Scripture', description: err.message, variant: 'destructive' });
-        setScriptureOn(false);
+        if (canShowVersesRef.current === false) {
+          askToTurnOn();
+        } else {
+          toast({ title: 'Could not turn on Live Scripture', description: err.message, variant: 'destructive' });
+          setScriptureOn(false);
+        }
       } finally {
         if (!cancelled) setScriptureStarting(false);
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId]);
+  }, [scriptureOn, roomName, ministryId, sourceLanguage, isHost, userId, scriptureRetry]);
 
   // Find the room's Live Scripture session without starting one: the latest
   // live session for this room now, then any session a verse is shown on
@@ -523,7 +674,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
   const scriptureLive = useRef({ settings: scriptureSettings, onScreenRef: onScreenVerse?.reference ?? null });
   scriptureLive.current = { settings: scriptureSettings, onScreenRef: onScreenVerse?.reference ?? null };
   useEffect(() => {
-    if (!scriptureSessionId || !scriptureSettings.auto_detect) return;
+    if (!scriptureSessionId || !scriptureSettings.auto_detect || canShowVerses === false) return;
     const detector = new ScriptureDetector();
     const channel = supabase
       .channel(`scripture-detect-${scriptureSessionId}`)
@@ -546,14 +697,14 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [scriptureSessionId, scriptureSettings.auto_detect, ministryId, sourceLanguage]);
+  }, [scriptureSessionId, scriptureSettings.auto_detect, ministryId, sourceLanguage, canShowVerses]);
 
   // Same auto-detect, fed by on-demand captions (CC) instead of
   // translation_logs. Only final lines are scanned, once each. The agent
   // runs while anyone in the room has CC on, and its transcription events
   // reach everyone, so this works even if this user's own CC is off.
   useEffect(() => {
-    if (!scriptureSessionId || !scriptureSettings.auto_detect || !captionsBridge) return;
+    if (!scriptureSessionId || !scriptureSettings.auto_detect || !captionsBridge || canShowVerses === false) return;
     const detector = new ScriptureDetector();
     const scanned = new Set<string>();
     return captionsBridge.subscribe((segments) => {
@@ -575,11 +726,19 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
         }
       }
     });
-  }, [scriptureSessionId, scriptureSettings.auto_detect, captionsBridge, ministryId, sourceLanguage]);
+  }, [scriptureSessionId, scriptureSettings.auto_detect, captionsBridge, ministryId, sourceLanguage, canShowVerses]);
 
   const showManualVerse = async () => {
     if (!scriptureSessionId || !scriptureManual.trim()) return;
     setScriptureManualError(null);
+    if (canShowVerses === false) {
+      const ref = parseReference(scriptureManual.trim());
+      if (!ref) { setScriptureManualError('Not a passage I recognise. Try "John 3:16".'); return; }
+      sendScriptureRequest({ kind: 'show', reference: formatReference(ref) });
+      toast({ title: 'Sent to the host', description: `${formatReference(ref)} will show once the host or a ministry admin approves it.` });
+      setScriptureManual('');
+      return;
+    }
     const err = await showScriptureVerse(scriptureSessionId, ministryId, scriptureManual.trim(), scriptureSettings, sourceLanguage);
     if (err) setScriptureManualError(err);
     else setScriptureManual('');
@@ -610,12 +769,29 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
 
   const hideVerse = async () => {
     if (!scriptureSessionId) return;
+    if (canShowVerses === false) {
+      sendScriptureRequest({ kind: 'hide' });
+      toast({ title: 'Asked the host to hide the verse' });
+      return;
+    }
     setScriptureHiding(true);
     try {
       await hideScriptureVerse(scriptureSessionId, ministryId);
     } finally {
       setScriptureHiding(false);
     }
+  };
+
+  const canControlScripture = !!(scriptureOn && isHost && scriptureSessionId);
+  const editVerse = async (text: string): Promise<string | null> => {
+    if (!scriptureSessionId || !onScreenVerse) return 'Nothing on screen to edit.';
+    if (canShowVerses === false) {
+      if (!text.trim()) return "The verse text can't be empty.";
+      sendScriptureRequest({ kind: 'edit', text: text.trim(), reference: onScreenVerse.reference ?? undefined });
+      toast({ title: 'Sent to the host', description: 'Your edit will show once the host or a ministry admin approves it.' });
+      return null;
+    }
+    return editScriptureVerse(scriptureSessionId, ministryId, onScreenVerse, text);
   };
 
   useEffect(() => {
@@ -630,13 +806,15 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
       onScreenVerse,
       hiding: scriptureHiding,
       onHide: hideVerse,
-      canControl: !!(scriptureOn && isHost && scriptureSessionId),
+      onEdit: editVerse,
+      needsApproval: canShowVerses === false,
+      canControl: canControlScripture,
       isHost,
       autoOff: !(scriptureSettings.auto_detect && scriptureSettings.auto_show),
       onOpenSettings: openScriptureSettings,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId, scriptureSettings.auto_detect, scriptureSettings.auto_show]);
+  }, [scriptureOn, scriptureStarting, scriptureManual, scriptureManualError, onScreenVerse, scriptureHiding, isHost, scriptureSessionId, scriptureSettings.auto_detect, scriptureSettings.auto_show, canShowVerses]);
 
   // Used to be loaded lazily (host-only, only once "+ Add language" was
   // opened). Now fetched eagerly for everyone on mount — "Ask a question"
@@ -899,13 +1077,20 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           is why participants missed verses, most visibly while someone
           was screen sharing. The portal target follows fullscreen so the
           verse still shows when the meeting is fullscreened. */}
-      {overlayRoot && createPortal(
+      {/* z-[75] (2026-11-06): the meeting itself is a fixed z-[70] layer
+          (ActiveCallHost.tsx), and once these overlays were portalled to the
+          body their old z-50 put them BEHIND it, so nobody saw the verse on
+          screen even though the Live Scripture tab showed it. 75 sits above
+          the meeting and below Radix dialogs/popovers (z-80/90). Hidden while
+          the meeting is shrunk to the mini-player so they don't float over
+          the rest of the app. */}
+      {overlayRoot && !overlaysHidden && createPortal(
         <>
           {displaySessionId && (
             <div
               ref={scriptureOverlay.ref}
-              className="fixed bottom-60 sm:bottom-64 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
-              style={scriptureOverlay.style}
+              className={`fixed left-1/2 z-[75] w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2 ${scriptureBottom == null ? 'bottom-40 sm:bottom-44' : ''}`}
+              style={{ ...scriptureOverlay.style, ...(scriptureBottom != null ? { bottom: scriptureBottom } : {}) }}
             >
               <div
                 onPointerDown={scriptureOverlay.onPointerDown}
@@ -915,7 +1100,11 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
                 title="Drag to move"
                 className={`select-none ${scriptureOverlay.isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
               >
-                <ScripturePanel sessionId={displaySessionId} variant="display" />
+                <ScripturePanel
+                  sessionId={displaySessionId}
+                  variant="card"
+                  onEdit={canControlScripture ? editVerse : undefined}
+                />
               </div>
             </div>
           )}
@@ -923,7 +1112,7 @@ export const FloatingTranslationButton: React.FC<FloatingTranslationButtonProps>
           {captionMode !== 'off' && (
             <div
               ref={captionOverlay.ref}
-              className="fixed bottom-40 sm:bottom-44 left-1/2 z-50 w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
+              className="fixed bottom-40 sm:bottom-44 left-1/2 z-[75] w-[94vw] sm:w-[85vw] md:w-[70vw] lg:max-w-3xl px-2"
               style={captionOverlay.style}
             >
               <div

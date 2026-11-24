@@ -32,7 +32,9 @@ export default defineConfig(({ mode }) => ({
         {
           entry: 'electron/preload.ts',
           onstart(options) { options.reload(); },
-          vite: { build: { outDir: 'dist-electron', rollupOptions: { external: ['electron'] } } },
+          // CommonJS: a non-sandboxed preload is require()d, so the ESM default
+          // (from package.json "type": "module") would fail to load.
+          vite: { build: { outDir: 'dist-electron', lib: { entry: 'electron/preload.ts', formats: ['cjs'], fileName: () => 'preload.cjs' }, rollupOptions: { external: ['electron'] } } },
         },
       ]),
       renderer(),

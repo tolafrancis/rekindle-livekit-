@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Pencil, Check, X, Loader2 } from 'lucide-react';
 import { supabase } from '@rekindle/supabase';
 
 /**
@@ -36,9 +37,9 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
     if (!sessionId) return;
     let cancelled = false;
     const take = (row: ScriptureEvent) =>
-      setLatest(prev => (prev && new Date(prev.created_at) > new Date(row.created_at) ? prev : row));
+      setLatest(prev => (prev && (prev.id === row.id || new Date(prev.created_at) > new Date(row.created_at)) ? prev : row));
 
-    supabase
+    const poll = () => supabase
       .from('translation_scripture_events')
       .select('id, status, reference, version, text, attribution, listener_text, listener_version, display_seconds, created_at')
       .eq('session_id', sessionId)
@@ -47,6 +48,16 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
       .then(({ data }) => {
         if (!cancelled && data?.[0]) take(data[0] as ScriptureEvent);
       }, () => { /* no verse: nothing to show */ });
+    poll();
+    // Polling backstop (2026-11-11). On 2026-11-11 a meeting's realtime
+    // socket hit Supabase's "Too many joins on this socket" limit, so this
+    // channel never joined: Show saved the verse but nobody's screen got the
+    // INSERT, not even the host's. The realtime event still makes it
+    // instant when it arrives; this guarantees it shows within a few
+    // seconds when it doesn't. Also re-checks on return to the tab.
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 4000);
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    document.addEventListener('visibilitychange', onVisible);
 
     // One channel per hook instance: a page can use this hook more than once
     // for the same session (FloatingTranslationButton reads the verse and
@@ -60,7 +71,12 @@ export function useCurrentScripture(sessionId: string | undefined): ScriptureEve
         (payload) => take(payload.new as ScriptureEvent))
       .subscribe();
 
-    return () => { cancelled = true; supabase.removeChannel(channel); };
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      supabase.removeChannel(channel);
+    };
   }, [sessionId]);
 
   // Hide a verse once its display time is up (display_seconds = 0 keeps it
@@ -87,17 +103,122 @@ class ScriptureBoundary extends React.Component<{ children: React.ReactNode }, {
 
 interface ScripturePanelProps {
   sessionId: string | undefined;
-  /** display: the listener page's dark card. overlay: OBS Browser Source text. */
-  variant: 'display' | 'overlay';
+  /** display: the listener page's dark card. overlay: OBS Browser Source text.
+   *  card: the floating verse card over a meeting, stream or screen share,
+   *  solid enough to read on any background (2026-11-21). */
+  variant: 'display' | 'overlay' | 'card';
+  /** card only: lets the host change the verse's wording in place. Saving
+   *  puts the edited text on everyone's screen. Returns an error or null. */
+  onEdit?: (text: string) => Promise<string | null>;
   /** Overlay font size in px (the reference line is scaled from it). */
   size?: number;
   /** Overlay background style, matching the captions' own. */
   overlayStyle?: 'box' | 'outline';
 }
 
-const Inner: React.FC<ScripturePanelProps> = ({ sessionId, variant, size = 36, overlayStyle = 'box' }) => {
+// Stops the drag surface around the card from grabbing the pointer, so the
+// buttons and text box inside it get their own clicks, taps and selection.
+const noDrag = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() };
+
+/** The floating verse card (2026-11-21): a near-opaque dark card with light
+ *  text, a ring and a shadow, so the verse reads the same over a bright
+ *  slide, a white screen share or a dark camera feed. The old card was a 10%
+ *  indigo tint that vanished on light backgrounds. */
+const VerseCard: React.FC<{ verse: ScriptureEvent; onEdit?: (text: string) => Promise<string | null> }> = ({ verse, onEdit }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // A different verse arriving (auto-detect, or someone else's edit) ends an
+  // edit in progress instead of saving over it.
+  useEffect(() => { setEditing(false); setError(null); }, [verse.id]);
+
+  const save = async () => {
+    if (!onEdit) return;
+    setSaving(true);
+    setError(null);
+    const err = await onEdit(draft);
+    setSaving(false);
+    if (err) setError(err);
+    else setEditing(false);
+  };
+
+  const label = `${verse.reference} · ${verse.listener_text ? `${verse.listener_version} / ${verse.version}` : verse.version}`;
+  return (
+    <section
+      aria-live="polite"
+      className="w-full rounded-2xl bg-gray-950/90 backdrop-blur-md px-5 py-4 text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)] ring-1 ring-white/15"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-amber-300">{label}</p>
+        {onEdit && !editing && (
+          <button
+            type="button"
+            {...noDrag}
+            onClick={() => { setDraft(verse.text ?? ''); setError(null); setEditing(true); }}
+            className="-mr-1 -mt-1 shrink-0 rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+            aria-label="Edit verse text"
+            title="Edit verse text"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div {...noDrag} className="mt-2 select-text">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            rows={4}
+            autoFocus
+            className="w-full resize-y rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-base sm:text-lg leading-snug text-white outline-none focus:border-amber-300/70"
+            aria-label="Verse text"
+          />
+          {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+            >
+              <X className="h-3.5 w-3.5" /> Cancel
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving || !draft.trim()}
+              className="inline-flex items-center gap-1 rounded-md bg-amber-400 px-3 py-1.5 text-sm font-semibold text-gray-950 hover:bg-amber-300 disabled:opacity-60"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {verse.listener_text && (
+            <p className="mt-1.5 text-lg sm:text-xl leading-snug font-medium text-white">{verse.listener_text}</p>
+          )}
+          <p className={verse.listener_text
+            ? 'mt-2 text-sm sm:text-base leading-snug text-white/75'
+            : 'mt-1.5 text-lg sm:text-xl leading-snug font-medium text-white'}>{verse.text}</p>
+        </>
+      )}
+      {verse.attribution && <p className="mt-2 text-[10px] leading-tight text-white/50">{verse.attribution}</p>}
+    </section>
+  );
+};
+
+const Inner: React.FC<ScripturePanelProps> = ({ sessionId, variant, size = 36, overlayStyle = 'box', onEdit }) => {
   const verse = useCurrentScripture(sessionId);
   if (!verse) return null;
+
+  if (variant === 'card') return <VerseCard verse={verse} onEdit={onEdit} />;
 
   if (variant === 'display') {
     return (

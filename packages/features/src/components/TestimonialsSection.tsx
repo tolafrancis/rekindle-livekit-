@@ -19,10 +19,10 @@ export const TestimonialsSection: React.FC = () => {
   if (items.length === 0) return null;
 
   return (
-    <section id="testimonials" style={{ background: '#fdf9f3', padding: '100px 0' }}>
+    <section id="testimonials" style={{ background: '#fbf8f3', padding: '56px 0' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
         <p style={{ fontSize: '.78rem', fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: '#7c3aed', marginBottom: 12, textAlign: 'center' }}>{t('landing', 'testimonialsEyebrow', 'Testimonials')}</p>
-        <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(2rem,4vw,3.2rem)', color: '#0f0a1e', marginBottom: 40, textAlign: 'center' }}>{t('landing', 'testimonialsTitle', 'What people are saying')}</h2>
+        <h2 style={{ fontSize: 'clamp(1.6rem,3vw,2.1rem)', fontWeight: 700, letterSpacing: '-.02em', color: '#1c1530', marginBottom: 28, textAlign: 'center' }}>{t('landing', 'testimonialsTitle', 'What people are saying')}</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 20 }}>
           {items.map((item) => (
             <figure key={item.id} style={{ margin: 0, background: '#fff', border: '1px solid rgba(124,58,237,.12)', borderRadius: 16, padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
