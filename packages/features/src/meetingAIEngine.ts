@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '@rekindle/supabase';
+import { meetingNotesToPlainText, meetingNotesToReportDocument } from './meetingNotesFormat';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,17 @@ export interface MeetingInsights {
   speakerInsights: SpeakerInsight[];
   dominantLanguage: string;
   processingDurationMs: number;
+  /**
+   * Detailed meeting notes / report (Markdown subset, see meetingNotesFormat.ts):
+   * overview, topic sections, tables, action items with owners. Missing on
+   * insights generated before this was added; the Summary tab offers to create it.
+   */
+  meetingNotes?: string | null;
+}
+
+export interface MeetingNotesOptions {
+  /** Shown under the report title, e.g. "6 November 2026". Defaults to today. */
+  meetingDate?: string;
 }
 
 export type SlashCommand = '/record' | '/transcribe' | '/summarize';
@@ -68,6 +80,17 @@ export type SlashCommand = '/record' | '/transcribe' | '/summarize';
 
 const CHUNK_DURATION_SECONDS = 180; // 3-minute chunks for long sessions
 const CHUNK_OVERLAP_SECONDS = 20;   // overlap to preserve context at boundaries
+
+// gpt-4o-mini has a 128k-token context, so a normal meeting (a 45-minute
+// meeting is ~30k characters, ~8k tokens) fits in ONE call. Summarising it in
+// 3-minute, 300-token pieces first is what made the insights so thin, so we
+// only fall back to segment notes for very long sessions.
+const SINGLE_PASS_MAX_CHARS = 180_000;
+const NOTES_SEGMENT_CHARS = 60_000;
+// The report is written by a stronger model: gpt-4o-mini dropped most names,
+// assignments and plans when tested on a real 46-minute meeting. meeting-ai
+// falls back to gpt-4o-mini if it can't serve this one.
+const NOTES_MODEL = 'gpt-4.1';
 
 // ── Internal helper ────────────────────────────────────────────────────────
 
@@ -79,9 +102,9 @@ const CHUNK_OVERLAP_SECONDS = 20;   // overlap to preserve context at boundaries
  * API key and no CORS allowance, so every AI step failed. Never call a model
  * provider from the client: the key would be exposed, and browsers block it.
  */
-async function callAI(systemPrompt: string, userContent: string, maxTokens = 1000): Promise<string> {
+async function callAI(systemPrompt: string, userContent: string, maxTokens = 1000, model?: string): Promise<string> {
   const { data, error } = await supabase.functions.invoke('meeting-ai', {
-    body: { system: systemPrompt, user: userContent, maxTokens },
+    body: { system: systemPrompt, user: userContent, maxTokens, ...(model ? { model } : {}) },
   });
   if (error) throw new Error(`meeting-ai failed: ${error.message}`);
   if (data?.error) throw new Error(`meeting-ai: ${data.error}`);
@@ -264,7 +287,8 @@ export async function processTranscript(raw: RawTranscript): Promise<CleanedTran
 
 export async function generateMeetingInsights(
   cleaned: CleanedTranscript,
-  meetingTitle: string
+  meetingTitle: string,
+  notesOptions: MeetingNotesOptions = {},
 ): Promise<MeetingInsights> {
   const start = Date.now();
 
@@ -272,9 +296,15 @@ export async function generateMeetingInsights(
   const linesForSummary = cleaned.translatedLines ?? cleaned.lines;
   const transcriptText = formatTranscriptToText(linesForSummary);
 
-  // Chunk if very long
-  const chunks = chunkTranscript(linesForSummary);
+  // Only chunk when the transcript is too long for one call (see SINGLE_PASS_MAX_CHARS).
+  const chunks = transcriptText.length > SINGLE_PASS_MAX_CHARS ? chunkTranscript(linesForSummary) : [linesForSummary];
   let combinedContext = transcriptText;
+
+  // The detailed report runs alongside the structured insights.
+  const notesPromise = generateMeetingNotes(cleaned, meetingTitle, notesOptions).catch(err => {
+    console.error('Meeting notes generation failed:', err);
+    return null;
+  });
 
   if (chunks.length > 1) {
     // Summarize each chunk first, then summarize summaries
@@ -308,14 +338,15 @@ export async function generateMeetingInsights(
 CRITICAL RULES:
 - Never hallucinate or invent details not present in the transcript
 - If information is missing, use null or empty arrays
-- Keep summaries concise but complete
+- Be specific: prefer concrete details (who, what, when, how many) over generic phrases
+- Give 6-12 key points for a typical meeting, fewer only if little was said
 - Action items must include owner and deadline ONLY if explicitly mentioned
 - Sentiment must be based on the actual tone, not guessed
 
 Output this exact JSON structure:
 {
-  "summaryEnglish": "<2-4 sentence summary in English>",
-  "keyPoints": ["<point>", ...],
+  "summaryEnglish": "<4-6 sentence summary in English: purpose, main discussion, outcomes and next steps>",
+  "keyPoints": ["<specific point, with names, numbers, dates and scripture references when stated>", ...],
   "actionItems": [{"text": "<task>", "owner": "<name or null>", "deadline": "<date/time or null>"}, ...],
   "decisions": ["<decision>", ...],
   "openQuestions": ["<question>", ...],
@@ -355,13 +386,128 @@ Output this exact JSON structure:
     keyTopics: [], // Could be enriched with another Claude call but kept lean
   }));
 
+  const meetingNotes = await notesPromise;
+
   return {
     ...parsed,
     summaryOriginal,
     speakerInsights,
     dominantLanguage: cleaned.dominantLanguage,
+    meetingNotes,
     processingDurationMs: Date.now() - start,
   };
+}
+
+// ── Detailed meeting notes (report) ───────────────────────────────────────
+
+const MEETING_NOTES_SYSTEM = `You are an experienced minute-taker for church and ministry meetings. From the transcript, write a DETAILED meeting report in Markdown that a leader who missed the meeting could act on.
+
+STRUCTURE (follow this order; skip a section only if the transcript has nothing for it):
+# <Meeting title> – Meeting Report
+<Meeting date line, exactly as given>
+
+## Overview
+One short paragraph: what the meeting set out to do and what it produced (assignments, plans, decisions), plus its approximate length. Then bullets:
+- **Convened by:** <who led it, described by role if no name is said>
+- **Participants named:** <every person named, with what they did or were mentioned for>
+- **Purpose:** <the stated purpose>
+If parts of the transcript are garbled, inaudible or missing (e.g. during feedback), say so in one sentence with the rough time range, and say that unclear details are marked.
+
+Then 3-7 topic sections ("## <Topic>"), in the order they were discussed, named for what they cover (e.g. "Opening exhortation", "Vision and context", "Assignments to leaders", "Proposed event", "Feedback"). Each section:
+- starts with one lead sentence that states the main point of the section;
+- then bullets with concrete detail. Start a bullet with a short **bold label:** when it names a sub-topic (e.g. "**Why now:**", "**Visas:**", "**Date:**");
+- uses a numbered list when the meeting gave numbered assignments, steps or requests, with indented sub-bullets (two spaces then "- ") for detail under an item;
+- uses a Markdown table (| col | col |, with a |---| separator row) for any schedule, programme, day-by-day plan, budget or comparison;
+- includes scripture references and short quotes when the speaker cited them;
+- includes names, countries, numbers, dates, prices, features and reasons exactly as stated.
+For sermon-like or teaching portions, capture each distinct point as its own bullet.
+
+## Decisions
+Bullets of what was agreed or decided (omit the section if nothing was decided).
+
+## Action items
+One sentence on the most important next step, then a table:
+| Action | Owner | Due |
+|---|---|---|
+Use the person, role or group responsible ("All leaders", "Coordinator"); write "Not stated" when no owner or due date was given. Drop the Due column if no dates were mentioned at all.
+After the table, list anything still to be confirmed as lines starting with "☐ ".
+
+RULES:
+- Use ONLY what is in the transcript. Never invent names, dates, numbers or decisions. If something is unclear write "(unclear in the recording)".
+- Speaker labels like "Speaker" or "Participant 1" are not names; describe people by role instead.
+- Correct obvious speech-to-text errors only when the meaning is certain (e.g. a misheard Bible book).
+- Write in English, in clear full sentences and bullets, past tense, neutral tone. No emojis.
+- Be thorough: a 45-60 minute meeting should produce roughly 700-1200 words. Shorter meetings proportionally less.
+- Output only the Markdown report, with no code fences and no commentary.`;
+
+/**
+ * Detailed, sectioned meeting report (Markdown). Uses the whole transcript in one
+ * call when it fits; very long meetings are first turned into detailed segment
+ * notes, which are then written up as one report.
+ */
+export async function generateMeetingNotes(
+  cleaned: CleanedTranscript,
+  meetingTitle: string,
+  options: MeetingNotesOptions = {},
+): Promise<string | null> {
+  const lines = cleaned.translatedLines ?? cleaned.lines;
+  if (lines.length === 0) return null;
+
+  const meetingDate = options.meetingDate
+    || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const first = lines[0]?.timestamp ?? 0;
+  const last = lines[lines.length - 1]?.timestamp ?? 0;
+  const minutes = Math.max(1, Math.round((last - first) / 60));
+
+  let transcriptText = formatTranscriptToText(lines);
+
+  if (transcriptText.length > SINGLE_PASS_MAX_CHARS) {
+    // Split into large segments and take detailed notes on each, keeping
+    // timestamps, names and specifics so the final write-up loses little.
+    const segments: TranscriptLine[][] = [];
+    let current: TranscriptLine[] = [];
+    let size = 0;
+    for (const l of lines) {
+      const len = l.text.length + l.speaker.length + 12;
+      if (size + len > NOTES_SEGMENT_CHARS && current.length) {
+        segments.push(current);
+        current = [];
+        size = 0;
+      }
+      current.push(l);
+      size += len;
+    }
+    if (current.length) segments.push(current);
+
+    const segmentNotes: string[] = [];
+    for (let i = 0; i < segments.length; i += 3) {
+      const batch = segments.slice(i, i + 3);
+      const results = await Promise.all(
+        batch.map((seg, j) =>
+          callAI(
+            `You are taking detailed notes on part ${i + j + 1} of ${segments.length} of a meeting transcript. Write thorough bullet notes of everything substantive: each point made, names, numbers, dates, scripture references, plans, requests, assignments, decisions and who owns what. Keep the [mm:ss] time of each topic. Note any inaudible or garbled stretches. Use only what is in the transcript. Plain bullets, no preamble.`,
+            formatTranscriptToText(seg),
+            2500,
+          ),
+        ),
+      );
+      segmentNotes.push(...results);
+    }
+    transcriptText = segmentNotes.map((n, i) => `### Notes on part ${i + 1}\n${n}`).join('\n\n');
+  }
+
+  const userContent = `Meeting title: "${meetingTitle}"\nMeeting date line: ${meetingDate}\nApproximate length: ${minutes} minutes\n\nTranscript:\n${transcriptText}`;
+  let raw: string;
+  try {
+    raw = await callAI(MEETING_NOTES_SYSTEM, userContent, 6000, NOTES_MODEL);
+  } catch (err) {
+    // e.g. the session token expired and the stronger model was refused.
+    console.warn('Meeting notes: falling back to the default model', err);
+    raw = await callAI(MEETING_NOTES_SYSTEM, userContent, 4000);
+  }
+
+  const notes = raw.replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  return notes || null;
 }
 
 // ── Slash Command Parser ───────────────────────────────────────────────────
@@ -414,6 +560,10 @@ export function downloadInsightsAsTxt(insights: MeetingInsights, meetingTitle: s
     lines.push('📋 SUMMARY (ORIGINAL LANGUAGE)', insights.summaryOriginal, '');
   }
 
+  if (insights.meetingNotes) {
+    lines.push('📝 MEETING NOTES', '─'.repeat(60), meetingNotesToPlainText(insights.meetingNotes), '', '═'.repeat(60), '');
+  }
+
   if (insights.keyPoints.length > 0) {
     lines.push('🔑 KEY POINTS');
     insights.keyPoints.forEach((p, i) => lines.push(`  ${i + 1}. ${p}`));
@@ -456,6 +606,18 @@ export function downloadInsightsAsTxt(insights: MeetingInsights, meetingTitle: s
   }
 
   triggerDownload(lines.join('\n'), `${sanitizeFilename(meetingTitle)}_insights.txt`, 'text/plain');
+}
+
+/**
+ * The detailed report as a Word document (.doc holding styled HTML, which Word,
+ * Google Docs and LibreOffice all open), ready to print or save as PDF.
+ */
+export function downloadMeetingNotesAsDoc(notes: string, meetingTitle: string): void {
+  triggerDownload(
+    meetingNotesToReportDocument(notes, `${meetingTitle} – Meeting Report`),
+    `${sanitizeFilename(meetingTitle)}_meeting_report.doc`,
+    'application/msword',
+  );
 }
 
 function sanitizeFilename(name: string): string {
