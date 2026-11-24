@@ -20,3 +20,4 @@
 2026-11-24 Live tile: Meetings in Live group
 2026-11-22 keep Android meeting service running after mic grant
 2026-11-06 detailed AI meeting notes + Meeting default
+2026-11-05 remove unused restream defaults card, broadcast history (packages/ministry, #138)

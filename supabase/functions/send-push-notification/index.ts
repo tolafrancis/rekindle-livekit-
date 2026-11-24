@@ -516,10 +516,13 @@ serve(async (req) => {
           title,
           message: body,
           channel: doPush ? (doInApp ? 'push+inapp' : 'push') : 'inapp',
-          recipients_count: pushTotal,
-          successful_sends: pushSent,
-          failed_sends: pushFailed,
-          sent_at: new Date().toISOString()
+          // In-app only: count the notifications written, not push devices (0).
+          recipients_count: doPush ? pushTotal : inAppInserted,
+          successful_sends: doPush ? pushSent : inAppInserted,
+          failed_sends: doPush ? pushFailed : 0,
+          sent_at: new Date().toISOString(),
+          // The ministry Broadcast screen lists its history by metadata.ministryId (0434).
+          metadata: { ministryId: ministryId ?? null, notificationType: notificationType ?? null, inAppRecipients: inAppInserted },
         });
     } catch (logErr) {
       console.error('Failed to log broadcast:', logErr);
